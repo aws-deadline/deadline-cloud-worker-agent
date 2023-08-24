@@ -1,0 +1,54 @@
+dn: ou=People,dc=environment,dc=internal
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Groups,dc=environment,dc=internal
+objectClass: organizationalUnit
+ou: Groups
+
+dn: cn=agentuser,ou=Groups,dc=environment,dc=internal
+objectClass: posixGroup
+cn: agentuser
+gidNumber: 5000
+
+dn: cn=jobuser,ou=Groups,dc=environment,dc=internal
+objectClass: posixGroup
+cn: jobuser
+gidNumber: 5001
+
+dn: cn=sharedgroup,ou=Groups,dc=environment,dc=internal
+objectClass: posixGroup
+cn: sharedgroup
+gidNumber: 5003
+
+dn: uid=agentuser,ou=People,dc=environment,dc=internal
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: agentuser
+sn: agentuser
+givenName: agentuser
+cn: agentuser
+displayName: agentuser
+uidNumber: 10000
+gidNumber: 5000
+userPassword: password
+gecos: agentuser
+loginShell: /bin/bash
+homeDirectory: /home/agentuser
+
+dn: uid=jobuser,ou=People,dc=environment,dc=internal
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: jobuser
+sn: jobuser
+givenName: jobuser
+cn: jobuser
+displayName: jobuser
+uidNumber: 10001
+gidNumber: 5001
+userPassword: password
+gecos: jobuser
+loginShell: /bin/bash
+homeDirectory: /home/jobuser

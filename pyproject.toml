@@ -1,0 +1,157 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deadline-cloud-worker-agent"
+dynamic = ["version"]
+dependencies = [
+    "requests ~= 2.29",
+    "boto3 ~= 1.26",
+    "deadline == 0.16.*",
+    "openjobio == 0.8.*",
+    # tomli became tomllib in standard library in Python 3.11
+    "tomli >= 1.1.0 ; python_version<'3.11'",
+    "typing_extensions ~= 4.5",
+    "psutil ~= 5.9",
+    "pydantic ~= 1.10.0",
+]
+requires-python = ">=3.7"
+
+[project.scripts]
+deadline-worker-agent = "deadline_worker_agent:entrypoint"
+install-deadline-worker = "deadline_worker_agent:install"
+
+[tool.hatch.build]
+artifacts = [
+  "*_version.py",
+]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "_version.py"
+
+[tool.hatch.version.raw-options]
+version_scheme = "post-release"
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_version_hook.py"
+
+[[tool.hatch.build.hooks.custom.copy_map]]
+sources = [
+  "_version.py",
+]
+destinations = [
+  "src/deadline_worker_agent",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/*",
+    "hatch_version_hook.py",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "src/deadline_worker_agent",
+]
+
+[tool.mypy]
+# See https://mypy.readthedocs.io/en/latest/config_file.html for more mypy options.
+
+# Enables the type-checker on the interior of functions without type annotations.
+check_untyped_defs = true
+
+# Displaying specific error codes makes it easier to silence specific errors
+# See also https://mypy.readthedocs.io/en/latest/error_codes.html
+show_error_codes = true
+
+# Show source code snippets and location markers in error messages
+pretty = true
+
+# Declare mypy plugins
+plugins = [
+    "pydantic.mypy",
+]
+
+files = [ "src/**/*.py" ]
+python_version = 3.9
+
+ignore_missing_imports = true
+
+# Ignore missing type annotations for the following packages
+# See https://mypy.readthedocs.io/en/stable/config_file.html#using-a-pyproject-toml-file
+[[tool.mypy.overrides]]
+
+module = [
+    "requests",
+    "requests.exceptions",
+    "boto3.*",
+    "botocore.client",
+    "botocore.exceptions",
+    "botocore.*"
+]
+
+[tool.ruff]
+ignore = [
+  "E501",
+  "E722",
+  "F811",
+]
+line-length = 100
+
+[tool.ruff.isort]
+known-first-party = [
+  "deadline_worker_agent",
+  "deadline",
+  "openjobio",
+]
+
+[tool.black]
+line-length = 100
+
+
+# Configuration for pytest; enable coverage for deadline_worker_agent, emit
+# XML, HTML, and terminal reports.
+[tool.pytest.ini_options]
+xfail_strict = true
+addopts = [
+    "--durations=5",
+    "--color=yes",
+    "--cov=src/deadline_worker_agent",
+    "--cov-report=html:build/coverage",
+    "--cov-report=xml:build/coverage/coverage.xml",
+    "--cov-report=term-missing",
+    "--numprocesses=auto"
+]
+testpaths = [ "test" ]
+looponfailroots = [ "src", "test" ]
+filterwarnings = [
+    "default",
+    "error::pytest.PytestUnhandledThreadExceptionWarning"
+]
+
+
+[tool.coverage.run]
+branch = true
+parallel = false
+source_pkgs = [ "deadline_worker_agent" ]
+omit = [
+    # the mock boto implementation doesn't require tests
+    "*/boto_mock.py",
+    # TODO: Remove these once we have session test coverage
+    "*/api_models.py",
+    "*/errors.py",
+    "*/queue.py",
+    "*/scheduler/**/*.py",
+    "*/worker.py",
+]
+
+[tool.coverage.paths]
+source = [ "src/" ]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 78

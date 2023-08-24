@@ -1,11 +1,14 @@
-## My Project
+# DeadlineWorkerAgent
 
-TODO: Fill this README out!
+This package has two active branches:
 
-Be sure to:
+- `mainline` -- For active development. This branch is not intended to be consumed by other packages. Any commit to this branch may break APIs, dependencies, and so on, and thus break any consumer without notice.
+- `release` -- The official release of the package intended for consumers. Any breaking releases will be accompanied with an increase to this package's interface version.
 
-* Change the title in this README
-* Edit your repository description on GitHub
+## Overview
+
+The DeadlineWorkerAgent package contains the worker agent software that is installed on worker nodes
+to interact with Amazon Deadline Cloud and perform tasks.
 
 ## Security
 
