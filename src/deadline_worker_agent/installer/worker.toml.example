@@ -1,0 +1,276 @@
+[worker]
+
+# The unique identifier of the Amazon Deadline Cloud farm that the Worker belongs to. This value is overridden
+# when the DEADLINE_WORKER_FARM_ID environment variable is set or the --farm-id command-line argument
+# is specified.
+#
+# The following is an example for setting the farm ID in this configuration file:
+#
+# farm_id = "farm-aabbccddeeff11223344556677889900"
+#
+# Uncomment the line below and replace the value with your Amazon Deadline Cloud farm ID:
+#
+# farm_id = "REPLACE-WTIH-WORKER-FARM-ID"
+
+
+# The unique identifier of the Amazon Deadline Cloud fleet that the Worker belongs to. This value is overridden
+# when the DEADLINE_WORKER_FLEET_ID environment variable is set or the --fleet-id command-line
+# argument is specified.
+#
+# The following is an example for setting the fleet ID in this configuration file:
+#
+# fleet_id = "fleet-aabbccddeeff11223344556677889900"
+#
+# Uncomment the line below and replace the value with your Amazon Deadline Cloud fleet ID:
+#
+# fleet_id = "REPLACE-WITH-WORKER-FLEET-ID"
+
+
+# The directory where the worker agent persists its settings and credentials. The persistence directory
+# is expected to be located on a file-system that is local to the Worker Host. The Worker's ID
+# and credentials are persisted and these should not be accessible by other Workers. This value is overridden
+# when the DEADLINE_WORKER_PERSISTENCE_DIR environment variable is set or the --persistence-dir command-line argument
+# is specified.
+#
+# The following is the default worker persistence dir on POSIX systems.
+# worker_persistence_dir = "/var/lib/deadline"
+
+[aws]
+
+# The worker agent requires initial AWS credentials in order to bootstrap the worker. Bootstrapping
+# the worker consists of two steps:
+#
+# 1.  Creating a worker resource if one has not been previously created and persisted
+#     to /var/lib/deadline/worker.json
+# 2.  Obtaining credentials for the worker resource
+#
+# Once the worker credentials are obtained, those credentials are used and rotated throughout the
+# worker agent's lifecycle
+#
+# By default, the worker agent uses boto3's default credential resolution process to obtain the
+# bootstrapping credentials. For details, on this, see
+# https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html.
+#
+# Optionally, the name of an AWS profile can be specified to obtain bootstrapping credentials. For
+# an overview of the AWS config file and AWS profiles, see
+# https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
+#
+# To use an AWS profile, uncomment the line below and replace with your desired AWS profile name.
+# This value is overridden when the DEADLINE_WORKER_PROFILE environment variable is set or if a
+# --profile command-line argument is specified.
+#
+# profile = "my_aws_profile_name"
+
+
+# The "allow_ec2_instance_profile" setting controls whether the Worker will run with an EC2 instance
+# profile associated to the host instance. This value is overridden when the
+# DEADLINE_WORKER_ALLOW_INSTANCE_PROFILE environment variable is set using one of the following
+# case-insensitive values:
+#
+#     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+#
+# or if the --allow-instance-profile command-line flag is specified.
+#
+# By default, this value is false and the worker agent makes requests to the EC2 instance meta-data
+# service (IMDS) to check for an instance profile. If an instance profile is detected, the worker
+# agent will stop and exit.
+#
+#  ***************************************** WARNING *****************************************
+#  *                                                                                         *
+#  *     IF THIS IS TRUE, THEN ANY SESSIONS RUNNING ON THE WORKER CAN ASSUME THE INSTANCE    *
+#  *                  PROFILE AND USE ITS ASSOCIATED PRIVILEGES                              *
+#  *                                                                                         *
+#  *******************************************************************************************
+#
+# To accept this risk and allow the worker agent to run with an EC2 instance profile, uncomment
+# the line below:
+#
+# allow_ec2_instance_profile = true
+
+[logging]
+
+# Setting "verbose" to true causes more detailed log output which may be useful for troubleshooting.
+# This value is overridden when the DEADLINE_WORKER_VERBOSE environment variable is set using one
+# of the following case-insensitive values:
+#
+#     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+#
+# or if the --verbose command-line flag is specified.
+#
+#  ***************************************** WARNING *****************************************
+#  *                                                                                         *
+#  *           IT IS RECOMMENDED TO NOT TURN ON VERBOSE LOGGING FOR PRODUCTION USE           *
+#  *                                                                                         *
+#  *******************************************************************************************
+#
+# To turn on verbose logging, uncomment the line below:
+#
+# verbose = true
+
+
+# The directory where the worker agent writes log files. This value is overridden
+# when the DEADLINE_WORKER_LOGS_DIR environment variable is set or the --logs-dir command-line argument
+# is specified.
+#
+# The following is the default worker logs dir on POSIX systems. To change the log directory,
+# uncomment and modify the line below:
+#
+# worker_logs_dir = "/var/log/amazon/deadline"
+
+
+# Whether the worker agent should write session logs to the local file-system.
+#
+#  ******************************************* NOTE ******************************************
+#  *                                                                                         *
+#  #   The Amazon Deadline Cloud Worker Agent does not have any feature to delete/clean up session logs.   #
+#  #   It is up to the worker host admin to manage the deletion of session logs written to   #
+#  #    local file-system. Otherwise, the worker could eventually fill up all file-system    #
+#  #                                         capacity.                                       #
+#  *                                                                                         *
+#  *******************************************************************************************
+#
+# The logs are written to:
+#
+#    <worker_logs_dir>/<queue_id>/<session_id>.log
+#
+# This value is overridden when the DEADLINE_WORKER_LOCAL_SESSION_LOGS environment variable is set using
+# one of the following case-insensitive values:
+#
+#     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+#
+# or if the --no-local-session-logs command-line flag is specified.
+#
+# By default local session logging is turned on. To turn off local session logging, uncomment the
+# line below:
+#
+# local_session_logs = false
+
+
+[os]
+
+# Amazon Deadline Cloud may specify an OS user to impersonate when running session actions. By setting
+# "impersonation" to false, the OS user is ignored and the session actions are run as the same user
+# that the worker agent process runs as.
+#
+# This value is overridden when the DEADLINE_WORKER_IMPERSONATION environment variable is set using
+# one of the following case-insensitive values:
+#
+#     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+#
+# or if the --no-impersonation command-line flag is specified.
+#
+# To turn off OS user impersonation, uncomment the line below
+#
+# impersonation = false
+
+# Amazon Deadline Cloud may specify an OS user to impersonate when running session actions. By setting
+# "posix_job_user", this will override the OS user and the session actions will be run as
+# this user. Requires Impersonation to be set to true.
+#
+# posix_job_user is expressed as a string in the following format:
+#
+#     '<POSIX_USER>:<POSIX_GROUP>'
+#
+#   Where:
+#
+#       <POSIX_USER>
+#           An existing posix user that the worker agent has access to
+#       <POSIX_GROUP>
+#           An existing posix group that the worker agent has access to
+#
+# To have a specific OS user and group used when running jobs, uncomment the line below and
+# replace the user and group name as desired. This value is overridden when the DEADLINE_WORKER_POSIX_JOB_USER
+# environment variable or if the --posix-job-user command-line flag is specified.
+#
+# posix_job_user = "user:group"
+
+# Amazon Deadline Cloud may tell the worker to stop. If the "shutdown_on_stop" setting below is true, then the
+# Worker will attempt to shutdown the host system after the Worker has been stopped.
+#
+# This value is overridden when the DEADLINE_WORKER_NO_SHUTDOWN environment variable is set using
+# one of the following case-insensitive values:
+#
+#     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+#
+# or if the --no-shutdown command-line flag is specified.
+#
+# To prevent the worker agent from shutting down the host when being told to stop, uncomment the
+# line below:
+#
+# shutdown_on_stop = false
+
+
+[capabilities]
+
+# Capabilities for the Worker can be declared in this config section. There are two types of
+# capabilities - amounts and attributes.
+#
+# The values in the following configuration sections are overridden if the
+# DEADLINE_WORKER_CAPABILITIES environment variable is set using a JSON syntax, for example:
+#
+# {"amounts": { "amount.apples": 12 }, "attributes": { "attr.license_servers": ["green.internal"] }}
+#
+# For further documentation, see the sections below.
+
+[capabilities.amounts]
+
+# Amount Capabilities
+# -------------------
+#
+#   Amounts represent a capability with a numeric quantity. Amount capabilities are expressed in the
+#   config file as:
+#
+#       "[<VENDOR>:]amount.<NAME>" = <VALUE>
+#
+#   Where:
+#
+#       <VENDOR>
+#           An optional namespace that indicates the capabilitiy is specific to a particular
+#           OpenJobIO-compatable render farm management system.
+#       <NAME>
+#           A name for the amount capability
+#       <VALUE>
+#           A positive floating-point value which indicates the amount of capability available to
+#           the worker.
+#
+# Examples
+# --------
+#
+# "amount.slots" = 20
+# "deadline:amount.pets" = 99
+
+[capabilities.attributes]
+
+#
+# Attributes Capabilities
+# -------------------
+#
+#   Attributes represent a capability with a one or more string labels, e.g. major version of a
+#   software component. Attribute capabilities are expressed in the config file as:
+#
+#       "[<VENDOR>:]attr.<NAME>" = [ "<VALUE>", ... ]
+#            [...]
+#
+#   Where:
+#
+#       <VENDOR>
+#           An optional namespace that indicates the capabilitiy is specific to a particular
+#           OpenJobIO-compatable render farm component.
+#       <NAME>
+#           A name for the attribute capability
+#       <VALUE>
+#           One or more string labels
+#
+# Examples
+# --------
+#
+# "attr.groups" = [
+#   "simulation",
+#   "maya",
+#   "nuke"
+# ]
+#
+# "acmewidgetsco:attr.admins" = [
+#   "bob",
+#   "alice"
+# ]

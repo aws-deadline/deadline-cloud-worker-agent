@@ -1,0 +1,452 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+from __future__ import annotations
+
+from dataclasses import dataclass, asdict, fields
+from time import sleep
+from typing import Optional
+import json
+import logging as _logging
+import stat
+import sys
+
+from botocore.exceptions import ClientError
+import requests
+
+from ..aws.deadline import (
+    DeadlineRequestConditionallyRecoverableError,
+    DeadlineRequestUnrecoverableError,
+    WorkerLogConfig,
+    construct_worker_log_config,
+    create_worker,
+    update_worker,
+)
+from .config import Configuration
+from .host_properties import get_host_properties as _get_host_properties
+from ..api_models import WorkerStatus
+from ..boto_mock import DeadlineClient, Session
+from ..aws_credentials import WorkerBoto3Session
+from ..session_events import configure_session_events
+
+__all__ = [
+    "WorkerPersistenceInfo",
+    "bootstrap_worker",
+]
+
+_logger = _logging.getLogger(__name__)
+
+
+# The number of attempts and sleep duration (in seconds) between attempts used to check for instance
+# profile disassociation before giving up and quiting the program.
+#
+# The delay time over all attempts totals two minutes which should be sufficient for an external
+# workflow to disassociate the instance profile under normal circumstances.
+INSTANCE_PROFILE_REMOVAL_ATTEMPTS = 120
+INSTANCE_PROFILE_CHECK_DURATION_SECONDS = 1
+
+
+class WorkerDeregisteredError(Exception):
+    """Exception raised when Worker is deregistered"""
+
+    _worker_id: str
+
+    def __init__(self, *, worker_id: str) -> None:
+        self._worker_id = worker_id
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"Worker {self._worker_id} is DEREGISTERED"
+
+
+class InstanceProfileAttachedError(Exception):
+    """
+    Exception raised when the Worker resides on an EC2 instance with an instance profile
+    attached, but instance profile is not allowed.
+    """
+
+    def __str__(self) -> str:  # pragma: no cover
+        return (
+            "Worker's EC2 instance profile not allowed but attached after "
+            f"{INSTANCE_PROFILE_REMOVAL_ATTEMPTS} attempts"
+        )
+
+
+class BootstrapWithoutWorkerLoad(Exception):
+    """
+    This exception is raised to worker_bootstrap, and indicates that the
+    worker_bootstrap function should be recursively called with
+    use_existing_worker=False
+    """
+
+    pass
+
+
+@dataclass
+class WorkerPersistenceInfo:
+    """Information about the Worker that must be persisted between launches of the Worker Agent"""
+
+    worker_id: str
+    """The Worker ID"""
+
+    @classmethod
+    def load(cls, *, config: Configuration) -> Optional[WorkerPersistenceInfo]:
+        """Load the Worker Bootstrap from the Worker Agent state persistence file"""
+        if not config.worker_state_file.is_file():
+            return None
+
+        with config.worker_state_file.open("r", encoding="utf8") as fh:
+            data: dict[str, str] = json.load(fh)
+
+        own_fields = set(f.name for f in fields(class_or_instance=WorkerPersistenceInfo))
+        selected_data = {key: value for key, value in data.items() if key in own_fields}
+        ignored_keys = data.keys() - own_fields
+        if ignored_keys:
+            _logger.warning(
+                "Ignoring unknown keys in worker persistence file: %s", ", ".join(ignored_keys)
+            )
+
+        return cls(**selected_data)
+
+    def save(self, *, config: Configuration) -> None:
+        """Save the Worker Bootstrap to the Worker Agent state persistence file"""
+        if not (
+            config.worker_state_file.parent.exists() and config.worker_state_file.parent.is_dir()
+        ):
+            raise RuntimeError(
+                f"The configured directory for the worker state file does not exist:\n{config.worker_state_file.parent}"
+            )
+
+        if (
+            config.worker_state_file.is_file()
+            and config.worker_state_file.stat().st_mode & stat.S_IWOTH
+        ):
+            _logger.warning(
+                f"Worker state file {config.worker_state_file} is world writeable which could lead to tampering."
+            )
+        config.worker_state_file.touch(mode=stat.S_IWUSR | stat.S_IRUSR, exist_ok=True)
+        with config.worker_state_file.open("w", encoding="utf8") as fh:
+            json.dump(
+                asdict(self),
+                fh,
+            )
+
+
+@dataclass
+class WorkerBootstrap:
+    """Return value of the bootstrap_worker() function"""
+
+    worker_info: WorkerPersistenceInfo
+    """Stateful information about the Worker"""
+
+    session: WorkerBoto3Session
+    """A boto3 session with Worker credentials"""
+
+    log_config: Optional[WorkerLogConfig] = None
+    """The log configuration for the Worker"""
+
+
+def bootstrap_worker(config: Configuration, *, use_existing_worker: bool = True) -> WorkerBootstrap:
+    """Contains startup logic to ensure that the Worker is created and started"""
+
+    # Session that will store AWS Credentials used during the initial bootstrapping until
+    # we have obtained Fleet Role Credentials from the service.
+    bootstrap_session = Session(profile_name=config.profile)
+    configure_session_events(boto3_session=bootstrap_session)
+
+    # raises: SystemExit
+    worker_info, has_existing_worker = _load_or_create_worker(
+        session=bootstrap_session, config=config, use_existing_worker=use_existing_worker
+    )
+
+    try:
+        # raises: BootstrapWithoutWorkerLoad, SystemExit
+        worker_session = _get_boto3_session_for_fleet_role(
+            session=bootstrap_session,
+            config=config,
+            worker_id=worker_info.worker_id,
+            has_existing_worker=has_existing_worker,
+        )
+    except BootstrapWithoutWorkerLoad:
+        _logger.info(
+            "Cannot obtain AWS Credentials for Worker %s, loaded from the local host settings. Creating a new Worker.",
+            worker_info.worker_id,
+        )
+        return bootstrap_worker(config, use_existing_worker=False)
+
+    deadline_client = worker_session.client("deadline")
+
+    try:
+        # raises: BootstrapWithoutWorkerLoad, SystemExit
+        log_config = _start_worker(
+            deadline_client=deadline_client,
+            config=config,
+            worker_id=worker_info.worker_id,
+            has_existing_worker=has_existing_worker,
+        )
+    except BootstrapWithoutWorkerLoad:
+        _logger.info(
+            "Worker %s, loaded from the local host settings, could not be STARTED. Creating a new Worker.",
+            worker_info.worker_id,
+        )
+        return bootstrap_worker(config, use_existing_worker=False)
+
+    # raises: InstanceProfileAttachedError
+    _enforce_no_instance_profile_or_stop_worker(
+        config=config,
+        deadline_client=deadline_client,
+        worker_id=worker_info.worker_id,
+    )
+
+    return WorkerBootstrap(
+        worker_info=worker_info,
+        session=worker_session,
+        log_config=log_config,
+    )
+
+
+def _load_or_create_worker(
+    *, session: Session, config: Configuration, use_existing_worker: bool
+) -> tuple[WorkerPersistenceInfo, bool]:
+    """Used by bootstrap_worker to obtain a WorkerPersistenceInfo for the Worker that is this Agent's identity in the
+    service.
+
+    If `use_existing_worker` is True, then this will load a persisted worker info from disk if one is available.
+    Otherwise (whether False or a persisted one doesn't exist), it will Create a new Worker in the service, persist
+    its info to disk, and return that info.
+
+    Returns:
+        (WorkerPersistenceInfo, bool)
+            WorkerPersistenceInfo -- Information about the Worker that was loaded/created&saved
+            bool -- True if, and only if, a Worker was *LOADED* from the host's local storage,
+                rather than created anew in the service.
+
+    Raises:
+        SystemExit - Any error here is unrecoverable, and the Agent should exit.
+    """
+
+    worker_info: Optional[WorkerPersistenceInfo] = None
+    has_existing_worker = False
+    if use_existing_worker:
+        worker_info = WorkerPersistenceInfo.load(config=config)
+        if worker_info:
+            has_existing_worker = True
+            _logger.info("Found existing Worker (%s) from prior launch", worker_info.worker_id)
+
+    if not worker_info:
+        # Worker creation must be done using bootstrap credentials from the environment
+        deadline_client = session.client("deadline")
+
+        host_properties = _get_host_properties()
+        _logger.info('Creating worker for hostname "%s"', host_properties["hostName"])
+        try:
+            # raises: DeadlineRequestUnrecoverableError
+            create_worker_response = create_worker(
+                deadline_client=deadline_client, config=config, host_properties=host_properties
+            )
+        except DeadlineRequestUnrecoverableError as e:
+            _logger.error("CreateWorker received an unrecoverable error: %s", str(e))
+            # Raises: SystemExit
+            sys.exit(1)
+        worker_id = create_worker_response["workerId"]
+        worker_info = WorkerPersistenceInfo(worker_id=worker_id)
+        _logger.info('Worker "%s" successfully created', worker_id)
+        worker_info.save(config=config)
+
+    return worker_info, has_existing_worker
+
+
+def _get_boto3_session_for_fleet_role(
+    *, session: Session, config: Configuration, worker_id: str, has_existing_worker: bool
+) -> WorkerBoto3Session:
+    """Used by bootstrap_worker to obtain a boto3 Session that contains AWS Credentials from the worker's Fleet
+    for this specific Worker.
+
+    `use_existing_worker` must be set to the value returned from _load_or_create_worker(). It being true tells us
+    that we loaded a previous worker_id from disk, and so we can recover by creating a new Worker if we get a
+    ResourceNotFound when trying to obtain credentials.
+
+    Returns:
+        Session - A boto3 Session that contains the AWS Credentials for use by the Worker Agent going forward.
+
+    Raises:
+        SystemExit - Any error here is unrecoverable, and the Agent should exit.
+        BootstrapWithoutWorkerLoad - If the worker has been deleted and we used an existing worker.
+    """
+
+    try:
+        # Create the session.
+        # Note that the constructor will force a credential refresh if
+        # either there are no credentials stored on disk or the credentials
+        # stored on disk are expired.
+        worker_session = WorkerBoto3Session(
+            bootstrap_session=session, config=config, worker_id=worker_id
+        )
+    except DeadlineRequestUnrecoverableError as e:
+        if isinstance(inner_exc := e.inner_exc, ClientError):
+            code = inner_exc.response.get("Error", {}).get("Code", None)
+            # If we're using a pre-existing workerId and we got a ResourceNotFoundException,
+            # then we can retry without using the existing worker.
+            # Otherwise, the error is terminal and we must exit.
+            if code == "ResourceNotFoundException" and has_existing_worker:
+                _logger.info(
+                    "The previously saved worker, %s, has been deleted.",
+                    worker_id,
+                )
+                raise BootstrapWithoutWorkerLoad()
+        _logger.error("Could not obtain AWS Credentials for Worker %s", worker_id, exc_info=True)
+        sys.exit(1)
+    except Exception:
+        # Note: A naked exception should be impossible, but let's be paranoid.
+        _logger.error("Could not obtain AWS Credentials for Worker %s", worker_id, exc_info=True)
+        sys.exit(1)
+
+    return worker_session
+
+
+def _start_worker(
+    *,
+    deadline_client: DeadlineClient,
+    config: Configuration,
+    worker_id: str,
+    has_existing_worker: bool,
+) -> Optional[WorkerLogConfig]:
+    """Updates the Worker in the service to the STARTED state.
+
+    Returns:
+        Optional[WorkerLogConfig] -- Non-None only if the UpdateWorker request
+            contained a log configuration for the Worker Agent to use for writing
+            its own logs. The returned WorkerLogConfig is the configuration that it
+            should use.
+
+    Raises:
+        BootstrapWithoutWorkerLoad
+        SystemExit
+    """
+
+    host_properties = _get_host_properties()
+
+    try:
+        response = update_worker(
+            deadline_client=deadline_client,
+            config=config,
+            worker_id=worker_id,
+            status=WorkerStatus.STARTED,
+            host_properties=host_properties,
+        )
+    except DeadlineRequestUnrecoverableError:
+        _logger.error("Could not set status of %s to STARTED", worker_id, exc_info=True)
+        sys.exit(1)
+    except DeadlineRequestConditionallyRecoverableError:
+        if has_existing_worker:
+            raise BootstrapWithoutWorkerLoad()
+        _logger.error("Could not set status of %s to STARTED", worker_id, exc_info=True)
+        sys.exit(1)
+
+    if log_config := response.get("log"):
+        return construct_worker_log_config(log_config=log_config)
+    return None
+
+
+def _enforce_no_instance_profile_or_stop_worker(
+    *,
+    config: Configuration,
+    deadline_client: DeadlineClient,
+    worker_id: str,
+) -> None:
+    """
+    If the configuration does not allow instance profiles while the Worker is running, then
+    this function will wait until instance profile IAM credentials are no longer available or
+    until reaching the maximum number of retries.
+
+    If the maximum number of retries is reached, the Worker will attempt to be stopped. This is a
+    best-effort attempt and will utilize boto3's default retry behavior.
+    """
+
+    _logger.debug("Allow instance profile: %s", config.allow_instance_profile)
+    if config.allow_instance_profile:
+        return
+
+    try:
+        _enforce_no_instance_profile()
+    except InstanceProfileAttachedError:
+        try:
+            update_worker(
+                deadline_client=deadline_client,
+                config=config,
+                worker_id=worker_id,
+                status=WorkerStatus.STOPPED,
+            )
+        except DeadlineRequestUnrecoverableError as e:
+            _logger.critical(
+                "Error encountered trying to stop worker: %s", e.inner_exc, exc_info=True
+            )
+        except Exception:
+            _logger.critical("Error encountered trying to stop worker", exc_info=True)
+        else:
+            _logger.info("Worker %s stopped", worker_id)
+        raise
+
+
+def _enforce_no_instance_profile() -> None:
+    """
+    This function will query the IMDS /iam/info endpoint in a loop until either:
+
+    1.  The endpoint returns a HTTP 404 response (the instance profile is no longer associated with
+        the host EC2 instance)
+    2.  The maximum number of attempts (see INSTANCE_PROFILE_REMOVAL_ATTEMPTS) is reached
+        (raises InstanceProfileAttachedError)
+
+    The function will sleep for a number of seconds (see INSTANCE_PROFILE_CHECK_DURATION_SECONDS)
+    between attempts.
+    """
+    for i in range(INSTANCE_PROFILE_REMOVAL_ATTEMPTS):
+        response = _get_metadata("iam/info")
+        if response is None:
+            _logger.warning("Not running on EC2 but --no-allow-instance-profile argument specified")
+            break
+        _logger.info("IMDS /iam/info response %d", response.status_code)
+        if response.status_code == 404:
+            _logger.info("Instance profile disassociated, proceeding to run tasks.")
+            break
+        elif response.status_code == 200:
+            _logger.info(
+                "Instance profile is still associated (attempt %d of %d)",
+                i + 1,
+                INSTANCE_PROFILE_REMOVAL_ATTEMPTS,
+            )
+        else:
+            _logger.warning(
+                "Unexpected HTTP status code (%d) from /iam/info IMDS response",
+                response.status_code,
+            )
+        sleep(INSTANCE_PROFILE_CHECK_DURATION_SECONDS)
+    else:
+        raise InstanceProfileAttachedError()
+
+
+def _get_metadata(metadata_type: str) -> requests.Response | None:
+    """Getting the information from the metadata service then returning it.
+
+    More information on the ec2 metadata service:
+        https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html
+
+    Args:
+        metadata_type (str): The metadata information to retrieve.
+
+    Returns:
+        str: The requested metadata information.
+    """
+    try:
+        response = requests.put(
+            "http://169.254.169.254/latest/api/token",
+            headers={"X-aws-ec2-metadata-token-ttl-seconds": "30"},
+        )
+        token = response.text
+        response = requests.get(
+            f"http://169.254.169.254/latest/meta-data/{metadata_type}",
+            headers={"X-aws-ec2-metadata-token": token},
+        )
+    except ConnectionError:
+        _logger.info("Not running on Ec2, the metadata service was not found!")
+        return None
+    else:
+        return response

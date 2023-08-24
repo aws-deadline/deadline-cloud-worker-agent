@@ -1,0 +1,54 @@
+{
+    "specificationVersion": "2022-09-01",
+    "name": "AssetsExample",
+    "parameters": [
+        {
+            "name": "DataDir",
+            "type": "PATH"
+        }
+    ],
+    "steps": [
+        {
+            "name": "Hash",
+            "script": {
+                "actions": {
+                    "onRun": {
+                        "command": "{{ Task.File.runScript }}"
+                    }
+                },
+                "embeddedFiles": [
+                    {
+                        "name": "runScript",
+                        "type": "TEXT",
+                        "runnable": true,
+                        "data": "#!/usr/bin/env bash\n\nfind . -type f -exec md5sum {} \\; > computed_hashes.txt\n"
+                    }
+                ]
+            },
+            "environments": [
+                {
+                    "name": "myenv",
+                    "script": {
+                        "actions": {
+                            "onEnter": {
+                                "command": "echo",
+                                "args": [
+                                    "env start"
+                                ]
+                            },
+                            "onExit": {
+                                "command": "echo",
+                                "args": [
+                                    "env end"
+                                ]
+                            }
+                        }
+                    },
+                    "variables": {
+                        "FOO": "a-value"
+                    }
+                }
+            ]
+        }
+    ]
+}

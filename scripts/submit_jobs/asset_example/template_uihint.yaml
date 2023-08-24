@@ -1,0 +1,8 @@
+parameters:
+- name: DataDir
+  uiHint:
+    label: Input/Output Directory
+    ojioFutureType: PATH
+    controlType: CHOOSE_DIRECTORY
+    assetReference: INOUT
+    
