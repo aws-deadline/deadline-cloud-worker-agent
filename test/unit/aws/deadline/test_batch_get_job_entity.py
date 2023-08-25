@@ -23,7 +23,7 @@ SAMPLE_RESPONSE: BatchGetJobEntityResponse = {
             "environmentDetails": {
                 "jobId": "job-1234",
                 "environmentId": "env:1234",
-                "schemaVersion": "2022-09-01",
+                "schemaVersion": "jobtemplate-2023-09",
                 "template": {},
             }
         }

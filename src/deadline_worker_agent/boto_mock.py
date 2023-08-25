@@ -251,7 +251,7 @@ class DeadlineClient:
                     {
                         "jobDetails": {
                             "jobId": "job-21432d89b44a46cbaaeb2f1d5254e548",
-                            "schemaVersion": "2022-09-01",
+                            "schemaVersion": "jobtemplate-2023-09",
                             "jobAttachmentSettings": {
                                 "s3BucketName": "asset-bucket",
                                 "rootPrefix": "my-queue",
@@ -291,7 +291,7 @@ class DeadlineClient:
                         "stepDetails": {
                             "jobId": "job-abac",
                             "stepId": "step-a50bcbf7a86848dabc46480db936b4a7",
-                            "schemaVersion": "2022-09-01",
+                            "schemaVersion": "jobtemplate-2023-09",
                             "template": {},
                             "dependencies": [],
                         },
@@ -300,7 +300,7 @@ class DeadlineClient:
                         "environmentDetails": {
                             "environmentId": "env1",
                             "jobId": "job-21432d89b44a46cbaaeb2f1d5254e548",
-                            "schemaVersion": "2022-09-01",
+                            "schemaVersion": "jobtemplate-2023-09",
                             "template": {
                                 "name": "foo",
                                 "script": {},

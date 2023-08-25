@@ -19,7 +19,7 @@ from deadline_worker_agent.aws.deadline import (
 )
 import deadline_worker_agent.aws_credentials.queue_boto3_session as queue_boto3_session_mod
 from deadline_worker_agent.aws_credentials.queue_boto3_session import QueueBoto3Session
-from openjobio.sessions import PosixSessionUser, SessionUser
+from openjd.sessions import PosixSessionUser, SessionUser
 
 
 @pytest.fixture(autouse=True)

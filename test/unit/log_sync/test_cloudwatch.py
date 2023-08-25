@@ -1461,10 +1461,10 @@ class TestCloudWatchHandler:
 @mark.parametrize(
     argnames=("mock_logger"),
     argvalues=(
-        (MagicMock(spec=logger_mod.OJIO_ACTION_OUTPUT_LOGGER)),
+        (MagicMock(spec=logger_mod.OPENJD_ACTION_OUTPUT_LOGGER)),
         (MagicMock(spec=logger_mod.ROOT_LOGGER)),
     ),
-    ids=("OJIO_ACTION_OUTPUT_LOGGER", "ROOT_LOGGER"),
+    ids=("OPENJD_ACTION_OUTPUT_LOGGER", "ROOT_LOGGER"),
 )
 def test_stream_cloudwatch(
     logs_client: MagicMock,

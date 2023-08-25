@@ -8,7 +8,7 @@ from typing import Generator
 from unittest.mock import ANY, MagicMock, Mock, call, patch
 import time
 
-from openjobio.sessions import ActionState, ActionStatus
+from openjd.sessions import ActionState, ActionStatus
 from botocore.exceptions import ClientError
 import pytest
 

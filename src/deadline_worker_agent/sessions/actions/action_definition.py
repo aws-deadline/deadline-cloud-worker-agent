@@ -92,7 +92,7 @@ class SessionActionDefinition(ABC):
         and hyphens.
 
         PARAM_NAME and PARAM_VALUE describe the parameters to the action. The allowable values for
-        are inherited from OpenJobIO step parameter spaces.
+        are inherited from Open Job Description step parameter spaces.
 
         For example:
 

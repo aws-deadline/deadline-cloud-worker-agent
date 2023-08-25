@@ -11,8 +11,8 @@ from typing import Generator, Optional
 
 from deadline.job_attachments.models import ManifestProperties, Attachments
 from deadline.job_attachments.utils import AssetLoadingMethod, OperatingSystemFamily
-from openjobio.model import SchemaVersion
-from openjobio.sessions import (
+from openjd.model import SchemaVersion
+from openjd.sessions import (
     Parameter,
     PathMappingRule,
     SessionUser,
@@ -176,8 +176,8 @@ def log_group_name() -> str:
 
 @pytest.fixture
 def schema_version() -> SchemaVersion:
-    """The OpenJobIO schema version"""
-    return SchemaVersion.v2022_09_01
+    """The Open Job Description schema version"""
+    return SchemaVersion.v2023_09
 
 
 @pytest.fixture
@@ -244,7 +244,7 @@ def jobs_run_as() -> JobsRunAs | None:
 
 @pytest.fixture
 def path_mapping_rules() -> list[PathMappingRule] | None:
-    """The path mapping rules to pass to OJIO"""
+    """The path mapping rules to pass to Open Job Description"""
     return []
 
 

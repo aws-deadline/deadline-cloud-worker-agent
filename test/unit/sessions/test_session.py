@@ -10,7 +10,7 @@ from typing import Generator, Iterable, Literal, Optional
 from unittest.mock import patch, MagicMock, ANY
 
 import pytest
-from openjobio.model.v2022_09_01 import (
+from openjd.model.v2023_09 import (
     Action,
     Environment,
     EnvironmentActions,
@@ -18,7 +18,7 @@ from openjobio.model.v2022_09_01 import (
     StepActions,
     StepScript,
 )
-from openjobio.sessions import (
+from openjd.sessions import (
     ActionState,
     ActionStatus,
     PathMappingOS,
@@ -70,7 +70,7 @@ def session_action_queue() -> MagicMock:
 @pytest.fixture
 def env() -> dict[str, str] | None:
     """A fixture that represents the dictionary of environment variables and their values supplied
-    the OpenJobIO Session initializer"""
+    the Open Job Description Session initializer"""
     return None
 
 
@@ -87,16 +87,16 @@ def action_complete_time() -> datetime:
 
 
 @pytest.fixture
-def mock_ojio_session_cls() -> Generator[MagicMock, None, None]:
-    """Mocks the Worker Agent Session module's import of the OpenJobIO Session class"""
-    with patch.object(session_mod, "OJIOSession") as mock_ojio_session:
-        yield mock_ojio_session
+def mock_openjd_session_cls() -> Generator[MagicMock, None, None]:
+    """Mocks the Worker Agent Session module's import of the Open Job Description Session class"""
+    with patch.object(session_mod, "OPENJDSession") as mock_openjd_session:
+        yield mock_openjd_session
 
 
 @pytest.fixture
-def mock_ojio_session(mock_ojio_session_cls: MagicMock) -> MagicMock:
-    """The mocked OpenJobIO Session class instance"""
-    return mock_ojio_session_cls.return_value
+def mock_openjd_session(mock_openjd_session_cls: MagicMock) -> MagicMock:
+    """The mocked Open Job Description Session class instance"""
+    return mock_openjd_session_cls.return_value
 
 
 @pytest.fixture
@@ -117,7 +117,7 @@ def session(
     env: dict[str, str] | None,
     job_details: JobDetails,
     os_user: SessionUser | None,
-    mock_ojio_session_cls: MagicMock,
+    mock_openjd_session_cls: MagicMock,
     queue_id: str,
     session_action_queue: MagicMock,
     session_id: str,
@@ -205,7 +205,7 @@ def current_action(
     ),
 )
 def failed_action_status(request: pytest.FixtureRequest) -> ActionStatus:
-    """A fixture providing a failed OpenJobIO ActionStatus"""
+    """A fixture providing a failed Open Job Description ActionStatus"""
     return request.param
 
 
@@ -233,7 +233,7 @@ def failed_action_status(request: pytest.FixtureRequest) -> ActionStatus:
     ),
 )
 def succeess_action_status(request: pytest.FixtureRequest) -> ActionStatus:
-    """A fixture providing a successful OpenJobIO ActionStatus"""
+    """A fixture providing a successful Open Job Description ActionStatus"""
     return request.param
 
 
@@ -250,13 +250,13 @@ class TestSessionInit:
     def test_uses_action_updated_callback(
         self,
         session: Session,
-        mock_ojio_session_cls: MagicMock,
+        mock_openjd_session_cls: MagicMock,
     ) -> None:
         """Asserts that the Session.update_action method is called by the callback supplied to the
-        OpenJobIO session initializer."""
+        Open Job Description session initializer."""
         # GIVEN
-        mock_ojio_session_cls.assert_called_once()
-        call = mock_ojio_session_cls.call_args_list[0]
+        mock_openjd_session_cls.assert_called_once()
+        call = mock_openjd_session_cls.call_args_list[0]
         action_status = ActionStatus(state=ActionState.SUCCESS)
 
         # THEN
@@ -314,19 +314,19 @@ class TestSessionInit:
     def test_has_path_mapping_rules(
         self,
         session: Session,
-        mock_ojio_session_cls: MagicMock,
+        mock_openjd_session_cls: MagicMock,
         path_mapping_rules: list[PathMappingRule],
     ):
-        """Ensure that when we have path mapping rules that we're passing them to the OJIO session"""
+        """Ensure that when we have path mapping rules that we're passing them to the Open Job Description session"""
         # GIVEN / WHEN / THEN
         assert session is not None
-        mock_ojio_session_cls.assert_called_once()
+        mock_openjd_session_cls.assert_called_once()
         if path_mapping_rules:
             assert (
-                path_mapping_rules == mock_ojio_session_cls.call_args.kwargs["path_mapping_rules"]
+                path_mapping_rules == mock_openjd_session_cls.call_args.kwargs["path_mapping_rules"]
             )
         else:
-            assert not mock_ojio_session_cls.call_args.kwargs.get("path_mapping_rules", False)
+            assert not mock_openjd_session_cls.call_args.kwargs.get("path_mapping_rules", False)
 
 
 class TestSessionOuterRun:
@@ -588,9 +588,9 @@ class TestSessionSyncAssetInputs:
         """
         Tests that the path mapping rules received from job_attachments's sync_inputs
         can use both the older 'source_os' and the newer 'source_path_format' based
-        on whatever fields are required in openjobio's PathMappingRule
+        on whatever fields are required in openjd's PathMappingRule
 
-        Remove this test once both openjobio and job_attachments both use source_path_format
+        Remove this test once both openjd and job_attachments both use source_path_format
         """
         # GIVEN
         mock_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
@@ -807,19 +807,19 @@ class TestSessionCancelActionsImpl:
     def test_cancels_current_action(
         self,
         session: Session,
-        mock_ojio_session: MagicMock,
+        mock_openjd_session: MagicMock,
         current_action: CurrentAction,
     ) -> None:
         """Asserts that the current action is canceled if cancel_actions() is called with the
         corresponding action ID in the action_ids argument."""
         # GIVEN
-        ojio_cancel_action: MagicMock = mock_ojio_session.cancel_action
+        openjd_cancel_action: MagicMock = mock_openjd_session.cancel_action
 
         # WHEN
         session._cancel_actions_impl(action_ids=[current_action.definition.id])
 
         # THEN
-        ojio_cancel_action.assert_called_once_with(time_limit=None)
+        openjd_cancel_action.assert_called_once_with(time_limit=None)
 
 
 class TestSessionReplaceAssignedActions:
@@ -930,7 +930,7 @@ class TestSessionActionUpdatedImpl:
         failed_action_status: ActionStatus,
         mock_report_action_update: MagicMock,
     ) -> None:
-        """Tests that if a environment enter action fails (the OpenJobIO action), that the action
+        """Tests that if a environment enter action fails (the Open Job Description action), that the action
         failure is returned, and that any pending actions other than ENV_EXITS are marked as FAILED
         with a message that explains that the env enter action failed."""
         # GIVEN
@@ -996,7 +996,7 @@ class TestSessionActionUpdatedImpl:
         failed_action_status: ActionStatus,
         mock_report_action_update: MagicMock,
     ) -> None:
-        """Tests that if a task run fails (the OpenJobIO action), that job attachment output
+        """Tests that if a task run fails (the Open Job Description action), that job attachment output
         sync is not performed, the action failure is returned, and that any pending actions are
         marked as NEVER_ATTEMPTED."""
         # GIVEN
@@ -1061,7 +1061,7 @@ class TestSessionActionUpdatedImpl:
         task_id: str,
         mock_report_action_update: MagicMock,
     ) -> None:
-        """Tests that if a task run succeeds (the OpenJobIO action), that job attachment output
+        """Tests that if a task run succeeds (the Open Job Description action), that job attachment output
         sync is performed, and AFTER that, the action success is returned."""
         # GIVEN
         current_action = CurrentAction(
@@ -1125,7 +1125,7 @@ class TestSessionActionUpdatedImpl:
         task_id: str,
         mock_report_action_update: MagicMock,
     ) -> None:
-        """Tests that if a task run succeeds (the OpenJobIO action), but the job attachment output
+        """Tests that if a task run succeeds (the Open Job Description action), but the job attachment output
         sync fails, the action failure is returned, and any pending actions are marked as
         NEVER_ATTEMPTED."""
         # GIVEN
@@ -1184,7 +1184,7 @@ class TestSessionActionUpdatedImpl:
         mock_sync_asset_outputs.assert_called_once_with(current_action=current_action)
 
 
-@pytest.mark.usefixtures("mock_ojio_session")
+@pytest.mark.usefixtures("mock_openjd_session")
 class TestStartCancelingCurrentAction:
     """Test cases for Session._start_canceling_current_action()"""
 
@@ -1433,21 +1433,21 @@ class TestSessionCleanup:
             message=session._stop_fail_message,
         )
 
-    def test_calls_ojio_cleanup(
+    def test_calls_openjd_cleanup(
         self,
         session: Session,
-        mock_ojio_session: MagicMock,
+        mock_openjd_session: MagicMock,
     ) -> None:
         # GIVEN
-        ojio_session_cleanup: MagicMock = mock_ojio_session.cleanup
+        openjd_session_cleanup: MagicMock = mock_openjd_session.cleanup
 
-        # Mock Session._monitor_action which is used to poll the OJIO session status
+        # Mock Session._monitor_action which is used to poll the Open Job Description session status
         with patch.object(session, "_monitor_action", return_value=[]):
             # WHEN
             session._cleanup()
 
         # THEN
-        ojio_session_cleanup.assert_called_once_with()
+        openjd_session_cleanup.assert_called_once_with()
 
 
 class TestSessionStartAction:

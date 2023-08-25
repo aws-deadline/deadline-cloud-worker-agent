@@ -10,7 +10,7 @@ from typing import Any, Generator, List, Optional
 import logging
 import pytest
 
-from openjobio.sessions import PosixSessionUser
+from openjd.sessions import PosixSessionUser
 
 from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
 from deadline_worker_agent.startup import config as config_mod

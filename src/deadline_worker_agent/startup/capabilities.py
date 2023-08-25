@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any, Literal, TYPE_CHECKING
-from openjobio.model.v2022_09_01 import CapabilityName
+from openjd.model import validate_attribute_capability_name, validate_amount_capability_name
+from openjd.model.v2023_09 import STANDARD_ATTRIBUTE_CAPABILITIES, STANDARD_AMOUNT_CAPABILITIES
 
 from pydantic import BaseModel, NonNegativeFloat
 
@@ -28,6 +29,31 @@ def capability_type(capability_name_str: str) -> Literal["amount", "attr"]:
         )
 
 
+class CapabilityName(str):
+    @classmethod
+    def __get_validators__(cls) -> CallableGenerator:
+        yield cls._validate_min_length
+        yield cls._validate_max_length
+
+    @classmethod
+    def _validate_min_length(cls, value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError(f"Capability names must be strings. -- {value}")
+        if not value:
+            raise ValueError("Capability names cannot be the empty string.")
+        return value
+
+    @classmethod
+    def _validate_max_length(cls, value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError(f"Capability names must be strings. -- {value}")
+        if len(value) > 100:
+            raise ValueError(
+                f"Capability names must not exceed 100 characters in length. '{value}' is {len(value)} characters long."
+            )
+        return value
+
+
 class AmountCapabilityName(CapabilityName):
     @classmethod
     def __get_validators__(cls) -> CallableGenerator:
@@ -35,15 +61,13 @@ class AmountCapabilityName(CapabilityName):
         yield cls._validate_amount_capability_name
 
     @classmethod
-    def _validate_amount_capability_name(cls, value: str) -> AmountCapabilityName:
-        cap_type = capability_type(value)
-
-        if not cap_type == "amount":
-            raise ValueError(
-                f"Capability name ({value}) is not an amount capability type ({cap_type})"
-            )
-
-        return AmountCapabilityName(value)
+    def _validate_amount_capability_name(cls, value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError("Capability names must be strings.")
+        validate_amount_capability_name(
+            capability_name=value, standard_capabilities=list(STANDARD_AMOUNT_CAPABILITIES.keys())
+        )
+        return value
 
 
 class AttributeCapabilityName(CapabilityName):
@@ -53,15 +77,14 @@ class AttributeCapabilityName(CapabilityName):
         yield cls._validate_attribute_capability_name
 
     @classmethod
-    def _validate_attribute_capability_name(cls, value: str) -> AttributeCapabilityName:
-        cap_type = capability_type(value)
-
-        if not cap_type == "attr":
-            raise ValueError(
-                f"Capability name ({value}) is not an attribute capability type ({cap_type})"
-            )
-
-        return AttributeCapabilityName(value)
+    def _validate_attribute_capability_name(cls, value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError("Capability names must be strings.")
+        validate_attribute_capability_name(
+            capability_name=value,
+            standard_capabilities=list(STANDARD_ATTRIBUTE_CAPABILITIES.keys()),
+        )
+        return value
 
 
 class Capabilities(BaseModel):

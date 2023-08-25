@@ -6,7 +6,7 @@ from typing import Generator
 from unittest.mock import MagicMock, patch
 import subprocess
 
-from openjobio.sessions import SessionUser, PosixSessionUser
+from openjd.sessions import SessionUser, PosixSessionUser
 import pytest
 
 from deadline_worker_agent.scheduler.session_cleanup import (

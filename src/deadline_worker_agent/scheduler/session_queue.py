@@ -8,8 +8,8 @@ from logging import getLogger
 from threading import Event
 from typing import Any, Callable, Iterable, Generic, Literal, TypeVar, TYPE_CHECKING, cast
 
-from openjobio.model import UnsupportedSchema
-from openjobio.sessions import ActionState, ActionStatus
+from openjd.model import UnsupportedSchema
+from openjd.sessions import ActionState, ActionStatus
 
 from ..api_models import (
     EnvironmentAction as EnvironmentActionApiModel,
@@ -209,7 +209,7 @@ class SessionActionQueue:
                 end_time=timestamp,
                 # TODO: This is semantically incorrect, but status.state is a required field. We
                 # only need this to communicate the message. In the future, we may want to remove
-                # the "status" field from OJIO here and hoist the fields we care about up to the
+                # the "status" field from Open Job Description here and hoist the fields we care about up to the
                 # SessionActionStatus class.
                 status=ActionStatus(
                     state=ActionState.FAILED,
@@ -313,7 +313,7 @@ class SessionActionQueue:
         Raises
         ------
             JobEntityUnsupportedSchemaError:
-                When the details for an OjioAction have a schema that the Worker Agent
+                When the details for an OpenjdAction have a schema that the Worker Agent
                 does not support. Allows the action to gracefully report the failure
                 to the service.
 
