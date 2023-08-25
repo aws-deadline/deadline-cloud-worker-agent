@@ -13,7 +13,7 @@ from deadline_worker_agent.aws_credentials.aws_configs import (
     _setup_file,
     _setup_parent_dir,
 )
-from openjobio.sessions import PosixSessionUser, SessionUser
+from openjd.sessions import PosixSessionUser, SessionUser
 
 
 @pytest.fixture

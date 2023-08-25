@@ -7,14 +7,14 @@ from unittest.mock import Mock
 from deadline_worker_agent.sessions import Session
 import re
 
-from openjobio.sessions import ActionState, ActionStatus
+from openjd.sessions import ActionState, ActionStatus
 import pytest
 
-from deadline_worker_agent.sessions.actions.ojio_action import OjioAction
+from deadline_worker_agent.sessions.actions.openjd_action import OpenjdAction
 from deadline_worker_agent.sessions.errors import CancelationError
 
 
-class DerivedOjioAction(OjioAction):
+class DerivedOpenjdAction(OpenjdAction):
     def __init__(self, *, id: str) -> None:
         super().__init__(id=id)
         self.start_mock = Mock()
@@ -32,7 +32,7 @@ def session() -> Mock:
 
 
 class TestCancel:
-    """Tests for the OjioAction.cancel() method"""
+    """Tests for the OpenjdAction.cancel() method"""
 
     @pytest.fixture(
         params=(
@@ -49,16 +49,16 @@ class TestCancel:
     def time_limit(self, request: pytest.FixtureRequest) -> timedelta | None:
         return request.param
 
-    def test_calls_ojio_session_cancel_action(
+    def test_calls_openjd_session_cancel_action(
         self,
         session: Mock,
         time_limit: timedelta | None,
     ) -> None:
-        """Tests that when calling OjioAction.cancel(), the session's OpenJobIO session action is
+        """Tests that when calling OpenjdAction.cancel(), the session's Open Job Description session action is
         canceled"""
 
         # GIVEN
-        action = DerivedOjioAction(id="my-id")
+        action = DerivedOpenjdAction(id="my-id")
 
         # WHEN
         action.cancel(session=session, time_limit=time_limit)
@@ -85,11 +85,11 @@ class TestCancel:
         time_limit: timedelta | None,
         action_status: ActionStatus | None,
     ) -> None:
-        """Tests that when calling OjioAction.cancel(), the session's OpenJobIO session action is
+        """Tests that when calling OpenjdAction.cancel(), the session's Open Job Description session action is
         canceled"""
 
         # GIVEN
-        action = DerivedOjioAction(id="my-id")
+        action = DerivedOpenjdAction(id="my-id")
         error_msg = "error msg"
         session._session.cancel_action.side_effect = RuntimeError(error_msg)
         session._session.action_status = action_status

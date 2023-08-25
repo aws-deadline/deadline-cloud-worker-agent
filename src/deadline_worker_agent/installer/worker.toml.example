@@ -226,7 +226,7 @@
 #
 #       <VENDOR>
 #           An optional namespace that indicates the capabilitiy is specific to a particular
-#           OpenJobIO-compatable render farm management system.
+#           Open Job Description-compatable render farm management system.
 #       <NAME>
 #           A name for the amount capability
 #       <VALUE>
@@ -255,7 +255,7 @@
 #
 #       <VENDOR>
 #           An optional namespace that indicates the capabilitiy is specific to a particular
-#           OpenJobIO-compatable render farm component.
+#           Open Job Description-compatable render farm component.
 #       <NAME>
 #           A name for the attribute capability
 #       <VALUE>

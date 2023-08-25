@@ -13,7 +13,7 @@ from threading import Event
 from typing import Any, TYPE_CHECKING, Optional
 
 from deadline.job_attachments.errors import AssetSyncCancelledError
-from openjobio.sessions import ActionState, ActionStatus
+from openjd.sessions import ActionState, ActionStatus
 
 from ..session import Session
 
@@ -127,14 +127,14 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
             )
         except Exception as e:
             session.logger.exception(e)
-            # We need to directly complete the action. Other actions rely on the OpenJobIO session's
+            # We need to directly complete the action. Other actions rely on the Open Job Description session's
             # callback to complete the action
             action_status = ActionStatus(
                 state=ActionState.FAILED,
                 fail_message=str(e),
             )
         finally:
-            # We need to directly complete the action. Other actions rely on the OpenJobIO session's
+            # We need to directly complete the action. Other actions rely on the Open Job Description session's
             # callback to complete the action
             session.update_action(action_status=action_status)
 

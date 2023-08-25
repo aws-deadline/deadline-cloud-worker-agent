@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from threading import Lock
 
-from openjobio.sessions import SessionUser, PosixSessionUser
+from openjd.sessions import SessionUser, PosixSessionUser
 
 from .log import LOGGER
 from ..sessions import Session

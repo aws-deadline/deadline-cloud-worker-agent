@@ -53,7 +53,7 @@ class JobEntityUnsupportedSchemaError(SessionActionError):
     def __init__(self, action_id: str, schema_version: str):
         self.schema_version = schema_version
         self.message = (
-            f"Worker Agent: {version} does not support OpenJobIO Schema Version {self.schema_version}. "
+            f"Worker Agent: {version} does not support Open Job Description Schema Version {self.schema_version}. "
             f"Consider upgrading to a newer Worker Agent."
         )
         super().__init__(action_id=action_id, message=self.message)

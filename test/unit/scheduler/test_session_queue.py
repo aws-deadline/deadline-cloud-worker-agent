@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, Mock, patch
 from collections import OrderedDict
 
 from deadline.job_attachments.utils import AssetLoadingMethod
-from openjobio.model import SchemaVersion, UnsupportedSchema
-from openjobio.model.v2022_09_01 import (
+from openjd.model import SchemaVersion, UnsupportedSchema
+from openjd.model.v2023_09 import (
     Environment,
     EnvironmentScript,
     EnvironmentActions,
@@ -15,7 +15,7 @@ from openjobio.model.v2022_09_01 import (
     StepScript,
     StepActions,
 )
-from openjobio.sessions import Parameter, ParameterType
+from openjd.sessions import Parameter, ParameterType
 import pytest
 
 from deadline_worker_agent.scheduler.session_queue import (

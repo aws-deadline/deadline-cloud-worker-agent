@@ -5,8 +5,8 @@ from typing import Generator
 from unittest.mock import MagicMock, patch
 
 from deadline.job_attachments.utils import AssetLoadingMethod
-from openjobio.model import SchemaVersion
-from openjobio.model.v2022_09_01 import (
+from openjd.model import SchemaVersion
+from openjd.model.v2023_09 import (
     Action,
     Environment,
     EnvironmentActions,
@@ -14,7 +14,7 @@ from openjobio.model.v2022_09_01 import (
     StepActions,
     StepScript,
 )
-from openjobio.sessions import PosixSessionUser
+from openjd.sessions import PosixSessionUser
 
 
 import pytest
@@ -145,7 +145,7 @@ class TestJobEntity:
         job_details_boto = JobDetailsBoto(
             jobDetails={
                 "jobId": job_id,
-                "schemaVersion": "2022-09-01",
+                "schemaVersion": "jobtemplate-2023-09",
                 "logGroupName": "fake-name",
             },
         )
@@ -191,7 +191,7 @@ class TestJobEntity:
                 },
             },
             "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2022_09_01.value,
+            "schemaVersion": SchemaVersion.v2023_09.value,
         }
 
         # WHEN
@@ -245,7 +245,7 @@ class TestJobEntity:
             "jobId": "job-123",
             "jobsRunAs": jobs_run_as_data,
             "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2022_09_01.value,
+            "schemaVersion": SchemaVersion.v2023_09.value,
         }
 
         # WHEN
@@ -261,7 +261,7 @@ class TestJobEntity:
         entity_data: JobDetailsData = {
             "jobId": "job-123",
             "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2022_09_01.value,
+            "schemaVersion": SchemaVersion.v2023_09.value,
         }
 
         # WHEN
@@ -277,7 +277,7 @@ class TestDetails:
         job_details_boto = JobDetailsBoto(
             jobDetails={
                 "jobId": job_id,
-                "schemaVersion": "2022-09-01",
+                "schemaVersion": "jobtemplate-2023-09",
                 "logGroupName": "fake-name",
             },
         )
@@ -286,7 +286,7 @@ class TestDetails:
             "errors": [],
         }
         expected_details = JobDetails(
-            schema_version=SchemaVersion("2022-09-01"),
+            schema_version=SchemaVersion("jobtemplate-2023-09"),
             log_group_name="fake-name",
         )
         deadline_client.batch_get_job_entity.return_value = response
@@ -312,7 +312,7 @@ class TestDetails:
             environmentDetails=EnvironmentDetailsData(
                 jobId=job_id,
                 environmentId=environment_id,
-                schemaVersion="2022-09-01",
+                schemaVersion="jobtemplate-2023-09",
                 template={
                     "name": env_name,
                     "script": {
@@ -392,7 +392,7 @@ class TestDetails:
             stepDetails=StepDetailsData(
                 jobId=job_id,
                 stepId=step_id,
-                schemaVersion="2022-09-01",
+                schemaVersion="jobtemplate-2023-09",
                 template={
                     "actions": {
                         "onRun": {
@@ -465,19 +465,19 @@ class TestCaching:
         expected_job_details: JobDetailsData = {
             "jobId": job_id,
             "logGroupName": "/aws/service/loggroup",
-            "schemaVersion": "2022-09-01",
+            "schemaVersion": "jobtemplate-2023-09",
         }
         expected_environment_details: EnvironmentDetailsData = {
             "jobId": job_id,
             "environmentId": environment_id,
-            "schemaVersion": "2022-09-01",
+            "schemaVersion": "jobtemplate-2023-09",
             # Don't actually need the full template for a test
             "template": {},
         }
         expected_step_details: StepDetailsData = {
             "jobId": job_id,
             "stepId": step_id,
-            "schemaVersion": "2022-09-01",
+            "schemaVersion": "jobtemplate-2023-09",
             # Don't actually need the full template for a test
             "template": {},
         }
@@ -576,7 +576,7 @@ class TestCaching:
         details = EnvironmentDetailsData(
             jobId=job_id,
             environmentId=environment_id,
-            schemaVersion="2022-09-01",
+            schemaVersion="jobtemplate-2023-09",
             template={
                 "name": "TestEnv",
                 "script": {

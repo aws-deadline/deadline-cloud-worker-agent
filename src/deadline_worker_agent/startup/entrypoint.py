@@ -16,7 +16,7 @@ import shutil
 from pathlib import Path
 
 from botocore.client import Config as BotoClientConfig
-from openjobio.sessions import LOG as OJIO_SESSION_LOG
+from openjd.sessions import LOG as OPENJD_SESSION_LOG
 from pydantic import PositiveFloat
 
 from .._version import __version__
@@ -39,13 +39,13 @@ def detect_system_capabilities() -> Capabilities:
     attributes: dict[AttributeCapabilityName, list[str]] = {}
 
     platform_system = platform.system().lower()
-    python_system_to_ojio_os_family = {
+    python_system_to_openjd_os_family = {
         "darwin": "macos",
         "linux": "linux",
         "windows": "windows",
     }
-    if ojio_os_family := python_system_to_ojio_os_family.get(platform_system):
-        attributes[AttributeCapabilityName("attr.worker.os.family")] = [ojio_os_family]
+    if openjd_os_family := python_system_to_openjd_os_family.get(platform_system):
+        attributes[AttributeCapabilityName("attr.worker.os.family")] = [openjd_os_family]
     attributes[AttributeCapabilityName("attr.worker.cpu.arch")] = [platform.machine()]
     amounts[AmountCapabilityName("amount.worker.vcpu")] = float(psutil.cpu_count())
     amounts[AmountCapabilityName("amount.worker.memory")] = float(psutil.virtual_memory().total) / (
@@ -256,12 +256,12 @@ def _configure_base_logging(worker_logs_dir: Path, verbose: bool) -> logging.Han
         logging.getLogger(logger_name).setLevel(logging.WARNING)
 
     # We don't want the Session logs to appear in the Worker Agent logs, so
-    # set the OpenJobIO library's logger to not propagate.
+    # set the Open Job Description library's logger to not propagate.
     # We do this because the Session log will contain job-specific customer
     # sensitive data. The Worker's log is intended for IT admins that may
     # have different/lesser permissions/access-rights/need-to-know than the
     # folk submitting jobs, so keep the sensitive stuff out of the agent log.
-    OJIO_SESSION_LOG.propagate = False
+    OPENJD_SESSION_LOG.propagate = False
 
     JOB_ATTACHMENTS_LOGGER = logging.getLogger("deadline.job_attachments")
     JOB_ATTACHMENTS_LOGGER.propagate = False

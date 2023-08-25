@@ -1,7 +1,7 @@
 {
-    "specificationVersion": "2022-09-01",
+    "specificationVersion": "jobtemplate-2023-09",
     "name": "Longsleep",
-    "parameters": [
+    "parameterDefinitions": [
         {
             "name": "duration",
             "type": "INT",
@@ -25,11 +25,11 @@
                         "name": "runScript",
                         "type": "TEXT",
                         "runnable": true,
-                        "data": "#!/usr/bin/env python3\n\nimport signal\nimport sys\nimport time\n\nprint(sys.argv)\nif len(sys.argv) < 2:\n    print(\"ERROR: Expected arg for number of seconds\")\n    sys.exit(1)\nelif len(sys.argv) > 2:\n    print(\"ERROR: Unexpected number of arguments\")\n    sys.exit(1)\n\n\ntry:\n    seconds = int(sys.argv[1])\nexcept Exception as e:\n    print(f'ERROR: could not parse number from \"{sys.argv[1]}\"')\n    sys.exit(1)\n\nif seconds <= 0:\n    print(\"ERROR: Invalid \")\n\n\ndef signal_handler(sig_num, frame):\n    print(f\"Trapped signal {sig_num}\")\n    sys.stdout.flush()\n\n    if sig_num in (signal.SIGINT, signal.SIGTERM):\n        print(\"CANCELLED\")\n        sys.stdout.flush()\n        sys.exit(1)\n\nif sys.platform.startswith(\"win\"):\n    signal.signal(signal.SIGINT, signal_handler)\nelse:\n    signal.signal(signal.SIGTERM, signal_handler)\n\n\nprogress_inc = 100 / float(seconds)\nprogress = 0.0\n\nprint(f\"Waiting {seconds}...\")\n\nfor i in range(seconds):\n    time.sleep(1)\n    progress += progress_inc\n    print(f\"openjobio_progress: {progress}\")\n    sys.stdout.flush()\n\nprint(\"done.\")\n"
+                        "data": "#!/usr/bin/env python3\n\nimport signal\nimport sys\nimport time\n\nprint(sys.argv)\nif len(sys.argv) < 2:\n    print(\"ERROR: Expected arg for number of seconds\")\n    sys.exit(1)\nelif len(sys.argv) > 2:\n    print(\"ERROR: Unexpected number of arguments\")\n    sys.exit(1)\n\n\ntry:\n    seconds = int(sys.argv[1])\nexcept Exception as e:\n    print(f'ERROR: could not parse number from \"{sys.argv[1]}\"')\n    sys.exit(1)\n\nif seconds <= 0:\n    print(\"ERROR: Invalid \")\n\n\ndef signal_handler(sig_num, frame):\n    print(f\"Trapped signal {sig_num}\")\n    sys.stdout.flush()\n\n    if sig_num in (signal.SIGINT, signal.SIGTERM):\n        print(\"CANCELLED\")\n        sys.stdout.flush()\n        sys.exit(1)\n\nif sys.platform.startswith(\"win\"):\n    signal.signal(signal.SIGINT, signal_handler)\nelse:\n    signal.signal(signal.SIGTERM, signal_handler)\n\n\nprogress_inc = 100 / float(seconds)\nprogress = 0.0\n\nprint(f\"Waiting {seconds}...\")\n\nfor i in range(seconds):\n    time.sleep(1)\n    progress += progress_inc\n    print(f\"openjd_progress: {progress}\")\n    sys.stdout.flush()\n\nprint(\"done.\")\n"
                     }
                 ]
             },
-            "environments": [
+            "stepEnvironments": [
                 {
                     "name": "myenv",
                     "script": {

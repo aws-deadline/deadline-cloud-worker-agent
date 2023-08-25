@@ -133,7 +133,7 @@ class StepDetailsIdentifier(TypedDict):
 
 class StepDetailsData(StepDetailsIdentifierFields):
     schemaVersion: str
-    """The OpenJobIO schema version that corresponds to the template"""
+    """The Open Job Description schema version that corresponds to the template"""
 
     template: dict[str, Any]
     """The template of the step"""
@@ -260,7 +260,7 @@ class JobDetailsData(JobDetailsIdentifierFields):
     """The name of the CloudWatch Log Group containing the Worker session's Log Stream"""
 
     schemaVersion: str
-    """The OpenJobIO job template schema version"""
+    """The Open Job Description job template schema version"""
 
     parameters: NotRequired[
         dict[str, StringParameter | PathParameter | IntParameter | FloatParameter | str]
@@ -297,7 +297,7 @@ class EnvironmentDetailsIdentifier(TypedDict):
 
 class EnvironmentDetailsData(EnvironmentDetailsIdentifierFields):
     schemaVersion: str
-    """The OpenJobIO schema version"""
+    """The Open Job Description schema version"""
     template: dict[str, Any]
     """The template of the environment."""
 

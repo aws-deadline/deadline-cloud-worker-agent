@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from configparser import ConfigParser
 from pathlib import Path
 from typing import Optional
-from openjobio.sessions import PosixSessionUser, SessionUser
+from openjd.sessions import PosixSessionUser, SessionUser
 from subprocess import run, DEVNULL, PIPE, STDOUT
 
 __all__ = [

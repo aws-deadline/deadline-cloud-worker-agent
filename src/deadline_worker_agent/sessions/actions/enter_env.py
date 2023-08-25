@@ -4,10 +4,10 @@ from __future__ import annotations
 from concurrent.futures import Executor
 from typing import Any, TYPE_CHECKING
 
-from openjobio.sessions import EnvironmentIdentifier
+from openjd.sessions import EnvironmentIdentifier
 
 from ..job_entities import EnvironmentDetails
-from .ojio_action import OjioAction
+from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
     from ...api_models import EnvironmentAction
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from .action_definition import SessionActionDefinition
 
 
-class EnterEnvironmentAction(OjioAction):
+class EnterEnvironmentAction(OpenjdAction):
     """Action to enter an environment within a Worker session
 
     Parameters
@@ -23,7 +23,7 @@ class EnterEnvironmentAction(OjioAction):
     id : str
         A unique identifier for the session action
     job_env_id : str
-        A unique identifier for the environment within the OpenJobIO job
+        A unique identifier for the environment within the Open Job Description job
     environment_details : EnvironmentDetails
         The environment details
     """

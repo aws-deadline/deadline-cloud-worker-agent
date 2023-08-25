@@ -1,13 +1,13 @@
 
 ## Build
 ```
-docker build testing_containers/ldap_sudo_environment -t ojio_ldap_test
+docker build testing_containers/ldap_sudo_environment -t agent_posix_ldap_multiuser
 ```
 
 ## Run Interactive Bash
 To start an interactive bash session:
 ```
-docker run -h ldap.environment.internal --rm -v $(pwd):/code:ro -e PIP_INDEX_URL=${PIP_INDEX_URL} -it --entrypoint bash ojio_ldap_test:latest
+docker run -h ldap.environment.internal --rm -v $(pwd):/code:ro -e PIP_INDEX_URL=${PIP_INDEX_URL} -it --entrypoint bash agent_posix_ldap_multiuser:latest
 ```
 To start the LDAP Server and Client:
 ```

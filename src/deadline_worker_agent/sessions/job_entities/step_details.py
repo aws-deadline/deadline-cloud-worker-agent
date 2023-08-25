@@ -4,9 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from openjobio.model import parse_model, SchemaVersion, UnsupportedSchema
-from openjobio.model.v2022_09_01 import StepScript as StepScript_2022_09_01
-from openjobio.sessions import StepScriptModel
+from openjd.model import parse_model, SchemaVersion, UnsupportedSchema
+from openjd.model.v2023_09 import StepScript as StepScript_2023_09
+from openjd.sessions import StepScriptModel
 
 from ...api_models import StepDetailsData
 from .job_entity_type import JobEntityType
@@ -21,7 +21,7 @@ class StepDetails:
     """The JobEntityType handled by this class"""
 
     script: StepScriptModel
-    """The step's OpenJobIO script"""
+    """The step's Open Job Description script"""
 
     dependencies: list[str] = field(default_factory=list)
     """The dependencies (a list of IDs) that the step depends on"""
@@ -44,15 +44,23 @@ class StepDetails:
         Raises
         ------
         RuntimeError:
-            If the environment's OpenJobIO schema version not unsupported
+            If the environment's Open Job Description schema version not unsupported
         """
 
-        schema_version = SchemaVersion(step_details_data["schemaVersion"])
+        # TODO - Remove from here
+        step_schema_version = step_details_data["schemaVersion"]
+        if step_schema_version not in ("jobtemplate-2023-09", "2022-09-01"):
+            UnsupportedSchema(step_schema_version)
+        # Note: 2023-09 & 2022-09-01 are identical as far as the worker agent is concerned.
+        schema_version = SchemaVersion.v2023_09
+        # -- to here once the migration to the new schema version is complete
 
-        if schema_version == SchemaVersion.v2022_09_01:
-            step_script = parse_model(
-                model=StepScript_2022_09_01, obj=step_details_data["template"]
-            )
+        # TODO - Put this back in once the migration to the new schema version is complete.
+        # schema_version = SchemaVersion(environment_details_data["schemaVersion"])
+        # --
+
+        if schema_version == SchemaVersion.v2023_09:
+            step_script = parse_model(model=StepScript_2023_09, obj=step_details_data["template"])
         else:
             raise UnsupportedSchema(schema_version.value)
 

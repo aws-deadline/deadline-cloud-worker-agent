@@ -10,7 +10,7 @@ cp -r /aws/models/deadline/* .aws/models/deadline/
 
 python -m venv .venv
 source .venv/bin/activate
-pip install /code/dist/deadline_worker_agent-*-py3-none-any.whl
+pip install /code/dist/deadline_cloud_worker_agent-*-py3-none-any.whl
 
 deadline-worker-agent \
     --allow-instance-profile \

@@ -4,16 +4,16 @@ from __future__ import annotations
 from concurrent.futures import Executor
 from typing import Any, TYPE_CHECKING
 
-from openjobio.sessions import Parameter
+from openjd.sessions import Parameter
 
-from .ojio_action import OjioAction
+from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
     from ..job_entities import StepDetails
     from ..session import Session
 
 
-class RunStepTaskAction(OjioAction):
+class RunStepTaskAction(OpenjdAction):
     """Action to run a step's task within a Worker session
 
     Parameters

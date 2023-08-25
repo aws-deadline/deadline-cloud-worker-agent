@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from .actions import SessionActionDefinition
     from .job_entities import JobAttachmentDetails, JobDetails
 
-from openjobio.sessions import (
+from openjd.sessions import (
     ActionState,
     ActionStatus,
     EnvironmentIdentifier,
@@ -47,8 +47,8 @@ from openjobio.sessions import (
     StepScriptModel,
     SessionUser,
 )
-from openjobio.sessions import Session as OJIOSession
-from openjobio.sessions import LOG as OJIO_LOG
+from openjd.sessions import Session as OPENJDSession
+from openjd.sessions import LOG as OPENJD_LOG
 
 from deadline.job_attachments.asset_sync import AssetSync
 from deadline.job_attachments.asset_sync import logger as ASSET_SYNC_LOGGER
@@ -67,7 +67,7 @@ from ..sessions.errors import SessionActionError
 # currently canceling action is completed
 # from .errors import CancelationError
 
-OJIO_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
+OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
     ActionState,
     CompletedActionStatus,
 ] = {
@@ -84,10 +84,10 @@ logger = getLogger(__name__)
 @dataclass(frozen=True)
 class ActiveEnvironment:
     session_env_id: EnvironmentIdentifier
-    """An identifier that is unique to the OpenJobIO session used to exit the environment"""
+    """An identifier that is unique to the Open Job Description session used to exit the environment"""
 
     job_env_id: str
-    """A unique identifier that identifies the environment within the OpenJobIO job model"""
+    """A unique identifier that identifies the environment within the Open Job Description job model"""
 
 
 @dataclass(frozen=True)
@@ -100,12 +100,12 @@ class CurrentAction:
 
 
 class Session:
-    """A Worker session corresponding to an OpenJobIO session
+    """A Worker session corresponding to an Open Job Description session
 
     This class manages:
 
     - a queue of session actions
-    - the asynchronous orchestration of actions against the underlying OpenJobIO session
+    - the asynchronous orchestration of actions against the underlying Open Job Description session
     - notifying the progress and failure/completion of the active session action
     - asynchronous interruption/cancellation of the active session action
 
@@ -167,15 +167,15 @@ class Session:
         self._report_action_update = action_update_callback
         self._env = env
 
-        def ojio_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
+        def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
 
-        self._session = OJIOSession(
+        self._session = OPENJDSession(
             session_id=self._id,
             job_parameter_values=self._job_details.parameters,
             path_mapping_rules=self._job_details.path_mapping_rules,
             user=self._os_user,
-            callback=ojio_session_action_callback,
+            callback=openjd_session_action_callback,
             os_env_vars=self._env,
         )
 
@@ -184,11 +184,11 @@ class Session:
         self._stopped_running = Event()
         self._stopped_running.set()
 
-        # Use the OpenJobIO logger here since it:
-        # 1. Is the log that openjobio is sending action logs to;
+        # Use the Open Job Description logger here since it:
+        # 1. Is the log that openjd is sending action logs to;
         # 2. It is already set up to not propagate to the agent log; and
         # 3. We're already capturing it to send to cloudwatch.
-        self.logger = LoggerAdapter(OJIO_LOG, extra={"session_id": self._id})
+        self.logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": self._id})
 
     @property
     def id(self) -> str:
@@ -229,7 +229,7 @@ class Session:
         try:
             self._run()
         except Exception as e:
-            # We set the stop event to inform the OJIO action update callback (the
+            # We set the stop event to inform the Open Job Description action update callback (the
             # Session._action_updated() method) that action updates are no longer reported to the
             # service. If an action was running at the time of this exception, its failure is
             # reported immediately in the call to Session._cleanup() below.
@@ -266,7 +266,7 @@ class Session:
                     #     1.  action update lock (scheduler owned)
                     #     2.  current action lock
                     #
-                    # If the action starts running successfully, the OpenJobIO session will invoke
+                    # If the action starts running successfully, the Open Job Description session will invoke
                     # the session action update callback with state = RUNNING. That callback
                     # requires acquiring self._action_update_lock, but another thread may hold that
                     # lock and cause a deadlock. To avoid the deadlock, we proactively acquire the
@@ -366,7 +366,7 @@ class Session:
                     logger.info("%s successful", desc)
                 cur_time = monotonic()
         finally:
-            # Clean-up the OpenJobIO session
+            # Clean-up the Open Job Description session
             self._session.cleanup()
 
     def replace_assigned_actions(
@@ -664,7 +664,7 @@ class Session:
         if timeout:
             while (
                 self._session.action_status.state
-                not in OJIO_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS
+                not in OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS
             ):
                 elapsed_time = timedelta(seconds=cur_time - start_time)
                 remaining_time = timeout - elapsed_time
@@ -725,7 +725,7 @@ class Session:
         current_action is added by the Worker Agent (via partial)
         progress and status message are passed in by Job Attachments."""
         return True
-        # TODO: Since moving to the OJIO callback, asset sync no longer blocks
+        # TODO: Since moving to the Open Job Description callback, asset sync no longer blocks
         # the next action. Therefore we can end up in a situation where
         # this callback attempts to re-open a completed session action
         # and/or attempts to complete a session action in the wrong order.
@@ -826,7 +826,7 @@ class Session:
             f"Summary Statistics for file downloads:\n{download_summary_statistics}"
         )
 
-        # TODO: remove path_mapping_rule workaround once deadline-cloud and openjobio are both upgraded
+        # TODO: remove path_mapping_rule workaround once deadline-cloud and openjd are both upgraded
         source_path_format_key = "source_path_format"
         source_os_key = "source_os"
         use_source_path_format = any(
@@ -846,7 +846,7 @@ class Session:
             PathMappingRule.from_dict(rule) for rule in path_mapping_rules
         ]
 
-        # OJIO session implementation details -- path mappings are sorted.
+        # Open Job Description session implementation details -- path mappings are sorted.
         # bisect.insort only supports the 'key' arg in 3.10 or later, so
         # we first extend the list and sort it afterwards.
         if self._session._path_mapping_rules:
@@ -854,12 +854,12 @@ class Session:
         else:
             self._session._path_mapping_rules = job_attachment_path_mappings
 
-        # OJIO Sessions sort the path mapping rules based on length of the parts make
+        # Open Job Description Sessions sort the path mapping rules based on length of the parts make
         # rules that are subsets of each other behave in a predictable manner. We must
         # sort here since we're modifying that internal list appending to the list.
         self._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
 
-        # OJIO sessions handles the working directory,
+        # Open Job Description sessions handles the working directory,
         # but JobAttachments adds files afterwards
         if self._os_user is not None:
             self._recursive_change_fs_group(self._session.working_directory)
@@ -880,7 +880,7 @@ class Session:
                 self._recursive_change_fs_group(child_path)
 
     def update_action(self, action_status: ActionStatus) -> None:
-        """Callback called on every OpenJobIO status/progress update and the completion/exit of the
+        """Callback called on every Open Job Description status/progress update and the completion/exit of the
         current action.
 
         This is a thin wrapper of Session._action_updated_impl that acquires the
@@ -910,14 +910,14 @@ class Session:
         action_status: ActionStatus,
         now: datetime,
     ) -> None:
-        """Internal implementation for the callback invoked on every OpenJobIO status/progress
+        """Internal implementation for the callback invoked on every Open Job Description status/progress
         update and the completion/exit of the current action. The caller should acquire the
         Session._current_action_lock before calling this method.
 
         The method:
 
         1.  Forwards action status/progress updates back to the service
-        2.  Reacts to OpenJobIO action completions.
+        2.  Reacts to Open Job Description action completions.
 
             In the case of a successful task run, output job attachments are uploaded as a
             post-processing step.
@@ -948,9 +948,9 @@ class Session:
         )
 
         # There is special-case handling when the current action was interrupted. In such cases, the
-        # interruption is reported immediately, so we should not report any OpenJobIO action updates
+        # interruption is reported immediately, so we should not report any Open Job Description action updates
         # to the scheduler regardless of the result. We only need to reset internal state attributes
-        # when the OJIO action completes and then return early.
+        # when the Open Job Description action completes and then return early.
         if self._interrupted:
             if action_status.state != ActionState.RUNNING:
                 self._current_action = None
@@ -1026,7 +1026,7 @@ class Session:
                 start_time=current_action.start_time,
                 end_time=now if action_status.state != ActionState.RUNNING else None,
                 update_time=now if action_status.state == ActionState.RUNNING else None,
-                completed_status=OJIO_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
+                completed_status=OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
                     action_status.state, None
                 ),
             )

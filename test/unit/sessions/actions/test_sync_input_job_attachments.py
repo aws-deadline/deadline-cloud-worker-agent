@@ -6,7 +6,7 @@ from typing import Callable, TYPE_CHECKING
 from unittest.mock import Mock, patch
 
 from deadline.job_attachments.errors import AssetSyncCancelledError
-from openjobio.sessions import ActionState, ActionStatus
+from openjd.sessions import ActionState, ActionStatus
 import pytest
 
 from deadline_worker_agent.sessions.actions import SyncInputJobAttachmentsAction

@@ -101,7 +101,7 @@ Workflow before proceeding.
         that the Worker cannot start the Session Action if either:
             * The Session Action is a type that is not understood by the Worker Agent (e.g. a new type
             added in the future);
-            * The Session Action uses an OpenJobIO version that the Worker Agent doesn't understand; or
+            * The Session Action uses an Open Job Description version that the Worker Agent doesn't understand; or
             * Otherwise unable to be run by the Worker Agent (e.g. compatibility reasons, or failures
             in a `AssumeQueueRoleForWorker` request).
         4. Any other updates as dictated by a Worker-Initiated Drain workflow.

@@ -4,13 +4,13 @@ from __future__ import annotations
 from concurrent.futures import Executor
 from typing import TYPE_CHECKING, Any
 
-from .ojio_action import OjioAction
+from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
     from ..session import Session
 
 
-class ExitEnvironmentAction(OjioAction):
+class ExitEnvironmentAction(OpenjdAction):
     """Action to exit an environment within a Worker session
 
     Parameters
