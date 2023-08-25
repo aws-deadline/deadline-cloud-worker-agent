@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
-from openjobio.sessions import Parameter, ParameterType
+from openjd.sessions import Parameter, ParameterType
 from deadline.job_attachments.utils import AssetLoadingMethod
 
 from ...api_models import (
@@ -107,7 +107,7 @@ class JobAttachmentDetails:
         Raises
         ------
         RuntimeError:
-            If the environment's OpenJobIO schema version not unsupported
+            If the environment's Open Job Description schema version not unsupported
         """
 
         return JobAttachmentDetails(

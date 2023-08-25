@@ -19,9 +19,9 @@ import logging
 import os
 import stat
 
-from openjobio.sessions import ActionState, ActionStatus, SessionUser
-from openjobio.sessions import LOG as OJIO_SESSION_LOG
-from openjobio.sessions import ActionState, ActionStatus
+from openjd.sessions import ActionState, ActionStatus, SessionUser
+from openjd.sessions import LOG as OPENJD_SESSION_LOG
+from openjd.sessions import ActionState, ActionStatus
 from deadline.job_attachments.asset_sync import AssetSync
 from botocore.exceptions import ClientError
 
@@ -88,8 +88,8 @@ class SchedulerSession:
 @dataclass(frozen=True)
 class QueueAwsCredentials:
     """This holds the AWS Credentials for a particular Queue to use for all actions
-    performed on behalf of the OpenJobIO Session for Jobs from that Queue. This
-    includes:
+    performed on behalf of the Open Job Description Session for Jobs from that Queue.
+    This includes:
     1. all Job Attachments behaviors; and
     2. things done by the running SessionActions' subprocesses.
 
@@ -656,7 +656,7 @@ class WorkerScheduler:
 
             try:
                 log_config = LogConfiguration.from_boto(
-                    loggers=[OJIO_SESSION_LOG, JOB_ATTACHMENTS_LOGGER],
+                    loggers=[OPENJD_SESSION_LOG, JOB_ATTACHMENTS_LOGGER],
                     log_configuration=session_spec["logConfiguration"],
                     session_log_file=session_log_file,
                 )

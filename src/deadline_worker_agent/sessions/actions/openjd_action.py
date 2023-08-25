@@ -8,8 +8,8 @@ from .action_definition import SessionActionDefinition
 from ..errors import CancelationError
 
 
-class OjioAction(SessionActionDefinition):
-    """Common base class for OpenJobIO session actions"""
+class OpenjdAction(SessionActionDefinition):
+    """Common base class for Open Job Description session actions"""
 
     _current_action_cancel_sent = False
 

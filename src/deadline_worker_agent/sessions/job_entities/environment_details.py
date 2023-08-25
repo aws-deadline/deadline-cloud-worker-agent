@@ -4,9 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
-from openjobio.model import parse_model, SchemaVersion, UnsupportedSchema
-from openjobio.model.v2022_09_01 import Environment as Environment_2022_09_01
-from openjobio.sessions import EnvironmentModel
+from openjd.model import parse_model, SchemaVersion, UnsupportedSchema
+from openjd.model.v2023_09 import Environment as Environment_2023_09
+from openjd.sessions import EnvironmentModel
 
 from ...api_models import EnvironmentDetailsData
 from .job_entity_type import JobEntityType
@@ -41,12 +41,24 @@ class EnvironmentDetails:
         Raises
         ------
         RuntimeError:
-            If the environment's OpenJobIO schema version not unsupported
+            If the environment's Open Job Description schema version not unsupported
         """
-        schema_version = SchemaVersion(environment_details_data["schemaVersion"])
-        if schema_version == SchemaVersion.v2022_09_01:
+
+        # TODO - Remove from here
+        env_schema_version = environment_details_data["schemaVersion"]
+        if env_schema_version not in ("jobtemplate-2023-09", "2022-09-01"):
+            UnsupportedSchema(env_schema_version)
+        # Note: 2023-09 & 2022-09-01 are identical as far as the worker agent is concerned.
+        schema_version = SchemaVersion.v2023_09
+        # -- to here once the migration to the new schema version is complete
+
+        # TODO - Put this back in once the migration to the new schema version is complete.
+        # schema_version = SchemaVersion(environment_details_data["schemaVersion"])
+        # --
+
+        if schema_version == SchemaVersion.v2023_09:
             environment = parse_model(
-                model=Environment_2022_09_01, obj=environment_details_data["template"]
+                model=Environment_2023_09, obj=environment_details_data["template"]
             )
         else:
             raise UnsupportedSchema(schema_version.value)

@@ -9,7 +9,7 @@ from typing import Any, Optional, Sequence, Tuple, cast
 
 from pydantic import ValidationError
 
-from openjobio.sessions import PosixSessionUser, SessionUser
+from openjd.sessions import PosixSessionUser, SessionUser
 
 from ..errors import ConfigurationError
 from .capabilities import Capabilities

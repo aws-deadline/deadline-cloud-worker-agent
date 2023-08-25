@@ -11,7 +11,7 @@ import stat
 from threading import Event
 
 from botocore.utils import JSONFileCache
-from openjobio.sessions import PosixSessionUser, SessionUser
+from openjd.sessions import PosixSessionUser, SessionUser
 
 from ..boto_mock import DeadlineClient
 
@@ -31,9 +31,9 @@ _logger = logging.getLogger(__name__)
 
 class QueueBoto3Session(BaseBoto3Session):
     """A Boto3 Session that contains Queue Role AWS Credentials for use by:
-    1. Any service Session Action run within an OpenJobIO Session; and
-    2. The Worker when performing actions on behalf of a service Session Action for an OpenJobIO
-       Session.
+    1. Any service Session Action run within an Open Job Description Session; and
+    2. The Worker when performing actions on behalf of a service Session Action for
+       an Open Job Description Session.
 
     When created, this Session:
     1. Installs an AWS Credentials Process in the ~/.aws of the given os_user, or the current user if

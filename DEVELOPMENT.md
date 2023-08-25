@@ -28,7 +28,7 @@ This contains an impementation of the Worker Agent's scheduler. This works with 
 
 ### `src/deadline_worker_agent/sessions`
 
-This contains the logic and APIs for managing the life-cycle of a Worker session. The primary class contained in this package, the `Session` class, is responsible for taking actions from the `SessionActionQueue` and running them within the OpenJobIO session.
+This contains the logic and APIs for managing the life-cycle of a Worker session. The primary class contained in this package, the `Session` class, is responsible for taking actions from the `SessionActionQueue` and running them within the Open Job Description session.
 
 ### `src/deadline_worker_agent/sessions/actions`
 

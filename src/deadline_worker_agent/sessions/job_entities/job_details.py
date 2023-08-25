@@ -6,14 +6,14 @@ from pathlib import PurePath, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 import os
 
-from openjobio.model import SchemaVersion
-from openjobio.sessions import (
+from openjd.model import SchemaVersion, UnsupportedSchema
+from openjd.sessions import (
     Parameter,
     ParameterType,
     PathMappingOS,
     PosixSessionUser,
 )
-from openjobio.sessions import PathMappingRule as OJIOPathMappingRule
+from openjd.sessions import PathMappingRule as OPENJDPathMappingRule
 
 from ...api_models import (
     FloatParameter,
@@ -57,12 +57,12 @@ def parameters_data_to_list(
     return result
 
 
-def path_mapping_api_model_to_ojio(
+def path_mapping_api_model_to_openjd(
     path_mapping_rules: list[PathMappingRule],
-) -> list[OJIOPathMappingRule]:
+) -> list[OPENJDPathMappingRule]:
     """Converts path_mapping_rules from a BatchGetJobEntity response
-    to the format expected by OJIO. effectively camelCase to snake_case"""
-    rules: list[OJIOPathMappingRule] = []
+    to the format expected by Open Job Description. effectively camelCase to snake_case"""
+    rules: list[OPENJDPathMappingRule] = []
     for api_rule in path_mapping_rules:
         api_source_path_format = (
             # delete sourceOs once removed from api response
@@ -82,7 +82,7 @@ def path_mapping_api_model_to_ojio(
         )
         destination_path: PurePath = PurePath(api_rule["destinationPath"])
         rules.append(
-            OJIOPathMappingRule(
+            OPENJDPathMappingRule(
                 source_os=source_path_format,
                 source_path=source_path,
                 destination_path=destination_path,
@@ -153,7 +153,7 @@ class JobDetails:
     """The name of the log group for the session"""
 
     schema_version: SchemaVersion
-    """The OpenJobIO schema version"""
+    """The Open Job Description schema version"""
 
     job_attachment_settings: JobAttachmentSettings | None = None
     """The job attachment settings of the job's queue"""
@@ -164,7 +164,7 @@ class JobDetails:
     jobs_run_as: JobsRunAs | None = None
     """The user associated with the job's Amazon Deadline Cloud queue"""
 
-    path_mapping_rules: list[OJIOPathMappingRule] = field(default_factory=list)
+    path_mapping_rules: list[OPENJDPathMappingRule] = field(default_factory=list)
     """The path mapping rules for the job"""
 
     queue_role_arn: str | None = None
@@ -187,10 +187,10 @@ class JobDetails:
 
         job_parameters_data: dict = job_details_data.get("parameters", {})
         job_parameters = parameters_data_to_list(job_parameters_data)
-        path_mapping_rules: list[OJIOPathMappingRule] = []
+        path_mapping_rules: list[OPENJDPathMappingRule] = []
         path_mapping_rules_data = job_details_data.get("pathMappingRules", None)
         if path_mapping_rules_data:
-            path_mapping_rules = path_mapping_api_model_to_ojio(path_mapping_rules_data)
+            path_mapping_rules = path_mapping_api_model_to_openjd(path_mapping_rules_data)
 
         job_attachment_settings: JobAttachmentSettings | None = None
         if job_attachment_settings_boto := job_details_data.get("jobAttachmentSettings", None):
@@ -206,9 +206,24 @@ class JobDetails:
             or None
         )
 
+        # TODO - Remove from here
+        job_schema_version = job_details_data["schemaVersion"]
+        if job_schema_version not in ("jobtemplate-2023-09", "2022-09-01"):
+            UnsupportedSchema(job_schema_version)
+        # Note: 2023-09 & 2022-09-01 are identical as far as the worker agent is concerned.
+        schema_version = SchemaVersion.v2023_09
+        # -- to here once the migration to the new schema version is complete
+
+        # TODO - Put this back in once the migration to the new schema version is complete.
+        # schema_version = SchemaVersion(job_details_data["schemaVersion"])
+        # --
+
+        if schema_version != SchemaVersion.v2023_09:
+            raise UnsupportedSchema(schema_version.value)
+
         return JobDetails(
             parameters=job_parameters,
-            schema_version=SchemaVersion(job_details_data["schemaVersion"]),
+            schema_version=schema_version,
             log_group_name=job_details_data["logGroupName"],
             jobs_run_as=jobs_run_as,
             path_mapping_rules=path_mapping_rules,
