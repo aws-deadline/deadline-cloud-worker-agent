@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from os import chmod
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from logging import getLogger, LoggerAdapter
@@ -820,6 +820,22 @@ class Session:
         ASSET_SYNC_LOGGER.info(
             f"Summary Statistics for file downloads:\n{download_summary_statistics}"
         )
+
+        # TODO: remove path_mapping_rule workaround once deadline-cloud and openjobio are both upgraded
+        source_path_format_key = "source_path_format"
+        source_os_key = "source_os"
+        use_source_path_format = any(
+            f.name == source_path_format_key for f in fields(PathMappingRule)
+        )
+        for rule in path_mapping_rules:
+            if use_source_path_format:
+                if source_os_key in rule:
+                    rule[source_path_format_key] = rule[source_os_key]
+                    del rule[source_os_key]
+            else:
+                if source_path_format_key in rule:
+                    rule[source_os_key] = rule[source_path_format_key]
+                    del rule[source_path_format_key]
 
         job_attachment_path_mappings = [
             PathMappingRule.from_dict(rule) for rule in path_mapping_rules

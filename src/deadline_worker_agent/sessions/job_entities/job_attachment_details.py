@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
-from pathlib import PurePath, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 
-from openjobio.sessions import Parameter, ParameterType, PathMappingOS
-from openjobio.sessions import PathMappingRule as OJIOPathMappingRule
+from openjobio.sessions import Parameter, ParameterType
 from deadline.job_attachments.utils import AssetLoadingMethod
 
 from ...api_models import (
     FloatParameter,
     IntParameter,
     JobAttachmentDetailsData,
-    PathMappingRule,
     PathParameter,
     StringParameter,
 )
@@ -47,34 +44,6 @@ def parameters_data_to_list(
             # TODO - PATH parameter types
             raise ValueError(f"Parameter {name} -- unknown form in API response: {str(value)}")
     return result
-
-
-def path_mapping_api_model_to_ojio(
-    path_mapping_rules: list[PathMappingRule],
-) -> list[OJIOPathMappingRule]:
-    """Converts path_mapping_rules from a BatchGetJobEntity response
-    to the format expected by OJIO. effectively camelCase to snake_case"""
-    rules: list[OJIOPathMappingRule] = []
-    for api_rule in path_mapping_rules:
-        source_os: PathMappingOS = (
-            PathMappingOS.WINDOWS
-            if api_rule["sourceOS"].lower() == "windows"
-            else PathMappingOS.POSIX
-        )
-        source_path: PurePath = (
-            PureWindowsPath(api_rule["sourcePath"])
-            if source_os == PathMappingOS.WINDOWS
-            else PurePosixPath(api_rule["sourcePath"])
-        )
-        destination_path: PurePath = PurePath(api_rule["destinationPath"])
-        rules.append(
-            OJIOPathMappingRule(
-                source_os=source_os,
-                source_path=source_path,
-                destination_path=destination_path,
-            )
-        )
-    return rules
 
 
 @dataclass(frozen=True)
