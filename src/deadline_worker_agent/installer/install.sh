@@ -66,7 +66,7 @@ usage()
     echo "    --worker-agent-program WORKER_AGENT_PROGRAM"
     echo "        An optional path to the Worker Agent program. This is used as the program path"
     echo "        when creating the systemd service. If not specified, the first program named"
-    echo "        deadline_worker_agent found in the search path will be used."
+    echo "        deadline-worker-agent found in the search path will be used."
     echo "    --allow-shutdown"
     echo "        Dictates whether a sudoers rule is created/deleted allowing the worker agent the"
     echo "        ability to shutdown the host system"
@@ -149,14 +149,15 @@ elif ! validate_deadline_id fleet "${fleet_id}"; then
 fi
 if [[ "${worker_agent_program}" == "unset" ]]; then
     set +e
-    worker_agent_program=$(which deadline_worker_agent)
+    worker_agent_program=$(which deadline-worker-agent)
     if [[ "$?" != "0" ]]; then
-        echo "ERROR: Could not find deadline_worker_agent in search path"
+        echo "ERROR: Could not find deadline-worker-agent in search path"
         exit 1
     fi
     set -e
 elif [[ ! -f "${worker_agent_program}" ]]; then
-    echo "ERROR: The specified Worker Agent path is not found: \"${worker_agent_program}\"" 
+    echo "ERROR: The specified Worker Agent path is not found: \"${worker_agent_program}\""
+    usage
 fi
 if [[ ! -z "${region}" ]] && [[ ! "${region}" =~ ^[a-z]+-[a-z]+-[0-9]+$ ]]; then
     echo "ERROR: Not a valid value for --region: ${region}"
