@@ -222,8 +222,12 @@ class ManifestProperties(TypedDict):
 
 
 class PathMappingRule(TypedDict):
-    sourceOS: str
+    # TODO: remove sourceOS and make sourcePathFormat required
+    sourceOS: NotRequired[str]
     """The operating system family (posix/windows) associated with the source path"""
+
+    sourcePathFormat: NotRequired[str]
+    """The path format associated with the source path (windows vs posix)"""
 
     sourcePath: str
     """The path we're looking to change"""

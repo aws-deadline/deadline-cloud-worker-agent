@@ -105,7 +105,7 @@ class TestJobEntity:
             pytest.param(
                 [
                     {
-                        "sourceOS": "windows",
+                        "sourcePathFormat": "windows",
                         "sourcePath": "C:/windows/path",
                         "destinationPath": "/linux/path",
                     }
@@ -115,17 +115,18 @@ class TestJobEntity:
             pytest.param(
                 [
                     {
+                        # TODO: swap to sourcePathFormat once sourceOS removed
                         "sourceOS": "windows",
                         "sourcePath": "Z:/artist/windows/path",
                         "destinationPath": "/mnt/worker/windows/path",
                     },
                     {
-                        "sourceOS": "posix",
+                        "sourcePathFormat": "posix",
                         "sourcePath": "/artist/linux",
                         "destinationPath": "/mnt/worker/linux",
                     },
                     {
-                        "sourceOS": "posix",
+                        "sourcePathFormat": "posix",
                         "sourcePath": "/artist/linux/path",
                         "destinationPath": "/mnt/worker/linux/path",
                     },

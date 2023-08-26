@@ -64,20 +64,26 @@ def path_mapping_api_model_to_ojio(
     to the format expected by OJIO. effectively camelCase to snake_case"""
     rules: list[OJIOPathMappingRule] = []
     for api_rule in path_mapping_rules:
-        source_os: PathMappingOS = (
+        api_source_path_format = (
+            # delete sourceOS once removed from api response
+            api_rule["sourcePathFormat"]
+            if "sourcePathFormat" in api_rule
+            else api_rule["sourceOS"]
+        )
+        source_path_format: PathMappingOS = (
             PathMappingOS.WINDOWS
-            if api_rule["sourceOS"].lower() == "windows"
+            if api_source_path_format.lower() == "windows"
             else PathMappingOS.POSIX
         )
         source_path: PurePath = (
             PureWindowsPath(api_rule["sourcePath"])
-            if source_os == PathMappingOS.WINDOWS
+            if source_path_format == PathMappingOS.WINDOWS
             else PurePosixPath(api_rule["sourcePath"])
         )
         destination_path: PurePath = PurePath(api_rule["destinationPath"])
         rules.append(
             OJIOPathMappingRule(
-                source_os=source_os,
+                source_os=source_path_format,
                 source_path=source_path,
                 destination_path=destination_path,
             )
@@ -295,7 +301,9 @@ class JobDetails:
                 validate_object(
                     data=path_mapping_rule,
                     fields=(
-                        Field(key="sourceOS", expected_type=str, required=True),
+                        # TODO: remove sourceOS and make sourcePathFormat required
+                        Field(key="sourceOS", expected_type=str, required=False),
+                        Field(key="sourcePathFormat", expected_type=str, required=False),
                         Field(key="sourcePath", expected_type=str, required=True),
                         Field(key="destinationPath", expected_type=str, required=True),
                     ),
