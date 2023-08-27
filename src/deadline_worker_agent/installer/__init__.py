@@ -23,7 +23,7 @@ def install() -> None:
 
     arg_parser = get_argument_parser()
     args = arg_parser.parse_args(namespace=ParsedCommandLineArguments)
-    worker_agent_program = Path(sysconfig.get_path("scripts")) / "deadline_worker_agent"
+    worker_agent_program = Path(sysconfig.get_path("scripts")) / "deadline-worker-agent"
 
     cmd = [
         "sudo",

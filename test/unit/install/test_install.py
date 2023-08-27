@@ -125,7 +125,7 @@ def expected_cmd(
         "--user",
         parsed_args.user,
         "--worker-agent-program",
-        os.path.join(sysconfig.get_path("scripts"), "deadline_worker_agent"),
+        os.path.join(sysconfig.get_path("scripts"), "deadline-worker-agent"),
     ]
     if parsed_args.group is not None:
         expected_cmd.extend(("--group", parsed_args.group))
