@@ -124,7 +124,6 @@ addopts = [
     "--cov-report=html:build/coverage",
     "--cov-report=xml:build/coverage/coverage.xml",
     "--cov-report=term-missing",
-    "--numprocesses=auto"
 ]
 testpaths = [ "test" ]
 looponfailroots = [ "src", "test" ]
@@ -132,6 +131,10 @@ filterwarnings = [
     "default",
     "error::pytest.PytestUnhandledThreadExceptionWarning"
 ]
+# Print live logs during test run. This will only take effect if tests are not run
+# concurrently, since pytest-xdist does not support live logging.
+log_cli = true
+log_cli_level = "INFO"
 
 
 [tool.coverage.run]

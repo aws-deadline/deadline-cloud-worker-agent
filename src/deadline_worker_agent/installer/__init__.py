@@ -47,6 +47,8 @@ def install() -> None:
         cmd.append("--start")
     if args.allow_shutdown:
         cmd.append("--allow-shutdown")
+    if not args.install_service:
+        cmd.append("--no-install-service")
 
     try:
         run(
@@ -69,6 +71,7 @@ class ParsedCommandLineArguments(Namespace):
     confirmed: bool
     service_start: bool
     allow_shutdown: bool
+    install_service: bool
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
@@ -103,7 +106,7 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     )
     parser.add_argument(
         "--start",
-        help="Starts the systemd service immediately. Defaults to start on system boot.",
+        help="Starts the systemd service immediately. Defaults to start on system boot. This option is ignored if --no-install-service is used.",
         action="store_true",
         dest="service_start",
     )
@@ -112,6 +115,12 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
         help="Controls whether to create/delete a sudoers rule allowing the worker agent OS user to"
         "shutdown the system",
         action="store_true",
+    )
+    parser.add_argument(
+        "--no-install-service",
+        help="Skips the worker agent systemd service installation",
+        action="store_false",
+        dest="install_service",
     )
     parser.add_argument(
         "--yes",
