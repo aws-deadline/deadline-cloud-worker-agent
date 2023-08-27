@@ -12,7 +12,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install /code/dist/deadline_worker_agent-*-py3-none-any.whl
 
-deadline_worker_agent \
+deadline-worker-agent \
     --allow-instance-profile \
     --posix-job-user jobuser:sharedgroup \
     --no-shutdown \
