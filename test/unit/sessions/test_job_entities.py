@@ -115,8 +115,8 @@ class TestJobEntity:
             pytest.param(
                 [
                     {
-                        # TODO: swap to sourcePathFormat once sourceOS removed
-                        "sourceOS": "windows",
+                        # TODO: swap to sourcePathFormat once sourceOs removed
+                        "sourceOs": "windows",
                         "sourcePath": "Z:/artist/windows/path",
                         "destinationPath": "/mnt/worker/windows/path",
                     },
