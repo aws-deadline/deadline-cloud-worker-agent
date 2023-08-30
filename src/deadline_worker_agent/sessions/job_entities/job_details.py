@@ -65,10 +65,10 @@ def path_mapping_api_model_to_ojio(
     rules: list[OJIOPathMappingRule] = []
     for api_rule in path_mapping_rules:
         api_source_path_format = (
-            # delete sourceOS once removed from api response
+            # delete sourceOs once removed from api response
             api_rule["sourcePathFormat"]
             if "sourcePathFormat" in api_rule
-            else api_rule["sourceOS"]
+            else api_rule["sourceOs"]
         )
         source_path_format: PathMappingOS = (
             PathMappingOS.WINDOWS
@@ -301,8 +301,8 @@ class JobDetails:
                 validate_object(
                     data=path_mapping_rule,
                     fields=(
-                        # TODO: remove sourceOS and make sourcePathFormat required
-                        Field(key="sourceOS", expected_type=str, required=False),
+                        # TODO: remove sourceOs and make sourcePathFormat required
+                        Field(key="sourceOs", expected_type=str, required=False),
                         Field(key="sourcePathFormat", expected_type=str, required=False),
                         Field(key="sourcePath", expected_type=str, required=True),
                         Field(key="destinationPath", expected_type=str, required=True),

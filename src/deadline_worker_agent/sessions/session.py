@@ -805,6 +805,11 @@ class Session:
             assetLoadingMethod=self._job_attachment_details.asset_loading_method,
         )
 
+        storage_profiles_path_mapping_rules_dict: dict[str, str] = {
+            str(rule.source_path): str(rule.destination_path)
+            for rule in self._job_details.path_mapping_rules
+        }
+
         # Add path mapping rules for root paths in job attachments
         ASSET_SYNC_LOGGER.info("Syncing inputs using Job Attachments")
         (download_summary_statistics, path_mapping_rules) = self._asset_sync.sync_inputs(
@@ -813,6 +818,7 @@ class Session:
             queue_id=self._queue_id,  # only used for error message
             job_id=self._queue._job_id,  # only used for error message
             session_dir=self._session.working_directory,
+            storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
             step_dependencies=step_dependencies,
             on_downloading_files=progress_handler,
         )
@@ -1068,6 +1074,11 @@ class Session:
             assetLoadingMethod=job_attachment_details.asset_loading_method,
         )
 
+        storage_profiles_path_mapping_rules_dict: dict[str, str] = {
+            str(rule.source_path): str(rule.destination_path)
+            for rule in self._job_details.path_mapping_rules
+        }
+
         ASSET_SYNC_LOGGER.info("Started syncing outputs using Job Attachments")
         # avoid circular import
         from .actions import RunStepTaskAction
@@ -1083,6 +1094,7 @@ class Session:
             session_action_id=current_action.definition.id,
             start_time=current_action.start_time.timestamp(),
             session_dir=self._session.working_directory,
+            storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
             on_uploading_files=partial(self._notifier_callback, current_action),
         )
         ASSET_SYNC_LOGGER.info("Finished syncing outputs using Job Attachments")

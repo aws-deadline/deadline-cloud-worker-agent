@@ -222,8 +222,8 @@ class ManifestProperties(TypedDict):
 
 
 class PathMappingRule(TypedDict):
-    # TODO: remove sourceOS and make sourcePathFormat required
-    sourceOS: NotRequired[str]
+    # TODO: remove sourceOs and make sourcePathFormat required
+    sourceOs: NotRequired[str]
     """The operating system family (posix/windows) associated with the source path"""
 
     sourcePathFormat: NotRequired[str]

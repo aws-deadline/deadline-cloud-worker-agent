@@ -511,6 +511,7 @@ class TestSessionSyncAssetInputs:
                     manifests=ANY,
                     assetLoadingMethod=asset_loading_method,
                 ),
+                storage_profiles_path_mapping_rules={},
                 step_dependencies=None,
                 on_downloading_files=ANY,
             )
@@ -595,7 +596,7 @@ class TestSessionSyncAssetInputs:
         mock_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
         path_mapping_rules = [
             {
-                # TODO: remove sourceOS once removed
+                # TODO: remove sourceOs once removed
                 "source_os": "windows",
                 "source_path": "Z:/artist/windows/path",
                 "destination_path": "/mnt/worker/windows/path",
