@@ -657,3 +657,97 @@ class TestCloudWatchLogStreaming:
         )
         context_mgr_enter.assert_called_once_with()
         context_mgr_exit.assert_called_once()
+
+    @patch.object(entrypoint_mod.subprocess, "check_output")
+    def test_get_gpu_count(
+        self,
+        check_output_mock: MagicMock,
+    ) -> None:
+        """
+        Tests that the _get_gpu_count function returns the correct number of GPUs
+        """
+        # GIVEN
+        check_output_mock.return_value = b"2"
+
+        # WHEN
+        result = entrypoint_mod._get_gpu_count()
+
+        # THEN
+        check_output_mock.assert_called_once_with(
+            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"]
+        )
+        assert result == 2
+
+    @pytest.mark.parametrize(
+        ("exception", "expected_result"),
+        (
+            pytest.param(FileNotFoundError("nvidia-smi not found"), 0, id="FileNotFoundError"),
+            pytest.param(subprocess.CalledProcessError(1, "command"), 0, id="CalledProcessError"),
+        ),
+    )
+    @patch.object(entrypoint_mod.subprocess, "check_output")
+    def test_get_gpu_count_nvidia_smi_error(
+        self, check_output_mock: MagicMock, exception, expected_result
+    ) -> None:
+        """
+        Tests that the _get_gpu_count function returns 0 when nvidia-smi is not found or fails
+        """
+        # GIVEN
+        check_output_mock.side_effect = exception
+
+        # WHEN
+        result = entrypoint_mod._get_gpu_count()
+
+        # THEN
+        check_output_mock.assert_called_once_with(
+            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"]
+        )
+
+        assert result == expected_result
+
+    @patch.object(entrypoint_mod.subprocess, "check_output")
+    def test_get_gpu_memory(
+        self,
+        check_output_mock: MagicMock,
+    ) -> None:
+        """
+        Tests that the _get_gpu_memory function returns total memory
+        """
+        # GIVEN
+        check_output_mock.return_value = b"6800 MiB"
+
+        # WHEN
+        result = entrypoint_mod._get_gpu_memory()
+
+        # THEN
+        check_output_mock.assert_called_once_with(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
+        )
+        assert result == 6800
+
+    @pytest.mark.parametrize(
+        ("exception", "expected_result"),
+        (
+            pytest.param(FileNotFoundError("nvidia-smi not found"), 0, id="FileNotFoundError"),
+            pytest.param(subprocess.CalledProcessError(1, "command"), 0, id="CalledProcessError"),
+        ),
+    )
+    @patch.object(entrypoint_mod.subprocess, "check_output")
+    def test_get_gpu_memory_nvidia_smi_error(
+        self, check_output_mock: MagicMock, exception, expected_result
+    ) -> None:
+        """
+        Tests that the _get_gpu_memory function returns 0 when nvidia-smi is not found or fails
+        """
+        # GIVEN
+        check_output_mock.side_effect = exception
+
+        # WHEN
+        result = entrypoint_mod._get_gpu_memory()
+
+        # THEN
+        check_output_mock.assert_called_once_with(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
+        )
+
+        assert result == expected_result

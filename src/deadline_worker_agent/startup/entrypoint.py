@@ -12,6 +12,7 @@ from logging.handlers import TimedRotatingFileHandler
 from typing import Optional
 import platform
 import psutil
+import shutil
 from pathlib import Path
 
 from botocore.client import Config as BotoClientConfig
@@ -50,9 +51,11 @@ def detect_system_capabilities() -> Capabilities:
     amounts[AmountCapabilityName("amount.worker.memory")] = float(psutil.virtual_memory().total) / (
         1024.0**2
     )
-    amounts[AmountCapabilityName("amount.worker.disk.scratch")] = 0  # TODO: compute scratch
-    amounts[AmountCapabilityName("amount.worker.gpu")] = 0  # compute GPU count
-    amounts[AmountCapabilityName("amount.worker.gpu.memory")] = 0  # TODO: compute GPU memory
+    amounts[AmountCapabilityName("amount.worker.disk.scratch")] = int(
+        shutil.disk_usage("/").free // 1024 // 1024
+    )
+    amounts[AmountCapabilityName("amount.worker.gpu")] = _get_gpu_count()
+    amounts[AmountCapabilityName("amount.worker.gpu.memory")] = _get_gpu_memory()
 
     return Capabilities(amounts=amounts, attributes=attributes)
 
@@ -327,3 +330,51 @@ def _log_agent_info() -> None:
     _logger.info(f"Python Interpreter: {sys.executable}")
     _logger.info("Python Version: %s", sys.version.replace("\n", " - "))
     _logger.info(f"Platform: {sys.platform}")
+
+
+def _get_gpu_count() -> int:
+    """
+    Get the number of GPUs available on the machine.
+
+    Returns
+    -------
+    int
+        The number of GPUs available on the machine.
+    """
+    try:
+        output = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"]
+        )
+    except FileNotFoundError:
+        _logger.warning("Could not detect GPU count, nvidia-smi not found")
+        return 0
+    except subprocess.CalledProcessError:
+        _logger.warning("Could not detect GPU count, error running nvidia-smi")
+        return 0
+    else:
+        _logger.info("Number of GPUs: %s", output.decode().strip())
+        return int(output.decode().strip())
+
+
+def _get_gpu_memory() -> int:
+    """
+    Get the total GPU memory available on the machine.
+
+    Returns
+    -------
+    int
+        The total GPU memory available on the machine.
+    """
+    try:
+        output = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
+        )
+    except FileNotFoundError:
+        _logger.warning("Could not detect GPU memory, nvidia-smi not found")
+        return 0
+    except subprocess.CalledProcessError:
+        _logger.warning("Could not detect GPU memory, error running nvidia-smi")
+        return 0
+    else:
+        _logger.info("Total GPU Memory: %s", output.decode().strip())
+        return int(output.decode().strip().replace("MiB", ""))
