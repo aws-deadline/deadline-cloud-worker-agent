@@ -12,7 +12,7 @@ from logging import getLogger
 from threading import Event
 from typing import Any, TYPE_CHECKING, Optional
 
-from deadline.job_attachments.errors import AssetSyncError, AssetSyncCancelledError
+from deadline.job_attachments.errors import AssetSyncCancelledError
 from openjobio.sessions import ActionState, ActionStatus
 
 from ..session import Session
@@ -117,42 +117,26 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
         session : Session
             The session that the aciton is running in
         """
+        action_status: ActionStatus = ActionStatus(state=ActionState.SUCCESS)
         try:
             future.result()
         except (FutureCancelledError, AssetSyncCancelledError):
-            session.update_action(
-                action_status=ActionStatus(
-                    state=ActionState.CANCELED,
-                    fail_message="Canceled",
-                ),
-            )
-        except AssetSyncError as e:
-            # Already logged to the session log.
-            # We need to directly complete the action. Other actions rely on the OpenJobIO session's
-            # callback to complete the action
-            session.update_action(
-                action_status=ActionStatus(
-                    state=ActionState.FAILED,
-                    fail_message=str(e),
-                ),
+            action_status = ActionStatus(
+                state=ActionState.CANCELED,
+                fail_message="Canceled",
             )
         except Exception as e:
             session.logger.exception(e)
-
             # We need to directly complete the action. Other actions rely on the OpenJobIO session's
             # callback to complete the action
-            session.update_action(
-                action_status=ActionStatus(
-                    state=ActionState.FAILED,
-                    fail_message=str(e),
-                ),
+            action_status = ActionStatus(
+                state=ActionState.FAILED,
+                fail_message=str(e),
             )
-        else:
+        finally:
             # We need to directly complete the action. Other actions rely on the OpenJobIO session's
             # callback to complete the action
-            session.update_action(
-                action_status=ActionStatus(state=ActionState.SUCCESS),
-            )
+            session.update_action(action_status=action_status)
 
     def human_readable(self) -> str:
         return "job.sync_input_job_attachments()"

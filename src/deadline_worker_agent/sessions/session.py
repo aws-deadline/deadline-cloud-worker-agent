@@ -240,9 +240,8 @@ class Session:
             try:
                 self._cleanup()
             except Exception as error:
-                logger.exception(error)
-                logger.error(
-                    "Unexpected exception while performing cleanup of Session %s.", self._id
+                logger.exception(
+                    f"Unexpected exception while performing cleanup of Session {self._id}: {error}."
                 )
             finally:
                 self._stopped_running.set()
