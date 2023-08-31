@@ -8,7 +8,7 @@ import pytest  # noqa: F401
 
 import logging
 
-from deadline_test_scaffolding import (
+from deadline_test_fixtures import (
     DeadlineClient,
     DeadlineResources,
     Farm,
