@@ -267,7 +267,7 @@ class JobEntities:
                 # InternalServerException, ValidationException, ResourceNotFoundException,
 
                 failed_entity_key = self._entity_key(failed_entity)
-                entity_record = self._entity_record_map[entity_key]
+                entity_record = self._entity_record_map[failed_entity_key]
                 entity_record.error = failed_entity_value
                 logger.info(
                     f"BatchGetJobEntity request: {failed_entity_key} failed due to {failed_entity_value['code']}: {failed_entity_value['message']}"
