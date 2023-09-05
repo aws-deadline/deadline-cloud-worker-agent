@@ -152,7 +152,6 @@ elif ! validate_deadline_id fleet "${fleet_id}"; then
     echo "ERROR: Non a valid value for --fleet-id: ${fleet_id}"
     usage
 fi
-echo "Checking WA program: $worker_agent_program"
 if [[ "${worker_agent_program}" == "unset" ]]; then
     set +e
     worker_agent_program=$(which deadline-worker-agent)
