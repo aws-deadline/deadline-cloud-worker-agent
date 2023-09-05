@@ -39,6 +39,7 @@ confirm=""
 region="us-west-2"
 worker_agent_program="unset"
 allow_shutdown="no"
+no_install_service="no"
 start_service="no"
 warning_lines=()
 
@@ -70,9 +71,12 @@ usage()
     echo "    --allow-shutdown"
     echo "        Dictates whether a sudoers rule is created/deleted allowing the worker agent the"
     echo "        ability to shutdown the host system"
+    echo "    --no-install-service"
+    echo "        Skips the worker agent systemd service installation"
     echo "    --start"
     echo "        Starts the systemd service as part of the installation. By default, the systemd"
     echo "        service is configured to start on system boot, but not started immediately."
+    echo "        This option is ignored if --no-install-service is used."
     echo "    -y"
     echo "        Skips a confirmation prompt before performing the installation."
 
@@ -100,7 +104,7 @@ validate_deadline_id() {
 }
 
 # Validate arguments
-PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,worker-agent-program:,start,allow-shutdown -- "y" "$@")
+PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,worker-agent-program:,start,allow-shutdown,no-install-service -- "y" "$@")
 VALID_ARGUMENTS=$?
 if [ "${VALID_ARGUMENTS}" != "0" ]; then
     usage
@@ -120,6 +124,7 @@ do
     --group)                 job_group="$2"             ; shift 2 ;;
     --worker-agent-program)  worker_agent_program="$2"  ; shift 2 ;;
     --allow-shutdown)        allow_shutdown="yes"       ; shift   ;;
+    --no-install-service)    no_install_service="yes"   ; shift   ;;
     --start)                 start_service="yes"        ; shift   ;;
     -y)                      confirm="$1"               ; shift   ;;
     # -- means the end of the arguments; drop this, and break out of the while loop
@@ -309,10 +314,11 @@ sed -E                                                          \
     /etc/amazon/deadline/worker.toml
 echo "Done configuring farm and fleet"
 
-# Set up the service
-echo "Installing systemd service to /etc/systemd/system/deadline-worker.service"
-worker_agent_homedir=$(eval echo ~$wa_user)
-cat > /etc/systemd/system/deadline-worker.service <<EOF
+if ! [[ "${no_install_service}" == "yes" ]]; then
+    # Set up the service
+    echo "Installing systemd service to /etc/systemd/system/deadline-worker.service"
+    worker_agent_homedir=$(eval echo ~$wa_user)
+    cat > /etc/systemd/system/deadline-worker.service <<EOF
 [Unit]
 Description=Amazon Deadline Cloud Worker Agent
 
@@ -326,23 +332,24 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 EOF
-chown root:root /etc/systemd/system/deadline-worker.service
-chmod 600 /etc/systemd/system/deadline-worker.service
-echo "Done installing systemd service"
+    chown root:root /etc/systemd/system/deadline-worker.service
+    chmod 600 /etc/systemd/system/deadline-worker.service
+    echo "Done installing systemd service"
 
-# Tell systemd to reload units
-echo "Reloading systemd"
-systemctl daemon-reload
-echo "Done reloading systemd"
+    # Tell systemd to reload units
+    echo "Reloading systemd"
+    systemctl daemon-reload
+    echo "Done reloading systemd"
 
-# Tell systemd to start the service on system bootup
-systemctl enable deadline-worker
+    # Tell systemd to start the service on system bootup
+    systemctl enable deadline-worker
 
-# Start the service
-if [[ "${start_service}" == "yes" ]]; then
-    echo "Starting the service"
-    systemctl start deadline-worker
-    echo "Done starting the service"
+    # Start the service
+    if [[ "${start_service}" == "yes" ]]; then
+        echo "Starting the service"
+        systemctl start deadline-worker
+        echo "Done starting the service"
+    fi
 fi
 
 echo "Done"

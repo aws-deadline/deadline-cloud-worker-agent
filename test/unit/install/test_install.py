@@ -73,6 +73,11 @@ def allow_shutdown() -> bool:
 
 
 @pytest.fixture
+def install_service() -> bool:
+    return True
+
+
+@pytest.fixture
 def parsed_args(
     farm_id: str,
     fleet_id: str,
@@ -82,6 +87,7 @@ def parsed_args(
     service_start: bool,
     confirmed: bool,
     allow_shutdown: bool,
+    install_service: bool,
 ) -> ParsedCommandLineArguments:
     parsed_args = ParsedCommandLineArguments()
     parsed_args.farm_id = farm_id
@@ -92,6 +98,7 @@ def parsed_args(
     parsed_args.service_start = service_start
     parsed_args.confirmed = confirmed
     parsed_args.allow_shutdown = allow_shutdown
+    parsed_args.install_service = install_service
     return parsed_args
 
 
