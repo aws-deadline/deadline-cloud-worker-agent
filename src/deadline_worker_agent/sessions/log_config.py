@@ -14,7 +14,7 @@ from ..log_sync.cloudwatch import (
     LOG_CONFIG_OPTION_STREAM_NAME_KEY,
 )
 from ..api_models import LogConfiguration as BotoSessionLogConfiguration
-from ..boto_mock import Session as BotoSession
+from ..boto import Session as BotoSession
 from ..log_sync.cloudwatch import CloudWatchHandler
 
 

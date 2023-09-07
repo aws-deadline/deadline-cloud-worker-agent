@@ -10,7 +10,7 @@ from botocore.retries.standard import ExponentialBackoff, RetryContext
 from botocore.exceptions import ClientError
 
 from ...startup.config import Configuration
-from ...boto_mock import DeadlineClient
+from ...boto import DeadlineClient
 from ...api_models import (
     AssumeFleetRoleForWorkerResponse,
     AssumeQueueRoleForWorkerResponse,

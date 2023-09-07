@@ -15,7 +15,7 @@ from botocore.credentials import (
 from ..session_events import configure_session_events
 
 
-from ..boto_mock import Session
+from ..boto import Session
 from ..api_models import AwsCredentials
 
 
