@@ -9,7 +9,6 @@ from typing import Any, Callable, Optional, TYPE_CHECKING, Union
 from uuid import uuid4
 
 from boto3 import Session as _Session
-from botocore.session import Session as _BotocoreSession
 
 from ..api_models import (
     AssignedSession,
@@ -461,22 +460,6 @@ class DeadlineClient:
 
 class Session(_Session):
     """A mock for a boto session"""
-
-    def __init__(
-        self,
-        aws_access_key_id: Optional[str] = None,
-        aws_secret_access_key: Optional[str] = None,
-        aws_session_token: Optional[str] = None,
-        profile_name: Optional[str] = None,
-        botocore_session: Optional[_BotocoreSession] = None,
-    ):
-        super().__init__(
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            aws_session_token=aws_session_token,
-            profile_name=profile_name,
-            botocore_session=botocore_session,
-        )
 
     def client(self, service: str, *args: Any, **kwargs: Any) -> DeadlineClient:
         """Returns a real boto3 client for any service other than deadline.

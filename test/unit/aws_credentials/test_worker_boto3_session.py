@@ -9,6 +9,7 @@ import pytest
 from deadline_worker_agent.aws.deadline import DeadlineRequestUnrecoverableError
 import deadline_worker_agent.aws_credentials.worker_boto3_session as worker_boto3_session_mod
 from deadline_worker_agent.aws_credentials.worker_boto3_session import WorkerBoto3Session
+from deadline_worker_agent.boto import DEADLINE_BOTOCORE_CONFIG
 from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
 from deadline_worker_agent.startup.config import Configuration
 
@@ -209,7 +210,7 @@ class TestRefreshCredentials:
             session.refresh_credentials()
 
             # THEN
-            mock_client.assert_called_once_with("deadline")
+            mock_client.assert_called_once_with("deadline", config=DEADLINE_BOTOCORE_CONFIG)
             assume_role_mock.assert_called_once_with(
                 deadline_client=mock_client.return_value,
                 farm_id=config.farm_id,
@@ -272,7 +273,9 @@ class TestRefreshCredentials:
             session.refresh_credentials()
 
             # THEN
-            bootstrap_session.client.assert_called_once_with("deadline")
+            bootstrap_session.client.assert_called_once_with(
+                "deadline", config=DEADLINE_BOTOCORE_CONFIG
+            )
             assume_role_mock.assert_called_once_with(
                 deadline_client=mock_client,
                 farm_id=config.farm_id,

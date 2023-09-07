@@ -15,13 +15,13 @@ import psutil
 import shutil
 from pathlib import Path
 
-from botocore.client import Config as BotoClientConfig
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
 from pydantic import PositiveFloat
 
 from .._version import __version__
 from ..api_models import WorkerStatus
 from ..aws.deadline import DeadlineRequestError, delete_worker, update_worker
+from ..boto import DEADLINE_BOTOCORE_CONFIG, OTHER_BOTOCORE_CONFIG
 from ..errors import ServiceShutdown
 from ..log_sync.cloudwatch import stream_cloudwatch_logs
 from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger
@@ -29,7 +29,6 @@ from ..worker import Worker
 from .bootstrap import bootstrap_worker
 from .capabilities import AmountCapabilityName, AttributeCapabilityName, Capabilities
 from .config import Capabilities, Configuration, ConfigurationError
-from ..aws.deadline import DeadlineRequestError, delete_worker, update_worker
 
 __all__ = ["entrypoint"]
 _logger = logging.getLogger(__name__)
@@ -105,15 +104,12 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
 
         # Get the boto3 session
         session = worker_bootstrap.session
-        boto_client_config = BotoClientConfig(
-            user_agent_extra=f"deadline_worker_agent/{__version__}",
-        )
         deadline_client = session.client(
             "deadline",
-            config=boto_client_config,
+            config=DEADLINE_BOTOCORE_CONFIG,
         )
-        s3_client = session.client("s3", config=boto_client_config)
-        logs_client = session.client("logs", config=boto_client_config)
+        s3_client = session.client("s3", config=OTHER_BOTOCORE_CONFIG)
+        logs_client = session.client("logs", config=OTHER_BOTOCORE_CONFIG)
 
         # Shutdown behavior flags set by Worker below
         should_delete_worker = False
