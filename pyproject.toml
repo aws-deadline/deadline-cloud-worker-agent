@@ -143,7 +143,7 @@ parallel = false
 source_pkgs = [ "deadline_worker_agent" ]
 omit = [
     # the mock boto implementation doesn't require tests
-    "*/boto_mock.py",
+    "*/boto/shim.py",
     # TODO: Remove these once we have session test coverage
     "*/api_models.py",
     "*/errors.py",

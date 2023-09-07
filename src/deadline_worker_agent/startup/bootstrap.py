@@ -24,7 +24,7 @@ from ..aws.deadline import (
 from .config import Configuration
 from .host_properties import get_host_properties as _get_host_properties
 from ..api_models import WorkerStatus
-from ..boto_mock import DeadlineClient, Session
+from ..boto import DeadlineClient, Session
 from ..aws_credentials import WorkerBoto3Session
 from ..session_events import configure_session_events
 

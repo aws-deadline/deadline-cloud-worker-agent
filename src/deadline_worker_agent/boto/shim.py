@@ -5,14 +5,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from logging import getLogger
 from typing import Any, Callable, Optional, TYPE_CHECKING, Union
 from uuid import uuid4
 
 from boto3 import Session as _Session
 from botocore.session import Session as _BotocoreSession
 
-from .api_models import (
+from ..api_models import (
     AssignedSession,
     AssumeFleetRoleForWorkerResponse,
     AssumeQueueRoleForWorkerResponse,
@@ -27,11 +26,10 @@ from .api_models import (
     UpdateWorkerScheduleResponse,
     WorkerStatus,
 )
+from .logger import logger
 
 if TYPE_CHECKING:
     from .api_models import EntityIdentifier
-
-logger = getLogger(__name__)
 
 
 class DeadlineClient:

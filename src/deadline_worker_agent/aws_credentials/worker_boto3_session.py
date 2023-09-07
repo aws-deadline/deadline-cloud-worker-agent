@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from botocore.utils import JSONFileCache
 
-from ..boto_mock import Session
+from ..boto import Session
 from ..startup.config import Configuration
 from .temporary_credentials import TemporaryCredentials
 from ..aws.deadline import (
