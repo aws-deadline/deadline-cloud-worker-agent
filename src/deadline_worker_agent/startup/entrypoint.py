@@ -21,6 +21,7 @@ from pydantic import PositiveFloat
 
 from .._version import __version__
 from ..api_models import WorkerStatus
+from ..aws.deadline import DeadlineRequestError, delete_worker, update_worker
 from ..errors import ServiceShutdown
 from ..log_sync.cloudwatch import stream_cloudwatch_logs
 from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger

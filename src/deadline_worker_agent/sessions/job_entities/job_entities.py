@@ -28,7 +28,7 @@ from ...aws.deadline import (
     DeadlineRequestUnrecoverableError,
     batch_get_job_entity,
 )
-from ...boto_mock import DeadlineClient
+from ...boto import DeadlineClient
 from .job_attachment_details import JobAttachmentDetails
 from .job_details import JobDetails
 from .job_entity_type import JobEntityType

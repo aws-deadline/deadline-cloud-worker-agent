@@ -13,7 +13,7 @@ from threading import Event
 from botocore.utils import JSONFileCache
 from openjd.sessions import PosixSessionUser, SessionUser
 
-from ..boto_mock import DeadlineClient
+from ..boto import DeadlineClient
 
 from .temporary_credentials import TemporaryCredentials
 from ..aws.deadline import (

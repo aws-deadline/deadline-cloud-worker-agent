@@ -27,7 +27,7 @@ from botocore.exceptions import ClientError
 
 
 from ..aws_credentials import QueueBoto3Session, AwsCredentialsRefresher
-from ..boto_mock import DeadlineClient, Session as BotoSession
+from ..boto import DeadlineClient, Session as BotoSession
 from ..errors import ServiceShutdown
 from ..sessions import JobEntities, Session
 from ..sessions.actions import SessionActionDefinition

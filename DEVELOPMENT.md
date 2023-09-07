@@ -14,6 +14,10 @@ Files of note include:
 
     `Worker` class implementation containing the main thread's event loop that runs after the Worker has been bootstrapped. This is the original implementation of the Worker Agent that uses `UpdateWorkerSchedule` and `NotifyProgress` which are APIs that are unaware of Worker Sessions.
 
+## `src/deadline_worker_agent/boto`
+
+This contains logic for boto3 and botocore.
+
 ### `src/deadline_worker_agent/startup`
 
 This contains logic for the startup phase in the Worker Agent's lifecycle.

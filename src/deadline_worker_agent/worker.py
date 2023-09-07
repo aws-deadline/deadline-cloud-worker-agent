@@ -17,7 +17,7 @@ from pathlib import Path
 import boto3
 import requests
 
-from .boto_mock import DeadlineClient
+from .boto import DeadlineClient
 from .errors import ServiceShutdown
 from .scheduler import WorkerScheduler
 from .sessions import Session
