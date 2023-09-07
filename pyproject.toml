@@ -14,7 +14,7 @@ dependencies = [
     "tomli >= 1.1.0 ; python_version<'3.11'",
     "typing_extensions ~= 4.5",
     "psutil ~= 5.9",
-    "pydantic ~= 1.10.0",
+    "pydantic ~= 2.3.0",
 ]
 requires-python = ">=3.7"
 
