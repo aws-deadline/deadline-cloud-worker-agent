@@ -22,6 +22,20 @@ class TestDeadlineBotocoreConfig:
         assert isinstance(DEADLINE_BOTOCORE_CONFIG, Config)
         assert DEADLINE_BOTOCORE_CONFIG.user_agent_extra == f"deadline_worker_agent/{__version__}"
 
+    def test_does_not_retry(self) -> None:
+        """Asserts that DEADLINE_BOTOCORE_CONFIG sets retries.max_attempts to 1.
+
+        The worker agent handles the retry strategy.
+        """
+        # WHEN
+        DEADLINE_BOTOCORE_CONFIG = boto_config_mod.DEADLINE_BOTOCORE_CONFIG
+
+        # THEN
+        assert isinstance(DEADLINE_BOTOCORE_CONFIG, Config)
+        assert DEADLINE_BOTOCORE_CONFIG.retries == {
+            "max_attempts": 1,
+        }
+
 
 class TestOtherBotocoreConfig:
     """Tests for deadline_worker_agent.boto.config.OTHER_BOTOCORE_CONFIG"""

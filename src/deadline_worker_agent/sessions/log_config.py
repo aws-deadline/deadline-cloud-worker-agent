@@ -14,7 +14,10 @@ from ..log_sync.cloudwatch import (
     LOG_CONFIG_OPTION_STREAM_NAME_KEY,
 )
 from ..api_models import LogConfiguration as BotoSessionLogConfiguration
-from ..boto import Session as BotoSession
+from ..boto import (
+    Session as BotoSession,
+    OTHER_BOTOCORE_CONFIG,
+)
 from ..log_sync.cloudwatch import CloudWatchHandler
 
 
@@ -200,7 +203,7 @@ class LogConfiguration:
         return CloudWatchHandler(
             log_group_name=log_group,
             log_stream_name=log_stream,
-            logs_client=boto_session.client("logs"),
+            logs_client=boto_session.client("logs", config=OTHER_BOTOCORE_CONFIG),
         )
 
     def create_local_file_handler(self) -> logging.FileHandler:

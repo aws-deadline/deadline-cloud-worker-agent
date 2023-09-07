@@ -24,7 +24,7 @@ from ..aws.deadline import (
 from .config import Configuration
 from .host_properties import get_host_properties as _get_host_properties
 from ..api_models import WorkerStatus
-from ..boto import DeadlineClient, Session
+from ..boto import DEADLINE_BOTOCORE_CONFIG, DeadlineClient, Session
 from ..aws_credentials import WorkerBoto3Session
 from ..session_events import configure_session_events
 
@@ -172,7 +172,7 @@ def bootstrap_worker(config: Configuration, *, use_existing_worker: bool = True)
         )
         return bootstrap_worker(config, use_existing_worker=False)
 
-    deadline_client = worker_session.client("deadline")
+    deadline_client = worker_session.client("deadline", config=DEADLINE_BOTOCORE_CONFIG)
 
     try:
         # raises: BootstrapWithoutWorkerLoad, SystemExit
@@ -233,7 +233,7 @@ def _load_or_create_worker(
 
     if not worker_info:
         # Worker creation must be done using bootstrap credentials from the environment
-        deadline_client = session.client("deadline")
+        deadline_client = session.client("deadline", config=DEADLINE_BOTOCORE_CONFIG)
 
         host_properties = _get_host_properties()
         _logger.info('Creating worker for hostname "%s"', host_properties["hostName"])

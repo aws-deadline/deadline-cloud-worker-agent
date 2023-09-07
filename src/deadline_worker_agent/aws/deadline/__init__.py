@@ -6,11 +6,11 @@ from typing import Any, Optional
 from threading import Event
 from dataclasses import dataclass
 
-from botocore.retries.standard import ExponentialBackoff, RetryContext
+from botocore.retries.standard import RetryContext
 from botocore.exceptions import ClientError
 
 from ...startup.config import Configuration
-from ...boto import DeadlineClient
+from ...boto import DeadlineClient, NoOverflowExponentialBackoff as Backoff
 from ...api_models import (
     AssumeFleetRoleForWorkerResponse,
     AssumeQueueRoleForWorkerResponse,
@@ -131,7 +131,7 @@ def assume_fleet_role_for_worker(
     """Calls the AssumeFleetRoleForWorker API, with automatic infinite retries
     when throttled.
     """
-    backoff = ExponentialBackoff(max_backoff=30)
+    backoff = Backoff(max_backoff=30)
     retry = 0
 
     # Note: Frozen credentials could expire while doing a retry loop; that's
@@ -209,7 +209,7 @@ def assume_queue_role_for_worker(
         AWS Credentials" of the Worker API contract in response.
       DeadlineRequestInterrupted - If the interrupt_event was set.
     """
-    backoff = ExponentialBackoff(max_backoff=30)
+    backoff = Backoff(max_backoff=30)
     retry = 0
     query_start_time = monotonic()
 
@@ -313,7 +313,7 @@ def batch_get_job_entity(
     """Calls the BatchGetJobEntity API, with automatic infinite retries
     when throttled.
     """
-    backoff = ExponentialBackoff(max_backoff=30)
+    backoff = Backoff(max_backoff=30)
     retry = 0
 
     # Note: Frozen credentials could expire while doing a retry loop; that's
@@ -362,7 +362,7 @@ def create_worker(
     """Calls the CreateWorker API to register this machine's worker and get a worker ID"""
 
     # Retry API call when being throttled
-    backoff = ExponentialBackoff(max_backoff=30)
+    backoff = Backoff(max_backoff=30)
     retry = 0
     while True:
         try:
@@ -430,7 +430,7 @@ def delete_worker(
     """Calls the DeleteWorker API for the given Worker."""
 
     # Retry API call when being throttled
-    backoff = ExponentialBackoff(max_backoff=30)
+    backoff = Backoff(max_backoff=30)
     retry = 0
 
     while True:
@@ -497,7 +497,7 @@ def update_worker(
     """
 
     # Retry API call when being throttled
-    backoff = ExponentialBackoff(max_backoff=30)
+    backoff = Backoff(max_backoff=30)
     retry = 0
 
     _logger.info(f"Invoking UpdateWorker to set {worker_id} to status={status.value}.")
@@ -681,7 +681,7 @@ def update_worker_schedule(
     _logger.debug("UpdateWorkerSchedule request: %s", request)
 
     # Retry API call when being throttled
-    backoff = ExponentialBackoff(max_backoff=30)
+    backoff = Backoff(max_backoff=30)
     retry = 0
     while True:
         if interrupt_event is not None and interrupt_event.is_set():

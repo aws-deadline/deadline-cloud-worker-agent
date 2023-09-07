@@ -24,6 +24,14 @@ lint = [
   "typing",
 ]
 
+[envs.research]
+pre-install-commands = [
+  "pip install -r requirements-research.txt ."
+]
+
+[envs.research.scripts]
+sync = "pip install -r requirements-testing.txt"
+
 [[envs.all.matrix]]
 python = ["3.9", "3.10", "3.11"]
 

@@ -16,6 +16,7 @@ from deadline_worker_agent.api_models import (
     UpdateWorkerResponse,
     WorkerStatus,
 )
+from deadline_worker_agent.boto import DEADLINE_BOTOCORE_CONFIG
 from deadline_worker_agent.log_sync.cloudwatch import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,
     LOG_CONFIG_OPTION_STREAM_NAME_KEY,
@@ -330,7 +331,7 @@ class TestBootstrapWorker:
     def get_boto3_session_for_fleet_role_mock(self) -> Generator[MagicMock, None, None]:
         with patch.object(bootstrap_mod, "_get_boto3_session_for_fleet_role") as mock:
 
-            def client_implementation(service: str) -> MagicMock:
+            def client_implementation(service: str, config: Any) -> MagicMock:
                 if service == "deadline":
                     return MagicMock()
                 raise NotImplementedError(f'No mock for service "{service}"')
@@ -493,7 +494,7 @@ class TestLoadOrCreateWorker:
     def deadline_client_mock(self, session_mock: MagicMock) -> MagicMock:
         deadline_client = MagicMock()
 
-        def client_impl(service: str) -> MagicMock:
+        def client_impl(service: str, config: Any) -> MagicMock:
             if service == "deadline":
                 return deadline_client
             raise NotImplementedError(f'No mock for service "{service}"')
@@ -567,6 +568,7 @@ class TestLoadOrCreateWorker:
         )
         worker_persistence_info_mock.assert_called_once_with(worker_id=worker_id)
         worker_info_mock.save.assert_called_once_with(config=config)
+        session_mock.client.assert_called_once_with("deadline", config=DEADLINE_BOTOCORE_CONFIG)
 
     def test_raises_system_exit(
         self,

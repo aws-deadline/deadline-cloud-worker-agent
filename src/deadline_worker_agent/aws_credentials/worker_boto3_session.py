@@ -7,14 +7,14 @@ from typing import Any, cast
 
 from botocore.utils import JSONFileCache
 
-from ..boto import Session
+from ..boto import DEADLINE_BOTOCORE_CONFIG, Session
 from ..startup.config import Configuration
-from .temporary_credentials import TemporaryCredentials
 from ..aws.deadline import (
     DeadlineRequestUnrecoverableError,
     assume_fleet_role_for_worker,
 )
 from .boto3_sessions import BaseBoto3Session, SettableCredentials
+from .temporary_credentials import TemporaryCredentials
 
 _logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ class WorkerBoto3Session(BaseBoto3Session):
             "Requesting AWS Credentials for Worker %s via AssumeFleetRoleForWorker", self._worker_id
         )
 
-        deadline_client = session.client("deadline")
+        deadline_client = session.client("deadline", config=DEADLINE_BOTOCORE_CONFIG)
         try:
             response = assume_fleet_role_for_worker(
                 deadline_client=deadline_client,
