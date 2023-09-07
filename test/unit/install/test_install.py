@@ -73,6 +73,11 @@ def allow_shutdown() -> bool:
 
 
 @pytest.fixture
+def telemetry_opt_out() -> bool:
+    return True
+
+
+@pytest.fixture
 def install_service() -> bool:
     return True
 
@@ -88,6 +93,7 @@ def parsed_args(
     confirmed: bool,
     allow_shutdown: bool,
     install_service: bool,
+    telemetry_opt_out: bool,
 ) -> ParsedCommandLineArguments:
     parsed_args = ParsedCommandLineArguments()
     parsed_args.farm_id = farm_id
@@ -99,6 +105,7 @@ def parsed_args(
     parsed_args.confirmed = confirmed
     parsed_args.allow_shutdown = allow_shutdown
     parsed_args.install_service = install_service
+    parsed_args.telemetry_opt_out = telemetry_opt_out
     return parsed_args
 
 
@@ -131,8 +138,8 @@ def expected_cmd(
         parsed_args.region,
         "--user",
         parsed_args.user,
-        "--worker-agent-program",
-        os.path.join(sysconfig.get_path("scripts"), "deadline-worker-agent"),
+        "--scripts-path",
+        sysconfig.get_path("scripts"),
     ]
     if parsed_args.group is not None:
         expected_cmd.extend(("--group", parsed_args.group))
@@ -142,6 +149,8 @@ def expected_cmd(
         expected_cmd.append("--start")
     if parsed_args.allow_shutdown:
         expected_cmd.append("--allow-shutdown")
+    if parsed_args.telemetry_opt_out:
+        expected_cmd.append("--telemetry-opt-out")
     return expected_cmd
 
 
@@ -216,6 +225,12 @@ class TestInstallRunsCommand:
         params=(True, False),
     )
     def allow_shutdown(self, request: pytest.FixtureRequest) -> bool:
+        return request.param
+
+    @pytest.fixture(
+        params=(True, False),
+    )
+    def telemetry_opt_out(self, request: pytest.FixtureRequest) -> bool:
         return request.param
 
     @pytest.fixture(
