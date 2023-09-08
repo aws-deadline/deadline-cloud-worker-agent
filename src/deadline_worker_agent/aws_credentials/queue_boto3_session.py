@@ -73,9 +73,6 @@ class QueueBoto3Session(BaseBoto3Session):
     # Basename of the filename (minus extension) of the file that credentials are written to
     _credentials_filename: str
 
-    # Location of the credentials process script written to disk
-    _credentials_process_script_path: Path
-
     _aws_config: AWSConfig
     _aws_credentials: AWSCredentials
 
@@ -91,8 +88,7 @@ class QueueBoto3Session(BaseBoto3Session):
         interrupt_event: Event,
         worker_persistence_dir: Path,
     ) -> None:
-        if os.name != "posix":
-            raise NotImplementedError("Windows not supported.")
+        
         super().__init__()
 
         self._deadline_client = deadline_client
@@ -110,7 +106,6 @@ class QueueBoto3Session(BaseBoto3Session):
         self._credentials_filename = (
             "aws_credentials"  # note: .json extension added by JSONFileCache
         )
-        self._credentials_process_script_path = self._credential_dir / "get_aws_credentials.sh"
 
         self._aws_config = AWSConfig(self._os_user)
         self._aws_credentials = AWSCredentials(self._os_user)
@@ -294,26 +289,11 @@ class QueueBoto3Session(BaseBoto3Session):
             self._profile_name,
         )
 
-        # write the credential process script and set permissions
-        mode: int = stat.S_IRWXU
-        if self._os_user is not None:
-            mode |= stat.S_IRGRP | stat.S_IXGRP
-        descriptor = os.open(
-            path=str(self._credentials_process_script_path),
-            flags=os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-            mode=mode,
-        )
-        with open(descriptor, mode="w", encoding="utf-8") as f:
-            f.write(self._generate_credential_process_script())
-            if self._os_user is not None:
-                assert isinstance(self._os_user, PosixSessionUser)
-                shutil.chown(self._credentials_process_script_path, group=self._os_user.group)
-
         # install credential process to /home/<job-user>/.aws/config and
         # /home/<job-user>/.aws/credentials
         for aws_cred_file in (self._aws_config, self._aws_credentials):
             aws_cred_file.install_credential_process(
-                self._profile_name, self._credentials_process_script_path
+                self._profile_name, self._generate_credential_process_script()
             )
 
     def _generate_credential_process_script(self) -> str:
@@ -321,9 +301,14 @@ class QueueBoto3Session(BaseBoto3Session):
         Generates the bash script which generates the credentials as JSON output on STDOUT.
         This script will be used by the installed credential process.
         """
-        return ("#!/bin/bash\nset -eu\ncat {0}\n").format(
-            (self._credential_dir / self._credentials_filename).with_suffix(".json")
-        )
+        if os.name== "posix":
+            return ("cat {0}\n").format(
+                (self._credential_dir / self._credentials_filename).with_suffix(".json")
+            )
+        else:
+            return ("cmd.exe /C type {0}\n").format(
+                (self._credential_dir / self._credentials_filename).with_suffix(".json")
+            )
 
     def _uninstall_credential_process(self) -> None:
         """

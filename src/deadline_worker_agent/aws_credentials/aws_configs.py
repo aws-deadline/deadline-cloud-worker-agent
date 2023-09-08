@@ -97,16 +97,16 @@ class _AWSConfigBase(ABC):
         # finally, read the config
         self._config_parser.read(self._config_path)
 
-    def install_credential_process(self, profile_name: str, script_path: Path) -> None:
+    def install_credential_process(self, profile_name: str, script: str) -> None:
         """
-        Installs a credential process given the profile name and script path
+        Installs a credential process given the profile name and script
 
         Args:
             profile_name (str): The profile name to install under
-            script_path (Path): The script to call in the process
+            script_path (str): The script to call in the process
         """
         self._config_parser[self._get_profile_name(profile_name)] = {
-            "credential_process": str(script_path.absolute())
+            "credential_process": script
         }
         self._write()
 
