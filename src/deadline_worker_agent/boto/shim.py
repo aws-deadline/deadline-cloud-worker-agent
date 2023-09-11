@@ -281,7 +281,7 @@ class DeadlineClient:
                             "jobId": "job-21432d89b44a46cbaaeb2f1d5254e548",
                             "attachments": {
                                 "manifests": [],
-                                "assetLoadingMethod": "PRELOAD",
+                                "fileSystem": "COPIED",
                             },
                         },
                     },

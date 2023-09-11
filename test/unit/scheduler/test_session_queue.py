@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, Mock, patch
 from collections import OrderedDict
 
-from deadline.job_attachments.models import AssetLoadingMethod
+from deadline.job_attachments.models import JobAttachmentsFileSystem
 from openjd.model import SchemaVersion, UnsupportedSchema
 from openjd.model.v2023_09 import (
     Environment,
@@ -170,7 +170,7 @@ class TestSessionActionQueueDequeue:
                 SyncInputJobAttachmentsAction(
                     id="id",
                     job_attachment_details=JobAttachmentDetails(
-                        asset_loading_method=AssetLoadingMethod.PRELOAD,
+                        job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
                         manifests=[],
                     ),
                 ),
