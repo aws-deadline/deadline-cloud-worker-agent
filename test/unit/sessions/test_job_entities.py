@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Generator
 from unittest.mock import MagicMock, patch
 
-from deadline.job_attachments.models import AssetLoadingMethod
+from deadline.job_attachments.models import JobAttachmentsFileSystem
 from openjd.model import SchemaVersion
 from openjd.model.v2023_09 import (
     Action,
@@ -464,9 +464,7 @@ class TestDetails:
         details_boto = JobAttachmentDetailsBoto(
             jobAttachmentDetails=JobAttachmentDetailsData(
                 jobId=job_id,
-                attachments=Attachments(
-                    manifests=[], assetLoadingMethod=AssetLoadingMethod.PRELOAD
-                ),
+                attachments=Attachments(manifests=[], fileSystem=JobAttachmentsFileSystem.COPIED),
             )
         )
         response: BatchGetJobEntityResponse = {
@@ -474,7 +472,7 @@ class TestDetails:
             "errors": [],
         }
         expected_details = JobAttachmentDetails(
-            manifests=[], asset_loading_method=AssetLoadingMethod.PRELOAD
+            manifests=[], job_attachments_file_system=JobAttachmentsFileSystem.COPIED
         )
         deadline_client.batch_get_job_entity.return_value = response
         job_entities = JobEntities(

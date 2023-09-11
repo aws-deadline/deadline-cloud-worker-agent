@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from openjd.sessions import Parameter, ParameterType
-from deadline.job_attachments.models import AssetLoadingMethod
+from deadline.job_attachments.models import JobAttachmentsFileSystem
 
 from ...api_models import (
     FloatParameter,
@@ -84,7 +84,7 @@ class JobAttachmentDetails:
     Each item in the list specifies its path, required input assets, and output assets.
     """
 
-    asset_loading_method: AssetLoadingMethod = AssetLoadingMethod.PRELOAD
+    job_attachments_file_system: JobAttachmentsFileSystem = JobAttachmentsFileSystem.COPIED
     """Method to use when loading assets required for a job"""
 
     @classmethod
@@ -126,9 +126,9 @@ class JobAttachmentDetails:
                 )
                 for manifest_properties in job_attachments_details_data["attachments"]["manifests"]
             ],
-            asset_loading_method=AssetLoadingMethod(
+            job_attachments_file_system=JobAttachmentsFileSystem(
                 job_attachments_details_data["attachments"].get(
-                    "assetLoadingMethod", AssetLoadingMethod.PRELOAD
+                    "fileSystem", JobAttachmentsFileSystem.COPIED
                 )
             ),
         )
@@ -185,7 +185,7 @@ class JobAttachmentDetails:
                                 Field(key="inputManifestHash", expected_type=str, required=False),
                             ),
                         ),
-                        Field(key="assetLoadingMethod", expected_type=str, required=False),
+                        Field(key="fileSystem", expected_type=str, required=False),
                     ),
                 ),
             ),
