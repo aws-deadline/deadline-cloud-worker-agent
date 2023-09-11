@@ -761,6 +761,8 @@ class Session:
                     progress=job_upload_status.progress,
                 ),
             )
+            ASSET_SYNC_LOGGER.info(job_upload_status.progressMessage)
+
             return not cancel.is_set()
 
         if not (job_attachment_settings := self._job_details.job_attachment_settings):
