@@ -328,7 +328,7 @@ class Attachments(TypedDict):
     manifests: list[ManifestProperties]
     """A list of all manifests and their configuration"""
 
-    assetLoadingMethod: NotRequired[str]
+    fileSystem: NotRequired[str]
     """Method to use when loading assets required for a job"""
 
 

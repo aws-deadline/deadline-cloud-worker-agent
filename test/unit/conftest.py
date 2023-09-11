@@ -10,7 +10,7 @@ from pytest import FixtureRequest
 from typing import Generator, Optional
 
 from deadline.job_attachments.models import (
-    AssetLoadingMethod,
+    JobAttachmentsFileSystem,
     Attachments,
     ManifestProperties,
     PathFormat,
@@ -215,19 +215,19 @@ def job_attachment_manifest_properties(
 
 
 @pytest.fixture
-def asset_loading_method() -> AssetLoadingMethod:
-    return AssetLoadingMethod.PRELOAD
+def job_attachments_file_system() -> JobAttachmentsFileSystem:
+    return JobAttachmentsFileSystem.COPIED
 
 
 @pytest.fixture
 def job_attachment_details(
     job_attachment_manifest_properties: JobAttachmentManifestProperties,
-    asset_loading_method: AssetLoadingMethod,
+    job_attachments_file_system: JobAttachmentsFileSystem,
 ) -> JobAttachmentDetails | None:
     """Job attachment settings for the job"""
     return JobAttachmentDetails(
         manifests=[job_attachment_manifest_properties],
-        asset_loading_method=asset_loading_method,
+        job_attachments_file_system=job_attachments_file_system,
     )
 
 
