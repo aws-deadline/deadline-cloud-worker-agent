@@ -811,7 +811,7 @@ class Session:
 
         attachments = Attachments(
             manifests=manifest_properties_list,
-            assetLoadingMethod=self._job_attachment_details.asset_loading_method,
+            fileSystem=self._job_attachment_details.job_attachments_file_system,
         )
 
         storage_profiles_path_mapping_rules_dict: dict[str, str] = {
@@ -1070,7 +1070,7 @@ class Session:
 
         attachments = Attachments(
             manifests=manifest_properties_list,
-            assetLoadingMethod=job_attachment_details.asset_loading_method,
+            fileSystem=job_attachment_details.job_attachments_file_system,
         )
 
         storage_profiles_path_mapping_rules_dict: dict[str, str] = {
