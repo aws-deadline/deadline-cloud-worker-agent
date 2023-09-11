@@ -45,7 +45,7 @@ from deadline_worker_agent.sessions.job_entities import (
 )
 from deadline.job_attachments.models import (
     Attachments,
-    AssetLoadingMethod,
+    JobAttachmentsFileSystem,
     PosixFileSystemPermissionSettings,
 )
 import deadline_worker_agent.sessions.session as session_mod
@@ -510,17 +510,19 @@ class TestSessionSyncAssetInputs:
         with patch.object(session, "_asset_sync") as mock_asset_sync:
             yield mock_asset_sync
 
-    # This overrides the asset_loading_method fixture in tests/unit/conftest.py which feeds into
+    # This overrides the job_attachments_file_system fixture in tests/unit/conftest.py which feeds into
     # the job_attachment_details fixture
-    @pytest.mark.parametrize("asset_loading_method", [e.value for e in AssetLoadingMethod])
+    @pytest.mark.parametrize(
+        "job_attachments_file_system", [e.value for e in JobAttachmentsFileSystem]
+    )
     def test_asset_loading_method(
         self,
         session: Session,
-        asset_loading_method: AssetLoadingMethod,
+        job_attachments_file_system: JobAttachmentsFileSystem,
         mock_asset_sync: MagicMock,
         job_attachment_details: JobAttachmentDetails,
     ) -> None:
-        """Tests that the asset_loading_method specified in session._job_details is properly passed to the sync_inputs function"""
+        """Tests that the job_attachments_file_system specified in session._job_details is properly passed to the sync_inputs function"""
         # GIVEN
         mock_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
         mock_sync_inputs.return_value = ({}, {})
@@ -539,7 +541,7 @@ class TestSessionSyncAssetInputs:
             session_dir=ANY,
             attachments=Attachments(
                 manifests=ANY,
-                assetLoadingMethod=asset_loading_method,
+                fileSystem=job_attachments_file_system,
             ),
             fs_permission_settings=PosixFileSystemPermissionSettings(
                 os_group="some-group",
@@ -559,7 +561,7 @@ class TestSessionSyncAssetInputs:
                     {
                         "job_attachment_details": JobAttachmentDetails(
                             manifests=[],
-                            asset_loading_method="PRELOAD",
+                            job_attachments_file_system="COPIED",
                         )
                     }
                 ],
@@ -570,7 +572,7 @@ class TestSessionSyncAssetInputs:
                     {
                         "job_attachment_details": JobAttachmentDetails(
                             manifests=[],
-                            asset_loading_method="PRELOAD",
+                            job_attachments_file_system="COPIED",
                         )
                     },
                     {"step_dependencies": ["step-1"]},
