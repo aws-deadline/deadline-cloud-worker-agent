@@ -2,11 +2,11 @@
 
 import pytest
 
-from deadline.job_attachments.models import AssetLoadingMethod
+from deadline.job_attachments.models import JobAttachmentsFileSystem
 from deadline_worker_agent.sessions.job_entities.job_attachment_details import JobAttachmentDetails
 
 
-@pytest.mark.parametrize("loading_method", [e.value for e in AssetLoadingMethod])
+@pytest.mark.parametrize("loading_method", [e.value for e in JobAttachmentsFileSystem])
 def test_asset_loading_method(loading_method):
     """Test that the loading method is read from the boto data into JobAttachmentDetails"""
     entity_obj = JobAttachmentDetails.from_boto(
@@ -14,13 +14,13 @@ def test_asset_loading_method(loading_method):
             "jobId": "myjob",
             "attachments": {
                 "manifests": [],
-                "assetLoadingMethod": loading_method,
+                "fileSystem": loading_method,
             },
         },
     )
 
     assert entity_obj is not None
-    assert entity_obj.asset_loading_method == loading_method
+    assert entity_obj.job_attachments_file_system == loading_method
 
 
 def test_asset_loading_method_default():
@@ -35,4 +35,4 @@ def test_asset_loading_method_default():
     )
 
     assert entity_obj is not None
-    assert entity_obj.asset_loading_method == AssetLoadingMethod.PRELOAD
+    assert entity_obj.job_attachments_file_system == JobAttachmentsFileSystem.COPIED
