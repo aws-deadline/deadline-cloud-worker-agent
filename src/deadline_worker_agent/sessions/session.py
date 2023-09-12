@@ -58,7 +58,7 @@ from deadline.job_attachments.models import (
     Attachments,
 )
 from deadline.job_attachments.progress_tracker import ProgressReportMetadata
-from deadline.job_attachments.utils import OperatingSystemFamily
+from deadline.job_attachments._utils import OperatingSystemFamily
 
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError

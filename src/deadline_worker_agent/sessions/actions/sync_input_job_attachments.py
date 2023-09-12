@@ -12,7 +12,7 @@ from logging import getLogger
 from threading import Event
 from typing import Any, TYPE_CHECKING, Optional
 
-from deadline.job_attachments.errors import AssetSyncCancelledError
+from deadline.job_attachments.exceptions import AssetSyncCancelledError
 from openjd.sessions import ActionState, ActionStatus
 
 from ..session import Session

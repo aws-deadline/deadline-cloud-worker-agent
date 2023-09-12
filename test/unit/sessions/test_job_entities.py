@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Generator
 from unittest.mock import MagicMock, patch
 
-from deadline.job_attachments.utils import AssetLoadingMethod
+from deadline.job_attachments._utils import AssetLoadingMethod
 from openjd.model import SchemaVersion
 from openjd.model.v2023_09 import (
     Action,
