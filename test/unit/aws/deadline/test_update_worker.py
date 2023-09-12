@@ -117,7 +117,7 @@ def test_success(
             fleetId=config.fleet_id,
             workerId=worker_id,
             capabilities=config.capabilities.for_update_worker(),
-            targetStatus=status.value,
+            status=status.value,
             hostProperties=host_properties,
         )
     else:
@@ -126,7 +126,7 @@ def test_success(
             fleetId=config.fleet_id,
             workerId=worker_id,
             capabilities=config.capabilities.for_update_worker(),
-            targetStatus=status.value,
+            status=status.value,
         )
 
 
@@ -180,7 +180,7 @@ def test_updates_to_stopped_if_required(
                 fleetId=config.fleet_id,
                 workerId=worker_id,
                 capabilities=config.capabilities.for_update_worker(),
-                targetStatus=WorkerStatus.STARTED.value,
+                status=WorkerStatus.STARTED.value,
                 hostProperties=HOST_PROPERTIES,
             ),
             call(
@@ -188,7 +188,7 @@ def test_updates_to_stopped_if_required(
                 fleetId=config.fleet_id,
                 workerId=worker_id,
                 capabilities=config.capabilities.for_update_worker(),
-                targetStatus=WorkerStatus.STOPPED.value,
+                status=WorkerStatus.STOPPED.value,
                 hostProperties=HOST_PROPERTIES,
             ),
             call(
@@ -196,7 +196,7 @@ def test_updates_to_stopped_if_required(
                 fleetId=config.fleet_id,
                 workerId=worker_id,
                 capabilities=config.capabilities.for_update_worker(),
-                targetStatus=WorkerStatus.STARTED.value,
+                status=WorkerStatus.STARTED.value,
                 hostProperties=HOST_PROPERTIES,
             ),
         )
@@ -300,7 +300,7 @@ def test_reraises_when_updates_to_stopped(
                 fleetId=config.fleet_id,
                 workerId=worker_id,
                 capabilities=config.capabilities.for_update_worker(),
-                targetStatus=WorkerStatus.STARTED.value,
+                status=WorkerStatus.STARTED.value,
                 hostProperties=HOST_PROPERTIES,
             ),
             call(
@@ -308,7 +308,7 @@ def test_reraises_when_updates_to_stopped(
                 fleetId=config.fleet_id,
                 workerId=worker_id,
                 capabilities=config.capabilities.for_update_worker(),
-                targetStatus=WorkerStatus.STOPPED.value,
+                status=WorkerStatus.STOPPED.value,
                 hostProperties=HOST_PROPERTIES,
             ),
         )

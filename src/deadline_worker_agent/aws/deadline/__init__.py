@@ -507,7 +507,7 @@ def update_worker(
         fleetId=config.fleet_id,
         workerId=worker_id,
         capabilities=config.capabilities.for_update_worker(),
-        targetStatus=status.value,
+        status=status.value,
     )
     if host_properties:
         request["hostProperties"] = host_properties
