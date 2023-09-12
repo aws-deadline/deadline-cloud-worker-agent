@@ -2,7 +2,7 @@
 
 import pytest
 
-from deadline.job_attachments.utils import AssetLoadingMethod
+from deadline.job_attachments._utils import AssetLoadingMethod
 from deadline_worker_agent.sessions.job_entities.job_attachment_details import JobAttachmentDetails
 
 

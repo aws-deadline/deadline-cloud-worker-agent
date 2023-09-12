@@ -5,7 +5,7 @@ from concurrent.futures import CancelledError as FutureCancelledError
 from typing import Callable, TYPE_CHECKING
 from unittest.mock import Mock, patch
 
-from deadline.job_attachments.errors import AssetSyncCancelledError
+from deadline.job_attachments.exceptions import AssetSyncCancelledError
 from openjd.sessions import ActionState, ActionStatus
 import pytest
 
@@ -207,7 +207,7 @@ class TestOnDone:
         ),
         ids=(
             "concurrent.futures.CancelledError",
-            "deadline.job_attachments.errors.AssetSyncCancelledError",
+            "deadline.job_attachments.exceptions.AssetSyncCancelledError",
         ),
     )
     def test_handles_cancelation(
@@ -220,7 +220,7 @@ class TestOnDone:
         """Tests that when the future raises one of:
 
         - concurrent.futures.CancelledError (future was canceled before starting)
-        - deadline.job_attachments.errors.AssetSyncCancelledError
+        - deadline.job_attachments.exceptions.AssetSyncCancelledError
 
         that Session.update_action() is called with state=ActionState.CANCELED
         """
@@ -263,7 +263,7 @@ class TestOnDone:
         """Tests that when the future raises one of:
 
         - concurrent.futures.CancelledError (future was canceled before starting)
-        - deadline.job_attachments.errors.AssetSyncCancelledError
+        - deadline.job_attachments.exceptions.AssetSyncCancelledError
 
         that Session.update_action() is called with state=ActionState.CANCELED
         """

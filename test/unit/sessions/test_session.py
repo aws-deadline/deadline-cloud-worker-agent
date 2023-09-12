@@ -44,7 +44,7 @@ from deadline_worker_agent.sessions.job_entities import (
     StepDetails,
 )
 from deadline.job_attachments.models import Attachments
-from deadline.job_attachments.utils import AssetLoadingMethod
+from deadline.job_attachments._utils import AssetLoadingMethod
 import deadline_worker_agent.sessions.session as session_mod
 
 
