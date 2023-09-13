@@ -46,7 +46,7 @@ LOGGING_ALLOW_LIST: Dict[str, LoggingAllowList] = {
     "deadline.AssumeQueueRoleForWorker": {"log_request_url": True},
     "deadline.UpdateWorker": {
         "log_request_url": True,
-        "req_body_keys": ["targetStatus"],
+        "req_body_keys": ["status"],
         "res_body_keys": ["log"],
     },
     "deadline.BatchGetJobEntity": {"log_request_url": True},
