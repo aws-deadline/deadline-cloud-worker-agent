@@ -416,7 +416,7 @@ class DeadlineClient:
         farmId: str,
         fleetId: str,
         workerId: str,
-        targetStatus: Union[str, WorkerStatus],
+        status: Union[str, WorkerStatus],
         capabilities: dict[str, Any] | None = None,
         hostProperties: HostProperties | None = None,
     ) -> UpdateWorkerResponse:
@@ -425,7 +425,7 @@ class DeadlineClient:
                 "farmId": farmId,
                 "fleetId": fleetId,
                 "workerId": workerId,
-                "targetStatus": targetStatus,
+                "status": status,
             }
             if capabilities is not None:
                 request["capabilities"] = capabilities

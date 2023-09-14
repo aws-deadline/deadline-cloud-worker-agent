@@ -416,7 +416,10 @@ class WorkerScheduler:
         given additional new tasks to work on.
         """
         request = dict[str, Any](
-            farmId=self._farm_id, fleetId=self._fleet_id, workerId=self._worker_id, state="STOPPING"
+            farmId=self._farm_id,
+            fleetId=self._fleet_id,
+            workerId=self._worker_id,
+            status="STOPPING",
         )
 
         start_time = monotonic()
