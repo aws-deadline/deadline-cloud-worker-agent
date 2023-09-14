@@ -344,7 +344,7 @@ class TestTransitionToStopping:
 
             # THEN
             api_mock.assert_called_once()
-            assert api_mock.call_args.kwargs["state"] == "STOPPING"
+            assert api_mock.call_args.kwargs["status"] == "STOPPING"
 
     @pytest.mark.parametrize("code", ["ThrottlingException", "InternalServerException"])
     def test_retries_on_exception(self, scheduler: WorkerScheduler, code: str) -> None:
