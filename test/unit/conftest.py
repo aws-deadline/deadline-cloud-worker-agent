@@ -9,8 +9,12 @@ import pytest
 from pytest import FixtureRequest
 from typing import Generator, Optional
 
-from deadline.job_attachments.models import ManifestProperties, Attachments
-from deadline.job_attachments._utils import AssetLoadingMethod, OperatingSystemFamily
+from deadline.job_attachments.models import (
+    AssetLoadingMethod,
+    Attachments,
+    ManifestProperties,
+    OperatingSystemFamily,
+)
 from openjd.model import SchemaVersion
 from openjd.sessions import (
     Parameter,
