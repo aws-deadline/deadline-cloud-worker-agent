@@ -43,8 +43,11 @@ from deadline_worker_agent.sessions.job_entities import (
     JobDetails,
     StepDetails,
 )
-from deadline.job_attachments.models import Attachments
-from deadline.job_attachments._utils import AssetLoadingMethod
+from deadline.job_attachments.models import (
+    Attachments,
+    AssetLoadingMethod,
+    PosixFileSystemPermissionSettings,
+)
 import deadline_worker_agent.sessions.session as session_mod
 
 
@@ -494,27 +497,31 @@ class TestSessionSyncAssetInputs:
         mock_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
         mock_sync_inputs.return_value = ({}, {})
         cancel = Event()
-        with (patch.object(session, "_recursive_change_fs_group", return_value=()),):
-            # WHEN
-            session.sync_asset_inputs(
-                cancel=cancel,
-                job_attachment_details=job_attachment_details,
-            )
+        # WHEN
+        session.sync_asset_inputs(
+            cancel=cancel,
+            job_attachment_details=job_attachment_details,
+        )
 
-            # THEN
-            mock_sync_inputs.assert_called_with(
-                s3_settings=ANY,
-                queue_id=ANY,
-                job_id=ANY,
-                session_dir=ANY,
-                attachments=Attachments(
-                    manifests=ANY,
-                    assetLoadingMethod=asset_loading_method,
-                ),
-                storage_profiles_path_mapping_rules={},
-                step_dependencies=None,
-                on_downloading_files=ANY,
-            )
+        # THEN
+        mock_sync_inputs.assert_called_with(
+            s3_settings=ANY,
+            queue_id=ANY,
+            job_id=ANY,
+            session_dir=ANY,
+            attachments=Attachments(
+                manifests=ANY,
+                assetLoadingMethod=asset_loading_method,
+            ),
+            fs_permission_settings=PosixFileSystemPermissionSettings(
+                os_group="some-group",
+                dir_mode=0o20,
+                file_mode=0o20,
+            ),
+            storage_profiles_path_mapping_rules={},
+            step_dependencies=None,
+            on_downloading_files=ANY,
+        )
 
     @pytest.mark.parametrize(
         "sync_asset_inputs_args_sequence, expected_error",
@@ -568,17 +575,16 @@ class TestSessionSyncAssetInputs:
         mock_sync_inputs.return_value = ({}, {})
         cancel = Event()
 
-        with (patch.object(session, "_recursive_change_fs_group", return_value=()),):
-            for args in sync_asset_inputs_args_sequence:
-                if expected_error:
-                    with pytest.raises(RuntimeError) as raise_ctx:
-                        session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
-                    assert (
-                        raise_ctx.value.args[0]
-                        == "Job attachments must be synchronized before downloading Step dependencies."
-                    )
-                else:
+        for args in sync_asset_inputs_args_sequence:
+            if expected_error:
+                with pytest.raises(RuntimeError) as raise_ctx:
                     session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
+                assert (
+                    raise_ctx.value.args[0]
+                    == "Job attachments must be synchronized before downloading Step dependencies."
+                )
+            else:
+                session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
 
     def test_job_attachments_path_mapping_rules_compatibility(
         self,
@@ -617,10 +623,9 @@ class TestSessionSyncAssetInputs:
             )
         }
 
-        with (patch.object(session, "_recursive_change_fs_group", return_value=()),):
-            # WHEN / THEN
-            session.sync_asset_inputs(cancel=cancel, **sync_asset_inputs_args)  # type: ignore[arg-type]
-            # No errors on generating path mapping rules - success!
+        # WHEN / THEN
+        session.sync_asset_inputs(cancel=cancel, **sync_asset_inputs_args)  # type: ignore[arg-type]
+        # No errors on generating path mapping rules - success!
 
 
 class TestSessionInnerRun:
