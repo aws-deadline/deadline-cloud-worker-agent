@@ -21,7 +21,7 @@ from openjd.model.v2023_09 import (
 from openjd.sessions import (
     ActionState,
     ActionStatus,
-    PathMappingOS,
+    PathFormat,
     PathMappingRule,
     SessionUser,
     PosixSessionUser,
@@ -287,7 +287,7 @@ class TestSessionInit:
             pytest.param(
                 [
                     PathMappingRule(
-                        source_os=PathMappingOS.POSIX,
+                        source_path_format=PathFormat.POSIX,
                         source_path=PurePosixPath("/source/path"),
                         destination_path=PurePosixPath("/dest/path"),
                     )
@@ -297,12 +297,12 @@ class TestSessionInit:
             pytest.param(
                 [
                     PathMappingRule(
-                        source_os=PathMappingOS.POSIX,
+                        source_path_format=PathFormat.POSIX,
                         source_path=PurePosixPath("/source/path"),
                         destination_path=PurePosixPath("/dest/path"),
                     ),
                     PathMappingRule(
-                        source_os=PathMappingOS.WINDOWS,
+                        source_path_format=PathFormat.WINDOWS,
                         source_path=PureWindowsPath("C:/windows/source/path"),
                         destination_path=PurePosixPath("/linux/dest/path"),
                     ),

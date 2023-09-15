@@ -10,7 +10,7 @@ from openjd.model import SchemaVersion, UnsupportedSchema
 from openjd.sessions import (
     Parameter,
     ParameterType,
-    PathMappingOS,
+    PathFormat,
     PosixSessionUser,
 )
 from openjd.sessions import PathMappingRule as OPENJDPathMappingRule
@@ -70,20 +70,18 @@ def path_mapping_api_model_to_openjd(
             if "sourcePathFormat" in api_rule
             else api_rule["sourceOs"]
         )
-        source_path_format: PathMappingOS = (
-            PathMappingOS.WINDOWS
-            if api_source_path_format.lower() == "windows"
-            else PathMappingOS.POSIX
+        source_path_format: PathFormat = (
+            PathFormat.WINDOWS if api_source_path_format.lower() == "windows" else PathFormat.POSIX
         )
         source_path: PurePath = (
             PureWindowsPath(api_rule["sourcePath"])
-            if source_path_format == PathMappingOS.WINDOWS
+            if source_path_format == PathFormat.WINDOWS
             else PurePosixPath(api_rule["sourcePath"])
         )
         destination_path: PurePath = PurePath(api_rule["destinationPath"])
         rules.append(
             OPENJDPathMappingRule(
-                source_os=source_path_format,
+                source_path_format=source_path_format,
                 source_path=source_path,
                 destination_path=destination_path,
             )
