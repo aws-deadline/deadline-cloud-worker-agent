@@ -49,6 +49,7 @@ from deadline.job_attachments.models import (
     JobAttachmentsFileSystem,
     PosixFileSystemPermissionSettings,
 )
+from deadline.job_attachments.progress_tracker import ProgressReportMetadata, ProgressStatus
 import deadline_worker_agent.sessions.session as session_mod
 
 
@@ -616,6 +617,52 @@ class TestSessionSyncAssetInputs:
                 )
             else:
                 session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
+
+    def test_sync_asset_inputs_cacellation_by_low_transfer_rate(
+        self,
+        session: Session,
+        mock_asset_sync: MagicMock,
+    ):
+        """
+        Tests that the session is failed if the sync_inputs function reports successive
+        low transfer rates.
+        """
+        LOW_TRANSFER_COUNT_THRESHOLD = 2
+
+        # Mock out the AssetSync's sync_inputs function to simulate multiple
+        # consecutive low transfer rates.
+        def mock_sync_inputs(on_downloading_files, *args, **kwargs):
+            low_transfer_rate_report = ProgressReportMetadata(
+                status=ProgressStatus.DOWNLOAD_IN_PROGRESS,
+                progress=0.0,
+                transferRate=10,
+                progressMessage="",
+            )
+            for _ in range(LOW_TRANSFER_COUNT_THRESHOLD):
+                on_downloading_files(low_transfer_rate_report)
+            return ({}, {})
+
+        mock_asset_sync.sync_inputs = mock_sync_inputs
+        mock_cancel = MagicMock(spec=Event)
+
+        with patch.object(session, "update_action") as mock_update_action:
+            session.sync_asset_inputs(
+                cancel=mock_cancel,
+                job_attachment_details=JobAttachmentDetails(
+                    manifests=[],
+                    job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
+                ),
+            )
+        mock_cancel.set.assert_called_once()
+        mock_update_action.assert_called_with(
+            action_status=ActionStatus(
+                state=ActionState.FAILED,
+                fail_message=(
+                    "Input syncing failed due to successive low transfer rates (< 50 Kb/s). "
+                    "The transfer rate was below the threshold for the last two checks."
+                ),
+            ),
+        )
 
 
 class TestSessionInnerRun:

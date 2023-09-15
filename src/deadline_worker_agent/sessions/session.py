@@ -765,12 +765,50 @@ class Session:
         if self._asset_sync is None:
             return
 
-        def progress_handler(job_upload_status: ProgressReportMetadata) -> bool:
+        # A transfer rate below 50 Kb/s is considered concerning or potentially stalled.
+        TRANSFER_RATE_THRESHOLD = 50 * 10**3  # 50 KB/s
+        # Each progress report callback takes 1 min, so 2 reports amount to 2 mins in total
+        LOW_TRANSFER_COUNT_THRESHOLD = 2
+        low_transfer_count = 0
+
+        def progress_handler(job_attachment_download_status: ProgressReportMetadata) -> bool:
+            """
+            Callback for Job Attachments' sync_inputs() to track the the file transfer progress.
+            It performs checks on the tarnsfer rate and decides whether to continue the process.
+
+            Args:
+                job_attachment_download_status: contains information about the currenet progress.
+
+            Returns:
+                True if the operation should continue as normal or False to cancel.
+            """
+            # Check the trasfer rate from the progress report. Counts the successive low transfer
+            # rates, and if the count exceeds the spcified threshold, cancels the download and
+            # fails the current (sync_input_job_attachments) action.
+            nonlocal low_transfer_count
+            transfer_rate = job_attachment_download_status.transferRate
+            if transfer_rate < TRANSFER_RATE_THRESHOLD:
+                low_transfer_count += 1
+            else:
+                low_transfer_count = 0
+            if low_transfer_count >= LOW_TRANSFER_COUNT_THRESHOLD:
+                cancel.set()
+                self.update_action(
+                    action_status=ActionStatus(
+                        state=ActionState.FAILED,
+                        fail_message=(
+                            "Input syncing failed due to successive low transfer rates (< 50 Kb/s). "
+                            "The transfer rate was below the threshold for the last two checks."
+                        ),
+                    ),
+                )
+                return False
+
             self.update_action(
                 action_status=ActionStatus(
                     state=ActionState.RUNNING,
-                    status_message=job_upload_status.progressMessage,
-                    progress=job_upload_status.progress,
+                    status_message=job_attachment_download_status.progressMessage,
+                    progress=job_attachment_download_status.progress,
                 ),
             )
             return not cancel.is_set()
