@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, Mock, patch
 from collections import OrderedDict
 
-from deadline.job_attachments._utils import AssetLoadingMethod
+from deadline.job_attachments.models import AssetLoadingMethod
 from openjd.model import SchemaVersion, UnsupportedSchema
 from openjd.model.v2023_09 import (
     Environment,
