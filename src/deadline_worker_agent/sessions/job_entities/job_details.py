@@ -206,17 +206,7 @@ class JobDetails:
             or None
         )
 
-        # TODO - Remove from here
-        job_schema_version = job_details_data["schemaVersion"]
-        if job_schema_version not in ("jobtemplate-2023-09", "2022-09-01"):
-            UnsupportedSchema(job_schema_version)
-        # Note: 2023-09 & 2022-09-01 are identical as far as the worker agent is concerned.
-        schema_version = SchemaVersion.v2023_09
-        # -- to here once the migration to the new schema version is complete
-
-        # TODO - Put this back in once the migration to the new schema version is complete.
-        # schema_version = SchemaVersion(job_details_data["schemaVersion"])
-        # --
+        schema_version = SchemaVersion(job_details_data["schemaVersion"])
 
         if schema_version != SchemaVersion.v2023_09:
             raise UnsupportedSchema(schema_version.value)
