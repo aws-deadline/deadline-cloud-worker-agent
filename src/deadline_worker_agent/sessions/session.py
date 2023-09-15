@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from os import chmod
+import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, fields
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from logging import getLogger, LoggerAdapter
-from pathlib import Path
-from shutil import chown
 from threading import Event, RLock
 from time import monotonic, sleep
 from types import TracebackType
@@ -53,12 +51,13 @@ from openjd.sessions import LOG as OPENJD_LOG
 from deadline.job_attachments.asset_sync import AssetSync
 from deadline.job_attachments.asset_sync import logger as ASSET_SYNC_LOGGER
 from deadline.job_attachments.models import (
-    ManifestProperties,
-    JobAttachmentS3Settings,
     Attachments,
+    PosixFileSystemPermissionSettings,
+    JobAttachmentS3Settings,
+    ManifestProperties,
+    OperatingSystemFamily,
 )
 from deadline.job_attachments.progress_tracker import ProgressReportMetadata
-from deadline.job_attachments._utils import OperatingSystemFamily
 
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
@@ -764,8 +763,6 @@ class Session:
             return not cancel.is_set()
 
         if not (job_attachment_settings := self._job_details.job_attachment_settings):
-            if self._os_user is not None:
-                self._recursive_change_fs_group(self._session.working_directory)
             raise RuntimeError("Job attachment settings were not contained in JOB_DETAILS entity")
 
         if job_attachment_details:
@@ -792,7 +789,7 @@ class Session:
                     ManifestProperties(
                         rootPath=manifest_properties.root_path,
                         fileSystemLocationName=manifest_properties.file_system_location_name,
-                        osType=OperatingSystemFamily.get_os_family(manifest_properties.os_type),
+                        osType=OperatingSystemFamily(manifest_properties.os_type),
                         inputManifestPath=manifest_properties.input_manifest_path,
                         inputManifestHash=manifest_properties.input_manifest_hash,
                         outputRelativeDirectories=manifest_properties.output_relative_directories,
@@ -809,6 +806,22 @@ class Session:
             for rule in self._job_details.path_mapping_rules
         }
 
+        fs_permission_settings = None
+        if self._os_user is not None:
+            if os.name == "posix":
+                if not isinstance(self._os_user, PosixSessionUser):
+                    raise ValueError(f"The user must be a posix-user. Got {type(self._os_user)}")
+                fs_permission_settings = PosixFileSystemPermissionSettings(
+                    os_group=self._os_user.group,
+                    dir_mode=0o20,
+                    file_mode=0o20,
+                )
+            else:
+                # TODO: Support Windows file system permission settings
+                raise NotImplementedError(
+                    "File system permission settings for non-posix systems are not currently supported."
+                )
+
         # Add path mapping rules for root paths in job attachments
         ASSET_SYNC_LOGGER.info("Syncing inputs using Job Attachments")
         (download_summary_statistics, path_mapping_rules) = self._asset_sync.sync_inputs(
@@ -817,6 +830,7 @@ class Session:
             queue_id=self._queue_id,  # only used for error message
             job_id=self._queue._job_id,  # only used for error message
             session_dir=self._session.working_directory,
+            fs_permission_settings=fs_permission_settings,
             storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
             step_dependencies=step_dependencies,
             on_downloading_files=progress_handler,
@@ -858,26 +872,6 @@ class Session:
         # rules that are subsets of each other behave in a predictable manner. We must
         # sort here since we're modifying that internal list appending to the list.
         self._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
-
-        # Open Job Description sessions handles the working directory,
-        # but JobAttachments adds files afterwards
-        if self._os_user is not None:
-            self._recursive_change_fs_group(self._session.working_directory)
-
-    def _recursive_change_fs_group(self, path: Path) -> None:
-        """
-        Recursively changes the group owner of the file-system path to group with the same name as
-        the step user. This can be used to allow paths written by the Worker Agent to be accessible
-        by the session actions.
-        """
-        # The user that we're impersonating must be set prior to calling this function.
-        assert isinstance(self._os_user, PosixSessionUser)
-        chown(path, group=self._os_user.group)
-        stat = path.stat()
-        chmod(path, stat.st_mode | 0o20)
-        if path.is_dir():
-            for child_path in path.iterdir():
-                self._recursive_change_fs_group(child_path)
 
     def update_action(self, action_status: ActionStatus) -> None:
         """Callback called on every Open Job Description status/progress update and the completion/exit of the
@@ -1061,7 +1055,7 @@ class Session:
                 ManifestProperties(
                     manifest_properties.root_path,
                     manifest_properties.file_system_location_name,
-                    OperatingSystemFamily.get_os_family(manifest_properties.os_type),
+                    OperatingSystemFamily(manifest_properties.os_type),
                     manifest_properties.input_manifest_path,
                     manifest_properties.input_manifest_hash,
                     manifest_properties.output_relative_directories,

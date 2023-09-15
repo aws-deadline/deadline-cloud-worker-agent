@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from openjd.sessions import Parameter, ParameterType
-from deadline.job_attachments._utils import AssetLoadingMethod
+from deadline.job_attachments.models import AssetLoadingMethod
 
 from ...api_models import (
     FloatParameter,
