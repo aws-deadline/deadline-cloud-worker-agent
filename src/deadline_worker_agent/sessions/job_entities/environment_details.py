@@ -44,7 +44,17 @@ class EnvironmentDetails:
             If the environment's Open Job Description schema version not unsupported
         """
 
-        schema_version = SchemaVersion(environment_details_data["schemaVersion"])
+        # TODO - Remove from here
+        env_schema_version = environment_details_data["schemaVersion"]
+        if env_schema_version not in ("jobtemplate-2023-09", "2022-09-01"):
+            UnsupportedSchema(env_schema_version)
+        # Note: 2023-09 & 2022-09-01 are identical as far as the worker agent is concerned.
+        schema_version = SchemaVersion.v2023_09
+        # -- to here once the migration to the new schema version is complete
+
+        # TODO - Put this back in once the migration to the new schema version is complete.
+        # schema_version = SchemaVersion(environment_details_data["schemaVersion"])
+        # --
 
         if schema_version == SchemaVersion.v2023_09:
             environment = parse_model(

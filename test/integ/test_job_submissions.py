@@ -43,7 +43,7 @@ class TestJobSubmissions:
             queue=queue,
             priority=98,
             template={
-                "specificationVersion": "jobtemplate-2023-09",
+                "specificationVersion": "2022-09-01",
                 "name": "Sleep Job",
                 "steps": [
                     {

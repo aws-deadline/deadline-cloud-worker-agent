@@ -47,7 +47,17 @@ class StepDetails:
             If the environment's Open Job Description schema version not unsupported
         """
 
-        schema_version = SchemaVersion(step_details_data["schemaVersion"])
+        # TODO - Remove from here
+        step_schema_version = step_details_data["schemaVersion"]
+        if step_schema_version not in ("jobtemplate-2023-09", "2022-09-01"):
+            UnsupportedSchema(step_schema_version)
+        # Note: 2023-09 & 2022-09-01 are identical as far as the worker agent is concerned.
+        schema_version = SchemaVersion.v2023_09
+        # -- to here once the migration to the new schema version is complete
+
+        # TODO - Put this back in once the migration to the new schema version is complete.
+        # schema_version = SchemaVersion(environment_details_data["schemaVersion"])
+        # --
 
         if schema_version == SchemaVersion.v2023_09:
             step_script = parse_model(model=StepScript_2023_09, obj=step_details_data["template"])
