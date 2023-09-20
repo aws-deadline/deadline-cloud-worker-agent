@@ -393,8 +393,15 @@ class Worker:
                 logger.info(f"Spot {action} happening at {shutdown_time}")
                 # Spot gives the time in UTC with a trailing Z, but Prior to Python 3.11 Python can't handle
                 # the Z so we strip it
-                shutdown_time = datetime.fromisoformat(shutdown_time[:-1])
-                shutdown_time = shutdown_time.replace(tzinfo=timezone.utc)
+                if os.name == "posix":
+                    shutdown_time = datetime.fromisoformat(shutdown_time[:-1]).astimezone(
+                        timezone.utc
+                    )
+                else:
+                    # astimezone() appears to behave differently on Windows, it will make a timestamp that
+                    # is already utc incorrect
+                    shutdown_time = datetime.fromisoformat(shutdown_time[:-1])
+                    shutdown_time = shutdown_time.replace(tzinfo=timezone.utc)
                 current_time = datetime.now(timezone.utc)
                 time_delta = shutdown_time - current_time
                 time_delta_seconds = int(time_delta.total_seconds())

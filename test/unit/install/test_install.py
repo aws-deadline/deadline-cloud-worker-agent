@@ -287,7 +287,6 @@ class TestInstallRunsCommand:
         "aix",
         "emscripten",
         "wasi",
-        "win32",
         "cygwin",
         "darwin",
     ),

@@ -628,20 +628,19 @@ class TestCreateNewSessions:
             queue_log_dir_path.mkdir.assert_called_once_with(mode=0o700, exist_ok=True)
             if mkdir_side_effect:
                 mock_queue_session_log_file_path.assert_not_called()
-            else:
-                mock_queue_session_log_file_path.assert_called_once()
-            if mkdir_side_effect:
                 session_log_file_path.touch.asset_not_called()
             else:
+                mock_queue_session_log_file_path.assert_called_once()
                 session_log_file_path.touch.assert_called_once()
         else:
             if mkdir_side_effect:
                 mock_queue_session_log_file_path.assert_not_called()
+                session_log_file_path.touch.asset_not_called()
             else:
                 mock_queue_session_log_file_path.assert_called_once()
             mock_make_directory.assert_called_once()
-            if mkdir_side_effect:
-                session_log_file_path.touch.asset_not_called()
+            # if mkdir_side_effect:
+            #     session_log_file_path.touch.asset_not_called()
         mock_log_config_from_boto.assert_not_called()
         mock_fail_all_actions.assert_called_once_with(
             assigned_sessions[session_id],

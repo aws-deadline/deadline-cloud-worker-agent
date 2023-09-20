@@ -90,6 +90,7 @@ class TestWindowsCredentialsResolver:
         assert result.group == group
         assert result.password == secret_data["password"]
 
+    @mark.skipif(os.name != "nt", reason="Windows-only test.")
     @patch(
         "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
     )

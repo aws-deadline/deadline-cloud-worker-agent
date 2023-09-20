@@ -1048,10 +1048,15 @@ class WorkerScheduler:
             if not (session_entry := self._sessions.get(session_id, None)):
                 logger.warning("No session found: %s", session_id)
                 continue
-            parameters = SessionLogConfigurationParameters.from_boto(
-                session_spec["logConfiguration"]["parameters"]
-            )
-            session_entry.log_configuration.update(parameters=parameters)
+            try:
+                parameters = SessionLogConfigurationParameters.from_boto(
+                    session_spec["logConfiguration"]["parameters"]
+                )
+                session_entry.log_configuration.update(parameters=parameters)
+            except KeyError:
+                logger.warning(
+                    f"session specifications for {session_id} missing log configuration."
+                )
 
     def shutdown(
         self,
