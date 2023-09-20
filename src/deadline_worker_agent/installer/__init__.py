@@ -11,13 +11,14 @@ import sysconfig
 
 INSTALLER_PATH = {
     "linux": Path(__file__).parent / "install.sh",
+    "win32": Path(__file__).parent / "install.ps1",
 }
 
 
 def install() -> None:
     """Installer entrypoint for the Amazon Deadline Cloud Worker Agent"""
 
-    if sys.platform != "linux":
+    if sys.platform not in ["linux", "win32"]:
         print(f"ERROR: Unsupported platform {sys.platform}")
         sys.exit(1)
 
@@ -26,7 +27,7 @@ def install() -> None:
     worker_agent_program = Path(sysconfig.get_path("scripts")) / "deadline-worker-agent"
 
     cmd = [
-        "sudo",
+        "sudo" if sys.platform == "linux" else "",
         str(INSTALLER_PATH[sys.platform]),
         "--farm-id",
         args.farm_id,

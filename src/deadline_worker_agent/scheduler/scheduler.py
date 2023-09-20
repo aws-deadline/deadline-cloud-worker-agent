@@ -53,7 +53,8 @@ from .session_cleanup import SessionUserCleanupManager
 from .session_queue import SessionActionQueue, SessionActionStatus
 from ..startup.config import ImpersonationOverrides
 from ..utils import MappingWithCallbacks
-
+from ..set_windows_permissions import grant_full_control
+import subprocess
 
 logger = LOGGER
 
@@ -219,7 +220,7 @@ class WorkerScheduler:
         The Worker begins by hydrating its assigned work using the UpdateWorkerSchedule API.
 
         The scheduler then enters a loop of processing assigned actions - creating and deleting
-        Worker sessions as required. If no actions are assigned, the Worke idles for 5 seconds.
+        Worker sessions as required. If no actions are assigned, the Worker idles for 5 seconds.
         If any action completes, finishes cancelation, or if the Worker is done idling, an
         UpdateWorkerSchedule API request is made with any relevant changes specified in the request.
 
@@ -636,8 +637,12 @@ class WorkerScheduler:
             if self._worker_logs_dir:
                 queue_log_dir = self._queue_log_dir_path(queue_id=session_spec["queueId"])
                 try:
-                    queue_log_dir.mkdir(mode=stat.S_IRWXU, exist_ok=True)
-                except OSError:
+                    if os.name == "posix":
+                        queue_log_dir.mkdir(mode=stat.S_IRWXU, exist_ok=True)
+                    else:
+                        queue_log_dir.mkdir(exist_ok=True)
+                        grant_full_control(queue_log_dir.name)
+                except (OSError, subprocess.CalledProcessError):
                     error_msg = (
                         f"Failed to create local session log directory on worker: {queue_log_dir}"
                     )

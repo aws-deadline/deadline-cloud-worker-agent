@@ -91,8 +91,6 @@ class QueueBoto3Session(BaseBoto3Session):
         interrupt_event: Event,
         worker_persistence_dir: Path,
     ) -> None:
-        if os.name != "posix":
-            raise NotImplementedError("Windows not supported.")
         super().__init__()
 
         self._deadline_client = deadline_client
@@ -110,7 +108,11 @@ class QueueBoto3Session(BaseBoto3Session):
         self._credentials_filename = (
             "aws_credentials"  # note: .json extension added by JSONFileCache
         )
-        self._credentials_process_script_path = self._credential_dir / "get_aws_credentials.sh"
+
+        if os.name == "posix":
+            self._credentials_process_script_path = self._credential_dir / "get_aws_credentials.sh"
+        else:
+            self._credentials_process_script_path = self._credential_dir / "get_aws_credentials.cmd"
 
         self._aws_config = AWSConfig(self._os_user)
         self._aws_credentials = AWSCredentials(self._os_user)
@@ -321,9 +323,14 @@ class QueueBoto3Session(BaseBoto3Session):
         Generates the bash script which generates the credentials as JSON output on STDOUT.
         This script will be used by the installed credential process.
         """
-        return ("#!/bin/bash\nset -eu\ncat {0}\n").format(
-            (self._credential_dir / self._credentials_filename).with_suffix(".json")
-        )
+        if os.name == "posix":
+            return ("#!/bin/bash\nset -eu\ncat {0}\n").format(
+                (self._credential_dir / self._credentials_filename).with_suffix(".json")
+            )
+        else:
+            return ("@echo off\ntype {0}\n").format(
+                (self._credential_dir / self._credentials_filename).with_suffix(".json")
+            )
 
     def _uninstall_credential_process(self) -> None:
         """

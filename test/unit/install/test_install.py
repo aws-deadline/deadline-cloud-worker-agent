@@ -258,7 +258,6 @@ class TestInstallRunsCommand:
         "aix",
         "emscripten",
         "wasi",
-        "win32",
         "cygwin",
         "darwin",
     ),
@@ -273,4 +272,4 @@ def test_unsupported_platform_raises(platform: str, capsys: pytest.CaptureFixtur
     assert raise_ctx.value.code == 1
     capture = capsys.readouterr()
 
-    assert capture.out == f"ERROR: Unsupported platform {platform}{os.linesep}"
+    assert capture.out == f"ERROR: Unsupported platform {platform}\n"

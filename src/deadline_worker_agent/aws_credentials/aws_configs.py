@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import stat
-
+import os
 import logging
 from abc import ABC, abstractmethod
 from configparser import ConfigParser
@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 from openjd.sessions import PosixSessionUser, SessionUser
 from subprocess import run, DEVNULL, PIPE, STDOUT
+from ..set_windows_permissions import grant_full_control
 
 __all__ = [
     "AWSConfig",
@@ -28,8 +29,12 @@ def _run_cmd_as(*, user: PosixSessionUser, cmd: list[str]) -> None:
 
 def _setup_parent_dir(*, dir_path: Path, owner: SessionUser | None = None) -> None:
     if owner is None:
-        create_perms: int = stat.S_IRWXU
-        dir_path.mkdir(mode=create_perms, exist_ok=True)
+        if os.name == "posix":
+            create_perms: int = stat.S_IRWXU
+            dir_path.mkdir(mode=create_perms, exist_ok=True)
+        else:
+            dir_path.mkdir(exist_ok=True)
+            grant_full_control(dir_path.name)
     else:
         assert isinstance(owner, PosixSessionUser)
         _run_cmd_as(user=owner, cmd=["mkdir", "-p", str(dir_path)])

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import signal
+import os
 import sys
 import traceback
 from concurrent.futures import Executor, Future, ThreadPoolExecutor, wait
@@ -108,8 +109,10 @@ class Worker:
 
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
-        # TODO: Remove this once WA is stable or put behind a debug flag
-        signal.signal(signal.SIGUSR1, self._output_thread_stacks)
+
+        if os.name == "posix":
+            # TODO: Remove this once WA is stable or put behind a debug flag
+            signal.signal(signal.SIGUSR1, self._output_thread_stacks)  # type: ignore
 
     def _signal_handler(self, signum: int, frame: FrameType | None = None) -> None:
         """
@@ -134,7 +137,7 @@ class Worker:
         This signal is designated for application-defined behaviors. In our case, we want to output
         stack traces for all running threads.
         """
-        if signum in (signal.SIGUSR1,):
+        if signum in (signal.SIGUSR1,):  # type: ignore
             logger.info(f"Received signal {signum}. Initiating application shutdown.")
             # OUTPUT STACK TRACE FOR ALL THREADS
             print("\n*** STACKTRACE - START ***\n", file=sys.stderr)
@@ -156,7 +159,7 @@ class Worker:
 
     @property
     def sessions(self) -> WorkerSessionCollection:
-        raise NotImplementedError("Worker.sessions property not implemeneted")
+        raise NotImplementedError("Worker.sessions property not implemented")
 
     def run(self) -> None:
         """Runs the main Worker loop for processing sessions."""
@@ -373,7 +376,15 @@ class Worker:
                 logger.info(f"Spot {action} happening at {shutdown_time}")
                 # Spot gives the time in UTC with a trailing Z, but Python can't handle
                 # the Z so we strip it
-                shutdown_time = datetime.fromisoformat(shutdown_time[:-1]).astimezone(timezone.utc)
+                if os.name == "posix":
+                    shutdown_time = datetime.fromisoformat(shutdown_time[:-1]).astimezone(
+                        timezone.utc
+                    )
+                else:
+                    # astimezone() appears to behave differently on Windows, it will make a timestamp that
+                    # is already utc incorrect
+                    shutdown_time = datetime.fromisoformat(shutdown_time[:-1])
+                    shutdown_time = shutdown_time.replace(tzinfo=timezone.utc)
                 current_time = datetime.now(timezone.utc)
                 time_delta = shutdown_time - current_time
                 time_delta_seconds = int(time_delta.total_seconds())

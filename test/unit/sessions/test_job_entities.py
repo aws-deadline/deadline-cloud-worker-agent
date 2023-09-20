@@ -18,6 +18,7 @@ from openjd.sessions import PosixSessionUser
 
 
 import pytest
+import os
 
 from deadline_worker_agent.api_models import (
     Attachments,
@@ -174,6 +175,7 @@ class TestJobEntity:
             assert job_details.path_mapping_rules not in (None, [])
             assert len(job_details.path_mapping_rules) == len(path_mapping_rules)
 
+    @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
     def test_job_run_as_user(self) -> None:
         """Ensures that if we receive a job_run_as_user field in the response,
         that the created entity has a (Posix) SessionUser created with the
@@ -250,10 +252,11 @@ class TestJobEntity:
 
         # THEN
         assert not hasattr(entity_obj, "jobs_run_as")
-        assert entity_obj.job_run_as_user is not None
-        assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
-        assert entity_obj.job_run_as_user.posix.user == expected_user
-        assert entity_obj.job_run_as_user.posix.group == expected_group
+        if os.name == "posix":
+            assert entity_obj.job_run_as_user is not None
+            assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
+            assert entity_obj.job_run_as_user.posix.user == expected_user
+            assert entity_obj.job_run_as_user.posix.group == expected_group
 
     # TODO: remove once service no longer sends jobsRunAs
     def test_only_old_jobs_run_as(self) -> None:
@@ -280,10 +283,11 @@ class TestJobEntity:
 
         # THEN
         assert not hasattr(entity_obj, "jobs_run_as")
-        assert entity_obj.job_run_as_user is not None
-        assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
-        assert entity_obj.job_run_as_user.posix.user == expected_user
-        assert entity_obj.job_run_as_user.posix.group == expected_group
+        if os.name == "posix":
+            assert entity_obj.job_run_as_user is not None
+            assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
+            assert entity_obj.job_run_as_user.posix.user == expected_user
+            assert entity_obj.job_run_as_user.posix.group == expected_group
 
     # TODO: remove once service no longer sends jobsRunAs
     def test_only_empty_old_jobs_run_as(self) -> None:

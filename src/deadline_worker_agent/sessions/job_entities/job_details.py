@@ -106,7 +106,7 @@ def job_run_as_user_api_model_to_worker_agent(
         )
     else:
         # TODO: windows support
-        raise NotImplementedError(f"{os.name} is not supported")
+        return None
 
     return job_run_as_user
 
