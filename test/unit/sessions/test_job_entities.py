@@ -115,8 +115,7 @@ class TestJobEntity:
             pytest.param(
                 [
                     {
-                        # TODO: swap to sourcePathFormat once sourceOs removed
-                        "sourceOs": "windows",
+                        "sourcePathFormat": "windows",
                         "sourcePath": "Z:/artist/windows/path",
                         "destinationPath": "/mnt/worker/windows/path",
                     },
@@ -488,7 +487,7 @@ class TestCaching:
                 "manifests": [
                     {
                         "rootPath": "/mnt/share",
-                        "osType": "linux",
+                        "rootPathFormat": "posix",
                         "outputRelativeDirectories": ["output"],
                     }
                 ]

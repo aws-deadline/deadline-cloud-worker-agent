@@ -13,7 +13,7 @@ from deadline.job_attachments.models import (
     AssetLoadingMethod,
     Attachments,
     ManifestProperties,
-    OperatingSystemFamily,
+    PathFormat,
 )
 from openjd.model import SchemaVersion
 from openjd.sessions import (
@@ -144,7 +144,7 @@ def action_id() -> str:
             manifests=[
                 ManifestProperties(
                     rootPath="/tmp",
-                    osType=OperatingSystemFamily.LINUX,
+                    rootPathFormat=PathFormat.POSIX,
                     inputManifestPath="rootPrefix/Manifests/farm-1/queue-1/Inputs/0000/0123_input.xxh128",
                     inputManifestHash="inputmanifesthash",
                     outputRelativeDirectories=["test_outputs"],
@@ -206,7 +206,7 @@ def job_attachment_manifest_properties(
 ) -> JobAttachmentManifestProperties:
     return JobAttachmentManifestProperties(
         root_path="/foo/bar",
-        os_type="linux",
+        root_path_format="posix",
         file_system_location_name="",
         input_manifest_path=f"{queue_job_attachment_settings.root_prefix}/Manifests/{farm_id}/{queue_id}/Inputs/0000/0123_input.xxh128",
         input_manifest_hash="inputmanifesthash",
