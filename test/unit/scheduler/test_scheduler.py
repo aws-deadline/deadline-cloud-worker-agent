@@ -6,7 +6,6 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Generator
 from unittest.mock import ANY, MagicMock, Mock, call, patch
-import time
 
 from openjd.sessions import ActionState, ActionStatus
 from botocore.exceptions import ClientError
@@ -335,45 +334,13 @@ class TestTransitionToStopping:
         """Most basic test. Do we invoke the correct API with the STOPPING state?"""
 
         # GIVEN
-        with patch.object(scheduler, "_deadline") as mock_deadline_client:
-            api_mock = MagicMock()
-            mock_deadline_client.update_worker = api_mock
-
+        with patch.object(scheduler_mod, "update_worker") as mock_update_worker:
             # WHEN
             scheduler._transition_to_stopping(timeout=timedelta(seconds=1))
 
             # THEN
-            api_mock.assert_called_once()
-            assert api_mock.call_args.kwargs["status"] == "STOPPING"
-
-    @pytest.mark.parametrize("code", ["ThrottlingException", "InternalServerException"])
-    def test_retries_on_exception(self, scheduler: WorkerScheduler, code: str) -> None:
-        """Test that we retry when getting a retryable exception."""
-
-        # GIVEN
-        with patch.object(scheduler, "_deadline") as mock_deadline_client:
-            exception = ClientError(
-                error_response={
-                    "Error": {
-                        "Code": code,
-                        "Message": "A message",
-                    },
-                },
-                operation_name="OpName",
-            )
-            api_mock = MagicMock()
-            api_mock.side_effect = (
-                exception,
-                {},
-            )
-            mock_deadline_client.update_worker = api_mock
-
-            # WHEN
-            scheduler._transition_to_stopping(timeout=timedelta(seconds=1))
-
-            # THEN
-            api_mock.assert_called()
-            assert api_mock.call_count == 2
+            mock_update_worker.assert_called_once()
+            assert mock_update_worker.call_args.kwargs["status"] == "STOPPING"
 
     @pytest.mark.parametrize(
         "code",
@@ -405,41 +372,6 @@ class TestTransitionToStopping:
 
             # THEN
             api_mock.assert_called_once()
-
-    def test_limited_backoffs(self, scheduler: WorkerScheduler) -> None:
-        """Test that we do an increasing-duration backoff when throttled."""
-
-        # GIVEN
-
-        def side_effect(*args, **kwargs):
-            time.sleep(0.05)
-            raise ClientError(
-                error_response={
-                    "Error": {
-                        "Code": "ThrottlingException",
-                        "Message": "A message",
-                    },
-                },
-                operation_name="OpName",
-            )
-
-        with (
-            patch.object(scheduler, "_deadline") as mock_deadline_client,
-            patch.object(scheduler_mod, "sleep") as mock_sleep,
-        ):
-            api_mock = MagicMock()
-            api_mock.side_effect = side_effect
-            mock_deadline_client.update_worker = api_mock
-
-            # WHEN
-            scheduler._transition_to_stopping(timeout=timedelta(seconds=1))
-
-            # THEN
-            api_mock.assert_called()
-            assert api_mock.call_count > 1
-            assert mock_sleep.call_count > 2
-            # back-offs are growing in length:
-            assert mock_sleep.call_args_list[0].args[0] < mock_sleep.call_args_list[1].args[0]
 
 
 class TestSchedulerSync:
