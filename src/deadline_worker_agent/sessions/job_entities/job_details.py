@@ -64,12 +64,7 @@ def path_mapping_api_model_to_openjd(
     to the format expected by Open Job Description. effectively camelCase to snake_case"""
     rules: list[OPENJDPathMappingRule] = []
     for api_rule in path_mapping_rules:
-        api_source_path_format = (
-            # delete sourceOs once removed from api response
-            api_rule["sourcePathFormat"]
-            if "sourcePathFormat" in api_rule
-            else api_rule["sourceOs"]
-        )
+        api_source_path_format = api_rule["sourcePathFormat"]
         source_path_format: PathFormat = (
             PathFormat.WINDOWS if api_source_path_format.lower() == "windows" else PathFormat.POSIX
         )
@@ -304,9 +299,7 @@ class JobDetails:
                 validate_object(
                     data=path_mapping_rule,
                     fields=(
-                        # TODO: remove sourceOs and make sourcePathFormat required
-                        Field(key="sourceOs", expected_type=str, required=False),
-                        Field(key="sourcePathFormat", expected_type=str, required=False),
+                        Field(key="sourcePathFormat", expected_type=str, required=True),
                         Field(key="sourcePath", expected_type=str, required=True),
                         Field(key="destinationPath", expected_type=str, required=True),
                     ),

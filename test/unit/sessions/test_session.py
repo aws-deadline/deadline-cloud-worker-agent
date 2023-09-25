@@ -586,47 +586,6 @@ class TestSessionSyncAssetInputs:
             else:
                 session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
 
-    def test_job_attachments_path_mapping_rules_compatibility(
-        self,
-        session: Session,
-        mock_asset_sync: MagicMock,
-    ):
-        """
-        Tests that the path mapping rules received from job_attachments's sync_inputs
-        can use both the older 'source_os' and the newer 'source_path_format' based
-        on whatever fields are required in openjd's PathMappingRule
-
-        Remove this test once both openjd and job_attachments both use source_path_format
-        """
-        # GIVEN
-        mock_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
-        path_mapping_rules = [
-            {
-                # TODO: remove sourceOs once removed
-                "source_os": "windows",
-                "source_path": "Z:/artist/windows/path",
-                "destination_path": "/mnt/worker/windows/path",
-            },
-            {
-                "source_path_format": "posix",
-                "source_path": "/artist/linux",
-                "destination_path": "/mnt/worker/linux",
-            },
-        ]
-        mock_sync_inputs.return_value = ({}, path_mapping_rules)
-        cancel = Event()
-
-        sync_asset_inputs_args = {
-            "job_attachment_details": JobAttachmentDetails(
-                manifests=[],
-                asset_loading_method=AssetLoadingMethod.PRELOAD,
-            )
-        }
-
-        # WHEN / THEN
-        session.sync_asset_inputs(cancel=cancel, **sync_asset_inputs_args)  # type: ignore[arg-type]
-        # No errors on generating path mapping rules - success!
-
 
 class TestSessionInnerRun:
     """Test cases for Session._run()"""
