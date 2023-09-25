@@ -262,12 +262,6 @@ class DeadlineClient:
                             },
                             "pathMappingRules": [
                                 {
-                                    # TODO: remove once sourceOs is removed from response
-                                    "sourceOs": "windows",
-                                    "sourcePath": "C:/windows/path",
-                                    "destinationPath": "/linux/path",
-                                },
-                                {
                                     "sourcePathFormat": "windows",
                                     "sourcePath": "C:/windows/path",
                                     "destinationPath": "/linux/path",
