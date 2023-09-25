@@ -240,7 +240,7 @@ class PosixUser(TypedDict):
     """The posix group name associated with session file ownership"""
 
 
-class JobsRunAs(TypedDict):
+class JobRunAsUser(TypedDict):
     posix: PosixUser
     # TODO: windows support
 
@@ -249,7 +249,11 @@ class JobDetailsData(JobDetailsIdentifierFields):
     jobAttachmentSettings: NotRequired[JobAttachmentQueueSettings]
     """The queue's job attachment settings"""
 
-    jobsRunAs: NotRequired[JobsRunAs | None]
+    # TODO: remove once service no longer sends this
+    jobsRunAs: NotRequired[JobRunAsUser | None]
+    """Deprecated: The queue's info on how to run the job processes (ie. posix user/group)"""
+
+    jobRunAsUser: NotRequired[JobRunAsUser | None]
     """The queue's info on how to run the job processes (ie. posix user/group)"""
 
     logGroupName: str
