@@ -54,8 +54,8 @@ class JobAttachmentManifestProperties:
     root_path: str
     """The input root path to be mapped"""
 
-    os_type: str
-    """The operating system family (linux/windows/macos) associated with the asset's root_path"""
+    root_path_format: str
+    """The operating system family (posix/windows) associated with the asset's root_path"""
 
     file_system_location_name: str | None = None
     """The name of the file system location"""
@@ -122,7 +122,7 @@ class JobAttachmentDetails:
                     input_manifest_path=manifest_properties.get("inputManifestPath", ""),
                     input_manifest_hash=manifest_properties.get("inputManifestHash", ""),
                     root_path=manifest_properties["rootPath"],
-                    os_type=manifest_properties["osType"],
+                    root_path_format=manifest_properties["rootPathFormat"],
                 )
                 for manifest_properties in job_attachments_details_data["attachments"]["manifests"]
             ],
@@ -175,7 +175,7 @@ class JobAttachmentDetails:
                                     required=False,
                                 ),
                                 Field(key="rootPath", expected_type=str, required=True),
-                                Field(key="osType", expected_type=str, required=True),
+                                Field(key="rootPathFormat", expected_type=str, required=True),
                                 Field(
                                     key="outputRelativeDirectories",
                                     expected_type=list,

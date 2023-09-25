@@ -206,8 +206,8 @@ class ManifestProperties(TypedDict):
     fileSystemLocationName: NotRequired[str]
     """The name of the file system location"""
 
-    osType: str
-    """The operating system family (linux/windows/macos) associated with the asset's rootPath"""
+    rootPathFormat: str
+    """The operating system family (posix/windows) associated with the asset's rootPath"""
 
     inputManifestPath: NotRequired[str]
     """A (partial) key path of an S3 object that points to a file manifest.
@@ -222,11 +222,7 @@ class ManifestProperties(TypedDict):
 
 
 class PathMappingRule(TypedDict):
-    # TODO: remove sourceOs and make sourcePathFormat required
-    sourceOs: NotRequired[str]
-    """The operating system family (posix/windows) associated with the source path"""
-
-    sourcePathFormat: NotRequired[str]
+    sourcePathFormat: str
     """The path format associated with the source path (windows vs posix)"""
 
     sourcePath: str
