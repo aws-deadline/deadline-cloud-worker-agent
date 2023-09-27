@@ -419,8 +419,8 @@ def test_system_shutdown_called(
 @pytest.mark.parametrize(
     ("expected_platform", "expected_command"),
     (
-        pytest.param("win32", "shutdown -s", id="windows"),
-        pytest.param("linux", "sudo shutdown now", id="linux"),
+        pytest.param("win32", ["shutdown", "-s"], id="windows"),
+        pytest.param("linux", ["sudo", "shutdown", "now"], id="linux"),
     ),
 )
 @patch.object(entrypoint_mod._logger, "info")
@@ -449,7 +449,6 @@ def test_system_shutdown(
     logger_info_mock.assert_any_call("Shutting down the instance")
     subprocess_popen_mock.assert_called_once_with(
         expected_command,
-        shell=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
@@ -458,8 +457,8 @@ def test_system_shutdown(
 @pytest.mark.parametrize(
     ("expected_platform", "expected_command"),
     (
-        pytest.param("win32", "shutdown -s", id="windows"),
-        pytest.param("linux", "sudo shutdown now", id="linux"),
+        pytest.param("win32", ["shutdown", "-s"], id="windows"),
+        pytest.param("linux", ["sudo", "shutdown", "now"], id="linux"),
     ),
 )
 @patch.object(entrypoint_mod, "_logger")
@@ -495,7 +494,6 @@ def test_system_shutdown_failure(
     logger_mock.info.assert_any_call("Shutting down the instance")
     subprocess_popen_mock.assert_called_once_with(
         expected_command,
-        shell=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
@@ -509,8 +507,8 @@ def test_system_shutdown_failure(
 @pytest.mark.parametrize(
     ("expected_platform", "expected_command"),
     (
-        pytest.param("win32", "shutdown -s", id="windows"),
-        pytest.param("linux", "sudo shutdown now", id="linux"),
+        pytest.param("win32", ["shutdown", "-s"], id="windows"),
+        pytest.param("linux", ["sudo", "shutdown", "now"], id="linux"),
     ),
 )
 @patch.object(entrypoint_mod._logger, "debug")
