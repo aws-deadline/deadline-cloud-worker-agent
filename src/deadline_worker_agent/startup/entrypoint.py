@@ -206,12 +206,12 @@ def _system_shutdown(config: Configuration) -> None:
 
     _logger.info("Shutting down the instance")
 
-    shutdown_command = None
+    shutdown_command: list[str]
 
     if sys.platform == "win32":
-        shutdown_command = "shutdown -s"
+        shutdown_command = ["shutdown", "-s"]
     else:
-        shutdown_command = "sudo shutdown now"
+        shutdown_command = ["sudo", "shutdown", "now"]
 
     if config.no_shutdown:
         _logger.debug(
@@ -227,7 +227,6 @@ def _system_shutdown(config: Configuration) -> None:
         shutdown_command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        shell=True,
     )
     stdout, _ = process.communicate()
     command_output = stdout.decode("utf-8")
