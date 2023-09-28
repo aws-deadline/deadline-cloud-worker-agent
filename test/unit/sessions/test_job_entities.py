@@ -32,7 +32,7 @@ from deadline_worker_agent.api_models import (
     JobDetails as JobDetailsBoto,
     JobDetailsData,
     JobDetailsIdentifier,
-    JobsRunAs,
+    JobRunAsUser,
     PathMappingRule,
     StepDetails as StepDetailsBoto,
     StepDetailsData,
@@ -174,14 +174,95 @@ class TestJobEntity:
             assert job_details.path_mapping_rules not in (None, [])
             assert len(job_details.path_mapping_rules) == len(path_mapping_rules)
 
-    def test_jobs_run_as(self) -> None:
-        """Ensures that if we receive a jobs_run_as field in the response,
+    def test_job_run_as_user(self) -> None:
+        """Ensures that if we receive a job_run_as_user field in the response,
         that the created entity has a (Posix) SessionUser created with the
         proper values"""
         # GIVEN
         expected_user = "job-user"
         expected_group = "job-group"
-        entity_data: JobDetailsData = {
+        api_response: dict = {
+            "jobId": "job-123",
+            "jobRunAsUser": {
+                "posix": {
+                    "user": expected_user,
+                    "group": expected_group,
+                },
+            },
+            "logGroupName": "TEST",
+            "schemaVersion": SchemaVersion.v2023_09.value,
+        }
+
+        # WHEN
+        job_details_data = JobDetails.validate_entity_data(api_response)
+        entity_obj = JobDetails.from_boto(job_details_data)
+
+        # THEN
+        assert entity_obj.job_run_as_user is not None
+        assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
+        assert entity_obj.job_run_as_user.posix.user == expected_user
+        assert entity_obj.job_run_as_user.posix.group == expected_group
+
+    # TODO: remove test once service no longer sends jobsRunAs
+    @pytest.mark.parametrize(
+        ("jobs_run_as_data"),
+        (
+            pytest.param(
+                {
+                    "user": "",
+                    "group": "",
+                },
+                id="empty user and group",
+            ),
+            pytest.param(
+                {
+                    "user": "diff-user",
+                    "group": "diff-group",
+                },
+                id="set user and group",
+            ),
+        ),
+    )
+    def test_old_jobs_run_as_existence(self, jobs_run_as_data: dict[str, str]) -> None:
+        """Ensures that if we receive the old jobs_run_as field in the response,
+        that we do not error on validating the response and use the newer jobRunAsUser info"""
+        # GIVEN
+        expected_user = "job-user"
+        expected_group = "job-group"
+        api_response: dict = {
+            "jobId": "job-123",
+            "jobsRunAs": {
+                "posix": jobs_run_as_data,
+            },
+            "jobRunAsUser": {
+                "posix": {
+                    "user": expected_user,
+                    "group": expected_group,
+                },
+            },
+            "logGroupName": "TEST",
+            "schemaVersion": SchemaVersion.v2023_09.value,
+        }
+
+        # WHEN
+        job_details_data = JobDetails.validate_entity_data(api_response)
+        entity_obj = JobDetails.from_boto(job_details_data)
+
+        # THEN
+        assert not hasattr(entity_obj, "jobs_run_as")
+        assert entity_obj.job_run_as_user is not None
+        assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
+        assert entity_obj.job_run_as_user.posix.user == expected_user
+        assert entity_obj.job_run_as_user.posix.group == expected_group
+
+    # TODO: remove once service no longer sends jobsRunAs
+    def test_only_old_jobs_run_as(self) -> None:
+        """Ensures that if we only receive the old jobs_run_as field in the response,
+        that we do not error on validating the response and we have job_run_as_user info"""
+        # GIVEN
+        expected_user = "job-user"
+        expected_group = "job-group"
+        api_response: dict = {
             "jobId": "job-123",
             "jobsRunAs": {
                 "posix": {
@@ -194,16 +275,43 @@ class TestJobEntity:
         }
 
         # WHEN
-        entity_obj = JobDetails.from_boto(entity_data)
+        job_details_data = JobDetails.validate_entity_data(api_response)
+        entity_obj = JobDetails.from_boto(job_details_data)
 
         # THEN
-        assert entity_obj.jobs_run_as is not None
-        assert isinstance(entity_obj.jobs_run_as.posix, PosixSessionUser)
-        assert entity_obj.jobs_run_as.posix.user == expected_user
-        assert entity_obj.jobs_run_as.posix.group == expected_group
+        assert not hasattr(entity_obj, "jobs_run_as")
+        assert entity_obj.job_run_as_user is not None
+        assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
+        assert entity_obj.job_run_as_user.posix.user == expected_user
+        assert entity_obj.job_run_as_user.posix.group == expected_group
+
+    # TODO: remove once service no longer sends jobsRunAs
+    def test_only_empty_old_jobs_run_as(self) -> None:
+        """Ensures that if we only receive the old jobs_run_as field with no user and group,
+        that we do not error on validating the response and we do not have job_run_as_user info"""
+        # GIVEN
+        api_response: dict = {
+            "jobId": "job-123",
+            "jobsRunAs": {
+                "posix": {
+                    "user": "",
+                    "group": "",
+                },
+            },
+            "logGroupName": "TEST",
+            "schemaVersion": SchemaVersion.v2023_09.value,
+        }
+
+        # WHEN
+        job_details_data = JobDetails.validate_entity_data(api_response)
+        entity_obj = JobDetails.from_boto(job_details_data)
+
+        # THEN
+        assert not hasattr(entity_obj, "jobs_run_as")
+        assert entity_obj.job_run_as_user is None
 
     @pytest.mark.parametrize(
-        ("jobs_run_as_data"),
+        ("job_run_as_user_data"),
         (
             pytest.param(
                 {
@@ -236,13 +344,13 @@ class TestJobEntity:
             pytest.param({}, id="no posix"),
         ),
     )
-    def test_jobs_run_empty_values(self, jobs_run_as_data: JobsRunAs | None) -> None:
-        """Ensures that if we are missing values in the jobs_run_as fields
+    def test_job_run_as_user_empty_values(self, job_run_as_user_data: JobRunAsUser | None) -> None:
+        """Ensures that if we are missing values in the job_run_as_user fields
         that created entity does not have it set (ie. old queues)"""
         # GIVEN
         entity_data: JobDetailsData = {
             "jobId": "job-123",
-            "jobsRunAs": jobs_run_as_data,
+            "jobRunAsUser": job_run_as_user_data,
             "logGroupName": "TEST",
             "schemaVersion": SchemaVersion.v2023_09.value,
         }
@@ -251,10 +359,10 @@ class TestJobEntity:
         entity_obj = JobDetails.from_boto(entity_data)
 
         # THEN
-        assert entity_obj.jobs_run_as is None
+        assert entity_obj.job_run_as_user is None
 
-    def test_jobs_run_as_not_provided(self) -> None:
-        """Ensures that if we somehow don't receive a jobs_run_as field
+    def test_job_run_as_user_not_provided(self) -> None:
+        """Ensures that if we somehow don't receive a job_run_as_user field
         that the created entity does not have it set (shouldn't happen)"""
         # GIVEN
         entity_data: JobDetailsData = {
@@ -267,7 +375,7 @@ class TestJobEntity:
         entity_obj = JobDetails.from_boto(entity_data)
 
         # THEN
-        assert entity_obj.jobs_run_as is None
+        assert entity_obj.job_run_as_user is None
 
 
 class TestDetails:
