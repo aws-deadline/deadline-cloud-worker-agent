@@ -704,11 +704,11 @@ class WorkerScheduler:
             logger.debug(f"[{new_session_id}] Assigned actions")
 
             os_user: Optional[SessionUser] = None
-            if job_details.jobs_run_as and not self._impersonation.inactive:
+            if job_details.job_run_as_user and not self._impersonation.inactive:
                 if os.name != "posix":
                     # TODO: windows support
                     raise NotImplementedError(f"{os.name} is not supported")
-                os_user = job_details.jobs_run_as.posix
+                os_user = job_details.job_run_as_user.posix
 
             if self._impersonation.posix_job_user is not None:
                 os_user = self._impersonation.posix_job_user

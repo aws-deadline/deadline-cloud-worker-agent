@@ -254,7 +254,14 @@ class DeadlineClient:
                                 "rootPrefix": "my-queue",
                             },
                             "logGroupName": "/aws/deadline/queue-abc",
+                            # TODO: remove once service no longer sends this
                             "jobsRunAs": {
+                                "posix": {
+                                    "user": "",
+                                    "group": "",
+                                }
+                            },
+                            "jobRunAsUser": {
                                 "posix": {
                                     "user": "job-user",
                                     "group": "job-group",
