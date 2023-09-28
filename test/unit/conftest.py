@@ -27,7 +27,7 @@ from deadline_worker_agent.api_models import HostProperties, IpAddresses
 from deadline_worker_agent.sessions.job_entities.job_details import (
     JobAttachmentSettings,
     JobDetails,
-    JobsRunAs,
+    JobRunAsUser,
 )
 from deadline_worker_agent.sessions.job_entities.job_attachment_details import (
     JobAttachmentDetails,
@@ -238,12 +238,12 @@ def job_parameters() -> list[Parameter]:
 
 
 @pytest.fixture
-def jobs_run_as() -> JobsRunAs | None:
+def job_run_as_user() -> JobRunAsUser | None:
     """The OS user/group associated with the job's queue"""
     # TODO: windows support
     if os.name != "posix":
         raise NotImplementedError(f"{os.name} is not supported")
-    return JobsRunAs(posix=PosixSessionUser(user="job-user", group="job-user"))
+    return JobRunAsUser(posix=PosixSessionUser(user="job-user", group="job-user"))
 
 
 @pytest.fixture
@@ -257,14 +257,14 @@ def job_details(
     queue_job_attachment_settings: JobAttachmentSettings,
     job_parameters: list[Parameter],
     log_group_name: str,
-    jobs_run_as: JobsRunAs | None,
+    job_run_as_user: JobRunAsUser | None,
     path_mapping_rules: list[PathMappingRule],
     schema_version: SchemaVersion,
 ) -> JobDetails:
     return JobDetails(
         job_attachment_settings=queue_job_attachment_settings,
         parameters=job_parameters,
-        jobs_run_as=jobs_run_as,
+        job_run_as_user=job_run_as_user,
         path_mapping_rules=path_mapping_rules,
         log_group_name=log_group_name,
         schema_version=schema_version,
