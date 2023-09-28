@@ -20,7 +20,7 @@ from ...api_models import (
     IntParameter,
     JobDetailsData,
     JobAttachmentQueueSettings as JobAttachmentSettingsBoto,
-    JobsRunAs as JobsRunAsModel,
+    JobRunAsUser as JobRunAsUserModel,
     PathMappingRule,
     PathParameter,
     StringParameter,
@@ -84,31 +84,31 @@ def path_mapping_api_model_to_openjd(
     return rules
 
 
-def jobs_runs_as_api_model_to_worker_agent(
-    jobs_run_as_data: JobsRunAsModel | None,
-) -> JobsRunAs | None:
-    """Converts the 'JobsRunAs' api model to the 'JobsRunAs' dataclass
+def job_run_as_user_api_model_to_worker_agent(
+    job_run_as_user_data: JobRunAsUserModel | None,
+) -> JobRunAsUser | None:
+    """Converts the 'JobRunAsUser' api model to the 'JobRunAsUser' dataclass
     expected by the Worker Agent.
     """
-    jobs_run_as: JobsRunAs | None = None
-    if not jobs_run_as_data:
+    job_run_as_user: JobRunAsUser | None = None
+    if not job_run_as_user_data:
         return None
 
     if os.name == "posix":
-        jobs_run_as_posix = jobs_run_as_data.get("posix", {})
-        user = jobs_run_as_posix.get("user", "")
-        group = jobs_run_as_posix.get("group", "")
+        job_run_as_user_posix = job_run_as_user_data.get("posix", {})
+        user = job_run_as_user_posix.get("user", "")
+        group = job_run_as_user_posix.get("group", "")
         if not (user and group):
             return None
 
-        jobs_run_as = JobsRunAs(
+        job_run_as_user = JobRunAsUser(
             posix=PosixSessionUser(user=user, group=group),
         )
     else:
         # TODO: windows support
         raise NotImplementedError(f"{os.name} is not supported")
 
-    return jobs_run_as
+    return job_run_as_user
 
 
 @dataclass(frozen=True)
@@ -130,7 +130,7 @@ class JobAttachmentSettings:
 
 
 @dataclass(frozen=True)
-class JobsRunAs:
+class JobRunAsUser:
     posix: PosixSessionUser
     # TODO: windows support
 
@@ -154,7 +154,7 @@ class JobDetails:
     parameters: list[Parameter] = field(default_factory=list)
     """The job's parameters"""
 
-    jobs_run_as: JobsRunAs | None = None
+    job_run_as_user: JobRunAsUser | None = None
     """The user associated with the job's Amazon Deadline Cloud queue"""
 
     path_mapping_rules: list[OPENJDPathMappingRule] = field(default_factory=list)
@@ -189,8 +189,13 @@ class JobDetails:
         if job_attachment_settings_boto := job_details_data.get("jobAttachmentSettings", None):
             job_attachment_settings = JobAttachmentSettings.from_boto(job_attachment_settings_boto)
 
-        jobs_run_as_data = job_details_data.get("jobsRunAs", None)
-        jobs_run_as: JobsRunAs | None = jobs_runs_as_api_model_to_worker_agent(jobs_run_as_data)
+        # Use jobRunAsUser if it exists, otherwise jobsRunAs if it exists, otherwise None.
+        job_run_as_user_data = job_details_data.get(
+            "jobRunAsUser", job_details_data.get("jobsRunAs", None)
+        )
+        job_run_as_user: JobRunAsUser | None = job_run_as_user_api_model_to_worker_agent(
+            job_run_as_user_data
+        )
 
         # Note: Record the empty string as a None as well.
         queue_role_arn: str | None = (
@@ -208,7 +213,7 @@ class JobDetails:
             parameters=job_parameters,
             schema_version=schema_version,
             log_group_name=job_details_data["logGroupName"],
-            jobs_run_as=jobs_run_as,
+            job_run_as_user=job_run_as_user,
             path_mapping_rules=path_mapping_rules,
             job_attachment_settings=job_attachment_settings,
             queue_role_arn=queue_role_arn,
@@ -252,8 +257,25 @@ class JobDetails:
                     expected_type=list,
                     required=False,
                 ),
+                # TODO: remove jobsRunAs once service no longer responds with jobsRunAs
                 Field(
                     key="jobsRunAs",
+                    expected_type=dict,
+                    required=False,
+                    fields=(
+                        Field(
+                            key="posix",
+                            expected_type=dict,
+                            required=False,
+                            fields=(
+                                Field(key="user", expected_type=str, required=True),
+                                Field(key="group", expected_type=str, required=True),
+                            ),
+                        ),
+                    ),
+                ),
+                Field(
+                    key="jobRunAsUser",
                     expected_type=dict,
                     required=False,
                     fields=(
