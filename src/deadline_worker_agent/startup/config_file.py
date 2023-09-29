@@ -39,6 +39,7 @@ class LoggingConfigSection(BaseModel):
     verbose: Optional[bool] = None
     worker_logs_dir: Optional[Path] = None
     local_session_logs: Optional[bool] = None
+    host_metrics_logging_interval_seconds: Optional[float] = None
 
 
 class OsConfigSection(BaseModel):
@@ -107,6 +108,10 @@ class ConfigFile(BaseModel):
             output_settings["worker_logs_dir"] = self.logging.worker_logs_dir
         if self.logging.local_session_logs is not None:
             output_settings["local_session_logs"] = self.logging.local_session_logs
+        if self.logging.host_metrics_logging_interval_seconds is not None:
+            output_settings[
+                "host_metrics_logging_interval_seconds"
+            ] = self.logging.host_metrics_logging_interval_seconds
         if self.os.shutdown_on_stop is not None:
             output_settings["no_shutdown"] = self.os.shutdown_on_stop
         if self.os.impersonation is not None:

@@ -122,6 +122,13 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         expected_default=True,
         expected_default_factory_return_value=None,
     ),
+    FieldTestCaseParams(
+        field_name="host_metrics_logging_interval_seconds",
+        expected_type=float,
+        expected_required=False,
+        expected_default=60,
+        expected_default_factory_return_value=None,
+    ),
 ]
 
 

@@ -595,6 +595,7 @@ def test_passes_worker_logs_dir(
         cleanup_session_user_processes=ANY,
         worker_persistence_dir=ANY,
         worker_logs_dir=tmp_path,
+        host_metrics_logging_interval_seconds=ANY,
     )
 
 

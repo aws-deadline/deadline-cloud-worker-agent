@@ -64,6 +64,8 @@ class WorkerSettings(BaseSettings):
         The path to the directory where the Worker Agent persists its state.
     local_session_logs : bool
         Whether to write session logs to the local filesystem
+    host_metrics_logging_interval_seconds : float
+        The interval between host metrics log messages
     """
 
     farm_id: str = Field(regex=r"^farm-[a-z0-9]{32}$")
@@ -83,6 +85,7 @@ class WorkerSettings(BaseSettings):
     worker_logs_dir: Path = DEFAULT_POSIX_WORKER_LOGS_DIR
     worker_persistence_dir: Path = DEFAULT_POSIX_WORKER_PERSISTENCE_DIR
     local_session_logs: bool = True
+    host_metrics_logging_interval_seconds: float = 60
 
     class Config:
         fields = {
@@ -101,6 +104,9 @@ class WorkerSettings(BaseSettings):
             "worker_logs_dir": {"env": "DEADLINE_WORKER_LOGS_DIR"},
             "worker_persistence_dir": {"env": "DEADLINE_WORKER_PERSISTENCE_DIR"},
             "local_session_logs": {"env": "DEADLINE_WORKER_LOCAL_SESSION_LOGS"},
+            "host_metrics_logging_interval_seconds": {
+                "env": "DEADLINE_WORKER_HOST_METRICS_LOGGING_INTERVAL_SECONDS"
+            },
         }
 
         @classmethod

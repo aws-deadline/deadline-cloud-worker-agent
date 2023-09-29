@@ -22,6 +22,7 @@ class ParsedCommandLineArguments(Namespace):
     persistence_dir: Path | None = None
     # TODO: Remove when deprecating --no-allow-instance-profile
     no_allow_instance_profile: bool | None = None
+    host_metrics_logging_interval_seconds: float | None = None
 
 
 def get_argument_parser() -> ArgumentParser:
@@ -107,6 +108,12 @@ def get_argument_parser() -> ArgumentParser:
         const=True,
         dest="allow_instance_profile",
         default=None,
+    )
+    parser.add_argument(
+        "--host-metrics-logging-interval-seconds",
+        help="The interval between host metrics log messages. Default is 60.",
+        default=None,
+        type=float,
     )
     parser.add_argument(
         "--verbose",
