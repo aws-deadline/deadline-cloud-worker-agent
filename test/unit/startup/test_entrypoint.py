@@ -148,6 +148,12 @@ def block_rich_import() -> Generator[None, None, None]:
         yield
 
 
+@pytest.fixture(autouse=True)
+def block_telemetry_client() -> Generator[MagicMock, None, None]:
+    with patch.object(entrypoint_mod, "record_worker_start_event") as telem_mock:
+        yield telem_mock
+
+
 def test_calls_worker_run(
     mock_worker_run: MagicMock,
 ) -> None:
