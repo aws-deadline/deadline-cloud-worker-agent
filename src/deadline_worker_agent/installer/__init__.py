@@ -23,7 +23,7 @@ def install() -> None:
 
     arg_parser = get_argument_parser()
     args = arg_parser.parse_args(namespace=ParsedCommandLineArguments)
-    worker_agent_program = Path(sysconfig.get_path("scripts")) / "deadline-worker-agent"
+    scripts_path = Path(sysconfig.get_path("scripts"))
 
     cmd = [
         "sudo",
@@ -36,8 +36,8 @@ def install() -> None:
         args.region,
         "--user",
         args.user,
-        "--worker-agent-program",
-        str(worker_agent_program),
+        "--scripts-path",
+        str(scripts_path),
     ]
     if args.group:
         cmd += ["--group", args.group]
@@ -49,6 +49,8 @@ def install() -> None:
         cmd.append("--allow-shutdown")
     if not args.install_service:
         cmd.append("--no-install-service")
+    if args.telemetry_opt_out:
+        cmd.append("--telemetry-opt-out")
 
     try:
         run(
@@ -72,6 +74,7 @@ class ParsedCommandLineArguments(Namespace):
     service_start: bool
     allow_shutdown: bool
     install_service: bool
+    telemetry_opt_out: bool
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
@@ -121,6 +124,11 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
         help="Skips the worker agent systemd service installation",
         action="store_false",
         dest="install_service",
+    )
+    parser.add_argument(
+        "--telemetry-opt-out",
+        help="Opts out of telemetry data collection",
+        action="store_true",
     )
     parser.add_argument(
         "--yes",
