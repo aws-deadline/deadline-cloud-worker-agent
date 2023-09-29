@@ -29,6 +29,12 @@ from ..worker import Worker
 from .bootstrap import bootstrap_worker
 from .capabilities import AmountCapabilityName, AttributeCapabilityName, Capabilities
 from .config import Capabilities, Configuration, ConfigurationError
+from ..aws.deadline import (
+    DeadlineRequestError,
+    delete_worker,
+    update_worker,
+    record_worker_start_event,
+)
 
 __all__ = ["entrypoint"]
 _logger = logging.getLogger(__name__)
@@ -86,6 +92,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
         # if customer manually provided the capabilities (to be added in this function)
         # then we default to the customer provided ones
         system_capabilities = detect_system_capabilities()
+        record_worker_start_event(system_capabilities)
         config.capabilities = system_capabilities.merge(config.capabilities)
 
         # Log the configuration
