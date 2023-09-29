@@ -189,10 +189,7 @@ class JobDetails:
         if job_attachment_settings_boto := job_details_data.get("jobAttachmentSettings", None):
             job_attachment_settings = JobAttachmentSettings.from_boto(job_attachment_settings_boto)
 
-        # Use jobRunAsUser if it exists, otherwise jobsRunAs if it exists, otherwise None.
-        job_run_as_user_data = job_details_data.get(
-            "jobRunAsUser", job_details_data.get("jobsRunAs", None)
-        )
+        job_run_as_user_data = job_details_data.get("jobRunAsUser", None)
         job_run_as_user: JobRunAsUser | None = job_run_as_user_api_model_to_worker_agent(
             job_run_as_user_data
         )

@@ -249,10 +249,6 @@ class JobDetailsData(JobDetailsIdentifierFields):
     jobAttachmentSettings: NotRequired[JobAttachmentQueueSettings]
     """The queue's job attachment settings"""
 
-    # TODO: remove once service no longer sends this
-    jobsRunAs: NotRequired[JobRunAsUser | None]
-    """Deprecated: The queue's info on how to run the job processes (ie. posix user/group)"""
-
     jobRunAsUser: NotRequired[JobRunAsUser | None]
     """The queue's info on how to run the job processes (ie. posix user/group)"""
 
