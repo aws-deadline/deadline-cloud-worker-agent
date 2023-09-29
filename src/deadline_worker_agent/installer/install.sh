@@ -37,17 +37,20 @@ fleet_id=unset
 wa_user=$default_wa_user
 confirm=""
 region="us-west-2"
-worker_agent_program="unset"
+scripts_path="unset"
+worker_agent_program="deadline-worker-agent"
+client_library_program="deadline"
 allow_shutdown="no"
 no_install_service="no"
 start_service="no"
+telemetry_opt_out="no"
 warning_lines=()
 
 usage()
 {
     echo "Usage: install.sh --farm-id FARM_ID --fleet-id FLEET_ID"
     echo "                  [--region REGION] [--user USER]"
-    echo "                  [--worker-agent-program WORKER_AGENT_PROGRAM]"
+    echo "                  [--scripts-path SCRIPTS_PATH]"
     echo "                  [-y]"
     echo ""
     echo "Arguments"
@@ -64,15 +67,18 @@ usage()
     echo "        A group name that the Worker Agent shares with the user(s) that Jobs will be running as."
     echo "        Do not use the primary/effective group of the Worker Agent user specifeid in --user as"
     echo "        this is not a secure configuration. Defaults to $default_job_group."
-    echo "    --worker-agent-program WORKER_AGENT_PROGRAM"
-    echo "        An optional path to the Worker Agent program. This is used as the program path"
-    echo "        when creating the systemd service. If not specified, the first program named"
-    echo "        deadline-worker-agent found in the search path will be used."
+    echo "    --scripts-path SCRIPTS_PATH"
+    echo "        An optional path to the directory that the Worker Agent and Deadline Cloud Library are"
+    echo "        installed. This is used as the program path when creating the systemd service for the "
+    echo "        Worker Agent. If not specified, the first program named 'deadline-worker-agent' and"
+    echo "        'deadline' found in the search path will be used."
     echo "    --allow-shutdown"
     echo "        Dictates whether a sudoers rule is created/deleted allowing the worker agent the"
     echo "        ability to shutdown the host system"
     echo "    --no-install-service"
     echo "        Skips the worker agent systemd service installation"
+    echo "    --telemetry-opt-out"
+    echo "        Opts out of telemetry collection for the worker agent"
     echo "    --start"
     echo "        Starts the systemd service as part of the installation. By default, the systemd"
     echo "        service is configured to start on system boot, but not started immediately."
@@ -104,7 +110,7 @@ validate_deadline_id() {
 }
 
 # Validate arguments
-PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,worker-agent-program:,start,allow-shutdown,no-install-service -- "y" "$@")
+PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,scripts-path:,start,allow-shutdown,no-install-service,telemetry-opt-out -- "y" "$@")
 VALID_ARGUMENTS=$?
 if [ "${VALID_ARGUMENTS}" != "0" ]; then
     usage
@@ -122,9 +128,10 @@ do
     --region)                region="$2"                ; shift 2 ;;
     --user)                  wa_user="$2"               ; shift 2 ;;
     --group)                 job_group="$2"             ; shift 2 ;;
-    --worker-agent-program)  worker_agent_program="$2"  ; shift 2 ;;
+    --scripts-path)          scripts_path="$2"          ; shift 2 ;;
     --allow-shutdown)        allow_shutdown="yes"       ; shift   ;;
     --no-install-service)    no_install_service="yes"   ; shift   ;;
+    --telemetry-opt-out)     telemetry_opt_out="yes"    ; shift   ;;
     --start)                 start_service="yes"        ; shift   ;;
     -y)                      confirm="$1"               ; shift   ;;
     # -- means the end of the arguments; drop this, and break out of the while loop
@@ -152,18 +159,38 @@ elif ! validate_deadline_id fleet "${fleet_id}"; then
     echo "ERROR: Non a valid value for --fleet-id: ${fleet_id}"
     usage
 fi
-if [[ "${worker_agent_program}" == "unset" ]]; then
+if [[ "${scripts_path}" == "unset" ]]; then
     set +e
     worker_agent_program=$(which deadline-worker-agent)
     if [[ "$?" != "0" ]]; then
         echo "ERROR: Could not find deadline-worker-agent in search path"
         exit 1
     fi
+    client_library_program=$(which deadline)
+    if [[ "$?" != "0" ]]; then
+        echo "ERROR: Could not find deadline in search path"
+        exit 1
+    fi
     set -e
-elif [[ ! -f "${worker_agent_program}" ]]; then
-    echo "ERROR: The specified Worker Agent path is not found: \"${worker_agent_program}\""
+elif [[ ! -d "${scripts_path}" ]]; then
+    echo "ERROR: The specified scripts path is not found: \"${scripts_path}\""
     usage
+else
+    set +e
+    # We have a provided scripts path, so we append it to the program paths
+    worker_agent_program="${scripts_path}"/deadline-worker-agent
+    if [[ ! -f "${worker_agent_program}" ]]; then
+        echo "ERROR: Could not find deadline-worker-agent in scripts path: \"${worker_agent_program}\""
+        exit 1
+    fi
+    client_library_program="${scripts_path}"/deadline
+    if [[ ! -f "${client_library_program}" ]]; then
+        echo "ERROR: Could not find deadline in scripts path: \"${client_library_program}\""
+        exit 1
+    fi
+    set -e
 fi
+
 if [[ ! -z "${region}" ]] && [[ ! "${region}" =~ ^[a-z]+-[a-z]+-[0-9]+$ ]]; then
     echo "ERROR: Not a valid value for --region: ${region}"
     usage
@@ -196,9 +223,12 @@ echo "Fleet ID: ${fleet_id}"
 echo "Region: ${region}"
 echo "Worker agent user: ${wa_user}"
 echo "Worker job group: ${job_group}"
+echo "Scripts path: ${scripts_path}"
 echo "Worker agent program path: ${worker_agent_program}"
+echo "Worker agent program path: ${client_library_program}"
 echo "Allow worker agent shutdown: ${allow_shutdown}"
 echo "Start systemd service: ${start_service}"
+echo "Telemetry opt-out: ${telemetry_opt_out}"
 
 # Confirmation prompt
 if [ -z "$confirm" ]; then
@@ -350,6 +380,12 @@ EOF
         systemctl start deadline-worker
         echo "Done starting the service"
     fi
+fi
+
+if [[ "${telemetry_opt_out}" == "yes" ]]; then
+    # Set the Deadline Client Lib configuration setting
+    echo "Opting out of telemetry collection"
+    sudo -u $wa_user $client_library_program config set telemetry.opt_out true
 fi
 
 echo "Done"
