@@ -9,7 +9,10 @@ from dataclasses import dataclass
 from botocore.retries.standard import RetryContext
 from botocore.exceptions import ClientError
 
-from ...startup.config import Configuration
+from deadline.client.api import get_telemetry_client, TelemetryClient
+
+from ..._version import __version__ as version  # noqa
+from ...startup.config import Configuration, Capabilities
 from ...boto import DeadlineClient, NoOverflowExponentialBackoff as Backoff
 from ...api_models import (
     AssumeFleetRoleForWorkerResponse,
@@ -735,3 +738,15 @@ def update_worker_schedule(
             raise DeadlineRequestUnrecoverableError(e)
 
     return response
+
+
+def _get_deadline_telemetry_client() -> TelemetryClient:
+    """Wrapper around the Deadline Client Library telemetry client, in order to set package-specific information"""
+    return get_telemetry_client("deadline-cloud-worker-agent", version)
+
+
+def record_worker_start_event(capabilities: Capabilities) -> None:
+    """Calls the telemetry client to record an event capturing generic machine information."""
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.start", event_details=capabilities.dict()
+    )
