@@ -11,14 +11,20 @@ from pydantic.env_settings import SettingsSourceCallable
 from .capabilities import Capabilities
 from .config_file import ConfigFile
 
+import os
+
 
 # Default path for the worker's logs.
 DEFAULT_POSIX_WORKER_LOGS_DIR = Path("/var/log/amazon/deadline")
+DEFAULT_WINDOWS_WORKER_LOGS_DIR = Path(os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Logs"))
 # Default path for the worker persistence directory.
 # The persistence directory is expected to be located on a file-system that is local to the Worker
 # Node. The Worker's ID and credentials are persisted and these should not be accessible by other
 # Worker Nodes.
 DEFAULT_POSIX_WORKER_PERSISTENCE_DIR = Path("/var/lib/deadline")
+DEFAULT_WINDOWS_WORKER_PERSISTENCE_DIR = Path(
+    os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Cache")
+)
 
 
 class WorkerSettings(BaseSettings):
@@ -84,8 +90,14 @@ class WorkerSettings(BaseSettings):
     capabilities: Capabilities = Field(
         default_factory=lambda: Capabilities(amounts={}, attributes={})
     )
-    worker_logs_dir: Path = DEFAULT_POSIX_WORKER_LOGS_DIR
-    worker_persistence_dir: Path = DEFAULT_POSIX_WORKER_PERSISTENCE_DIR
+    worker_logs_dir: Path = (
+        DEFAULT_WINDOWS_WORKER_LOGS_DIR if os.name == "nt" else DEFAULT_POSIX_WORKER_LOGS_DIR
+    )
+    worker_persistence_dir: Path = (
+        DEFAULT_WINDOWS_WORKER_PERSISTENCE_DIR
+        if os.name == "nt"
+        else DEFAULT_POSIX_WORKER_PERSISTENCE_DIR
+    )
     local_session_logs: bool = True
     host_metrics_logging: bool = True
     host_metrics_logging_interval_seconds: float = 60

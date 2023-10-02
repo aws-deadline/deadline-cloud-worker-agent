@@ -36,7 +36,7 @@ def mock_module_logger() -> Generator[MagicMock, None, None]:
 class TestCloudWatchLogEventBatch:
     @fixture(autouse=True)
     def now(self) -> datetime:
-        return datetime.fromtimestamp(123)
+        return datetime(2000, 1, 1)
 
     @fixture(autouse=True)
     def datetime_mock(self, now: datetime) -> Generator[MagicMock, None, None]:
@@ -51,7 +51,7 @@ class TestCloudWatchLogEventBatch:
     @fixture
     def event(self, now: datetime) -> PartitionedCloudWatchLogEvent:
         return PartitionedCloudWatchLogEvent(
-            log_event=CloudWatchLogEvent(timestamp=int(now.timestamp()), message="abc"),
+            log_event=CloudWatchLogEvent(timestamp=int(now.timestamp() * 1000), message="abc"),
             size=len("abc".encode("utf-8")),
         )
 
@@ -168,10 +168,12 @@ class TestCloudWatchLogEventBatch:
             datetime_mock: MagicMock,
         ):
             # GIVEN
-            now = datetime.fromtimestamp(1)
+            now = datetime(2000, 1, 1)
             datetime_mock.now.return_value = now
             event = PartitionedCloudWatchLogEvent(
-                log_event=CloudWatchLogEvent(message="abc", timestamp=int(now.timestamp())),
+                log_event=CloudWatchLogEvent(
+                    message="abc", timestamp=(int(now.timestamp()) * 1000)
+                ),
                 size=3,
             )
             batch = CloudWatchLogEventBatch()

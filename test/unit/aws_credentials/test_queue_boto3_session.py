@@ -51,9 +51,13 @@ def deadline_client() -> MagicMock:
     return MagicMock()
 
 
-@pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"), None))
-def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
-    return request.param
+@pytest.fixture
+def os_user() -> Optional[SessionUser]:
+    if os.name == "posix":
+        return PosixSessionUser(user="user", group="group")
+    else:
+        # TODO: Revisit when Windows impersonation is added
+        return None
 
 
 class TestInit:
@@ -614,9 +618,14 @@ class TestInstallCredentialProcess:
             session._install_credential_process()
 
         # THEN
-        credentials_process_script_path = (
-            Path(tmpdir) / "queues" / queue_id / "get_aws_credentials.sh"
-        )
+        if os.name == "posix":
+            credentials_process_script_path = (
+                Path(tmpdir) / "queues" / queue_id / "get_aws_credentials.sh"
+            )
+        else:
+            credentials_process_script_path = (
+                Path(tmpdir) / "queues" / queue_id / "get_aws_credentials.cmd"
+            )
         mock_os_open.assert_called_once_with(
             path=str(credentials_process_script_path),
             flags=os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
