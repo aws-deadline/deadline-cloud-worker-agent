@@ -14,6 +14,7 @@ from deadline_worker_agent.aws_credentials.aws_configs import (
     _setup_parent_dir,
 )
 from openjd.sessions import PosixSessionUser, SessionUser
+import os
 
 
 @pytest.fixture
@@ -27,9 +28,13 @@ def mock_run_cmd_as() -> Generator[MagicMock, None, None]:
         yield mock_run_cmd_as
 
 
-@pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"), None))
-def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
-    return request.param
+@pytest.fixture
+def os_user() -> Optional[SessionUser]:
+    if os.name == "posix":
+        return PosixSessionUser(user="user", group="group")
+    else:
+        # TODO: Revisit when Windows impersonation is added
+        return None
 
 
 class TestSetupParentDir:
@@ -37,6 +42,10 @@ class TestSetupParentDir:
 
     @pytest.fixture
     def dir_path(self) -> MagicMock:
+        return MagicMock()
+
+    @pytest.fixture
+    def set_windows_permissions(self) -> MagicMock:
         return MagicMock()
 
     def test_creates_dir(
@@ -51,7 +60,12 @@ class TestSetupParentDir:
         assert isinstance(os_user, PosixSessionUser) or os_user is None
 
         # WHEN
-        _setup_parent_dir(dir_path=dir_path, owner=os_user)
+        with (
+            patch.object(
+                aws_configs_mod, "set_user_restricted_path_permissions"
+            ) as mock_set_user_restricted_path_permissions,
+        ):
+            _setup_parent_dir(dir_path=dir_path, owner=os_user)
 
         # THEN
         if os_user:
@@ -62,10 +76,16 @@ class TestSetupParentDir:
             )
             mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "770", str(dir_path)])
         else:
-            mkdir.assert_called_once_with(
-                mode=0o700,
-                exist_ok=True,
-            )
+            if os.name == "posix":
+                mkdir.assert_called_once_with(
+                    mode=0o700,
+                    exist_ok=True,
+                )
+            else:
+                mkdir.assert_called_once_with(
+                    exist_ok=True,
+                )
+                mock_set_user_restricted_path_permissions.assert_called_once()
 
     def test_sets_group_ownership(
         self,
@@ -383,7 +403,7 @@ class AWSConfigTestBase:
 
 class TestAWSConfig(AWSConfigTestBase):
     """
-    Test class derrived from AWSConfigTestBase for AWSConfig.
+    Test class derived from AWSConfigTestBase for AWSConfig.
 
     All tests are defined in the base class. This class defines the fixtures that feed into those tests.
     """

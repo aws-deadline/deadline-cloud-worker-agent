@@ -1,7 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 from __future__ import annotations
 
-import os
 import logging
 from typing import Any, cast
 
@@ -34,8 +33,6 @@ class WorkerBoto3Session(BaseBoto3Session):
         config: Configuration,
         worker_id: str,
     ) -> None:
-        if os.name != "posix":
-            raise NotImplementedError("Windows not supported.")
         super().__init__()
 
         self._bootstrap_session = bootstrap_session

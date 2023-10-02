@@ -9,8 +9,9 @@ from unittest.mock import MagicMock, patch
 from typing import Any, Generator, List, Optional
 import logging
 import pytest
+import os
 
-from openjd.sessions import PosixSessionUser
+from openjd.sessions import SessionUser, PosixSessionUser
 
 from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
 from deadline_worker_agent.startup import config as config_mod
@@ -73,6 +74,14 @@ def arg_parser(
         get_argument_parser.return_value = arg_parser
         arg_parser.parse_args.return_value = parsed_args
         yield arg_parser
+
+
+@pytest.fixture
+def os_user() -> Optional[SessionUser]:
+    if os.name == "posix":
+        return PosixSessionUser(user="user", group="group")
+    else:
+        return None
 
 
 class TestLoad:
@@ -266,8 +275,18 @@ class TestLoad:
     @pytest.mark.parametrize(
         argnames="worker_logs_dir",
         argvalues=(
-            Path("/foo"),
-            Path("/bar"),
+            pytest.param(
+                Path("/foo"), marks=pytest.mark.skipif(os.name != "posix", reason="Not posix")
+            ),
+            pytest.param(
+                Path("/bar"), marks=pytest.mark.skipif(os.name != "posix", reason="Not posix")
+            ),
+            pytest.param(
+                Path("D:\\foo"), marks=pytest.mark.skipif(os.name != "nt", reason="Not windows")
+            ),
+            pytest.param(
+                Path("D:\\bar"), marks=pytest.mark.skipif(os.name != "nt", reason="Not windows")
+            ),
         ),
     )
     def test_uses_worker_logs_dir(
@@ -289,8 +308,18 @@ class TestLoad:
     @pytest.mark.parametrize(
         argnames="persistence_dir",
         argvalues=(
-            Path("/foo"),
-            Path("/bar"),
+            pytest.param(
+                Path("/foo"), marks=pytest.mark.skipif(os.name != "posix", reason="Not posix")
+            ),
+            pytest.param(
+                Path("/bar"), marks=pytest.mark.skipif(os.name != "posix", reason="Not posix")
+            ),
+            pytest.param(
+                Path("D:\\foo"), marks=pytest.mark.skipif(os.name != "nt", reason="Not windows")
+            ),
+            pytest.param(
+                Path("D:\\bar"), marks=pytest.mark.skipif(os.name != "nt", reason="Not windows")
+            ),
         ),
     )
     def test_uses_worker_persistence_dir(
@@ -598,6 +627,7 @@ class TestInit:
         else:
             assert "impersonation" not in call.kwargs
 
+    @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
     @pytest.mark.parametrize(
         argnames="posix_job_user",
         argvalues=("user:group", None),
@@ -776,8 +806,9 @@ class TestInit:
         argvalues=(
             pytest.param(
                 "user:group",
-                PosixSessionUser(group="group", user="user"),
+                "os_user",
                 id="has-posix-job-user-setting",
+                marks=pytest.mark.skipif(os.name != "posix", reason="Posix-only test."),
             ),
             pytest.param(
                 None,
@@ -792,6 +823,7 @@ class TestInit:
         expected_config_posix_job_user: PosixSessionUser | None,
         parsed_args: ParsedCommandLineArguments,
         mock_worker_settings_cls: MagicMock,
+        request,
     ) -> None:
         """Tests that any parsed_cli_args without a value of None are passed as kwargs when
         creating a WorkerSettings instance"""
@@ -822,9 +854,12 @@ class TestInit:
         assert config.capabilities is mock_worker_settings.capabilities
         assert config.impersonation.inactive == (not mock_worker_settings.impersonation)
         if expected_config_posix_job_user:
+            # TODO: This is needed because we are using a fixture with a parameterized call
+            # but let's revisit whether this can be simplified when Windows impersonation is added
+            posix_user: PosixSessionUser = request.getfixturevalue(expected_config_posix_job_user)
             assert isinstance(config.impersonation.posix_job_user, PosixSessionUser)
-            assert config.impersonation.posix_job_user.group == expected_config_posix_job_user.group
-            assert config.impersonation.posix_job_user.user == expected_config_posix_job_user.user
+            assert config.impersonation.posix_job_user.group == posix_user.group
+            assert config.impersonation.posix_job_user.user == posix_user.user
         else:
             assert config.impersonation.posix_job_user is None
         assert config.worker_logs_dir is mock_worker_settings.worker_logs_dir
