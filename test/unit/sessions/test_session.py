@@ -10,6 +10,8 @@ from typing import Generator, Iterable, Literal, Optional
 from unittest.mock import patch, MagicMock, ANY
 
 import pytest
+import os
+
 from openjd.model.v2023_09 import (
     Action,
     Environment,
@@ -53,9 +55,12 @@ from deadline.job_attachments.os_file_permission import PosixFileSystemPermissio
 import deadline_worker_agent.sessions.session as session_mod
 
 
-@pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"),))
-def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
-    return request.param
+@pytest.fixture
+def os_user() -> Optional[SessionUser]:
+    if os.name == "posix":
+        return PosixSessionUser(user="some-user", group="some-group")
+    else:
+        return None
 
 
 @pytest.fixture
@@ -517,6 +522,7 @@ class TestSessionSyncAssetInputs:
     @pytest.mark.parametrize(
         "job_attachments_file_system", [e.value for e in JobAttachmentsFileSystem]
     )
+    @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
     def test_asset_loading_method(
         self,
         session: Session,

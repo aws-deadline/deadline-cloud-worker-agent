@@ -53,9 +53,14 @@ def detect_system_capabilities() -> Capabilities:
         "linux": "linux",
         "windows": "windows",
     }
+    platform_machine = platform.machine().lower()
+    python_machine_to_openjd_cpu_arch = {"x86_64": "x86_64", "amd64": "x86_64"}
     if openjd_os_family := python_system_to_openjd_os_family.get(platform_system):
         attributes[AttributeCapabilityName("attr.worker.os.family")] = [openjd_os_family]
-    attributes[AttributeCapabilityName("attr.worker.cpu.arch")] = [platform.machine()]
+    if openjd_cpu_arch := python_machine_to_openjd_cpu_arch.get(platform_machine):
+        attributes[AttributeCapabilityName("attr.worker.cpu.arch")] = [openjd_cpu_arch]
+    else:
+        raise NotImplementedError(f"{platform_machine} not supported")
     amounts[AmountCapabilityName("amount.worker.vcpu")] = float(psutil.cpu_count())
     amounts[AmountCapabilityName("amount.worker.memory")] = float(psutil.virtual_memory().total) / (
         1024.0**2

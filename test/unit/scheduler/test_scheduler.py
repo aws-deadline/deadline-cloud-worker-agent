@@ -10,6 +10,7 @@ from unittest.mock import ANY, MagicMock, Mock, call, patch
 from openjd.sessions import ActionState, ActionStatus
 from botocore.exceptions import ClientError
 import pytest
+import os
 
 from deadline_worker_agent.api_models import (
     AssignedSession,
@@ -506,6 +507,9 @@ class TestCreateNewSessions:
         session_log_file_path = MagicMock()
 
         with (
+            patch.object(
+                scheduler_mod, "set_user_restricted_path_permissions"
+            ) as mock_set_user_restricted_path_permissions,
             patch.object(scheduler, "_executor"),
             patch.object(scheduler_mod.LogConfiguration, "from_boto") as mock_log_config_from_boto,
             patch.object(
@@ -520,7 +524,11 @@ class TestCreateNewSessions:
 
         # THEN
         mock_queue_log_dir.assert_called_once_with(queue_id=queue_id)
-        queue_log_dir_path.mkdir.assert_called_once_with(mode=0o700, exist_ok=True)
+        if os.name == "posix":
+            queue_log_dir_path.mkdir.assert_called_once_with(mode=0o700, exist_ok=True)
+        else:
+            queue_log_dir_path.mkdir.assert_called_once_with(exist_ok=True)
+            mock_set_user_restricted_path_permissions.assert_called_once()
         mock_queue_session_log_file_path.assert_called_once_with(
             session_id=session_id, queue_log_dir=queue_log_dir_path
         )
@@ -587,6 +595,9 @@ class TestCreateNewSessions:
 
         with (
             patch.object(scheduler, "_executor"),
+            patch.object(
+                scheduler_mod, "set_user_restricted_path_permissions"
+            ) as mock_set_user_restricted_path_permissions,
             patch.object(scheduler_mod.LogConfiguration, "from_boto") as mock_log_config_from_boto,
             patch.object(
                 scheduler, "_queue_log_dir_path", return_value=queue_log_dir_path
@@ -604,11 +615,17 @@ class TestCreateNewSessions:
 
         # THEN
         mock_queue_log_dir.assert_called_once_with(queue_id=queue_id)
-        queue_log_dir_path.mkdir.assert_called_once_with(mode=0o700, exist_ok=True)
+        if os.name == "posix":
+            queue_log_dir_path.mkdir.assert_called_once_with(mode=0o700, exist_ok=True)
+        else:
+            queue_log_dir_path.mkdir.assert_called_once_with(exist_ok=True)
         if mkdir_side_effect:
             mock_queue_session_log_file_path.assert_not_called()
+            mock_set_user_restricted_path_permissions.assert_not_called()
         else:
             mock_queue_session_log_file_path.assert_called_once()
+            if os.name != "posix":
+                mock_set_user_restricted_path_permissions.assert_called_once()
         if mkdir_side_effect:
             session_log_file_path.touch.asset_not_called()
         else:

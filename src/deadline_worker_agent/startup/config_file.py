@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 import sys
+import os
 
 from pydantic import BaseModel, BaseSettings, Field, ValidationError, root_validator
 
@@ -20,6 +21,7 @@ from .capabilities import Capabilities
 DEFAULT_CONFIG_PATH: dict[str, Path] = {
     "darwin": Path("/etc/amazon/deadline/worker.toml"),
     "linux": Path("/etc/amazon/deadline/worker.toml"),
+    "win32": Path(os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Config/worker.toml")),
 }
 
 

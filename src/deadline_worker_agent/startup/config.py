@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import logging as _logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -137,7 +138,7 @@ class Configuration:
 
         settings = WorkerSettings(**settings_kwargs)
 
-        if settings.posix_job_user is not None:
+        if os.name == "posix" and settings.posix_job_user is not None:
             user, group = self._get_user_and_group_from_posix_job_user(settings.posix_job_user)
             self.jobs_run_as_overrides = JobsRunAsUserOverride(
                 run_as_agent=settings.jobs_run_as_agent_user,

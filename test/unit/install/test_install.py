@@ -5,7 +5,6 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Generator, Optional
 from unittest.mock import MagicMock, patch
-import os
 import sysconfig
 
 import pytest
@@ -303,4 +302,4 @@ def test_unsupported_platform_raises(platform: str, capsys: pytest.CaptureFixtur
     assert raise_ctx.value.code == 1
     capture = capsys.readouterr()
 
-    assert capture.out == f"ERROR: Unsupported platform {platform}{os.linesep}"
+    assert capture.out == f"ERROR: Unsupported platform {platform}\n"
