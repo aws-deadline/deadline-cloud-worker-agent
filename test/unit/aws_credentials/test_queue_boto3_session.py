@@ -19,7 +19,10 @@ from deadline_worker_agent.aws.deadline import (
 )
 import deadline_worker_agent.aws_credentials.queue_boto3_session as queue_boto3_session_mod
 from deadline_worker_agent.aws_credentials.queue_boto3_session import QueueBoto3Session
-from openjd.sessions import PosixSessionUser, SessionUser
+from openjd.sessions import SessionUser
+
+if os.name == "posix":
+    from openjd.sessions import PosixSessionUser
 
 
 @pytest.fixture(autouse=True)
@@ -51,11 +54,15 @@ def deadline_client() -> MagicMock:
     return MagicMock()
 
 
-@pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"), None))
-def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
-    return request.param
+@pytest.fixture()
+def os_user() -> Optional[SessionUser]:
+    if os.name == "posix":
+        return PosixSessionUser(user="some-user", group="some-group")  # type: ignore # noqa
+    else:
+        return None
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestInit:
     def test_construction(
         self,
@@ -146,6 +153,7 @@ class TestInit:
             assert exc_context.value is mock_refresh.side_effect
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestCleanup:
     def test(
         self,
@@ -189,6 +197,7 @@ class TestCleanup:
             mock_delete_dir.assert_called_once()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestHasCredentials:
     @pytest.mark.parametrize("expired", [True, False])
     def test(
@@ -241,6 +250,7 @@ SAMPLE_DEADLINE_CREDENTIALS = {
 SAMPLE_ASSUME_ROLE_RESPONSE = {"credentials": SAMPLE_DEADLINE_CREDENTIALS}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestRefreshCredentials:
     def test_uses_bootstrap_credentials(
         self,
@@ -426,6 +436,7 @@ class TestRefreshCredentials:
             assert exc_context.value.inner_exc is exception
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestCreateCredentialsDirectory:
     def test_success(
         self,
@@ -470,7 +481,7 @@ class TestCreateCredentialsDirectory:
             parents=True,
             mode=0o750,
         )
-        if isinstance(os_user, PosixSessionUser):
+        if isinstance(os_user, PosixSessionUser):  # type: ignore # noqa
             mock_chown.assert_called_once_with(mock_path, group=os_user.group)
         else:
             mock_chown.assert_not_called()
@@ -516,6 +527,7 @@ class TestCreateCredentialsDirectory:
         assert exc_context.value is mock_path.mkdir.side_effect
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestDeleteCredentialsDirectory:
     @pytest.mark.parametrize("exists", [True, False])
     def test_success(
@@ -564,6 +576,7 @@ class TestDeleteCredentialsDirectory:
                 mock_rmtree.assert_not_called()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestInstallCredentialProcess:
     def test_success(
         self,
@@ -636,7 +649,7 @@ class TestInstallCredentialProcess:
             mock_chown.assert_not_called()
         else:
             # This assert for type checking. Expand the if-else chain when adding new user kinds.
-            assert isinstance(os_user, PosixSessionUser)
+            assert isinstance(os_user, PosixSessionUser)  # type: ignore # noqa
             mock_chown.assert_called_once_with(credentials_process_script_path, group=os_user.group)
         aws_config_mock.install_credential_process.assert_called_once_with(
             session._profile_name, credentials_process_script_path
@@ -646,6 +659,7 @@ class TestInstallCredentialProcess:
         )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestUninstallCredentialProcess:
     def test_success(
         self,

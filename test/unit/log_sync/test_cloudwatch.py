@@ -8,6 +8,7 @@ from logging import INFO, Formatter, LogRecord
 from threading import Event
 from typing import Any, Generator, Optional
 from unittest.mock import MagicMock, PropertyMock, call, patch
+import pytest
 
 from pytest import fixture, mark, param, raises
 
@@ -33,6 +34,7 @@ def mock_module_logger() -> Generator[MagicMock, None, None]:
         yield mock_module_logger
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows is not yet supported.")
 class TestCloudWatchLogEventBatch:
     @fixture(autouse=True)
     def now(self) -> datetime:
@@ -161,6 +163,7 @@ class TestCloudWatchLogEventBatch:
         # THEN
         assert actual_size == expected_size
 
+    @pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
     class TestValidateLogEventCanBeAdded:
         @patch.object(module, "datetime", wraps=datetime)
         def test_valid_log_event(
@@ -182,6 +185,7 @@ class TestCloudWatchLogEventBatch:
             # THEN
             # The function did not throw, test passed
 
+        @pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
         def test_too_many_events(self):
             # GIVEN
             with patch.object(
@@ -212,6 +216,7 @@ class TestCloudWatchLogEventBatch:
                 ),
             ),
         )
+        @pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
         def test_over_batch_size(
             self,
             batch_size: int,
@@ -282,6 +287,7 @@ class TestCloudWatchLogEventBatch:
                 ),
             ),
         )
+        @pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
         def test_exceed_batch_timespan(
             self,
             event_time: datetime,

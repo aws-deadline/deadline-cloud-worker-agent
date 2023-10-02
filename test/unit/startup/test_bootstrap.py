@@ -6,6 +6,8 @@ import stat
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import json
+import pytest
+import os
 
 from botocore.exceptions import ClientError
 from pytest import fixture, mark, param, raises
@@ -211,6 +213,7 @@ def mock_get_host_properties(
         yield mock_get_host_properties
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestWorkerInfo:
     """Tests for WorkerInfo class"""
 
@@ -319,6 +322,7 @@ class TestWorkerInfo:
         assert result.worker_id == worker_id
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestBootstrapWorker:
     """Tests for bootstrap_worker function"""
 
@@ -478,6 +482,7 @@ class TestBootstrapWorker:
         )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestLoadOrCreateWorker:
     """Tests for _load_or_create_worker()"""
 
@@ -588,6 +593,7 @@ class TestLoadOrCreateWorker:
             )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestGetBoto3SessionForFleetRole:
     """Tests of _get_boto3_session_for_fleet_role()"""
 
@@ -691,6 +697,7 @@ class TestGetBoto3SessionForFleetRole:
             )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestStartWorker:
     """Tests for the _start_worker() function"""
 
@@ -839,6 +846,7 @@ class TestStartWorker:
 
 
 @mark.usefixtures("get_metadata_mock")
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestEnforceNoInstanceProfile:
     def test_success(
         self,
@@ -902,6 +910,7 @@ class TestEnforceNoInstanceProfile:
         )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestEnforceNoInstanceProfileOrStopWorker:
     @fixture(autouse=True)
     def mock_enforce_no_instance_profile(self) -> Generator[MagicMock, None, None]:

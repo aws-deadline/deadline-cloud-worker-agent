@@ -3,6 +3,7 @@
 from typing import Optional, Generator
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone, timedelta
+import os
 
 import pytest
 
@@ -99,6 +100,7 @@ def temporary_credentials_cls_mock() -> Generator[MagicMock, None, None]:
         yield mock
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestInit:
     def test_without_loading(
         self,
@@ -169,6 +171,7 @@ SAMPLE_DEADLINE_CREDENTIALS = {
 SAMPLE_ASSUME_ROLE_RESPONSE = {"credentials": SAMPLE_DEADLINE_CREDENTIALS}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestRefreshCredentials:
     def test_uses_own_credentials(
         self,

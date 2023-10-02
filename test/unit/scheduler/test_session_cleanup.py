@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Generator
 from unittest.mock import MagicMock, patch
 import subprocess
+import os
 
 from openjd.sessions import SessionUser, PosixSessionUser
 import pytest
@@ -20,6 +21,7 @@ class FakeSessionUser(SessionUser):
         self.user = user
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestSessionUserCleanupManager:
     @pytest.fixture
     def manager(self) -> SessionUserCleanupManager:

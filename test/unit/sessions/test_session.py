@@ -27,6 +27,8 @@ from openjd.sessions import (
     PosixSessionUser,
 )
 
+import os
+
 from deadline_worker_agent.api_models import EnvironmentAction, TaskRunAction
 from deadline_worker_agent.sessions import Session
 from deadline_worker_agent.sessions import session as session_module
@@ -52,7 +54,9 @@ from deadline.job_attachments.models import (
 import deadline_worker_agent.sessions.session as session_mod
 
 
-@pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"),))
+@pytest.fixture(
+    params=((PosixSessionUser(user="some-user", group="some-group") if os.name == "posix" else None),)  # type: ignore
+)
 def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
     return request.param
 
@@ -276,6 +280,7 @@ def mock_mod_logger() -> Generator[MagicMock, None, None]:
         yield mock_mod_logger
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionInit:
     """Test cases for Session.__init__()"""
 
@@ -361,6 +366,7 @@ class TestSessionInit:
             assert not mock_openjd_session_cls.call_args.kwargs.get("path_mapping_rules", False)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionOuterRun:
     """Test cases for Session.run()"""
 
@@ -505,6 +511,7 @@ class TestSessionOuterRun:
         session_action_queue._job_entities.cache_entities.assert_called_once()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionSyncAssetInputs:
     @pytest.fixture(autouse=True)
     def mock_asset_sync(self, session: Session) -> Generator[MagicMock, None, None]:
@@ -618,6 +625,7 @@ class TestSessionSyncAssetInputs:
                 session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionInnerRun:
     """Test cases for Session._run()"""
 
@@ -709,6 +717,7 @@ class TestSessionInnerRun:
         mock_start_action.assert_called_once()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionCancelActions:
     """Test cases for Session.cancel_actions()"""
 
@@ -796,6 +805,7 @@ class TestSessionCancelActions:
         current_action_lock_exit.assert_called_once_with(None, None, None)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionCancelActionsImpl:
     """Test cases for Session._cancel_actions_impl()"""
 
@@ -817,6 +827,7 @@ class TestSessionCancelActionsImpl:
         openjd_cancel_action.assert_called_once_with(time_limit=None)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionReplaceAssignedActions:
     """Test cases for Session.replace_assigned_actions()"""
 
@@ -859,6 +870,7 @@ class TestSessionReplaceAssignedActions:
         lock_exit.assert_called_once()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionUpdateAction:
     """Test cases for Session.update_action()"""
 
@@ -906,6 +918,7 @@ class TestSessionUpdateAction:
         mock_report_action_update.assert_not_called()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionActionUpdatedImpl:
     """Test cases for Session._action_updated_impl()"""
 
@@ -1259,6 +1272,7 @@ class TestSessionActionUpdatedImpl:
 
 
 @pytest.mark.usefixtures("mock_openjd_session")
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestStartCancelingCurrentAction:
     """Test cases for Session._start_canceling_current_action()"""
 
@@ -1320,6 +1334,7 @@ class TestStartCancelingCurrentAction:
         )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionStop:
     """Tests for Session.stop()"""
 
@@ -1432,6 +1447,7 @@ class TestSessionStop:
         assert session._stop.is_set()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionCleanup:
     """Tests for the Session._cleanup() method"""
 
@@ -1527,6 +1543,7 @@ class TestSessionCleanup:
         openjd_session_cleanup.assert_called_once_with()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestSessionStartAction:
     """Tests for Session._start_action()"""
 

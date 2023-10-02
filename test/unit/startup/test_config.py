@@ -10,7 +10,10 @@ from typing import Any, Generator, List, Optional
 import logging
 import pytest
 
-from openjd.sessions import PosixSessionUser
+import os
+
+if os.name == "posix":
+    from openjd.sessions import PosixSessionUser
 
 from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
 from deadline_worker_agent.startup import config as config_mod
@@ -75,6 +78,7 @@ def arg_parser(
         yield arg_parser
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestLoad:
     """Tests for Configuration.load()"""
 
@@ -333,6 +337,7 @@ class TestLoad:
         assert config.local_session_logs == local_session_logs
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestInit:
     """Tests for Configutation.__init__"""
 
@@ -771,76 +776,89 @@ class TestInit:
         else:
             assert "local_session_logs" not in call.kwargs
 
-    @pytest.mark.parametrize(
-        argnames=("posix_job_user_setting", "expected_config_posix_job_user"),
-        argvalues=(
-            pytest.param(
-                "user:group",
-                PosixSessionUser(group="group", user="user"),
-                id="has-posix-job-user-setting",
+    if os.name == "posix":
+
+        @pytest.mark.parametrize(
+            argnames=("posix_job_user_setting", "expected_config_posix_job_user"),
+            argvalues=(
+                pytest.param(
+                    "user:group",
+                    PosixSessionUser(group="group", user="user"),
+                    id="has-posix-job-user-setting",
+                ),
+                pytest.param(
+                    None,
+                    None,
+                    id="no-posix-job-user-setting",
+                ),
+                pytest.param(
+                    None,
+                    None,
+                    id="no-posix-job-user-setting",
+                ),
             ),
-            pytest.param(
-                None,
-                None,
-                id="no-posix-job-user-setting",
-            ),
-        ),
-    )
-    def test_uses_worker_settings(
-        self,
-        posix_job_user_setting: str | None,
-        expected_config_posix_job_user: PosixSessionUser | None,
-        parsed_args: ParsedCommandLineArguments,
-        mock_worker_settings_cls: MagicMock,
-    ) -> None:
-        """Tests that any parsed_cli_args without a value of None are passed as kwargs when
-        creating a WorkerSettings instance"""
-
-        # GIVEN
-        mock_worker_settings_cls.side_effect = None
-        mock_worker_settings: MagicMock = mock_worker_settings_cls.return_value
-        mock_worker_settings.posix_job_user = posix_job_user_setting
-
-        # Needed because MagicMock does not support gt/lt comparison
-        mock_worker_settings.host_metrics_logging_interval_seconds = 10
-
-        # WHEN
-        config = config_mod.Configuration(parsed_cli_args=parsed_args)
-
-        # THEN
-        # Assert that the attributes are taken from the WorkerSettings instance
-        assert config.farm_id is mock_worker_settings.farm_id
-        assert config.fleet_id is mock_worker_settings.fleet_id
-        assert config.profile is mock_worker_settings.profile
-        assert config.verbose is mock_worker_settings.verbose
-        assert config.no_shutdown is mock_worker_settings.no_shutdown
-        assert config.allow_instance_profile is mock_worker_settings.allow_instance_profile
-        assert (
-            config.cleanup_session_user_processes
-            is mock_worker_settings.cleanup_session_user_processes
         )
-        assert config.capabilities is mock_worker_settings.capabilities
-        assert config.impersonation.inactive == (not mock_worker_settings.impersonation)
-        if expected_config_posix_job_user:
-            assert isinstance(config.impersonation.posix_job_user, PosixSessionUser)
-            assert config.impersonation.posix_job_user.group == expected_config_posix_job_user.group
-            assert config.impersonation.posix_job_user.user == expected_config_posix_job_user.user
-        else:
-            assert config.impersonation.posix_job_user is None
-        assert config.worker_logs_dir is mock_worker_settings.worker_logs_dir
-        assert config.local_session_logs is mock_worker_settings.local_session_logs
-        assert config.worker_persistence_dir is mock_worker_settings.worker_persistence_dir
-        assert (
-            config.worker_credentials_dir
-            is mock_worker_settings.worker_persistence_dir / "credentials"
-        )
-        assert config.host_metrics_logging is mock_worker_settings.host_metrics_logging
-        assert (
-            config.host_metrics_logging_interval_seconds
-            is mock_worker_settings.host_metrics_logging_interval_seconds
-        )
+        def test_uses_worker_settings(
+            self,
+            posix_job_user_setting: str | None,
+            expected_config_posix_job_user: PosixSessionUser | None,
+            parsed_args: ParsedCommandLineArguments,
+            mock_worker_settings_cls: MagicMock,
+        ) -> None:
+            """Tests that any parsed_cli_args without a value of None are passed as kwargs when
+            creating a WorkerSettings instance"""
+
+            # GIVEN
+            mock_worker_settings_cls.side_effect = None
+            mock_worker_settings: MagicMock = mock_worker_settings_cls.return_value
+            mock_worker_settings.posix_job_user = posix_job_user_setting
+
+            # Needed because MagicMock does not support gt/lt comparison
+            mock_worker_settings.host_metrics_logging_interval_seconds = 10
+
+            # WHEN
+            config = config_mod.Configuration(parsed_cli_args=parsed_args)
+
+            # THEN
+            # Assert that the attributes are taken from the WorkerSettings instance
+            assert config.farm_id is mock_worker_settings.farm_id
+            assert config.fleet_id is mock_worker_settings.fleet_id
+            assert config.profile is mock_worker_settings.profile
+            assert config.verbose is mock_worker_settings.verbose
+            assert config.no_shutdown is mock_worker_settings.no_shutdown
+            assert config.allow_instance_profile is mock_worker_settings.allow_instance_profile
+            assert (
+                config.cleanup_session_user_processes
+                is mock_worker_settings.cleanup_session_user_processes
+            )
+            assert config.capabilities is mock_worker_settings.capabilities
+            assert config.impersonation.inactive == (not mock_worker_settings.impersonation)
+            if expected_config_posix_job_user:
+                assert isinstance(config.impersonation.posix_job_user, PosixSessionUser)
+                assert (
+                    config.impersonation.posix_job_user.group
+                    == expected_config_posix_job_user.group
+                )
+                assert (
+                    config.impersonation.posix_job_user.user == expected_config_posix_job_user.user
+                )
+            else:
+                assert config.impersonation.posix_job_user is None
+            assert config.worker_logs_dir is mock_worker_settings.worker_logs_dir
+            assert config.local_session_logs is mock_worker_settings.local_session_logs
+            assert config.worker_persistence_dir is mock_worker_settings.worker_persistence_dir
+            assert (
+                config.worker_credentials_dir
+                is mock_worker_settings.worker_persistence_dir / "credentials"
+            )
+            assert config.host_metrics_logging is mock_worker_settings.host_metrics_logging
+            assert (
+                config.host_metrics_logging_interval_seconds
+                is mock_worker_settings.host_metrics_logging_interval_seconds
+            )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on Windows")
 class TestLog:
     """Tests for Configutation.log()"""
 

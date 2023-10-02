@@ -7,6 +7,7 @@ from threading import Event
 from typing import Generator
 from unittest.mock import ANY, MagicMock, call, patch
 from pathlib import Path
+import os
 
 import pytest
 
@@ -125,6 +126,7 @@ def thread_pool_executor(mock_thread_pool_executor_cls: MagicMock) -> MagicMock:
     return mock_thread_pool_executor_cls.return_value
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestInit:
     def test_stop_event_created(
         self,
@@ -157,6 +159,7 @@ class TestInit:
         )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestRun:
     def test_service_shutdown_raised_not_logged(
         self,
@@ -189,6 +192,7 @@ class TestRun:
         logger_exception.assert_not_called()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestMonitorEc2Shutdown:
     @pytest.fixture
     def is_asg_terminated(self) -> bool:
@@ -357,6 +361,7 @@ class TestMonitorEc2Shutdown:
         )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Expected to fail on windows")
 class TestEC2MetadataQueries:
     def test_get_imdsv2_token(self, worker: Worker, requests_put: MagicMock) -> None:
         # GIVEN

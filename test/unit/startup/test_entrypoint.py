@@ -156,6 +156,7 @@ def block_telemetry_client() -> Generator[MagicMock, None, None]:
         yield telem_mock
 
 
+@pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
 def test_calls_worker_run(
     mock_worker_run: MagicMock,
 ) -> None:
@@ -168,6 +169,7 @@ def test_calls_worker_run(
 
 
 @patch.object(entrypoint_mod.sys, "exit")
+@pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
 def test_worker_run_exception(
     sys_exit_mock: MagicMock,
     mock_worker_run: MagicMock,
@@ -188,6 +190,7 @@ def test_worker_run_exception(
     sys_exit_mock.assert_called_once_with(1)
 
 
+@pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
 def test_configuration_load(
     configuration_load: MagicMock,
 ) -> None:
@@ -228,6 +231,7 @@ def test_configuration_error(
     sys_exit_mock.assert_called_with(1)
 
 
+@pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
 def test_configuration_logged(
     configuration: MagicMock,
 ) -> None:
@@ -259,6 +263,7 @@ def test_configuration_logged(
 @patch.object(entrypoint_mod, "Configuration")
 @patch.object(entrypoint_mod.logging, "getLogger")
 @patch.object(entrypoint_mod, "_logger")
+@pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
 def test_log_configuration(
     module_logger_mock: MagicMock,
     get_logger_mock: MagicMock,
@@ -362,6 +367,7 @@ def test_log_configuration(
     ),
 )
 @patch.object(entrypoint_mod._logger, "info")
+@pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
 def test_worker_deletion(
     logger_info_mock: MagicMock,
     worker_info: WorkerPersistenceInfo,
@@ -402,6 +408,7 @@ def test_worker_deletion(
         pytest.param(False, id="False"),
     ],
 )
+@pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
 def test_system_shutdown_called(
     mock_system_shutdown: MagicMock,
     request_shutdown: bool,
@@ -605,6 +612,7 @@ def test_passes_worker_logs_dir(
 
 
 @patch.object(entrypoint_mod, "_logger")
+@pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
 def test_worker_stop_exception(
     logger_mock: MagicMock,
 ) -> None:
@@ -638,6 +646,7 @@ class TestCloudWatchLogStreaming:
     ) -> Optional[str]:
         return request.param
 
+    @pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
     def test_cloudwatch_log_streaming(
         self,
         mock_stream_cloudwatch_logs: MagicMock,

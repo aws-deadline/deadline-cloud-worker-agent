@@ -18,6 +18,7 @@ from openjd.sessions import PosixSessionUser
 
 
 import pytest
+import os
 
 from deadline_worker_agent.api_models import (
     Attachments,
@@ -174,6 +175,7 @@ class TestJobEntity:
             assert job_details.path_mapping_rules not in (None, [])
             assert len(job_details.path_mapping_rules) == len(path_mapping_rules)
 
+    @pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
     def test_job_run_as_user(self) -> None:
         """Ensures that if we receive a job_run_as_user field in the response,
         that the created entity has a (Posix) SessionUser created with the
@@ -223,6 +225,7 @@ class TestJobEntity:
             ),
         ),
     )
+    @pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
     def test_old_jobs_run_as_existence(self, jobs_run_as_data: dict[str, str]) -> None:
         """Ensures that if we receive the old jobs_run_as field in the response,
         that we do not error on validating the response and use the newer jobRunAsUser info"""
@@ -256,6 +259,7 @@ class TestJobEntity:
         assert entity_obj.job_run_as_user.posix.group == expected_group
 
     # TODO: remove once service no longer sends jobsRunAs
+    @pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
     def test_only_old_jobs_run_as(self) -> None:
         """Ensures that if we only receive the old jobs_run_as field in the response,
         that we do not error on validating the response and we have job_run_as_user info"""
@@ -286,6 +290,7 @@ class TestJobEntity:
         assert entity_obj.job_run_as_user.posix.group == expected_group
 
     # TODO: remove once service no longer sends jobsRunAs
+    @pytest.mark.xfail(os.name == "nt", reason="Windows is not yet supported.")
     def test_only_empty_old_jobs_run_as(self) -> None:
         """Ensures that if we only receive the old jobs_run_as field with no user and group,
         that we do not error on validating the response and we do not have job_run_as_user info"""
@@ -344,6 +349,7 @@ class TestJobEntity:
             pytest.param({}, id="no posix"),
         ),
     )
+    @pytest.mark.skipif(os.name == "nt", reason="Windows is not yet supported.")
     def test_job_run_as_user_empty_values(self, job_run_as_user_data: JobRunAsUser | None) -> None:
         """Ensures that if we are missing values in the job_run_as_user fields
         that created entity does not have it set (ie. old queues)"""

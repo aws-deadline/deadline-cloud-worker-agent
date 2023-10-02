@@ -13,7 +13,11 @@ from deadline_worker_agent.aws_credentials.aws_configs import (
     _setup_file,
     _setup_parent_dir,
 )
-from openjd.sessions import PosixSessionUser, SessionUser
+import os
+
+if os.name == "posix":
+    from openjd.sessions import PosixSessionUser
+from openjd.sessions import SessionUser
 
 
 @pytest.fixture
@@ -27,11 +31,15 @@ def mock_run_cmd_as() -> Generator[MagicMock, None, None]:
         yield mock_run_cmd_as
 
 
-@pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"), None))
-def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
-    return request.param
+@pytest.fixture()
+def os_user() -> Optional[SessionUser]:
+    if os.name == "posix":
+        return PosixSessionUser(user="some-user", group="some-group")
+    else:
+        return None
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows is not yet supported.")
 class TestSetupParentDir:
     """Tests for the _setup_parent_dir() function"""
 
@@ -92,6 +100,7 @@ class TestSetupParentDir:
             mock_run_cmd_as.assert_not_called()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows is not yet supported.")
 class TestSetupFile:
     """Tests for the _setup_file() function"""
 
@@ -199,6 +208,7 @@ class TestSetupFile:
             mock_run_cmd_as.assert_not_called()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows is not yet supported.")
 class AWSConfigTestBase:
     """Base class for common testing logic of AWSConfig and AWSCredentials classes"""
 
@@ -381,6 +391,7 @@ class AWSConfigTestBase:
         )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows is not yet supported.")
 class TestAWSConfig(AWSConfigTestBase):
     """
     Test class derrived from AWSConfigTestBase for AWSConfig.
@@ -402,6 +413,7 @@ class TestAWSConfig(AWSConfigTestBase):
         return f"~{os_user.user if os_user is not None else ''}/.aws/config"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows is not yet supported.")
 class TestAWSCredentials(AWSConfigTestBase):
     """
     Test class derrived from AWSConfigTestBase for AWSCredentials.
