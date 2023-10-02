@@ -51,16 +51,24 @@ def logs_client() -> MagicMock:
     return MagicMock()
 
 
-@pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"),))
-def posix_job_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
-    return request.param
+@pytest.fixture()
+def os_user() -> Optional[SessionUser]:
+    if os.name == "posix":
+        return PosixSessionUser(user="some-user", group="some-group")
+    else:
+        return None
 
 
-@pytest.fixture(params=(False,))
+@pytest.fixture(params=[(os.name == "posix",)])
 def impersonation(
-    request: pytest.FixtureRequest, posix_job_user: Optional[SessionUser]
+    request: pytest.FixtureRequest, os_user: Optional[SessionUser]
 ) -> ImpersonationOverrides:
-    return ImpersonationOverrides(inactive=request.param, posix_job_user=posix_job_user)
+    (posix_os,) = request.param
+
+    if posix_os:
+        return ImpersonationOverrides(inactive=False, posix_job_user=os_user)
+    else:
+        return ImpersonationOverrides(inactive=True)
 
 
 @pytest.fixture
@@ -242,7 +250,7 @@ def job_run_as_user() -> JobRunAsUser | None:
     """The OS user/group associated with the job's queue"""
     # TODO: windows support
     if os.name != "posix":
-        raise NotImplementedError(f"{os.name} is not supported")
+        return None
     return JobRunAsUser(posix=PosixSessionUser(user="job-user", group="job-user"))
 
 
