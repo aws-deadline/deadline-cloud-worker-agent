@@ -215,6 +215,34 @@ def failed_action_status(request: pytest.FixtureRequest) -> ActionStatus:
 @pytest.fixture(
     params=(
         ActionStatus(
+            exit_code=1,
+            state=ActionState.CANCELED,
+        ),
+        ActionStatus(
+            exit_code=1,
+            state=ActionState.CANCELED,
+            fail_message="canceled message",
+        ),
+        ActionStatus(
+            exit_code=1,
+            state=ActionState.CANCELED,
+            progress=50,
+        ),
+    ),
+    ids=(
+        "no-fail-msg-progress",
+        "no-progress",
+        "no-fail-msg",
+    ),
+)
+def canceled_action_status(request: pytest.FixtureRequest) -> ActionStatus:
+    """A fixture providing a canceled Open Job Description ActionStatus"""
+    return request.param
+
+
+@pytest.fixture(
+    params=(
+        ActionStatus(
             exit_code=0,
             state=ActionState.SUCCESS,
         ),
@@ -1146,6 +1174,78 @@ class TestSessionActionUpdatedImpl:
         )
         assert session._current_action is None, "Current session action emptied"
         mock_sync_asset_outputs.assert_called_once_with(current_action=current_action)
+
+    def test_logs_succeeded(
+        self,
+        action_complete_time: datetime,
+        current_action: CurrentAction,
+        mock_mod_logger: MagicMock,
+        session: Session,
+        succeess_action_status: ActionStatus,
+    ) -> None:
+        """Tests that succeeded actions are logged"""
+        # WHEN
+        session._action_updated_impl(
+            action_status=succeess_action_status,
+            now=action_complete_time,
+        )
+
+        # THEN
+        mock_mod_logger.info.assert_called_once_with(
+            "[%s] Action %s: %s completed as %s",
+            session.id,
+            current_action.definition.id,
+            current_action.definition.human_readable(),
+            "SUCCEEDED",
+        )
+
+    def test_logs_failed(
+        self,
+        action_complete_time: datetime,
+        current_action: CurrentAction,
+        mock_mod_logger: MagicMock,
+        session: Session,
+        failed_action_status: ActionStatus,
+    ) -> None:
+        """Tests that failed actions are logged"""
+        # WHEN
+        session._action_updated_impl(
+            action_status=failed_action_status,
+            now=action_complete_time,
+        )
+
+        # THEN
+        mock_mod_logger.info.assert_called_once_with(
+            "[%s] Action %s: %s completed as %s",
+            session.id,
+            current_action.definition.id,
+            current_action.definition.human_readable(),
+            "FAILED",
+        )
+
+    def test_logs_canceled(
+        self,
+        action_complete_time: datetime,
+        current_action: CurrentAction,
+        mock_mod_logger: MagicMock,
+        session: Session,
+        canceled_action_status: ActionStatus,
+    ) -> None:
+        """Tests that canceled actions are logged"""
+        # WHEN
+        session._action_updated_impl(
+            action_status=canceled_action_status,
+            now=action_complete_time,
+        )
+
+        # THEN
+        mock_mod_logger.info.assert_called_once_with(
+            "[%s] Action %s: %s completed as %s",
+            session.id,
+            current_action.definition.id,
+            current_action.definition.human_readable(),
+            "CANCELED",
+        )
 
 
 @pytest.mark.usefixtures("mock_openjd_session")
