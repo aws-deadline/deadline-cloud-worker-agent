@@ -997,6 +997,9 @@ class Session:
             # UpdateWorkerSchedule request if so.
             self._current_action = None
 
+        completed_status = OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
+            action_status.state, None
+        )
         self._report_action_update(
             SessionActionStatus(
                 id=current_action.definition.id,
@@ -1004,10 +1007,15 @@ class Session:
                 start_time=current_action.start_time,
                 end_time=now if action_status.state != ActionState.RUNNING else None,
                 update_time=now if action_status.state == ActionState.RUNNING else None,
-                completed_status=OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
-                    action_status.state, None
-                ),
+                completed_status=completed_status,
             )
+        )
+        logger.info(
+            "[%s] Action %s: %s completed as %s",
+            self.id,
+            current_action.definition.id,
+            current_action.definition.human_readable(),
+            completed_status,
         )
 
     def _sync_asset_outputs(
