@@ -222,7 +222,7 @@ class Session:
         """
         self._warm_job_entities_cache()
 
-        logger.info("[%s] started", self._id)
+        logger.info("[%s]: Session started", self._id)
         self._stopped_running.clear()
 
         try:
@@ -245,7 +245,7 @@ class Session:
             finally:
                 self._stopped_running.set()
 
-        logger.info("[%s] session complete", self._id)
+        logger.info("[%s]: Session complete", self._id)
 
     def wait(self, timeout: timedelta | None = None) -> None:
         # Wait until this Session is not running anymore.
@@ -461,8 +461,10 @@ class Session:
             #         logger.warning(str(e))
             #     except Exception as e:
             #         logger.error(
-            #             "Unexepected error trying to cancel (%s): %s",
+            #             "[%s] [%s] (%s): Error canceling action: %s",
+            #             self.id,
             #             canceled_action_id,
+            #             self._current_action.definition.human_readable(),
             #             e,
             #         )
 
@@ -473,7 +475,12 @@ class Session:
             raise ValueError("Current action not assigned")
 
         # Cancel the action
-        logger.info("[%s] Canceling action %s", self._id, current_action.definition.id)
+        logger.info(
+            "[%s] [%s] (%s): Canceling action",
+            self._id,
+            current_action.definition.id,
+            current_action.definition.human_readable(),
+        )
         current_action.definition.cancel(session=self, time_limit=time_limit)
 
     def _start_action(
@@ -538,7 +545,7 @@ class Session:
             return
 
         logger.info(
-            "[%s] Running action %s: %s",
+            "[%s] [%s] (%s): Starting action",
             self._id,
             action_definition.id,
             action_definition.human_readable(),
@@ -554,7 +561,13 @@ class Session:
                 executor=executor,
             )
         except Exception as e:
-            logger.warn("[%s] Error starting action %s: %s", self.id, action_definition.id, e)
+            logger.warn(
+                "[%s] [%s] (%s): Error starting action: %s",
+                self.id,
+                action_definition.id,
+                action_definition.human_readable(),
+                e,
+            )
             self._report_action_update(
                 SessionActionStatus(
                     id=action_definition.id,
@@ -1010,13 +1023,14 @@ class Session:
                 completed_status=completed_status,
             )
         )
-        logger.info(
-            "[%s] Action %s: %s completed as %s",
-            self.id,
-            current_action.definition.id,
-            current_action.definition.human_readable(),
-            completed_status,
-        )
+        if completed_status:
+            logger.info(
+                "[%s] [%s] (%s): Action completed as %s",
+                self.id,
+                current_action.definition.id,
+                current_action.definition.human_readable(),
+                completed_status,
+            )
 
     def _sync_asset_outputs(
         self,
