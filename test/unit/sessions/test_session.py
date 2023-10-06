@@ -1192,7 +1192,7 @@ class TestSessionActionUpdatedImpl:
 
         # THEN
         mock_mod_logger.info.assert_called_once_with(
-            "[%s] Action %s: %s completed as %s",
+            "[%s] [%s] (%s): Action completed as %s",
             session.id,
             current_action.definition.id,
             current_action.definition.human_readable(),
@@ -1216,7 +1216,7 @@ class TestSessionActionUpdatedImpl:
 
         # THEN
         mock_mod_logger.info.assert_called_once_with(
-            "[%s] Action %s: %s completed as %s",
+            "[%s] [%s] (%s): Action completed as %s",
             session.id,
             current_action.definition.id,
             current_action.definition.human_readable(),
@@ -1240,7 +1240,7 @@ class TestSessionActionUpdatedImpl:
 
         # THEN
         mock_mod_logger.info.assert_called_once_with(
-            "[%s] Action %s: %s completed as %s",
+            "[%s] [%s] (%s): Action completed as %s",
             session.id,
             current_action.definition.id,
             current_action.definition.human_readable(),
@@ -1303,7 +1303,10 @@ class TestStartCancelingCurrentAction:
 
         # THEN
         logger_info.assert_called_once_with(
-            "[%s] Canceling action %s", session.id, current_action.definition.id
+            "[%s] [%s] (%s): Canceling action",
+            session.id,
+            current_action.definition.id,
+            current_action.definition.human_readable(),
         )
 
 
@@ -1627,7 +1630,7 @@ class TestSessionStartAction:
 
         # THEN
         logger_info.assert_called_once_with(
-            "[%s] Running action %s: %s",
+            "[%s] [%s] (%s): Starting action",
             session.id,
             run_step_task_action.id,
             run_step_task_action.human_readable(),
@@ -1651,5 +1654,9 @@ class TestSessionStartAction:
         )
         assert session._current_action is None
         logger_warn.assert_called_once_with(
-            "[%s] Error starting action %s: %s", session.id, run_step_task_action.id, exception
+            "[%s] [%s] (%s): Error starting action: %s",
+            session.id,
+            run_step_task_action.id,
+            run_step_task_action.human_readable(),
+            exception,
         )
