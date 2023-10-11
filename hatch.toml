@@ -40,12 +40,7 @@ PIP_INDEX_URL="https://aws:{env:CODEARTIFACT_AUTH_TOKEN}@{env:CODEARTIFACT_DOMAI
 
 [envs.codebuild.scripts]
 build = "hatch build"
+integ-test = "pytest --no-cov test/integ {args}"
 
 [envs.codebuild.env-vars]
 PIP_INDEX_URL=""
-
-[envs.integ.scripts]
-test = "pytest --no-cov {args:test/integ}"
-
-[envs.e2e.scripts]
-test = "pytest --no-cov {args:test/e2e}"
