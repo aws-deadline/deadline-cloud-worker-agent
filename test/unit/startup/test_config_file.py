@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 import tempfile
 from pathlib import Path
+from deadline_worker_agent.startup.capabilities import Capabilities
 
 from pydantic import ValidationError
 import pytest
@@ -183,7 +184,7 @@ class TestWorkerConfigSection:
         self,
         worker_config_section_data: dict[str, Any],
     ) -> None:
-        """Asserts that an absent "farm_id" key raises a ValidationError"""
+        """Asserts that an absent "farm_id" key does not raise a ValidationError"""
         # GIVEN
         del worker_config_section_data["farm_id"]
 
@@ -215,7 +216,7 @@ class TestWorkerConfigSection:
         self,
         worker_config_section_data: dict[str, Any],
     ) -> None:
-        """Asserts that an absent "fleet_id" key raises a ValidationError"""
+        """Asserts that an absent "fleet_id" key does not raise a ValidationError"""
         # GIVEN
         del worker_config_section_data["fleet_id"]
 
@@ -463,6 +464,134 @@ class TestOsConfigSection:
 
         # THEN
         assert os_config.posix_job_user is None
+
+
+FULL_CONFIG_FILE_DATA = {
+    "worker": {
+        "farm_id": "farm-1f0ece77172c441ebe295491a51cf6d5",
+        "fleet_id": "fleet-c4a9481caa88404fa878a7fb98f8a4dd",
+        "cleanup_session_user_processes": False,
+        "worker_persistence_dir": "/my/worker/persistence",
+    },
+    "aws": {
+        "profile": "my_aws_profile_name",
+        "allow_ec2_instance_profile": True,
+    },
+    "logging": {
+        "verbose": True,
+        "worker_logs_dir": "/var/log/amazon/deadline",
+        "local_session_logs": False,
+    },
+    "os": {
+        "impersonation": False,
+        "posix_job_user": "user:group",
+        "shutdown_on_stop": False,
+    },
+    "capabilities": {
+        "amounts": {
+            "amount.slots": 20,
+            "deadline:amount.pets": 99,
+        },
+        "attributes": {
+            "attr.groups": ["simulation"],
+            "acmewidgetsco:attr.admins": ["bob", "alice"],
+        },
+    },
+}
+
+
+class TestConfigFileValidation:
+    @pytest.mark.parametrize(
+        "config_file_data",
+        [
+            pytest.param(
+                {
+                    "worker": {
+                        "cleanup_session_user_processes": False,
+                    },
+                    "aws": {},
+                    "logging": {},
+                    "os": {},
+                    "capabilities": {
+                        "amounts": {},
+                        "attributes": {},
+                    },
+                },
+                id="only required fields",
+            ),
+            pytest.param(
+                FULL_CONFIG_FILE_DATA,
+                id="all fields",
+            ),
+        ],
+    )
+    def test_input_validation_success(self, config_file_data: dict[str, Any]):
+        """Asserts that a valid input dictionary passes ConfigFile model validation"""
+        # WHEN
+        config_file = ConfigFile.parse_obj(config_file_data)
+
+        # THEN
+        assert config_file.worker == WorkerConfigSection.parse_obj(config_file_data["worker"])
+        assert config_file.aws == AwsConfigSection.parse_obj(config_file_data["aws"])
+        assert config_file.logging == LoggingConfigSection.parse_obj(config_file_data["logging"])
+        assert config_file.os == OsConfigSection.parse_obj(config_file_data["os"])
+        assert config_file.capabilities == Capabilities.parse_obj(config_file_data["capabilities"])
+
+    @pytest.mark.parametrize(
+        ("section_to_modify", "invalid_section_data"),
+        [
+            pytest.param("worker", None, id="missing worker config section"),
+            pytest.param(
+                "worker",
+                {"farm_id": "farm-x"},
+                id="invalid worker config section - invalid farm_id (bad format)",
+            ),
+            pytest.param("aws", None, id="missing aws config section"),
+            pytest.param(
+                "aws",
+                {"profile": ""},
+                id="invalid aws config section - profile is an empty string",
+            ),
+            pytest.param("logging", None, id="missing logging config section"),
+            pytest.param(
+                "logging",
+                {"verbose": "verbose"},
+                id="invalid logging config section - verbose is not bool",
+            ),
+            pytest.param("os", None, id="missing os config section"),
+            pytest.param(
+                "os",
+                {"posix_job_user": " user : group "},
+                id="invalid os config section - invalid posix_job_user value (whitespace)",
+            ),
+            pytest.param("capabilities", None, id="missing capabilities section"),
+            pytest.param(
+                "capabilities",
+                {"amounts": {}},
+                id="invalid capabilities config section - missing attributes",
+            ),
+        ],
+    )
+    def test_input_validation_failure(
+        self, section_to_modify: str, invalid_section_data: dict[str, Any] | None
+    ):
+        """Tests that an invalid iniput dictionary fails ConfigFile model validation"""
+        config_file_data = FULL_CONFIG_FILE_DATA.copy()
+
+        if invalid_section_data is None:
+            del config_file_data[section_to_modify]
+        else:
+            config_file_data[section_to_modify] = invalid_section_data
+
+        # WHEN
+        def when() -> ConfigFile:
+            return ConfigFile.parse_obj(config_file_data)
+
+        with pytest.raises(ValidationError) as excinfo:
+            when()
+
+        # THEN
+        assert len(excinfo.value.errors()) > 0
 
 
 FULL_CONFIG_FILE = """
