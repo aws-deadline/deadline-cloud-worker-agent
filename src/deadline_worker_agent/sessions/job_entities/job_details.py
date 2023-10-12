@@ -85,21 +85,15 @@ def path_mapping_api_model_to_openjd(
 
 
 def job_run_as_user_api_model_to_worker_agent(
-    job_run_as_user_data: JobRunAsUserModel | None,
-) -> JobRunAsUser | None:
+    job_run_as_user_data: JobRunAsUserModel,
+) -> JobRunAsUser:
     """Converts the 'JobRunAsUser' api model to the 'JobRunAsUser' dataclass
     expected by the Worker Agent.
     """
-    job_run_as_user: JobRunAsUser | None = None
-    if not job_run_as_user_data:
-        return None
-
     if os.name == "posix":
         job_run_as_user_posix = job_run_as_user_data.get("posix", {})
         user = job_run_as_user_posix.get("user", "")
         group = job_run_as_user_posix.get("group", "")
-        if not (user and group):
-            return None
 
         job_run_as_user = JobRunAsUser(
             posix=PosixSessionUser(user=user, group=group),
@@ -148,14 +142,14 @@ class JobDetails:
     schema_version: SchemaVersion
     """The Open Job Description schema version"""
 
+    job_run_as_user: JobRunAsUser
+    """The user associated with the job's Amazon Deadline Cloud queue"""
+
     job_attachment_settings: JobAttachmentSettings | None = None
     """The job attachment settings of the job's queue"""
 
     parameters: list[Parameter] = field(default_factory=list)
     """The job's parameters"""
-
-    job_run_as_user: JobRunAsUser | None = None
-    """The user associated with the job's Amazon Deadline Cloud queue"""
 
     path_mapping_rules: list[OPENJDPathMappingRule] = field(default_factory=list)
     """The path mapping rules for the job"""
@@ -189,8 +183,8 @@ class JobDetails:
         if job_attachment_settings_boto := job_details_data.get("jobAttachmentSettings", None):
             job_attachment_settings = JobAttachmentSettings.from_boto(job_attachment_settings_boto)
 
-        job_run_as_user_data = job_details_data.get("jobRunAsUser", None)
-        job_run_as_user: JobRunAsUser | None = job_run_as_user_api_model_to_worker_agent(
+        job_run_as_user_data = job_details_data["jobRunAsUser"]
+        job_run_as_user: JobRunAsUser = job_run_as_user_api_model_to_worker_agent(
             job_run_as_user_data
         )
 
@@ -257,7 +251,7 @@ class JobDetails:
                 Field(
                     key="jobRunAsUser",
                     expected_type=dict,
-                    required=False,
+                    required=True,
                     fields=(
                         Field(
                             key="posix",
