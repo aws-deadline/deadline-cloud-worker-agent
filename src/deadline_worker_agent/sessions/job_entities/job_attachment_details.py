@@ -135,18 +135,18 @@ class JobAttachmentDetails:
 
     @classmethod
     def validate_entity_data(cls, entity_data: dict[str, Any]) -> JobAttachmentDetailsData:
-        """Performs input validation on a response element recceived from boto3's call to
+        """Performs input validation on a response element received from boto3's call to
         the BatchGetJobEntity Amazon Deadline Cloud API.
 
         Parameters
         ----------
         entity_data : dict[str, Any]
-            The element "data" field to validate and cast into a JobDetailsData instance
+            The element "data" field to validate and cast into a JobAttachmentDetailsData instance
 
         Returns
         -------
-        deadline_worker_agent.api_models.JobDetailsData:
-            The input cast as a JobDetailsData after input validation
+        deadline_worker_agent.api_models.JobAttachmentDetailsData:
+            The input cast as a JobAttachmentDetailsData after input validation
 
         Raises
         ------
