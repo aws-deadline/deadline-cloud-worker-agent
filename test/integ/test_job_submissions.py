@@ -23,7 +23,8 @@ from deadline_test_fixtures import (
     Farm,
     Fleet,
     Job,
-    PosixUser,
+    JobRunAsUser,
+    PosixSessionUser,
     Queue,
     QueueFleetAssociation,
     TaskStatus,
@@ -48,8 +49,8 @@ def fleet(deadline_resources: DeadlineResources) -> Fleet:
 
 
 @pytest.fixture(scope="session")
-def job_run_as_user() -> PosixUser:
-    return PosixUser(
+def job_run_as_user() -> PosixSessionUser:
+    return PosixSessionUser(
         user="job-run-as-user",
         group="job-run-as-user-group",
     )
@@ -58,7 +59,7 @@ def job_run_as_user() -> PosixUser:
 @pytest.fixture(scope="session")
 def worker_config(
     worker_config: DeadlineWorkerConfiguration,
-    job_run_as_user: PosixUser,
+    job_run_as_user: PosixSessionUser,
 ) -> DeadlineWorkerConfiguration:
     return dataclasses.replace(
         worker_config,
@@ -74,20 +75,13 @@ def queue_with_job_run_as_user(
     farm: Farm,
     fleet: Fleet,
     deadline_client: DeadlineClient,
-    job_run_as_user: PosixUser,
+    job_run_as_user: PosixSessionUser,
 ) -> Generator[Queue, None, None]:
     queue = Queue.create(
         client=deadline_client,
         display_name=f"Queue with jobsRunAsUser {job_run_as_user.user}",
         farm=farm,
-        raw_kwargs={
-            "jobRunAsUser": {
-                "posix": {
-                    "user": job_run_as_user.user,
-                    "group": job_run_as_user.group,
-                },
-            },
-        },
+        job_run_as_user=JobRunAsUser(posix=job_run_as_user),
     )
 
     qfa = QueueFleetAssociation.create(
@@ -144,7 +138,7 @@ class TestJobSubmission:
         deadline_client: DeadlineClient,
         farm: Farm,
         queue_with_job_run_as_user: Queue,
-        job_run_as_user: PosixUser,
+        job_run_as_user: PosixSessionUser,
     ) -> None:
         # WHEN
         job = Job.submit(
