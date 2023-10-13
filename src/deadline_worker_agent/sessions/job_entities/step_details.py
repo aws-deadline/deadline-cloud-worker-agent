@@ -67,12 +67,12 @@ class StepDetails:
         Parameters
         ----------
         entity_data : dict[str, Any]
-            The environmentDetails entity data received from BatchGetJobEntity
+            The stepDetails entity data received from BatchGetJobEntity
 
         Returns
         -------
         deadline_worker_agent.api_models.StepDetailsData:
-            The input cast as a JobDetailsData after input validation
+            The input cast as a StepDetailsData after input validation
 
         Raises
         ------
