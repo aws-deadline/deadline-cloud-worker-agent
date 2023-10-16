@@ -13,6 +13,8 @@ INSTALLER_PATH = {
     "linux": Path(__file__).parent / "install.sh",
 }
 
+VFS_DEFAULT_INSTALL_PATH = "/opt/fus3"
+
 
 def install() -> None:
     """Installer entrypoint for the Amazon Deadline Cloud Worker Agent"""
@@ -38,6 +40,8 @@ def install() -> None:
         args.user,
         "--scripts-path",
         str(scripts_path),
+        "--vfs-install-path",
+        args.vfs_install_path,
     ]
     if args.group:
         cmd += ["--group", args.group]
@@ -75,6 +79,7 @@ class ParsedCommandLineArguments(Namespace):
     allow_shutdown: bool
     install_service: bool
     telemetry_opt_out: bool
+    vfs_install_path: str
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
@@ -136,6 +141,11 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
         help="Confirms the installation and skips the interactive confirmation prompt.",
         action="store_true",
         dest="confirmed",
+    )
+    parser.add_argument(
+        "--vfs-install-path",
+        help="Absolute path for the install location of the deadline vfs.",
+        default=VFS_DEFAULT_INSTALL_PATH,
     )
 
     return parser

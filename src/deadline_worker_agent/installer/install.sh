@@ -45,6 +45,7 @@ no_install_service="no"
 start_service="no"
 telemetry_opt_out="no"
 warning_lines=()
+vfs_install_path="unset"
 
 usage()
 {
@@ -52,6 +53,7 @@ usage()
     echo "                  [--region REGION] [--user USER]"
     echo "                  [--scripts-path SCRIPTS_PATH]"
     echo "                  [-y]"
+    echo "                  [--vfs_install_path VFS_INSTALL_PATH]"
     echo ""
     echo "Arguments"
     echo "---------"
@@ -85,6 +87,9 @@ usage()
     echo "        This option is ignored if --no-install-service is used."
     echo "    -y"
     echo "        Skips a confirmation prompt before performing the installation."
+    echo "    --vfs-install-path VFS_INSTALL_PATH"
+    echo "        An optional, absolute path to the directory that the Deadline Virtual File System (VFS) is"
+    echo "        installed. If it is not specified, the default path /opt/fus3 is used"
 
     exit 2
 }
@@ -110,7 +115,7 @@ validate_deadline_id() {
 }
 
 # Validate arguments
-PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,scripts-path:,start,allow-shutdown,no-install-service,telemetry-opt-out -- "y" "$@")
+PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,scripts-path:,vfs-install-path:,start,allow-shutdown,no-install-service,telemetry-opt-out -- "y" "$@")
 VALID_ARGUMENTS=$?
 if [ "${VALID_ARGUMENTS}" != "0" ]; then
     usage
@@ -129,6 +134,7 @@ do
     --user)                  wa_user="$2"               ; shift 2 ;;
     --group)                 job_group="$2"             ; shift 2 ;;
     --scripts-path)          scripts_path="$2"          ; shift 2 ;;
+    --vfs-install-path)      vfs_install_path="$2"      ; shift 2 ;;
     --allow-shutdown)        allow_shutdown="yes"       ; shift   ;;
     --no-install-service)    no_install_service="yes"   ; shift   ;;
     --telemetry-opt-out)     telemetry_opt_out="yes"    ; shift   ;;
@@ -206,6 +212,26 @@ if [[ ! -z "${job_group}" ]] && [[ ! "${job_group}" =~ ^[a-z_]([a-z0-9_-]{0,31}|
     usage
 fi
 
+if [[ "${vfs_install_path}" == "unset" ]]; then
+    vfs_install_path="/opt/fus3"
+elif [[ ! -d "${vfs_install_path}" ]]; then
+    echo "ERROR: The specified vfs install path is not found: \"${vfs_install_path}\""
+    usage
+else
+    set +e
+    deadline_vfs_executable="${vfs_install_path}"/bin/deadline_vfs
+    if [[ ! -f "${deadline_vfs_executable}" ]]; then
+        echo "Deadline vfs not found at \"${deadline_vfs_executable}\", using fus3 fallback."
+        fus3_executable="${vfs_install_path}"/bin/fus3
+        if [[ ! -f "${fus3_executable}" ]]; then
+            echo "ERROR: Could not find deadline vfs at install path \"${deadline_vfs_executable}\""
+            exit 1
+        fi
+    fi
+    set -e
+fi
+
+
 banner
 echo
 
@@ -229,6 +255,7 @@ echo "Worker agent program path: ${client_library_program}"
 echo "Allow worker agent shutdown: ${allow_shutdown}"
 echo "Start systemd service: ${start_service}"
 echo "Telemetry opt-out: ${telemetry_opt_out}"
+echo "VFS install path: ${vfs_install_path}"
 
 # Confirmation prompt
 if [ -z "$confirm" ]; then
@@ -355,7 +382,7 @@ Description=Amazon Deadline Cloud Worker Agent
 [Service]
 User=${wa_user}
 WorkingDirectory=${worker_agent_homedir}
-Environment=AWS_REGION=$region AWS_DEFAULT_REGION=$region
+Environment=AWS_REGION=$region AWS_DEFAULT_REGION=$region FUS3_PATH=$vfs_install_path
 ExecStart=$worker_agent_program
 Restart=on-failure
 
