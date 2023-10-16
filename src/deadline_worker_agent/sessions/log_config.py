@@ -198,7 +198,7 @@ class LogConfiguration:
         if not (log_group := self.options.get(LOG_CONFIG_OPTION_GROUP_NAME_KEY, None)):
             raise KeyError(f'No "{LOG_CONFIG_OPTION_GROUP_NAME_KEY}" in logConfiguration.options')
         elif not (log_stream := self.options.get(LOG_CONFIG_OPTION_STREAM_NAME_KEY, None)):
-            raise KeyError('No "{LOG_CONFIG_OPTION_STREAM_NAME_KEY}" in logConfiguration.options')
+            raise KeyError(f'No "{LOG_CONFIG_OPTION_STREAM_NAME_KEY}" in logConfiguration.options')
 
         return CloudWatchHandler(
             log_group_name=log_group,
