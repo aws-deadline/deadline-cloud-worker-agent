@@ -13,7 +13,7 @@ INSTALLER_PATH = {
     "linux": Path(__file__).parent / "install.sh",
 }
 
-VFS_DEFAULT_INSTALL_PATH = "/opt/fus3"
+VFS_DEFAULT_INSTALL_PATH = "/opt/deadline_vfs"
 
 
 def install() -> None:

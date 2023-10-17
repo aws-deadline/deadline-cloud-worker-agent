@@ -89,7 +89,7 @@ usage()
     echo "        Skips a confirmation prompt before performing the installation."
     echo "    --vfs-install-path VFS_INSTALL_PATH"
     echo "        An optional, absolute path to the directory that the Deadline Virtual File System (VFS) is"
-    echo "        installed. If it is not specified, the default path /opt/fus3 is used"
+    echo "        installed. If it is not specified, the default path /opt/deadline_vfs is used"
 
     exit 2
 }
@@ -213,7 +213,7 @@ if [[ ! -z "${job_group}" ]] && [[ ! "${job_group}" =~ ^[a-z_]([a-z0-9_-]{0,31}|
 fi
 
 if [[ "${vfs_install_path}" == "unset" ]]; then
-    vfs_install_path="/opt/fus3"
+    vfs_install_path="/opt/deadline_vfs"
 elif [[ ! -d "${vfs_install_path}" ]]; then
     echo "ERROR: The specified vfs install path is not found: \"${vfs_install_path}\""
     usage
@@ -221,12 +221,8 @@ else
     set +e
     deadline_vfs_executable="${vfs_install_path}"/bin/deadline_vfs
     if [[ ! -f "${deadline_vfs_executable}" ]]; then
-        echo "Deadline vfs not found at \"${deadline_vfs_executable}\", using fus3 fallback."
-        fus3_executable="${vfs_install_path}"/bin/fus3
-        if [[ ! -f "${fus3_executable}" ]]; then
-            echo "ERROR: Could not find deadline vfs at install path \"${deadline_vfs_executable}\""
-            exit 1
-        fi
+        echo "ERROR: Deadline vfs not found at \"${deadline_vfs_executable}\"."
+        exit 1
     fi
     set -e
 fi
@@ -382,7 +378,7 @@ Description=Amazon Deadline Cloud Worker Agent
 [Service]
 User=${wa_user}
 WorkingDirectory=${worker_agent_homedir}
-Environment=AWS_REGION=$region AWS_DEFAULT_REGION=$region FUS3_PATH=$vfs_install_path
+Environment=AWS_REGION=$region AWS_DEFAULT_REGION=$region FUS3_PATH=$vfs_install_path DEADLINE_VFS_PATH=$vfs_install_path
 ExecStart=$worker_agent_program
 Restart=on-failure
 
