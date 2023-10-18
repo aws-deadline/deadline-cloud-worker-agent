@@ -35,6 +35,8 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "worker_logs_dir": Path("/var/log/amazon/deadline"),
         "worker_persistence_dir": Path("/var/lib/deadline"),
         "local_session_logs": None,
+        "host_metrics_logging": True,
+        "host_metrics_logging_interval_seconds": 10,
     }
 
     class FakeWorkerSettings:
@@ -799,10 +801,9 @@ class TestInit:
         mock_worker_settings: MagicMock = mock_worker_settings_cls.return_value
         mock_worker_settings.posix_job_user = posix_job_user_setting
 
-        # with patch.object(
-        #     config_mod.Configuration, "_get_user_and_group_from_posix_job_user",
-        #     return_value=posix_job_user.split(":") if posix_job_user else None,
-        # ) as mock:
+        # Needed because MagicMock does not support gt/lt comparison
+        mock_worker_settings.host_metrics_logging_interval_seconds = 10
+
         # WHEN
         config = config_mod.Configuration(parsed_cli_args=parsed_args)
 
@@ -832,6 +833,11 @@ class TestInit:
         assert (
             config.worker_credentials_dir
             is mock_worker_settings.worker_persistence_dir / "credentials"
+        )
+        assert config.host_metrics_logging is mock_worker_settings.host_metrics_logging
+        assert (
+            config.host_metrics_logging_interval_seconds
+            is mock_worker_settings.host_metrics_logging_interval_seconds
         )
 
 
