@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from typing import Any, Generator
+from typing import Any, Generator, Optional
 from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
@@ -66,13 +66,14 @@ def test_success(
 
 
 @pytest.mark.parametrize(
-    "exception",
+    "exception,min_retry",
     [
         pytest.param(
             ClientError(
                 {"Error": {"Code": "ThrottlingException", "Message": "A message"}},
                 "BatchGetJobEntity",
             ),
+            None,
             id="Throttling",
         ),
         pytest.param(
@@ -80,7 +81,30 @@ def test_success(
                 {"Error": {"Code": "InternalServerException", "Message": "A message"}},
                 "BatchGetJobEntity",
             ),
+            None,
             id="InternalServer",
+        ),
+        pytest.param(
+            ClientError(
+                {
+                    "Error": {"Code": "ThrottlingException", "Message": "A message"},
+                    "retryAfterSeconds": 30,
+                },
+                "BatchGetJobEntity",
+            ),
+            30,
+            id="Throttling-minretry",
+        ),
+        pytest.param(
+            ClientError(
+                {
+                    "Error": {"Code": "InternalServerException", "Message": "A message"},
+                    "retryAfterSeconds": 30,
+                },
+                "BatchGetJobEntity",
+            ),
+            30,
+            id="InternalServer-minretry",
         ),
     ],
 )
@@ -90,6 +114,7 @@ def test_retries_when_appropriate(
     fleet_id: str,
     worker_id: str,
     exception: ClientError,
+    min_retry: Optional[float],
     sleep_mock: MagicMock,
 ):
     # A test that the batch_get_job_entity() function will retry calls to the API when:
@@ -111,6 +136,8 @@ def test_retries_when_appropriate(
     # THEN
     assert client.batch_get_job_entity.call_count == 2
     sleep_mock.assert_called_once()
+    if min_retry is not None:
+        assert min_retry <= sleep_mock.call_args.args[0] <= (min_retry + 0.2 * min_retry)
 
 
 @pytest.mark.parametrize(
