@@ -65,6 +65,10 @@ class Configuration:
     """Path to the directory where the Worker Agent writes its logs."""
     local_session_logs: bool
     """Whether to write session logs to the local filesystem"""
+    host_metrics_logging: bool
+    """Whether host metrics logging is enabled"""
+    host_metrics_logging_interval_seconds: float
+    """The interval in seconds between host metrics logs"""
 
     # Used to optimize the memory allocation and attribute lookup speed. Tells python to not create a dict
     # for the attributes.
@@ -83,6 +87,8 @@ class Configuration:
         "worker_state_file",
         "worker_logs_dir",
         "local_session_logs",
+        "host_metrics_logging",
+        "host_metrics_logging_interval_seconds",
     )
 
     def __init__(
@@ -116,6 +122,12 @@ class Configuration:
             settings_kwargs["worker_persistence_dir"] = parsed_cli_args.persistence_dir.absolute()
         if parsed_cli_args.local_session_logs is not None:
             settings_kwargs["local_session_logs"] = parsed_cli_args.local_session_logs
+        if parsed_cli_args.host_metrics_logging is not None:
+            settings_kwargs["host_metrics_logging"] = parsed_cli_args.host_metrics_logging
+        if parsed_cli_args.host_metrics_logging_interval_seconds is not None:
+            settings_kwargs[
+                "host_metrics_logging_interval_seconds"
+            ] = parsed_cli_args.host_metrics_logging_interval_seconds
 
         settings = WorkerSettings(**settings_kwargs)
 
@@ -143,6 +155,8 @@ class Configuration:
         self.capabilities = settings.capabilities
         self.worker_logs_dir = settings.worker_logs_dir
         self.local_session_logs = settings.local_session_logs
+        self.host_metrics_logging = settings.host_metrics_logging
+        self.host_metrics_logging_interval_seconds = settings.host_metrics_logging_interval_seconds
 
         self._validate()
 
@@ -163,6 +177,11 @@ class Configuration:
 
         if self.impersonation.inactive and self.impersonation.posix_job_user:
             raise ConfigurationError("Cannot specify an impersonation user with impersonation off")
+
+        if self.host_metrics_logging_interval_seconds <= 0:
+            raise ConfigurationError(
+                f"Host metrics logging interval must be a positive number, but got: {repr(self.host_metrics_logging_interval_seconds)}"
+            )
 
     def log(self, logger: Optional[_logging.Logger] = None, level: int = _logging.DEBUG) -> None:
         """Emit logs that represent the effective Configuration.

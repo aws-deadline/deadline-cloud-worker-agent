@@ -69,6 +69,8 @@ def worker(
         cleanup_session_user_processes=True,
         worker_persistence_dir=Path("/var/lib/deadline"),
         worker_logs_dir=worker_logs_dir,
+        host_metrics_logging=True,
+        host_metrics_logging_interval_seconds=60,
     )
 
 
