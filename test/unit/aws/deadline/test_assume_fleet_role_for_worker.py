@@ -98,6 +98,42 @@ def test_retries_when_throttled(
     sleep_mock.assert_called_once()
 
 
+@pytest.mark.parametrize("exception_code", ["ThrottlingException", "InternalServerException"])
+def test_respects_retryafter_when_throttled(
+    client: MagicMock,
+    farm_id: str,
+    fleet_id: str,
+    worker_id: str,
+    mock_assume_fleet_role_for_worker_response: AssumeFleetRoleForWorkerResponse,
+    exception_code: str,
+    sleep_mock: MagicMock,
+):
+    # A test that the time delay for a throttled retry respects the value in the 'retryAfterSeconds'
+    # property of an exception if one is present.
+
+    # GIVEN
+    min_retry = 30
+    exc = ClientError(
+        {"Error": {"Code": exception_code, "Message": "A message"}, "retryAfterSeconds": min_retry},
+        "AssumeFleetRoleForWorker",
+    )
+    client.assume_fleet_role_for_worker.side_effect = [
+        exc,
+        mock_assume_fleet_role_for_worker_response,
+    ]
+
+    # WHEN
+    response = assume_fleet_role_for_worker(
+        deadline_client=client, farm_id=farm_id, fleet_id=fleet_id, worker_id=worker_id
+    )
+
+    # THEN
+    assert response == mock_assume_fleet_role_for_worker_response
+    assert client.assume_fleet_role_for_worker.call_count == 2
+    sleep_mock.assert_called_once()
+    assert min_retry <= sleep_mock.call_args.args[0] <= (min_retry + 0.2 * min_retry)
+
+
 @pytest.mark.parametrize(
     "exception_code",
     [

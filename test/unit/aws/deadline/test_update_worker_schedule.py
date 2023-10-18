@@ -78,8 +78,8 @@ def test_can_interrupt(
     worker_id: str,
     sleep_mock: MagicMock,
 ):
-    # A test that the update_worker_schedule() function will
-    # retry calls to the API when throttled.
+    # A test that the update_worker_schedule() function will cease retries when the interrupt
+    # event it set.
 
     # GIVEN
     event = MagicMock()
@@ -111,13 +111,14 @@ def test_can_interrupt(
 
 
 @pytest.mark.parametrize(
-    "exception",
+    "exception,min_retry",
     [
         pytest.param(
             ClientError(
                 {"Error": {"Code": "ThrottlingException", "Message": "A message"}},
                 "UpdateWorkerSchedule",
             ),
+            None,
             id="Throttling",
         ),
         pytest.param(
@@ -125,7 +126,30 @@ def test_can_interrupt(
                 {"Error": {"Code": "InternalServerException", "Message": "A message"}},
                 "UpdateWorkerSchedule",
             ),
+            None,
             id="InternalServer",
+        ),
+        pytest.param(
+            ClientError(
+                {
+                    "Error": {"Code": "ThrottlingException", "Message": "A message"},
+                    "retryAfterSeconds": 30,
+                },
+                "UpdateWorkerSchedule",
+            ),
+            30,
+            id="Throttling-minretry",
+        ),
+        pytest.param(
+            ClientError(
+                {
+                    "Error": {"Code": "InternalServerException", "Message": "A message"},
+                    "retryAfterSeconds": 30,
+                },
+                "UpdateWorkerSchedule",
+            ),
+            30,
+            id="InternalServer-minretry",
         ),
     ],
 )
@@ -135,6 +159,7 @@ def test_retries_when_appropriate(
     fleet_id: str,
     worker_id: str,
     exception: ClientError,
+    min_retry: Optional[float],
     sleep_mock: MagicMock,
 ) -> None:
     # A test that the update_worker_schedule() function will retry calls to the API when:
@@ -153,6 +178,8 @@ def test_retries_when_appropriate(
     assert response == SAMPLE_UPDATE_WORKER_SCHEDULE_RESPONSE
     assert client.update_worker_schedule.call_count == 2
     sleep_mock.assert_called_once()
+    if min_retry is not None:
+        assert min_retry <= sleep_mock.call_args.args[0] <= (min_retry + 0.2 * min_retry)
 
 
 @pytest.mark.parametrize(
