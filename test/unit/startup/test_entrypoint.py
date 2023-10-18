@@ -126,6 +126,8 @@ def configuration() -> MagicMock:
     config.fleet_id = "fleet-456"
     config.profile = None
     config.sessions = True
+    # Required because MagicMock does not support int comparison
+    config.host_metrics_logging_interval_seconds = 10
     return config
 
 
@@ -277,6 +279,8 @@ def test_log_configuration(
         _config_mock.load().worker_credentials_dir = Path(tempdir) / "credentials"
         _config_mock.load().worker_logs_dir.mkdir()
         _config_mock.load().worker_credentials_dir.mkdir()
+        # Required because MagicMock does not support int comparison
+        _config_mock.load().host_metrics_logging_interval_seconds = 10
 
         # Mock logging.getLogger
         root_logger = MagicMock()
@@ -595,6 +599,7 @@ def test_passes_worker_logs_dir(
         cleanup_session_user_processes=ANY,
         worker_persistence_dir=ANY,
         worker_logs_dir=tmp_path,
+        host_metrics_logging=ANY,
         host_metrics_logging_interval_seconds=ANY,
     )
 

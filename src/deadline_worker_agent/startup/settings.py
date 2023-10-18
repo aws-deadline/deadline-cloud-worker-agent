@@ -64,6 +64,8 @@ class WorkerSettings(BaseSettings):
         The path to the directory where the Worker Agent persists its state.
     local_session_logs : bool
         Whether to write session logs to the local filesystem
+    host_metrics_logging : bool
+        Whether to log host metrics
     host_metrics_logging_interval_seconds : float
         The interval between host metrics log messages
     """
@@ -85,6 +87,7 @@ class WorkerSettings(BaseSettings):
     worker_logs_dir: Path = DEFAULT_POSIX_WORKER_LOGS_DIR
     worker_persistence_dir: Path = DEFAULT_POSIX_WORKER_PERSISTENCE_DIR
     local_session_logs: bool = True
+    host_metrics_logging: bool = True
     host_metrics_logging_interval_seconds: float = 60
 
     class Config:
@@ -104,6 +107,7 @@ class WorkerSettings(BaseSettings):
             "worker_logs_dir": {"env": "DEADLINE_WORKER_LOGS_DIR"},
             "worker_persistence_dir": {"env": "DEADLINE_WORKER_PERSISTENCE_DIR"},
             "local_session_logs": {"env": "DEADLINE_WORKER_LOCAL_SESSION_LOGS"},
+            "host_metrics_logging": {"env": "DEADLINE_WORKER_HOST_METRICS_LOGGING"},
             "host_metrics_logging_interval_seconds": {
                 "env": "DEADLINE_WORKER_HOST_METRICS_LOGGING_INTERVAL_SECONDS"
             },

@@ -35,6 +35,7 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "worker_logs_dir": Path("/var/log/amazon/deadline"),
         "worker_persistence_dir": Path("/var/lib/deadline"),
         "local_session_logs": None,
+        "host_metrics_logging": True,
         "host_metrics_logging_interval_seconds": 10,
     }
 
@@ -833,6 +834,7 @@ class TestInit:
             config.worker_credentials_dir
             is mock_worker_settings.worker_persistence_dir / "credentials"
         )
+        assert config.host_metrics_logging is mock_worker_settings.host_metrics_logging
         assert (
             config.host_metrics_logging_interval_seconds
             is mock_worker_settings.host_metrics_logging_interval_seconds
