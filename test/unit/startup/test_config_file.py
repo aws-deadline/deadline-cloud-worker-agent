@@ -608,6 +608,7 @@ allow_ec2_instance_profile = true
 verbose = true
 worker_logs_dir = "/var/log/amazon/deadline"
 local_session_logs = false
+host_metrics_logging_interval_seconds = 1
 
 [os]
 impersonation = false
@@ -679,6 +680,7 @@ class TestConfigFileLoad:
         assert config.logging.verbose is True
         assert config.logging.worker_logs_dir == Path("/var/log/amazon/deadline")
         assert config.logging.local_session_logs is False
+        assert config.logging.host_metrics_logging_interval_seconds == 1
 
         assert config.os.impersonation is False
         assert config.os.posix_job_user == "user:group"
