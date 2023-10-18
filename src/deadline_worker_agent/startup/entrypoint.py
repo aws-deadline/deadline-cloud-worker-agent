@@ -173,7 +173,8 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
             try:
                 update_worker(
                     deadline_client=deadline_client,
-                    config=config,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
                     worker_id=worker_id,
                     status=WorkerStatus.STOPPED,
                 )
