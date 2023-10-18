@@ -12,8 +12,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from threading import Event, RLock, Lock
-from time import sleep, monotonic
+from threading import Event, RLock, Lock, Timer
 from typing import Callable, Tuple, Union, cast, Optional, Any
 import logging
 import os
@@ -23,9 +22,9 @@ from openjd.sessions import ActionState, ActionStatus, SessionUser
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
 from openjd.sessions import ActionState, ActionStatus
 from deadline.job_attachments.asset_sync import AssetSync
-from botocore.exceptions import ClientError
 
 
+from ..aws.deadline import update_worker
 from ..aws_credentials import QueueBoto3Session, AwsCredentialsRefresher
 from ..boto import DeadlineClient, Session as BotoSession
 from ..errors import ServiceShutdown
@@ -40,8 +39,10 @@ from ..api_models import (
     AssignedSession,
     UpdateWorkerScheduleResponse,
     UpdatedSessionActionInfo,
+    WorkerStatus,
 )
 from ..aws.deadline import (
+    DeadlineRequestConditionallyRecoverableError,
     DeadlineRequestError,
     DeadlineRequestInterrupted,
     DeadlineRequestWorkerOfflineError,
@@ -415,45 +416,36 @@ class WorkerScheduler:
         initiated a worker-initiated drain operation, and that it must not be
         given additional new tasks to work on.
         """
-        request = dict[str, Any](
-            farmId=self._farm_id,
-            fleetId=self._fleet_id,
-            workerId=self._worker_id,
-            status="STOPPING",
-        )
-
-        start_time = monotonic()
-        curr_time = start_time
-        next_backoff = timedelta(microseconds=200 * 1000)
 
         # We're only being given timeout seconds to successfully make this request.
         # That is because the drain operation may be expedited, and we need to move
         # fast to get to transitioning to STOPPED state after this.
-        while (curr_time - start_time) < timeout.total_seconds():
-            try:
-                self._deadline.update_worker(**request)
-                logger.info("Successfully set Worker state to STOPPING.")
-                break
-            except ClientError as e:
-                code = e.response.get("Error", {}).get("Code", None)
-                if code == "ThrottlingException" or code == "InternalServerException":
-                    # backoff
-                    curr_time = monotonic()
-                    elapsed_time = curr_time - start_time
-                    max_backoff = max(
-                        timedelta(seconds=0),
-                        timedelta(seconds=(timeout.total_seconds() - elapsed_time)),
-                    )
-                    backoff = min(max_backoff, next_backoff)
-                    next_backoff = next_backoff * 2
-                    if backoff <= timedelta(seconds=0):
-                        logger.info("Failed to set Worker state to STOPPING: timeout")
-                        break
-                    sleep(backoff.total_seconds())
-                else:
-                    logger.info("Failed to set Worker state to STOPPING.")
-                    logger.exception(e)
-                    break
+        timeout_event = Event()
+        timer = Timer(interval=timeout.total_seconds(), function=timeout_event.set)
+
+        try:
+            update_worker(
+                deadline_client=self._deadline,
+                farm_id=self._farm_id,
+                fleet_id=self._fleet_id,
+                worker_id=self._worker_id,
+                status=WorkerStatus.STOPPING,
+                interrupt_event=timeout_event,
+            )
+            logger.info("Successfully set Worker state to STOPPING.")
+        except DeadlineRequestInterrupted:
+            logger.info(
+                "Timeout reached trying to update Worker to STOPPING status. Proceeding without changing status..."
+            )
+        except (
+            DeadlineRequestUnrecoverableError,
+            DeadlineRequestConditionallyRecoverableError,
+        ) as exc:
+            logger.warning(
+                f"Exception updating Worker to STOPPING status. Continuing with drain operation regardless. Exception: {str(exc)}"
+            )
+        finally:
+            timer.cancel()
 
     def _updated_session_actions(
         self,

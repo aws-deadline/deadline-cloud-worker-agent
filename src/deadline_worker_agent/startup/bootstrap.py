@@ -327,9 +327,11 @@ def _start_worker(
     try:
         response = update_worker(
             deadline_client=deadline_client,
-            config=config,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
             worker_id=worker_id,
             status=WorkerStatus.STARTED,
+            capabilities=config.capabilities,
             host_properties=host_properties,
         )
     except DeadlineRequestUnrecoverableError:
@@ -371,7 +373,8 @@ def _enforce_no_instance_profile_or_stop_worker(
         try:
             update_worker(
                 deadline_client=deadline_client,
-                config=config,
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
                 worker_id=worker_id,
                 status=WorkerStatus.STOPPED,
             )
