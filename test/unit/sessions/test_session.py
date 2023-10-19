@@ -29,6 +29,7 @@ from openjd.sessions import (
 
 from deadline_worker_agent.api_models import EnvironmentAction, TaskRunAction
 from deadline_worker_agent.sessions import Session
+from deadline_worker_agent.sessions import session as session_module
 from deadline_worker_agent.sessions.session import (
     CurrentAction,
     SessionActionStatus,
@@ -1087,7 +1088,14 @@ class TestSessionActionUpdatedImpl:
             end_time=action_complete_time,
         )
 
-        with patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs:
+        def mock_now(*arg, **kwarg) -> datetime:
+            return action_complete_time
+
+        with patch.object(session_module, "datetime") as mock_datetime, patch.object(
+            session, "_sync_asset_outputs"
+        ) as mock_sync_asset_outputs:
+            mock_datetime.now.side_effect = mock_now
+
             # Assert that reporting the action update happens AFTER syncing the output job
             # attachments.
             def sync_asset_outputs_side_effect(*, current_action: CurrentAction) -> None:
