@@ -57,21 +57,22 @@ def worker(
     # before we instantiate the Worker instance within this fixture body
     mock_scheduler_cls: MagicMock,
 ) -> Worker:
-    return Worker(
-        farm_id=farm_id,
-        deadline_client=client,
-        boto_session=boto_session,
-        fleet_id=fleet_id,
-        impersonation=impersonation,
-        logs_client=logs_client,
-        s3_client=s3_client,
-        worker_id=worker_id,
-        cleanup_session_user_processes=True,
-        worker_persistence_dir=Path("/var/lib/deadline"),
-        worker_logs_dir=worker_logs_dir,
-        host_metrics_logging=True,
-        host_metrics_logging_interval_seconds=60,
-    )
+    with patch.object(worker_mod, "HostMetricsLogger"):
+        return Worker(
+            farm_id=farm_id,
+            deadline_client=client,
+            boto_session=boto_session,
+            fleet_id=fleet_id,
+            impersonation=impersonation,
+            logs_client=logs_client,
+            s3_client=s3_client,
+            worker_id=worker_id,
+            cleanup_session_user_processes=True,
+            worker_persistence_dir=Path("/var/lib/deadline"),
+            worker_logs_dir=worker_logs_dir,
+            host_metrics_logging=True,
+            host_metrics_logging_interval_seconds=60,
+        )
 
 
 @pytest.fixture
