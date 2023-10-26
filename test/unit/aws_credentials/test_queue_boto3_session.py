@@ -19,7 +19,7 @@ from deadline_worker_agent.aws.deadline import (
 )
 import deadline_worker_agent.aws_credentials.queue_boto3_session as queue_boto3_session_mod
 from deadline_worker_agent.aws_credentials.queue_boto3_session import QueueBoto3Session
-from openjd.sessions import PosixSessionUser, SessionUser
+from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
 
 
 @pytest.fixture(autouse=True)
@@ -56,8 +56,7 @@ def os_user() -> Optional[SessionUser]:
     if os.name == "posix":
         return PosixSessionUser(user="user", group="group")
     else:
-        # TODO: Revisit when Windows impersonation is added
-        return None
+        return WindowsSessionUser(user="user", group="group", password="fakepassword")
 
 
 class TestInit:
@@ -464,7 +463,12 @@ class TestCreateCredentialsDirectory:
                 worker_persistence_dir=mock_path,
             )
 
-        with patch.object(queue_boto3_session_mod.shutil, "chown") as mock_chown:
+        with (
+            patch.object(
+                queue_boto3_session_mod, "set_user_restricted_path_permissions"
+            ) as set_user_restricted_path_permissions_mock,
+            patch.object(queue_boto3_session_mod.shutil, "chown") as mock_chown,
+        ):
             # WHEN
             session._create_credentials_directory()
 
@@ -477,7 +481,9 @@ class TestCreateCredentialsDirectory:
         if isinstance(os_user, PosixSessionUser):
             mock_chown.assert_called_once_with(mock_path, group=os_user.group)
         else:
-            mock_chown.assert_not_called()
+            set_user_restricted_path_permissions_mock.assert_called_once_with(
+                path=mock_path, user=os_user
+            )
 
     def test_reraises_oserror(
         self,
@@ -613,6 +619,9 @@ class TestInstallCredentialProcess:
             patch.object(
                 QueueBoto3Session, "_generate_credential_process_script"
             ) as mock_generate_script,
+            patch.object(
+                queue_boto3_session_mod, "set_user_restricted_path_permissions"
+            ) as set_user_restricted_path_permissions_mock,
         ):
             # WHEN
             session._install_credential_process()
@@ -645,8 +654,17 @@ class TestInstallCredentialProcess:
             mock_chown.assert_not_called()
         else:
             # This assert for type checking. Expand the if-else chain when adding new user kinds.
-            assert isinstance(os_user, PosixSessionUser)
-            mock_chown.assert_called_once_with(credentials_process_script_path, group=os_user.group)
+            if os.name == "posix":
+                assert isinstance(os_user, PosixSessionUser)
+                mock_chown.assert_called_once_with(
+                    credentials_process_script_path, group=os_user.group
+                )
+            else:
+                assert isinstance(os_user, WindowsSessionUser)
+                set_user_restricted_path_permissions_mock.assert_called_once_with(
+                    path=credentials_process_script_path, user=os_user
+                )
+
         aws_config_mock.install_credential_process.assert_called_once_with(
             session._profile_name, credentials_process_script_path
         )

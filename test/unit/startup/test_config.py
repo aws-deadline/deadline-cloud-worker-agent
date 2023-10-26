@@ -11,7 +11,7 @@ import logging
 import pytest
 import os
 
-from openjd.sessions import SessionUser, PosixSessionUser
+from openjd.sessions import SessionUser, WindowsSessionUser, PosixSessionUser
 
 from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
 from deadline_worker_agent.startup import config as config_mod
@@ -31,6 +31,8 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "no_shutdown": None,
         "jobs_run_as_agent_user": None,
         "posix_job_user": None,
+        "windows_job_user": None,
+        "windows_job_user_password_arn": None,
         "allow_instance_profile": None,
         "capabilities": None,
         "worker_logs_dir": Path("/var/log/amazon/deadline"),
@@ -77,11 +79,11 @@ def arg_parser(
 
 
 @pytest.fixture
-def os_user() -> Optional[SessionUser]:
+def os_user() -> SessionUser:
     if os.name == "posix":
         return PosixSessionUser(user="user", group="group")
     else:
-        return None
+        return WindowsSessionUser(user="user", group="group", password="fakepassword")
 
 
 class TestLoad:
@@ -813,18 +815,30 @@ class TestInit:
             assert "local_session_logs" not in call.kwargs
 
     @pytest.mark.parametrize(
-        argnames=("posix_job_user_setting", "expected_config_posix_job_user"),
+        argnames=(
+            "posix_job_user_setting",
+            "expected_config_posix_job_user",
+            "windows_job_user_setting",
+            "windows_job_user_password_arn_setting",
+            "expected_config_windows_job_user",
+        ),
         argvalues=(
             pytest.param(
                 "user:group",
                 "os_user",
+                None,
+                None,
+                None,
                 id="has-posix-job-user-setting",
                 marks=pytest.mark.skipif(os.name != "posix", reason="Posix-only test."),
             ),
             pytest.param(
                 None,
                 None,
-                id="no-posix-job-user-setting",
+                None,
+                None,
+                None,
+                id="no-posix-or-windows-job-user-setting",
             ),
         ),
     )
@@ -832,6 +846,9 @@ class TestInit:
         self,
         posix_job_user_setting: str | None,
         expected_config_posix_job_user: PosixSessionUser | None,
+        windows_job_user_setting: str | None,
+        windows_job_user_password_arn_setting: str | None,
+        expected_config_windows_job_user: WindowsSessionUser | None,
         parsed_args: ParsedCommandLineArguments,
         mock_worker_settings_cls: MagicMock,
         request,
@@ -846,6 +863,8 @@ class TestInit:
         mock_worker_settings: MagicMock = mock_worker_settings_cls.return_value
         mock_worker_settings.posix_job_user = posix_job_user_setting
         mock_worker_settings.jobs_run_as_agent_user = None
+        mock_worker_settings.windows_job_user = windows_job_user_setting
+        mock_worker_settings.windows_job_user_password_arn = windows_job_user_password_arn_setting
 
         # Needed because MagicMock does not support gt/lt comparison
         mock_worker_settings.host_metrics_logging_interval_seconds = 10
@@ -873,11 +892,11 @@ class TestInit:
             # TODO: This is needed because we are using a fixture with a parameterized call
             # but let's revisit whether this can be simplified when Windows impersonation is added
             posix_user: PosixSessionUser = request.getfixturevalue(expected_config_posix_job_user)
-            assert isinstance(config.jobs_run_as_overrides.posix_job_user, PosixSessionUser)
-            assert config.jobs_run_as_overrides.posix_job_user.group == posix_user.group
-            assert config.jobs_run_as_overrides.posix_job_user.user == posix_user.user
+            assert isinstance(config.jobs_run_as_overrides.job_user, PosixSessionUser)
+            assert config.jobs_run_as_overrides.job_user.group == posix_user.group
+            assert config.jobs_run_as_overrides.job_user.user == posix_user.user
         else:
-            assert config.jobs_run_as_overrides.posix_job_user is None
+            assert config.jobs_run_as_overrides.job_user is None
         assert config.worker_logs_dir is mock_worker_settings.worker_logs_dir
         assert config.local_session_logs is mock_worker_settings.local_session_logs
         assert config.worker_persistence_dir is mock_worker_settings.worker_persistence_dir
@@ -893,7 +912,7 @@ class TestInit:
 
 
 class TestLog:
-    """Tests for Configutation.log()"""
+    """Tests for Configuration.log()"""
 
     @pytest.mark.parametrize(
         ("farm_id", "fleet_id", "profile", "verbose"),

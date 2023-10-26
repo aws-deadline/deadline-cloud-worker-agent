@@ -132,7 +132,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
 
         # Let's treat this log line as a contract. It's the last thing that we'll
         # emit to the bootstrapping log, and external systems can use it as a
-        # sentinel to know that the worker has progressed sucessfully to processing
+        # sentinel to know that the worker has progressed successfully to processing
         # jobs.
         _logger.info("Worker successfully bootstrapped and is now running.")
 

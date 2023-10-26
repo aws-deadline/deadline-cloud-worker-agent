@@ -33,6 +33,7 @@ from deadline_worker_agent.aws.deadline import (
     DeadlineRequestUnrecoverableError,
     DeadlineRequestInterrupted,
 )
+from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
 
 
 @pytest.fixture
@@ -507,9 +508,7 @@ class TestCreateNewSessions:
         session_log_file_path = MagicMock()
 
         with (
-            patch.object(
-                scheduler_mod, "set_user_restricted_path_permissions"
-            ) as mock_set_user_restricted_path_permissions,
+            patch.object(scheduler_mod, "make_directory") as mock_make_directory,
             patch.object(scheduler, "_executor"),
             patch.object(scheduler_mod.LogConfiguration, "from_boto") as mock_log_config_from_boto,
             patch.object(
@@ -527,8 +526,11 @@ class TestCreateNewSessions:
         if os.name == "posix":
             queue_log_dir_path.mkdir.assert_called_once_with(mode=0o700, exist_ok=True)
         else:
-            queue_log_dir_path.mkdir.assert_called_once_with(exist_ok=True)
-            mock_set_user_restricted_path_permissions.assert_called_once()
+            mock_make_directory.assert_called_once_with(
+                dir_path=queue_log_dir_path,
+                user_permission=FileSystemPermissionEnum.READ_WRITE,
+                exist_ok=True,
+            )
         mock_queue_session_log_file_path.assert_called_once_with(
             session_id=session_id, queue_log_dir=queue_log_dir_path
         )
@@ -595,16 +597,11 @@ class TestCreateNewSessions:
 
         with (
             patch.object(scheduler, "_executor"),
-            patch.object(
-                scheduler_mod, "set_user_restricted_path_permissions"
-            ) as mock_set_user_restricted_path_permissions,
+            patch.object(scheduler_mod, "make_directory") as mock_make_directory,
             patch.object(scheduler_mod.LogConfiguration, "from_boto") as mock_log_config_from_boto,
             patch.object(
                 scheduler, "_queue_log_dir_path", return_value=queue_log_dir_path
             ) as mock_queue_log_dir,
-            patch.object(
-                scheduler, "_session_log_file_path", return_value=session_log_file_path
-            ) as mock_queue_session_log_file_path,
             patch.object(scheduler, "_fail_all_actions") as mock_fail_all_actions,
         ):
             queue_log_dir_path.mkdir.side_effect = mkdir_side_effect
@@ -618,18 +615,8 @@ class TestCreateNewSessions:
         if os.name == "posix":
             queue_log_dir_path.mkdir.assert_called_once_with(mode=0o700, exist_ok=True)
         else:
-            queue_log_dir_path.mkdir.assert_called_once_with(exist_ok=True)
-        if mkdir_side_effect:
-            mock_queue_session_log_file_path.assert_not_called()
-            mock_set_user_restricted_path_permissions.assert_not_called()
-        else:
-            mock_queue_session_log_file_path.assert_called_once()
-            if os.name != "posix":
-                mock_set_user_restricted_path_permissions.assert_called_once()
-        if mkdir_side_effect:
-            session_log_file_path.touch.asset_not_called()
-        else:
-            session_log_file_path.touch.assert_called_once()
+            mock_make_directory.assert_called_once()
+        session_log_file_path.touch.assert_called_once()
         mock_log_config_from_boto.assert_not_called()
         mock_fail_all_actions.assert_called_once_with(
             assigned_sessions[session_id],

@@ -18,7 +18,7 @@ import logging
 import os
 import stat
 
-from openjd.sessions import ActionState, ActionStatus, SessionUser
+from openjd.sessions import ActionState, ActionStatus, WindowsSessionUser, SessionUser
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
 from openjd.sessions import ActionState, ActionStatus
 from deadline.job_attachments.asset_sync import AssetSync
@@ -54,8 +54,8 @@ from .session_cleanup import SessionUserCleanupManager
 from .session_queue import SessionActionQueue, SessionActionStatus
 from ..startup.config import JobsRunAsUserOverride
 from ..utils import MappingWithCallbacks
-from ..set_windows_permissions import set_user_restricted_path_permissions
-import subprocess
+from ..file_system_operations import FileSystemPermissionEnum, make_directory
+from ..windows_credentials_resolver import WindowsCredentialsResolver
 
 logger = LOGGER
 
@@ -211,6 +211,27 @@ class WorkerScheduler:
         self._queue_aws_credentials_lock = Lock()
         self._worker_persistence_dir = worker_persistence_dir
         self._worker_logs_dir = worker_logs_dir
+        self._windows_credentials_resolver: Optional[WindowsCredentialsResolver]
+
+        if os.name == "nt":
+            self._windows_credentials_resolver = WindowsCredentialsResolver(self._boto_session)
+            # Now that we can determine the password, replace the job user
+            if (
+                self._jobs_run_as_user_override.job_user is not None
+                and self._jobs_run_as_user_override.job_user_password_arn is not None
+            ):
+                job_user: WindowsSessionUser = cast(
+                    WindowsSessionUser, self._jobs_run_as_user_override.job_user
+                )
+                self._jobs_run_as_user_override.job_user = (
+                    self._windows_credentials_resolver.get_windows_session_user(
+                        user=job_user.user,
+                        group=job_user.group,
+                        passwordArn=self._jobs_run_as_user_override.job_user_password_arn,
+                    )
+                )
+        else:
+            self._windows_credentials_resolver = None
 
     def _assign_sessions(self) -> None:
         """Handles an AssignSessions API cycle"""
@@ -632,9 +653,12 @@ class WorkerScheduler:
                     if os.name == "posix":
                         queue_log_dir.mkdir(mode=stat.S_IRWXU, exist_ok=True)
                     else:
-                        queue_log_dir.mkdir(exist_ok=True)
-                        set_user_restricted_path_permissions(queue_log_dir.name)
-                except (OSError, subprocess.CalledProcessError):
+                        make_directory(
+                            dir_path=queue_log_dir,
+                            exist_ok=True,
+                            user_permission=FileSystemPermissionEnum.READ_WRITE,
+                        )
+                except OSError:
                     error_msg = (
                         f"Failed to create local session log directory on worker: {queue_log_dir}"
                     )
@@ -673,6 +697,7 @@ class WorkerScheduler:
                 worker_id=self._worker_id,
                 job_id=job_id,
                 deadline_client=self._deadline,
+                windows_credentials_resolver=self._windows_credentials_resolver,
             )
             # TODO: Would be great to merge Session + SessionActionQueue
             # and move all job entities calls within the Session thread.
@@ -702,16 +727,13 @@ class WorkerScheduler:
 
             os_user: Optional[SessionUser] = None
             if not self._jobs_run_as_user_override.run_as_agent:
-                if (
-                    self._jobs_run_as_user_override.posix_job_user is not None
-                    and os.name == "posix"
-                ):
-                    os_user = self._jobs_run_as_user_override.posix_job_user
+                if self._jobs_run_as_user_override.job_user is not None:
+                    os_user = self._jobs_run_as_user_override.job_user
                 elif job_details.job_run_as_user:
-                    if os.name != "posix":
-                        # TODO: windows support
-                        raise NotImplementedError(f"{os.name} is not supported")
-                    os_user = job_details.job_run_as_user.posix
+                    if os.name == "posix":
+                        os_user = job_details.job_run_as_user.posix
+                    else:
+                        os_user = job_details.job_run_as_user.windows
 
             queue_credentials: QueueAwsCredentials | None = None
             asset_sync: AssetSync | None = None

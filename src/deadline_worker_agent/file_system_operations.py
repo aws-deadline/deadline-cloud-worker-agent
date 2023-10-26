@@ -1,0 +1,148 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+from typing import Optional
+from openjd.sessions import WindowsSessionUser, PosixSessionUser, SessionUser
+from subprocess import run, DEVNULL, PIPE, STDOUT
+import getpass
+from pathlib import Path
+import os
+from dataclasses import dataclass
+from typing import cast
+from enum import Enum
+
+
+@dataclass
+class FileSystemPermissionEnum(Enum):
+    READ = "READ"
+    WRITE = "WRITE"
+    EXECUTE = "EXECUTE"
+    READ_WRITE = "READ_WRITE"
+
+
+def _run_cmd_as(*, user: PosixSessionUser, cmd: list[str]) -> None:
+    sudo = ["sudo", "-u", user.user, "-i"]
+    # Raises: CalledProcessError
+    run(sudo + cmd, stdin=DEVNULL, stderr=STDOUT, stdout=PIPE, check=True)
+
+
+def set_permissions(
+    file_path: Path,
+    user_permission: FileSystemPermissionEnum,
+    user: Optional[SessionUser] = None,
+    group_permission: Optional[FileSystemPermissionEnum] = None,
+):
+    if os.name == "nt":
+        user = cast(WindowsSessionUser, user)
+
+        _set_windows_permissions(
+            path=file_path,
+            user_permission=user_permission,
+            user=user,
+            group_permission=group_permission,
+        )
+
+
+def touch_file(
+    file_path: Path,
+    user_permission: FileSystemPermissionEnum,
+    user: Optional[SessionUser] = None,
+    group_permission: Optional[FileSystemPermissionEnum] = None,
+):
+    if os.name == "nt":
+        user = cast(WindowsSessionUser, user)
+
+        if not file_path.exists():
+            file_path.touch()
+
+        _set_windows_permissions(
+            path=file_path,
+            user_permission=user_permission,
+            user=user,
+            group_permission=group_permission,
+        )
+
+
+def make_directory(
+    dir_path: Path,
+    user_permission: FileSystemPermissionEnum,
+    user: Optional[SessionUser] = None,
+    group_permission: Optional[FileSystemPermissionEnum] = None,
+    exist_ok: bool = True,
+    parents: bool = False,
+):
+    if os.name == "nt":
+        user = cast(WindowsSessionUser, user)
+
+        dir_path.mkdir(exist_ok=exist_ok, parents=parents)
+
+        _set_windows_permissions(
+            path=dir_path,
+            user_permission=user_permission,
+            user=user,
+            group_permission=group_permission,
+        )
+
+
+def _set_windows_permissions(
+    path: Path,
+    user_permission: FileSystemPermissionEnum,
+    user: Optional[WindowsSessionUser] = None,
+    group_permission: Optional[FileSystemPermissionEnum] = None,
+):
+    import win32security
+    import ntsecuritycon
+
+    if not user:
+        username = getpass.getuser()
+    else:
+        username = user.user
+
+    # We don't want to propagate existing permissions, so create a new DACL
+    dacl = win32security.ACL()
+
+    # Add an ACE to the DACL giving the user the required access and inheritance of the ACE
+    user_sid, _, _ = win32security.LookupAccountName(None, username)
+    dacl.AddAccessAllowedAceEx(
+        win32security.ACL_REVISION,
+        ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE,
+        _get_ntsecuritycon_mode(user_permission),
+        user_sid,
+    )
+
+    # Add an ACE to the DACL giving the group the required access and inheritance of the ACE
+    if group_permission is not None and user is not None:
+        group_sid, _, _ = win32security.LookupAccountName(None, user.group)
+        dacl.AddAccessAllowedAceEx(
+            win32security.ACL_REVISION,
+            ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE,
+            _get_ntsecuritycon_mode(group_permission),
+            group_sid,
+        )
+
+    # Get the security descriptor of the directory
+    sd = win32security.GetFileSecurity(str(path.resolve()), win32security.DACL_SECURITY_INFORMATION)
+
+    # Set the security descriptor's DACL to the newly-created DACL
+    # Arguments:
+    # 1. bDaclPresent = 1: Indicates that the DACL is present in the security descriptor.
+    #    If set to 0, this method ignores the provided DACL and allows access to all principals.
+    # 2. dacl: The discretionary access control list (DACL) to be set in the security descriptor.
+    # 3. bDaclDefaulted = 0: Indicates the DACL was provided and not defaulted.
+    #    If set to 1, indicates the DACL was defaulted, as in the case of permissions inherited from a parent directory.
+    sd.SetSecurityDescriptorDacl(1, dacl, 0)
+
+    # Set the security descriptor to the the directory
+    win32security.SetFileSecurity(str(path.resolve()), win32security.DACL_SECURITY_INFORMATION, sd)
+
+
+def _get_ntsecuritycon_mode(mode: FileSystemPermissionEnum) -> int:
+    import ntsecuritycon
+
+    permission_mapping = {
+        FileSystemPermissionEnum.READ.value: ntsecuritycon.FILE_GENERIC_READ,
+        FileSystemPermissionEnum.WRITE.value: ntsecuritycon.FILE_GENERIC_WRITE,
+        FileSystemPermissionEnum.READ_WRITE.value: ntsecuritycon.FILE_GENERIC_READ
+        | ntsecuritycon.FILE_GENERIC_WRITE,
+        FileSystemPermissionEnum.EXECUTE.value: ntsecuritycon.FILE_GENERIC_EXECUTE,
+    }
+    return permission_mapping[mode.value]
