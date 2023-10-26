@@ -115,6 +115,17 @@ def test_can_interrupt(
     [
         pytest.param(
             ClientError(
+                {
+                    "Error": {"Code": "ConflictException", "Message": "A message"},
+                    "reason": "CONCURRENT_MODIFICATION",
+                },
+                "UpdateWorkerSchedule",
+            ),
+            None,
+            id="ConcurrentMod",
+        ),
+        pytest.param(
+            ClientError(
                 {"Error": {"Code": "ThrottlingException", "Message": "A message"}},
                 "UpdateWorkerSchedule",
             ),
@@ -128,6 +139,18 @@ def test_can_interrupt(
             ),
             None,
             id="InternalServer",
+        ),
+        pytest.param(
+            ClientError(
+                {
+                    "Error": {"Code": "ConflictException", "Message": "A message"},
+                    "reason": "CONCURRENT_MODIFICATION",
+                    "retryAfterSeconds": 30,
+                },
+                "UpdateWorkerSchedule",
+            ),
+            30,
+            id="ConcurrentMod-minretry",
         ),
         pytest.param(
             ClientError(
