@@ -762,6 +762,9 @@ def update_worker_schedule(
                         raise DeadlineRequestWorkerOfflineError(e)
                     # If anything else is in STATUS_CONFLICT, then we can't recover.
                     raise DeadlineRequestUnrecoverableError(e)
+                elif exception_reason == "CONCURRENT_MODIFICATION":
+                    # Something else modified the Worker at the same time. Just retry.
+                    _logger.info(f"UpdateWorkerSchedule conflict. Retrying in {delay} seconds...")
                 else:
                     # Unknown exception_reason. Treat as unrecoverable
                     raise DeadlineRequestUnrecoverableError(e) from None
