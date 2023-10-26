@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from itertools import islice
 from logging import getLogger
 from threading import Event, Thread
-from typing import Any, Iterator, Iterable, TYPE_CHECKING, TypeVar, Union, cast
+from typing import Any, Iterator, Iterable, TYPE_CHECKING, TypeVar, Union, cast, Optional
+from ...windows_credentials_resolver import WindowsCredentialsResolver
 
 from ...api_models import (
     EntityIdentifier,
@@ -101,12 +102,14 @@ class JobEntities:
         worker_id: str,
         job_id: str,
         deadline_client: DeadlineClient,
+        windows_credentials_resolver: Optional[WindowsCredentialsResolver],
     ) -> None:
         self._job_id = job_id
         self._farm_id = farm_id
         self._fleet_id = fleet_id
         self._worker_id = worker_id
         self._deadline_client = deadline_client
+        self._windows_credentials_resolver = windows_credentials_resolver
         self._entity_record_map = {}
 
     def request(self, *, identifier: EntityIdentifier) -> dict[str, Any]:
@@ -317,7 +320,20 @@ class JobEntities:
 
         result = self.request(identifier=identifier)
         job_details_data = JobDetails.validate_entity_data(result)
-        return JobDetails.from_boto(job_details_data)
+        job_details = JobDetails.from_boto(job_details_data)
+
+        # if JobRunAsUser specifies a windows user resolve the credentials here
+        # so that we don't have to pass the resolver all through the JobDetails data classes
+        if job_details.job_run_as_user is not None:
+            windows_settings = job_details.job_run_as_user.windows_settings
+            if windows_settings is not None and self._windows_credentials_resolver is not None:
+                job_details.job_run_as_user.windows = (
+                    self._windows_credentials_resolver.get_windows_session_user(
+                        windows_settings.user, windows_settings.group, windows_settings.passwordArn
+                    )
+                )
+
+        return job_details
 
     def step_details(self, *, step_id: str) -> StepDetails:
         """Returns step details.

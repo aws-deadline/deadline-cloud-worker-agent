@@ -89,6 +89,20 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(
+        field_name="windows_job_user",
+        expected_type=ConstrainedStr,
+        expected_required=False,
+        expected_default=None,
+        expected_default_factory_return_value=None,
+    ),
+    FieldTestCaseParams(
+        field_name="windows_job_user_password_arn",
+        expected_type=ConstrainedStr,
+        expected_required=False,
+        expected_default=None,
+        expected_default_factory_return_value=None,
+    ),
+    FieldTestCaseParams(
         field_name="allow_instance_profile",
         expected_type=bool,
         expected_required=False,

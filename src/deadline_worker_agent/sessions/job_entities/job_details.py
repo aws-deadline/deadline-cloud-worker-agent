@@ -12,6 +12,7 @@ from openjd.sessions import (
     ParameterType,
     PathFormat,
     PosixSessionUser,
+    WindowsSessionUser,
 )
 from openjd.sessions import PathMappingRule as OPENJDPathMappingRule
 
@@ -100,13 +101,19 @@ def job_run_as_user_api_model_to_worker_agent(
         group = job_run_as_user_posix.get("group", "")
         if not (user and group):
             return None
-
         job_run_as_user = JobRunAsUser(
             posix=PosixSessionUser(user=user, group=group),
         )
     else:
-        # TODO: windows support
-        return None
+        job_run_as_user_windows = job_run_as_user_data.get("windows", {})
+        user = job_run_as_user_windows.get("user", "")
+        group = job_run_as_user_windows.get("group", "")
+        passwordArn = job_run_as_user_windows.get("passwordArn", "")
+        if not (user and passwordArn):
+            return None
+        job_run_as_user = JobRunAsUser(
+            windows_settings=JobRunAsWindowsUser(user=user, group=group, passwordArn=passwordArn),
+        )
 
     return job_run_as_user
 
@@ -130,9 +137,17 @@ class JobAttachmentSettings:
 
 
 @dataclass(frozen=True)
+class JobRunAsWindowsUser:
+    passwordArn: str
+    user: str
+    group: str | None = None
+
+
+@dataclass
 class JobRunAsUser:
-    posix: PosixSessionUser
-    # TODO: windows support
+    posix: PosixSessionUser | None = None
+    windows: WindowsSessionUser | None = None
+    windows_settings: JobRunAsWindowsUser | None = None
 
 
 @dataclass(frozen=True)
@@ -221,7 +236,7 @@ class JobDetails:
 
     @classmethod
     def validate_entity_data(cls, entity_data: dict[str, Any]) -> JobDetailsData:
-        """Performs input validation on a response element recceived from boto3's call to
+        """Performs input validation on a response element received from boto3's call to
         the BatchGetJobEntity Amazon Deadline Cloud API.
 
         Parameters
@@ -288,6 +303,16 @@ class JobDetails:
                                 Field(key="group", expected_type=str, required=True),
                             ),
                         ),
+                        Field(
+                            key="windows",
+                            expected_type=dict,
+                            required=False,
+                            fields=(
+                                Field(key="user", expected_type=str, required=True),
+                                Field(key="group", expected_type=str, required=True),
+                                Field(key="passwordArn", expected_type=str, required=True),
+                            ),
+                        ),
                     ),
                 ),
                 Field(
@@ -305,7 +330,7 @@ class JobDetails:
             ),
         )
 
-        # Validating job parameters reqiures special validation since keys are dynamic
+        # Validating job parameters requires special validation since keys are dynamic
         if job_parameters := entity_data.get("parameters", None):
             assert isinstance(job_parameters, dict)
             cls._validate_job_parameters(job_parameters)

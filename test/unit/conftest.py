@@ -66,7 +66,7 @@ def jobs_run_as_overrides(
     (posix_os,) = request.param
 
     if posix_os:
-        return JobsRunAsUserOverride(run_as_agent=False, posix_job_user=job_user)
+        return JobsRunAsUserOverride(run_as_agent=False, job_user=job_user)
     else:
         return JobsRunAsUserOverride(run_as_agent=True)
 
