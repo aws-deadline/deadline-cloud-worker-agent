@@ -87,7 +87,7 @@ class Worker:
         worker_persistence_dir: Path,
         worker_logs_dir: Path | None,
         host_metrics_logging: bool,
-        host_metrics_logging_interval_seconds: float | None,
+        host_metrics_logging_interval_seconds: float | None = None,
     ) -> None:
         self._deadline_client = deadline_client
         self._s3_client = s3_client
