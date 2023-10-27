@@ -56,9 +56,9 @@ def worker(
     # This is unused, but declaring it as a dependency fixture ensures we mock the scheduler class
     # before we instantiate the Worker instance within this fixture body
     mock_scheduler_cls: MagicMock,
-) -> Worker:
+) -> Generator[Worker, None, None]:
     with patch.object(worker_mod, "HostMetricsLogger"):
-        return Worker(
+        yield Worker(
             farm_id=farm_id,
             deadline_client=client,
             boto_session=boto_session,
@@ -70,8 +70,7 @@ def worker(
             cleanup_session_user_processes=True,
             worker_persistence_dir=Path("/var/lib/deadline"),
             worker_logs_dir=worker_logs_dir,
-            host_metrics_logging=True,
-            host_metrics_logging_interval_seconds=60,
+            host_metrics_logging=False,
         )
 
 
