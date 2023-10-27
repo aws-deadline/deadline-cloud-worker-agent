@@ -932,11 +932,7 @@ class Session:
         """
 
         # avoid circular import
-        from .actions import (
-            EnterEnvironmentAction,
-            RunStepTaskAction,
-            SyncInputJobAttachmentsAction,
-        )
+        from .actions import RunStepTaskAction
 
         # There is special-case handling when the current action was interrupted. In such cases, the
         # interruption is reported immediately, so we should not report any Open Job Description action updates
@@ -982,27 +978,10 @@ class Session:
                 or f"Action {current_action.definition.human_readable()} failed"
             )
 
-            # If the current action failed, we mark future assigned actions as either FAILED or
-            # NEVER_ATTEMPTED (depending on the current action type) and wait for the farm's
-            # scheduler to provide further action(s).
-            cancel_outcome: Literal["NEVER_ATTEMPTED", "FAILED"] = "NEVER_ATTEMPTED"
-
-            # TODO: This logic may change if ENV_ENTER and SYNC_INPUT_JOB_ATTACHMENT failures count
-            # as task failures.
-            # We fail all remaining assigned actions to the Worker for the session when an
-            # environment enter action fails. This is because otherwise the farm's scheduler
-            # continues requeueing the tasks indefinitely.
-            if (
-                isinstance(
-                    current_action.definition,
-                    (EnterEnvironmentAction, SyncInputJobAttachmentsAction),
-                )
-                and action_status.state == ActionState.FAILED
-            ):
-                cancel_outcome = "FAILED"
-
+            # If the current action failed, we mark future actions assigned to the session as
+            # NEVER_ATTEMPTED except for envExit actions.
             self._queue.cancel_all(
-                cancel_outcome=cancel_outcome,
+                cancel_outcome="NEVER_ATTEMPTED",
                 message=fail_message,
                 ignore_env_exits=True,
             )
