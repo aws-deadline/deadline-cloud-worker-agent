@@ -14,6 +14,13 @@ from deadline_worker_agent.metrics import HostMetricsLogger
 import deadline_worker_agent.metrics as metrics_mod
 
 
+@pytest.fixture(autouse=True)
+def mock_psutil_module() -> Generator[MagicMock, None, None]:
+    """Mock the entire psutil module to prevent future errors due to KeyError from psutil.virtual_memory()"""
+    with patch.object(metrics_mod, "psutil") as mock:
+        yield mock
+
+
 class TestHostMetricsLogger:
     BYTES_PATTERN = r"[0-9]+(?:\.[0-9]+)?"
     PERCENT_PATTERN = r"[0-9]{1,3}(?:\.[0-9]+)?"
@@ -28,11 +35,11 @@ class TestHostMetricsLogger:
 
     def test_enter(self, host_metrics_logger: HostMetricsLogger):
         # GIVEN
-        with patch.object(host_metrics_logger, "_set_timer") as mock_set_timer:
+        with patch.object(host_metrics_logger, "log_metrics") as mock_log_metrics:
             # WHEN
             with host_metrics_logger:
                 # THEN
-                mock_set_timer.assert_called_once()
+                mock_log_metrics.assert_called_once()
 
     @pytest.mark.parametrize("timer_exists", [True, False])
     def test_exit(
@@ -44,9 +51,10 @@ class TestHostMetricsLogger:
         timer = MagicMock()
 
         # WHEN
-        with host_metrics_logger:
-            if timer_exists:
-                host_metrics_logger._timer = timer
+        with patch.object(host_metrics_logger, "__enter__"):
+            with host_metrics_logger:
+                if timer_exists:
+                    host_metrics_logger._timer = timer
 
         # THEN
         if timer_exists:
@@ -140,7 +148,7 @@ class TestHostMetricsLogger:
             )
             return dioc(123, 321, 123123, 321321, 100, 200)
 
-        @pytest.fixture
+        @pytest.fixture(autouse=True)
         def mock_psutil(
             self,
             virtual_memory: tuple,
@@ -276,42 +284,45 @@ class TestHostMetricsLogger:
             assert re.search(r"network-sent-bytes-per-second NOT_AVAILABLE", log_line)
             assert re.search(r"network-recv-bytes-per-second NOT_AVAILABLE", log_line)
 
-    def test_log_metrics_correct_encoding(self, caplog: pytest.LogCaptureFixture) -> None:
-        # GIVEN
-        DECIMAL_NUMBER_PATTERN = r"\d+(?:\.\d+)?"
-        EXPECTED_LOG_MESSAGE_PATTERN = " ".join(
-            # fmt: off
-            [
-                "cpu-usage-percent", DECIMAL_NUMBER_PATTERN,
-                "memory-total-bytes", DECIMAL_NUMBER_PATTERN,
-                "memory-used-bytes", DECIMAL_NUMBER_PATTERN,
-                "memory-used-percent", DECIMAL_NUMBER_PATTERN,
-                "swap-used-bytes", DECIMAL_NUMBER_PATTERN,
-                "total-disk-bytes", DECIMAL_NUMBER_PATTERN,
-                "total-disk-used-bytes", DECIMAL_NUMBER_PATTERN,
-                "total-disk-used-percent", DECIMAL_NUMBER_PATTERN,
-                "user-disk-available-bytes", DECIMAL_NUMBER_PATTERN,
-                "network-sent-bytes-per-second", rf"(?:{DECIMAL_NUMBER_PATTERN}|NOT_AVAILABLE)",
-                "network-recv-bytes-per-second", rf"(?:{DECIMAL_NUMBER_PATTERN}|NOT_AVAILABLE)",
-                "disk-read-bytes-per-second", rf"(?:{DECIMAL_NUMBER_PATTERN}|NOT_AVAILABLE|NOT_SUPPORTED)",
-                "disk-write-bytes-per-second", rf"(?:{DECIMAL_NUMBER_PATTERN}|NOT_AVAILABLE|NOT_SUPPORTED)",
-            ]
-            # fmt: on
-        )
-        logger = logging.getLogger(__name__)
-        caplog.set_level(0, logger.name)
-        host_metrics_logger = HostMetricsLogger(logger=logger, interval_s=1)
+        def test_log_metrics_correct_encoding(
+            self,
+            caplog: pytest.LogCaptureFixture,
+        ) -> None:
+            # GIVEN
+            DECIMAL_NUMBER_PATTERN = r"\d+(?:\.\d+)?"
+            EXPECTED_LOG_MESSAGE_PATTERN = " ".join(
+                # fmt: off
+                [
+                    "cpu-usage-percent", DECIMAL_NUMBER_PATTERN,
+                    "memory-total-bytes", DECIMAL_NUMBER_PATTERN,
+                    "memory-used-bytes", DECIMAL_NUMBER_PATTERN,
+                    "memory-used-percent", DECIMAL_NUMBER_PATTERN,
+                    "swap-used-bytes", DECIMAL_NUMBER_PATTERN,
+                    "total-disk-bytes", DECIMAL_NUMBER_PATTERN,
+                    "total-disk-used-bytes", DECIMAL_NUMBER_PATTERN,
+                    "total-disk-used-percent", DECIMAL_NUMBER_PATTERN,
+                    "user-disk-available-bytes", DECIMAL_NUMBER_PATTERN,
+                    "network-sent-bytes-per-second", rf"(?:{DECIMAL_NUMBER_PATTERN}|NOT_AVAILABLE)",
+                    "network-recv-bytes-per-second", rf"(?:{DECIMAL_NUMBER_PATTERN}|NOT_AVAILABLE)",
+                    "disk-read-bytes-per-second", rf"(?:{DECIMAL_NUMBER_PATTERN}|NOT_AVAILABLE|NOT_SUPPORTED)",
+                    "disk-write-bytes-per-second", rf"(?:{DECIMAL_NUMBER_PATTERN}|NOT_AVAILABLE|NOT_SUPPORTED)",
+                ]
+                # fmt: on
+            )
+            logger = logging.getLogger(__name__)
+            caplog.set_level(0, logger.name)
+            host_metrics_logger = HostMetricsLogger(logger=logger, interval_s=1)
 
-        # WHEN
-        with (
-            # We don't want to actually create/start a timer
-            patch.object(metrics_mod, "Timer"),
-        ):
-            host_metrics_logger.log_metrics()
+            # WHEN
+            with (
+                # We don't want to actually create/start a timer
+                patch.object(metrics_mod, "Timer"),
+            ):
+                host_metrics_logger.log_metrics()
 
-        # THEN
-        assert len(caplog.messages) == 1
-        assert re.match(EXPECTED_LOG_MESSAGE_PATTERN, caplog.messages[0])
+            # THEN
+            assert len(caplog.messages) == 1
+            assert re.match(EXPECTED_LOG_MESSAGE_PATTERN, caplog.messages[0])
 
 
 def get_first_and_only_call_arg(mock: MagicMock) -> Any:
