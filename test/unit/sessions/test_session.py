@@ -926,8 +926,8 @@ class TestSessionActionUpdatedImpl:
         mock_report_action_update: MagicMock,
     ) -> None:
         """Tests that if a environment enter action fails (the Open Job Description action), that the action
-        failure is returned, and that any pending actions other than ENV_EXITS are marked as FAILED
-        with a message that explains that the env enter action failed."""
+        failure is returned, and that any pending actions other than ENV_EXITS are marked as
+        NEVER_ATTEMPTED with a message that explains that the env enter action failed."""
         # GIVEN
         job_env_id = "job_env_id"
         current_action = CurrentAction(
@@ -972,7 +972,7 @@ class TestSessionActionUpdatedImpl:
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
         queue_cancel_all.assert_called_once_with(
-            cancel_outcome="FAILED",
+            cancel_outcome="NEVER_ATTEMPTED",
             message=expected_next_action_message,
             ignore_env_exits=True,
         )
