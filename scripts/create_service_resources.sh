@@ -34,13 +34,6 @@ then
         
     echo "Creating Amazon Deadline Cloud Farm $farm_name"
     FARM_ID=$(aws deadline create-farm --display-name $farm_name | jq -r ".farmId")
-    # Wait to reduce race conditions
-    i=0
-    while [ $i -le 120 ]; do
-        echo "Waiting for Farm $FARM_ID to complete setup..."
-        sleep 5
-        i=$[$i+5]
-    done
 fi
 
 if [ "${QUEUE_ID_1:-}" == "" ]
@@ -54,7 +47,13 @@ then
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "ACTIVE",
+    "status": "IDLE",
+    "jobRunAsUser": {
+        "posix": {
+            "user": "",
+            "group": ""
+        }
+    },
     "jobAttachmentSettings": {
         "s3BucketName": "${assets_s3_bucket}",
         "rootPrefix": "assets/"
@@ -66,8 +65,14 @@ EOF
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "ACTIVE",
+    "status": "IDLE",
     "roleArn": "$queue_1_iam_role",
+    "jobRunAsUser": {
+        "posix": {
+            "user": "",
+            "group": ""
+        }
+    },
     "jobAttachmentSettings": {
         "s3BucketName": "${assets_s3_bucket}",
         "rootPrefix": "assets/"
@@ -81,7 +86,7 @@ EOF
     rm create-queue-config.json
 
     ready=""
-    while [[ $ready != "ACTIVE" ]] && [[ $ready != "SCHEDULING" ]]; do
+    while [[ $ready != "IDLE" ]] && [[ $ready != "SCHEDULING" ]]; do
         sleep 5
         ready=$(aws deadline get-queue --farm-id $FARM_ID --queue-id $QUEUE_ID_1 | jq -r ".status")
         echo "Queue $QUEUE_ID_1 in $ready status..."
@@ -105,7 +110,13 @@ then
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "ACTIVE",
+    "status": "IDLE",
+    "jobRunAsUser": {
+        "posix": {
+            "user": "",
+            "group": ""
+        }
+    },
     "jobAttachmentSettings": {
         "s3BucketName": "${assets_s3_bucket}",
         "rootPrefix": "assets/"
@@ -117,8 +128,14 @@ EOF
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "ACTIVE",
+    "status": "IDLE",
     "roleArn": "$queue_2_iam_role",
+    "jobRunAsUser": {
+        "posix": {
+            "user": "",
+            "group": ""
+        }
+    },
     "jobAttachmentSettings": {
         "s3BucketName": "${assets_s3_bucket}",
         "rootPrefix": "assets/"
@@ -132,7 +149,7 @@ EOF
     rm create-queue-config.json
 
     ready=""
-    while [[ $ready != "ACTIVE" ]] && [[ $ready != "SCHEDULING" ]]; do
+    while [[ $ready != "IDLE" ]] && [[ $ready != "SCHEDULING" ]]; do
         sleep 5
         ready=$(aws deadline get-queue --farm-id $FARM_ID --queue-id $QUEUE_ID_2 | jq -r ".status")
         echo "Queue $QUEUE_ID_2 in $ready status..."
@@ -155,12 +172,10 @@ then
     "farmId": "$FARM_ID",
     "displayName": "$fleet_name",
     "roleArn": "$worker_iam_role",
+    "maxWorkerCount": 5,
     "configuration": {
         "customerManaged": {
-            "autoScalingConfiguration": {
-                "mode": "NO_SCALING",
-                "maxFleetSize": 5
-            },
+            "mode": "NO_SCALING", 
             "workerRequirements": {
                 "vCpuCount": {
                     "min": 1
