@@ -13,9 +13,11 @@ import pytest
 from deadline_worker_agent.installer import (
     ParsedCommandLineArguments,
     install,
-    VFS_DEFAULT_INSTALL_PATH,
 )
 from deadline_worker_agent import installer as installer_mod
+
+
+VFS_DEFAULT_INSTALL_PATH = "/opt/deadline_vfs"
 
 
 @pytest.fixture(autouse=True)

@@ -89,7 +89,7 @@ usage()
     echo "        Skips a confirmation prompt before performing the installation."
     echo "    --vfs-install-path VFS_INSTALL_PATH"
     echo "        An optional, absolute path to the directory that the Deadline Virtual File System (VFS) is"
-    echo "        installed. If it is not specified, the default path /opt/deadline_vfs is used"
+    echo "        installed."
 
     exit 2
 }
@@ -212,19 +212,19 @@ if [[ ! -z "${job_group}" ]] && [[ ! "${job_group}" =~ ^[a-z_]([a-z0-9_-]{0,31}|
     usage
 fi
 
-if [[ "${vfs_install_path}" == "unset" ]]; then
-    vfs_install_path="/opt/deadline_vfs"
-elif [[ ! -d "${vfs_install_path}" ]]; then
-    echo "ERROR: The specified vfs install path is not found: \"${vfs_install_path}\""
-    usage
-else
-    set +e
-    deadline_vfs_executable="${vfs_install_path}"/bin/deadline_vfs
-    if [[ ! -f "${deadline_vfs_executable}" ]]; then
-        echo "ERROR: Deadline vfs not found at \"${deadline_vfs_executable}\"."
-        exit 1
+if [[ "${vfs_install_path}" != "unset" ]]; then
+    if [[ ! -d "${vfs_install_path}" ]]; then
+        echo "ERROR: The specified vfs install path is not found: \"${vfs_install_path}\""
+        usage
+    else
+        set +e
+        deadline_vfs_executable="${vfs_install_path}"/bin/deadline_vfs
+        if [[ ! -f "${deadline_vfs_executable}" ]]; then
+            echo "ERROR: Deadline vfs not found at \"${deadline_vfs_executable}\"."
+            exit 1
+        fi
+        set -e
     fi
-    set -e
 fi
 
 
@@ -378,7 +378,19 @@ Description=Amazon Deadline Cloud Worker Agent
 [Service]
 User=${wa_user}
 WorkingDirectory=${worker_agent_homedir}
+EOF
+    # Write VFS install directory if it's set
+    if [[ "${vfs_install_path}" != "unset" ]]; then
+        cat >> /etc/systemd/system/deadline-worker.service <<EOF   
 Environment=AWS_REGION=$region AWS_DEFAULT_REGION=$region FUS3_PATH=$vfs_install_path DEADLINE_VFS_PATH=$vfs_install_path
+EOF
+    else
+        cat >> /etc/systemd/system/deadline-worker.service <<EOF   
+Environment=AWS_REGION=$region AWS_DEFAULT_REGION=$region
+EOF
+    fi
+    
+    cat >> /etc/systemd/system/deadline-worker.service <<EOF   
 ExecStart=$worker_agent_program
 Restart=on-failure
 
