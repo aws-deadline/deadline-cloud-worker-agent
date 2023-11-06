@@ -752,9 +752,11 @@ class TestStartWorker:
         mock_get_host_properties.assert_called_once()
         update_worker_mock.assert_called_once_with(
             deadline_client=deadline_client,
-            config=config,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
             worker_id=worker_id,
             status=WorkerStatus.STARTED,
+            capabilities=config.capabilities,
             host_properties=host_properties,
         )
         if not log_config:
@@ -982,7 +984,8 @@ class TestEnforceNoInstanceProfileOrStopWorker:
         mock_enforce_no_instance_profile.assert_called_once_with()
         update_worker_mock.assert_called_once_with(
             deadline_client=client,
-            config=config,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
             worker_id=worker_id,
             status=WorkerStatus.STOPPED,
         )

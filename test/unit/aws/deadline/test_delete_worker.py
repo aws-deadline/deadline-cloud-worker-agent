@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from typing import Generator, Any
+from typing import Generator, Any, Optional
 from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
@@ -65,12 +65,13 @@ def test_success(client: MagicMock, config: Configuration, worker_id: str) -> No
 
 
 @pytest.mark.parametrize(
-    "exception",
+    "exception,min_retry",
     [
         pytest.param(
             ClientError(
                 {"Error": {"Code": "ThrottlingException", "Message": "A message"}}, "DeleteWorker"
             ),
+            None,
             id="Throttling",
         ),
         pytest.param(
@@ -78,7 +79,30 @@ def test_success(client: MagicMock, config: Configuration, worker_id: str) -> No
                 {"Error": {"Code": "InternalServerException", "Message": "A message"}},
                 "DeleteWorker",
             ),
+            None,
             id="InternalServer",
+        ),
+        pytest.param(
+            ClientError(
+                {
+                    "Error": {"Code": "ThrottlingException", "Message": "A message"},
+                    "retryAfterSeconds": 30,
+                },
+                "DeleteWorker",
+            ),
+            30,
+            id="Throttling-minretry",
+        ),
+        pytest.param(
+            ClientError(
+                {
+                    "Error": {"Code": "InternalServerException", "Message": "A message"},
+                    "retryAfterSeconds": 30,
+                },
+                "DeleteWorker",
+            ),
+            30,
+            id="InternalServer-minretry",
         ),
     ],
 )
@@ -87,6 +111,7 @@ def test_retries_when_appropriate(
     config: Configuration,
     worker_id: str,
     exception: ClientError,
+    min_retry: Optional[float],
     sleep_mock: MagicMock,
 ):
     # A test that the delete_worker() function will retry calls to the API when:
@@ -102,6 +127,8 @@ def test_retries_when_appropriate(
     # THEN
     assert client.delete_worker.call_count == 2
     sleep_mock.assert_called_once()
+    if min_retry is not None:
+        assert min_retry <= sleep_mock.call_args.args[0] <= (min_retry + 0.2 * min_retry)
 
 
 @pytest.mark.parametrize(

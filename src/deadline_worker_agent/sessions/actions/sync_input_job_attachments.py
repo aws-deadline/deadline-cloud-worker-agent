@@ -127,8 +127,6 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
             )
         except Exception as e:
             session.logger.exception(e)
-            # We need to directly complete the action. Other actions rely on the Open Job Description session's
-            # callback to complete the action
             action_status = ActionStatus(
                 state=ActionState.FAILED,
                 fail_message=str(e),

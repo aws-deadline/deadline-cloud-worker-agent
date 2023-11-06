@@ -29,6 +29,7 @@ from openjd.sessions import (
 
 from deadline_worker_agent.api_models import EnvironmentAction, TaskRunAction
 from deadline_worker_agent.sessions import Session
+from deadline_worker_agent.sessions import session as session_module
 from deadline_worker_agent.sessions.session import (
     CurrentAction,
     SessionActionStatus,
@@ -925,8 +926,8 @@ class TestSessionActionUpdatedImpl:
         mock_report_action_update: MagicMock,
     ) -> None:
         """Tests that if a environment enter action fails (the Open Job Description action), that the action
-        failure is returned, and that any pending actions other than ENV_EXITS are marked as FAILED
-        with a message that explains that the env enter action failed."""
+        failure is returned, and that any pending actions other than ENV_EXITS are marked as
+        NEVER_ATTEMPTED with a message that explains that the env enter action failed."""
         # GIVEN
         job_env_id = "job_env_id"
         current_action = CurrentAction(
@@ -971,7 +972,7 @@ class TestSessionActionUpdatedImpl:
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
         queue_cancel_all.assert_called_once_with(
-            cancel_outcome="FAILED",
+            cancel_outcome="NEVER_ATTEMPTED",
             message=expected_next_action_message,
             ignore_env_exits=True,
         )
@@ -1087,7 +1088,14 @@ class TestSessionActionUpdatedImpl:
             end_time=action_complete_time,
         )
 
-        with patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs:
+        def mock_now(*arg, **kwarg) -> datetime:
+            return action_complete_time
+
+        with patch.object(session_module, "datetime") as mock_datetime, patch.object(
+            session, "_sync_asset_outputs"
+        ) as mock_sync_asset_outputs:
+            mock_datetime.now.side_effect = mock_now
+
             # Assert that reporting the action update happens AFTER syncing the output job
             # attachments.
             def sync_asset_outputs_side_effect(*, current_action: CurrentAction) -> None:

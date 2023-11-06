@@ -7,6 +7,7 @@ from botocore.exceptions import ClientError
 
 from deadline_worker_agent.aws.deadline import (
     update_worker,
+    DeadlineRequestInterrupted,
     DeadlineRequestUnrecoverableError,
     DeadlineRequestConditionallyRecoverableError,
 )
@@ -103,9 +104,11 @@ def test_success(
     # WHEN
     response = update_worker(
         deadline_client=client,
-        config=config,
+        farm_id=config.farm_id,
+        fleet_id=config.fleet_id,
         worker_id=worker_id,
         status=status,
+        capabilities=config.capabilities,
         host_properties=host_properties,
     )
 
@@ -128,6 +131,46 @@ def test_success(
             capabilities=config.capabilities.for_update_worker(),
             status=status.value,
         )
+
+
+def test_can_interrupt(
+    client: MagicMock,
+    config: Configuration,
+    worker_id: str,
+    sleep_mock: MagicMock,
+) -> None:
+    # A test that the update_worker() function will cease retries when the interrupt
+    # event it set.
+
+    # GIVEN
+    event = MagicMock()
+    event.is_set.side_effect = [False, True]
+    dummy_response = {"log": AWSLOGS_LOG_CONFIGURATION}
+    throttle_exc = ClientError(
+        {"Error": {"Code": "ThrottlingException", "Message": "A message"}},
+        "UpdateWorker",
+    )
+    client.update_worker.side_effect = [
+        throttle_exc,
+        throttle_exc,
+        dummy_response,
+    ]
+
+    # WHEN
+    with pytest.raises(DeadlineRequestInterrupted):
+        update_worker(
+            deadline_client=client,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
+            worker_id=worker_id,
+            status=WorkerStatus.STOPPING,
+            interrupt_event=event,
+        )
+
+    # THEN
+    assert client.update_worker.call_count == 1
+    event.wait.assert_called_once()
+    sleep_mock.assert_not_called()
 
 
 @pytest.mark.parametrize("conflict_status", ["STOPPING", "NOT_COMPATIBLE"])
@@ -165,10 +208,10 @@ def test_updates_to_stopped_if_required(
     # WHEN
     response = update_worker(
         deadline_client=client,
-        config=config,
+        farm_id=config.farm_id,
+        fleet_id=config.fleet_id,
         worker_id=worker_id,
         status=WorkerStatus.STARTED,
-        host_properties=HOST_PROPERTIES,
     )
 
     # THEN
@@ -179,25 +222,19 @@ def test_updates_to_stopped_if_required(
                 farmId=config.farm_id,
                 fleetId=config.fleet_id,
                 workerId=worker_id,
-                capabilities=config.capabilities.for_update_worker(),
                 status=WorkerStatus.STARTED.value,
-                hostProperties=HOST_PROPERTIES,
             ),
             call(
                 farmId=config.farm_id,
                 fleetId=config.fleet_id,
                 workerId=worker_id,
-                capabilities=config.capabilities.for_update_worker(),
                 status=WorkerStatus.STOPPED.value,
-                hostProperties=HOST_PROPERTIES,
             ),
             call(
                 farmId=config.farm_id,
                 fleetId=config.fleet_id,
                 workerId=worker_id,
-                capabilities=config.capabilities.for_update_worker(),
                 status=WorkerStatus.STARTED.value,
-                hostProperties=HOST_PROPERTIES,
             ),
         )
     )
@@ -245,10 +282,10 @@ def test_does_not_recurse_if_not_started(
     with pytest.raises(DeadlineRequestUnrecoverableError) as exc_context:
         update_worker(
             deadline_client=client,
-            config=config,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
             worker_id=worker_id,
             status=target_status,
-            host_properties=HOST_PROPERTIES,
         )
 
     # THEN
@@ -285,10 +322,10 @@ def test_reraises_when_updates_to_stopped(
     with pytest.raises(DeadlineRequestUnrecoverableError) as exc_context:
         update_worker(
             deadline_client=client,
-            config=config,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
             worker_id=worker_id,
             status=WorkerStatus.STARTED,
-            host_properties=HOST_PROPERTIES,
         )
 
     # THEN
@@ -299,17 +336,13 @@ def test_reraises_when_updates_to_stopped(
                 farmId=config.farm_id,
                 fleetId=config.fleet_id,
                 workerId=worker_id,
-                capabilities=config.capabilities.for_update_worker(),
                 status=WorkerStatus.STARTED.value,
-                hostProperties=HOST_PROPERTIES,
             ),
             call(
                 farmId=config.farm_id,
                 fleetId=config.fleet_id,
                 workerId=worker_id,
-                capabilities=config.capabilities.for_update_worker(),
                 status=WorkerStatus.STOPPED.value,
-                hostProperties=HOST_PROPERTIES,
             ),
         )
     )
@@ -317,12 +350,13 @@ def test_reraises_when_updates_to_stopped(
 
 
 @pytest.mark.parametrize(
-    "exception",
+    "exception,min_retry",
     [
         pytest.param(
             ClientError(
                 {"Error": {"Code": "ThrottlingException", "Message": "A message"}}, "UpdateWorker"
             ),
+            None,
             id="Throttling",
         ),
         pytest.param(
@@ -330,7 +364,30 @@ def test_reraises_when_updates_to_stopped(
                 {"Error": {"Code": "InternalServerException", "Message": "A message"}},
                 "UpdateWorker",
             ),
+            None,
             id="InternalServer",
+        ),
+        pytest.param(
+            ClientError(
+                {
+                    "Error": {"Code": "ThrottlingException", "Message": "A message"},
+                    "retryAfterSeconds": 30,
+                },
+                "UpdateWorker",
+            ),
+            30,
+            id="Throttling-minretry",
+        ),
+        pytest.param(
+            ClientError(
+                {
+                    "Error": {"Code": "InternalServerException", "Message": "A message"},
+                    "retryAfterSeconds": 30,
+                },
+                "UpdateWorker",
+            ),
+            30,
+            id="InternalServer-minretry",
         ),
         pytest.param(
             ClientError(
@@ -340,6 +397,7 @@ def test_reraises_when_updates_to_stopped(
                 },
                 "UpdateWorker",
             ),
+            None,
             id="Conflict-CONCURRENT_MODIFICATION",
         ),
         pytest.param(
@@ -354,6 +412,7 @@ def test_reraises_when_updates_to_stopped(
                 },
                 "UpdateWorker",
             ),
+            None,
             id="Conflict-STATUS_CONFLICT-worker-ASSOCIATED",
         ),
     ],
@@ -364,6 +423,7 @@ def test_retries_when_appropriate(
     worker_id: str,
     sleep_mock: MagicMock,
     exception: ClientError,
+    min_retry: Optional[float],
 ):
     # A test that the update_worker() function will retry calls to the API when:
     # 1. Throttled
@@ -378,16 +438,18 @@ def test_retries_when_appropriate(
     # WHEN
     response = update_worker(
         deadline_client=client,
-        config=config,
+        farm_id=config.farm_id,
+        fleet_id=config.fleet_id,
         worker_id=worker_id,
         status=WorkerStatus.STARTED,
-        host_properties=HOST_PROPERTIES,
     )
 
     # THEN
     assert response is expected_response
     assert client.update_worker.call_count == 2
     sleep_mock.assert_called_once()
+    if min_retry is not None:
+        assert min_retry <= sleep_mock.call_args.args[0] <= (min_retry + 0.2 * min_retry)
 
 
 def test_not_found_raises_conditionally_recoverable(
@@ -411,10 +473,10 @@ def test_not_found_raises_conditionally_recoverable(
         # WHEN
         update_worker(
             deadline_client=client,
-            config=config,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
             worker_id=worker_id,
             status=WorkerStatus.STARTED,
-            host_properties=HOST_PROPERTIES,
         )
 
     # THEN
@@ -510,10 +572,10 @@ def test_raises_unrecoverable_error(
         # WHEN
         update_worker(
             deadline_client=client,
-            config=config,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
             worker_id=worker_id,
             status=WorkerStatus.STARTED,
-            host_properties=HOST_PROPERTIES,
         )
 
     # THEN
@@ -538,10 +600,10 @@ def test_raises_unexpected_exception(
         # WHEN
         update_worker(
             deadline_client=client,
-            config=config,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
             worker_id=worker_id,
             status=WorkerStatus.STARTED,
-            host_properties=HOST_PROPERTIES,
         )
 
     # THEN

@@ -142,6 +142,8 @@ Workflow before proceeding.
         [Worker Agent Startup](#worker-agent-startup-workflow) Workflow. The Worker is no longer
         in the STARTED status; this is likely due to failing to successfully call this API for an
         extended period of time.
+        * `reason` is `CONURRENT_MODIFICATION` -> Perform exponential backoff, and then retry.
+        * Any other -> Unrecoverable error. Abort. Exit the application.
     * Response: AccessDeniedException(403) -> Abort. Exit the application. The IAM Role on the
     Fleet lacks the required permissions.
     * Response: ResourceNotFoundException(404) -> Abort; the Worker has been deleted from the service.

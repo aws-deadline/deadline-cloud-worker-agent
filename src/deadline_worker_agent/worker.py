@@ -6,6 +6,7 @@ import json
 import signal
 import sys
 import traceback
+from contextlib import nullcontext
 from concurrent.futures import Executor, Future, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 from logging import getLogger
@@ -19,6 +20,7 @@ import requests
 
 from .boto import DeadlineClient
 from .errors import ServiceShutdown
+from .metrics import HostMetricsLogger
 from .scheduler import WorkerScheduler
 from .sessions import Session
 from .startup.config import ImpersonationOverrides
@@ -68,6 +70,7 @@ class Worker:
     _logs_client: boto3.client
     _boto_session: WorkerBoto3Session
     _worker_persistence_dir: Path
+    _host_metrics_logger: HostMetricsLogger | None = None
 
     def __init__(
         self,
@@ -83,6 +86,8 @@ class Worker:
         cleanup_session_user_processes: bool,
         worker_persistence_dir: Path,
         worker_logs_dir: Path | None,
+        host_metrics_logging: bool,
+        host_metrics_logging_interval_seconds: float | None = None,
     ) -> None:
         self._deadline_client = deadline_client
         self._s3_client = s3_client
@@ -105,6 +110,14 @@ class Worker:
         self._stop = Event()
         self._boto_session = boto_session
         self._worker_persistence_dir = worker_persistence_dir
+
+        if host_metrics_logging:
+            assert (
+                host_metrics_logging_interval_seconds is not None
+            ), "host_metrics_logging_interval_seconds is required if host metrics logging is enabled"
+            self._host_metrics_logger = HostMetricsLogger(
+                logger=logger, interval_s=host_metrics_logging_interval_seconds
+            )
 
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -162,10 +175,14 @@ class Worker:
         """Runs the main Worker loop for processing sessions."""
 
         monitor_ec2_shutdown: Future[WorkerShutdown | None] | None = None
-        with self._executor, AwsCredentialsRefresher(
-            identifier="Worker Agent",
-            session=self._boto_session,
-            failure_callback=self._aws_credentials_refresh_failure,
+        with (
+            self._executor,
+            AwsCredentialsRefresher(
+                identifier="Worker Agent",
+                session=self._boto_session,
+                failure_callback=self._aws_credentials_refresh_failure,
+            ),
+            self._host_metrics_logger or nullcontext(),
         ):
             scheduler_future = self._executor.submit(self._scheduler.run)
             futures: list[Future[Any]] = [

@@ -160,6 +160,8 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
                 cleanup_session_user_processes=config.cleanup_session_user_processes,
                 worker_persistence_dir=config.worker_persistence_dir,
                 worker_logs_dir=config.worker_logs_dir if config.local_session_logs else None,
+                host_metrics_logging=config.host_metrics_logging,
+                host_metrics_logging_interval_seconds=config.host_metrics_logging_interval_seconds,
             )
             try:
                 worker_sessions.run()
@@ -173,7 +175,8 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
             try:
                 update_worker(
                     deadline_client=deadline_client,
-                    config=config,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
                     worker_id=worker_id,
                     status=WorkerStatus.STOPPED,
                 )
@@ -335,7 +338,7 @@ def _log_agent_info() -> None:
     _logger.info(f"Platform: {sys.platform}")
 
 
-def _get_gpu_count() -> int:
+def _get_gpu_count(*, verbose: bool = True) -> int:
     """
     Get the number of GPUs available on the machine.
 
@@ -349,17 +352,20 @@ def _get_gpu_count() -> int:
             ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"]
         )
     except FileNotFoundError:
-        _logger.warning("Could not detect GPU count, nvidia-smi not found")
+        if verbose:
+            _logger.warning("Could not detect GPU count, nvidia-smi not found")
         return 0
     except subprocess.CalledProcessError:
-        _logger.warning("Could not detect GPU count, error running nvidia-smi")
+        if verbose:
+            _logger.warning("Could not detect GPU count, error running nvidia-smi")
         return 0
     else:
-        _logger.info("Number of GPUs: %s", output.decode().strip())
+        if verbose:
+            _logger.info("Number of GPUs: %s", output.decode().strip())
         return int(output.decode().strip())
 
 
-def _get_gpu_memory() -> int:
+def _get_gpu_memory(*, verbose: bool = True) -> int:
     """
     Get the total GPU memory available on the machine.
 
@@ -373,11 +379,14 @@ def _get_gpu_memory() -> int:
             ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
         )
     except FileNotFoundError:
-        _logger.warning("Could not detect GPU memory, nvidia-smi not found")
+        if verbose:
+            _logger.warning("Could not detect GPU memory, nvidia-smi not found")
         return 0
     except subprocess.CalledProcessError:
-        _logger.warning("Could not detect GPU memory, error running nvidia-smi")
+        if verbose:
+            _logger.warning("Could not detect GPU memory, error running nvidia-smi")
         return 0
     else:
-        _logger.info("Total GPU Memory: %s", output.decode().strip())
+        if verbose:
+            _logger.info("Total GPU Memory: %s", output.decode().strip())
         return int(output.decode().strip().replace("MiB", ""))

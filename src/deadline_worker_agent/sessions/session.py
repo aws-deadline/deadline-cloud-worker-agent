@@ -932,11 +932,7 @@ class Session:
         """
 
         # avoid circular import
-        from .actions import (
-            EnterEnvironmentAction,
-            RunStepTaskAction,
-            SyncInputJobAttachmentsAction,
-        )
+        from .actions import RunStepTaskAction
 
         # There is special-case handling when the current action was interrupted. In such cases, the
         # interruption is reported immediately, so we should not report any Open Job Description action updates
@@ -962,14 +958,17 @@ class Session:
         ):
             # Synchronizing job output attachments is currently bundled together with the
             # RunStepTaskAction. The synchronization happens after the task run succeeds, and both
-            # must be successful in order to mark the action as SUCCEEDED.
+            # must be successful in order to mark the action as SUCCEEDED. The time when
+            # the action is completed should be the moment when the sunchronization have
+            # been finished.
             try:
                 self._sync_asset_outputs(current_action=current_action)
+                now = datetime.now(tz=timezone.utc)
             except Exception as e:
                 # Log and fail the task run action if we are unable to sync output job
                 # attachments
                 fail_message = f"Failed to sync job output attachments for {current_action.definition.human_readable()}: {e}"
-                logger.warning(fail_message)
+                self.logger.warning(fail_message)
                 action_status = ActionStatus(state=ActionState.FAILED, fail_message=fail_message)
                 is_unsuccessful = True
 
@@ -979,27 +978,10 @@ class Session:
                 or f"Action {current_action.definition.human_readable()} failed"
             )
 
-            # If the current action failed, we mark future assigned actions as either FAILED or
-            # NEVER_ATTEMPTED (depending on the current action type) and wait for the farm's
-            # scheduler to provide further action(s).
-            cancel_outcome: Literal["NEVER_ATTEMPTED", "FAILED"] = "NEVER_ATTEMPTED"
-
-            # TODO: This logic may change if ENV_ENTER and SYNC_INPUT_JOB_ATTACHMENT failures count
-            # as task failures.
-            # We fail all remaining assigned actions to the Worker for the session when an
-            # environment enter action fails. This is because otherwise the farm's scheduler
-            # continues requeueing the tasks indefinitely.
-            if (
-                isinstance(
-                    current_action.definition,
-                    (EnterEnvironmentAction, SyncInputJobAttachmentsAction),
-                )
-                and action_status.state == ActionState.FAILED
-            ):
-                cancel_outcome = "FAILED"
-
+            # If the current action failed, we mark future actions assigned to the session as
+            # NEVER_ATTEMPTED except for envExit actions.
             self._queue.cancel_all(
-                cancel_outcome=cancel_outcome,
+                cancel_outcome="NEVER_ATTEMPTED",
                 message=fail_message,
                 ignore_env_exits=True,
             )
@@ -1083,7 +1065,7 @@ class Session:
         from .actions import RunStepTaskAction
 
         assert isinstance(current_action.definition, RunStepTaskAction)
-        self._asset_sync.sync_outputs(
+        upload_summary_statistics = self._asset_sync.sync_outputs(
             s3_settings=s3_settings,
             attachments=attachments,
             queue_id=self._queue_id,
@@ -1096,6 +1078,9 @@ class Session:
             storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
             on_uploading_files=partial(self._notifier_callback, current_action),
         )
+
+        ASSET_SYNC_LOGGER.info(f"Summary Statistics for file uploads:\n{upload_summary_statistics}")
+
         ASSET_SYNC_LOGGER.info("Finished syncing outputs using Job Attachments")
 
     def run_task(

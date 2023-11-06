@@ -5,6 +5,7 @@ from time import sleep, monotonic
 from typing import Any, Optional
 from threading import Event
 from dataclasses import dataclass
+import random
 
 from botocore.retries.standard import RetryContext
 from botocore.exceptions import ClientError
@@ -12,7 +13,8 @@ from botocore.exceptions import ClientError
 from deadline.client.api import get_telemetry_client, TelemetryClient
 
 from ..._version import __version__ as version  # noqa
-from ...startup.config import Configuration, Capabilities
+from ...startup.config import Configuration
+from ...startup.capabilities import Capabilities
 from ...boto import DeadlineClient, NoOverflowExponentialBackoff as Backoff
 from ...api_models import (
     AssumeFleetRoleForWorkerResponse,
@@ -120,6 +122,18 @@ def _get_error_reason_from_header(response: dict[str, Any]) -> Optional[str]:
     return response.get("reason", None)
 
 
+def _get_retry_after_seconds_from_header(response: dict[str, Any]) -> Optional[int]:
+    return response.get("retryAfterSeconds", None)
+
+
+def _apply_lower_bound_to_delay(delay: float, lower_bound: Optional[float] = None) -> float:
+    if lower_bound is not None and delay < lower_bound:
+        # We add just a tiny bit of jitter (20%) to the lower bound to reduce the probability
+        # of a group of workers all retry-storming in lock-step.
+        delay = lower_bound + random.uniform(0, 0.2 * lower_bound)
+    return delay
+
+
 def _get_resource_id_and_status_from_conflictexception_header(
     response: dict[str, Any]
 ) -> tuple[Optional[str], Optional[str]]:
@@ -155,7 +169,10 @@ def assume_fleet_role_for_worker(
             # Retry:
             #   ThrottlingException, InternalServerException
             delay = backoff.delay_amount(RetryContext(retry))
-            code = e.response.get("Error", {}).get("Code", None)
+            delay = _apply_lower_bound_to_delay(
+                delay, _get_retry_after_seconds_from_header(e.response)
+            )
+            code = _get_error_code_from_header(e.response)
             if code == "ThrottlingException":
                 _logger.info(
                     f"Throttled while attempting to refresh Worker AWS Credentials. Retrying in {delay} seconds..."
@@ -216,12 +233,11 @@ def assume_queue_role_for_worker(
     retry = 0
     query_start_time = monotonic()
 
-    _logger.info("")
     # Note: Frozen credentials could expire while doing a retry loop; that's
     #  probably going to manifest as AccessDenied, but I'm not 100% certain.
     while True:
         if interrupt_event and interrupt_event.is_set():
-            raise DeadlineRequestInterrupted("GetQueueIamCredentials interrupted")
+            raise DeadlineRequestInterrupted("AssumeQueueRoleForWorker interrupted")
         try:
             response = deadline_client.assume_queue_role_for_worker(
                 farmId=farm_id, fleetId=fleet_id, workerId=worker_id, queueId=queue_id
@@ -235,7 +251,10 @@ def assume_queue_role_for_worker(
             # Retry:
             #   ThrottlingException, InternalServerException
             delay = backoff.delay_amount(RetryContext(retry))
-            code = e.response.get("Error", {}).get("Code", None)
+            delay = _apply_lower_bound_to_delay(
+                delay, _get_retry_after_seconds_from_header(e.response)
+            )
+            code = _get_error_code_from_header(e.response)
             if code == "ThrottlingException":
                 _logger.info(
                     f"Throttled while attempting to refresh Worker AWS Credentials. Retrying in {delay} seconds..."
@@ -333,7 +352,10 @@ def batch_get_job_entity(
             # Retry:
             #   ThrottlingException, InternalServerException
             delay = backoff.delay_amount(RetryContext(retry))
-            code = e.response.get("Error", {}).get("Code", None)
+            delay = _apply_lower_bound_to_delay(
+                delay, _get_retry_after_seconds_from_header(e.response)
+            )
+            code = _get_error_code_from_header(e.response)
             if code == "ThrottlingException":
                 _logger.info(f"Throttled calling BatchGetJobEntity. Retrying in {delay} seconds...")
             elif code == "InternalServerException":
@@ -377,6 +399,9 @@ def create_worker(
             break
         except ClientError as e:
             delay = backoff.delay_amount(RetryContext(retry))
+            delay = _apply_lower_bound_to_delay(
+                delay, _get_retry_after_seconds_from_header(e.response)
+            )
             code = _get_error_code_from_header(e.response)
             if code == "ThrottlingException":
                 _logger.info(f"CreateWorker throttled. Retrying in {delay} seconds...")
@@ -444,6 +469,9 @@ def delete_worker(
             break
         except ClientError as e:
             delay = backoff.delay_amount(RetryContext(retry))
+            delay = _apply_lower_bound_to_delay(
+                delay, _get_retry_after_seconds_from_header(e.response)
+            )
             code = _get_error_code_from_header(e.response)
             if code == "ThrottlingException":
                 _logger.info(f"DeleteWorker throttled. Retrying in {delay} seconds...")
@@ -487,16 +515,20 @@ def delete_worker(
 def update_worker(
     *,
     deadline_client: DeadlineClient,
-    config: Configuration,
+    farm_id: str,
+    fleet_id: str,
     worker_id: str,
     status: WorkerStatus,
+    capabilities: Optional[Capabilities] = None,
     host_properties: Optional[HostProperties] = None,
+    interrupt_event: Optional[Event] = None,
 ) -> UpdateWorkerResponse:
     """Calls the UpdateWorker API to update this Worker's status, capabilities, and/or host properties with the service.
 
     Raises:
        DeadlineRequestConditionallyRecoverableError
        DeadlineRequestUnrecoverableError
+       DeadlineRequestInterrupted
     """
 
     # Retry API call when being throttled
@@ -506,26 +538,32 @@ def update_worker(
     _logger.info(f"Invoking UpdateWorker to set {worker_id} to status={status.value}.")
 
     request: dict[str, Any] = dict(
-        farmId=config.farm_id,
-        fleetId=config.fleet_id,
+        farmId=farm_id,
+        fleetId=fleet_id,
         workerId=worker_id,
-        capabilities=config.capabilities.for_update_worker(),
         status=status.value,
     )
+    if capabilities:
+        request["capabilities"] = capabilities.for_update_worker()
     if host_properties:
         request["hostProperties"] = host_properties
 
+    _logger.debug("UpdateWorker request: %s", request)
     while True:
         # If true, then we're trying to go to STARTED but have determined that we must first
         # go to STOPPED
         must_stop_first = False
 
-        _logger.debug("UpdateWorker request: %s", request)
+        if interrupt_event and interrupt_event.is_set():
+            raise DeadlineRequestInterrupted("UpdateWorker interrupted")
         try:
             response = deadline_client.update_worker(**request)
             break
         except ClientError as e:
             delay = backoff.delay_amount(RetryContext(retry))
+            delay = _apply_lower_bound_to_delay(
+                delay, _get_retry_after_seconds_from_header(e.response)
+            )
             code = _get_error_code_from_header(e.response)
 
             skip_sleep = False
@@ -578,7 +616,10 @@ def update_worker(
                 raise DeadlineRequestUnrecoverableError(e)
 
             if not skip_sleep:
-                sleep(delay)
+                if interrupt_event:
+                    interrupt_event.wait(delay)
+                else:
+                    sleep(delay)
                 retry += 1
         except Exception as e:
             _logger.error("Failed to start worker %s", worker_id)
@@ -589,9 +630,11 @@ def update_worker(
             try:
                 update_worker(
                     deadline_client=deadline_client,
-                    config=config,
+                    farm_id=farm_id,
+                    fleet_id=fleet_id,
                     worker_id=worker_id,
                     status=WorkerStatus.STOPPED,
+                    capabilities=capabilities,
                     host_properties=host_properties,
                 )
             except Exception:
@@ -695,6 +738,9 @@ def update_worker_schedule(
             break
         except ClientError as e:
             delay = backoff.delay_amount(RetryContext(retry))
+            delay = _apply_lower_bound_to_delay(
+                delay, _get_retry_after_seconds_from_header(e.response)
+            )
             code = _get_error_code_from_header(e.response)
 
             if code == "ThrottlingException":
@@ -716,6 +762,9 @@ def update_worker_schedule(
                         raise DeadlineRequestWorkerOfflineError(e)
                     # If anything else is in STATUS_CONFLICT, then we can't recover.
                     raise DeadlineRequestUnrecoverableError(e)
+                elif exception_reason == "CONCURRENT_MODIFICATION":
+                    # Something else modified the Worker at the same time. Just retry.
+                    _logger.info(f"UpdateWorkerSchedule conflict. Retrying in {delay} seconds...")
                 else:
                     # Unknown exception_reason. Treat as unrecoverable
                     raise DeadlineRequestUnrecoverableError(e) from None
