@@ -53,7 +53,7 @@ usage()
     echo "                  [--region REGION] [--user USER]"
     echo "                  [--scripts-path SCRIPTS_PATH]"
     echo "                  [-y]"
-    echo "                  [--vfs_install_path VFS_INSTALL_PATH]"
+    echo "                  [--vfs-install-path VFS_INSTALL_PATH]"
     echo ""
     echo "Arguments"
     echo "---------"
