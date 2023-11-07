@@ -9,8 +9,14 @@ import sysconfig
 
 import pytest
 
-from deadline_worker_agent.installer import ParsedCommandLineArguments, install
+from deadline_worker_agent.installer import (
+    ParsedCommandLineArguments,
+    install,
+)
 from deadline_worker_agent import installer as installer_mod
+
+
+VFS_DEFAULT_INSTALL_PATH = "/opt/deadline_vfs"
 
 
 @pytest.fixture(autouse=True)
@@ -82,6 +88,11 @@ def install_service() -> bool:
 
 
 @pytest.fixture
+def vfs_install_path() -> str:
+    return VFS_DEFAULT_INSTALL_PATH
+
+
+@pytest.fixture
 def parsed_args(
     farm_id: str,
     fleet_id: str,
@@ -93,6 +104,7 @@ def parsed_args(
     allow_shutdown: bool,
     install_service: bool,
     telemetry_opt_out: bool,
+    vfs_install_path: str,
 ) -> ParsedCommandLineArguments:
     parsed_args = ParsedCommandLineArguments()
     parsed_args.farm_id = farm_id
@@ -105,6 +117,7 @@ def parsed_args(
     parsed_args.allow_shutdown = allow_shutdown
     parsed_args.install_service = install_service
     parsed_args.telemetry_opt_out = telemetry_opt_out
+    parsed_args.vfs_install_path = vfs_install_path
     return parsed_args
 
 
@@ -139,6 +152,8 @@ def expected_cmd(
         parsed_args.user,
         "--scripts-path",
         sysconfig.get_path("scripts"),
+        "--vfs-install-path",
+        parsed_args.vfs_install_path,
     ]
     if parsed_args.group is not None:
         expected_cmd.extend(("--group", parsed_args.group))
