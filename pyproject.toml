@@ -6,13 +6,13 @@ build-backend = "hatchling.build"
 name = "deadline-cloud-worker-agent"
 dynamic = ["version"]
 dependencies = [
-    "requests ~= 2.29",
-    "boto3 ~= 1.26",
+    "requests ~= 2.31",
+    "boto3 >= 1.28.80",
     "deadline == 0.33.*",
     "openjd-sessions >= 0.2.3, < 0.3.0",
     # tomli became tomllib in standard library in Python 3.11
-    "tomli >= 1.1.0 ; python_version<'3.11'",
-    "typing_extensions ~= 4.5",
+    "tomli == 2.0.* ; python_version<'3.11'",
+    "typing_extensions ~= 4.8",
     "psutil ~= 5.9",
     "pydantic ~= 1.10.0",
 ]
