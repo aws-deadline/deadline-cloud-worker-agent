@@ -1347,7 +1347,7 @@ class TestCloudWatchHandler:
             # THEN
             log_queue_append_mock.assert_called_once_with(
                 FormattedLogEntry(
-                    timestamp=int(round(record.created * 1000)),
+                    timestamp=int(record.created * 1000),
                     message=record.message,
                 )
             )
@@ -1388,7 +1388,7 @@ class TestCloudWatchHandler:
             # THEN
             log_queue_append_mock.assert_called_once_with(
                 FormattedLogEntry(
-                    timestamp=int(round(record.created * 1000)),
+                    timestamp=int(record.created * 1000),
                     message=record.message,
                 )
             )
