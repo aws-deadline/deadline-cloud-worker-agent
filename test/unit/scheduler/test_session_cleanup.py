@@ -19,6 +19,10 @@ class FakeSessionUser(SessionUser):
     def __init__(self, user: str):
         self.user = user
 
+    @staticmethod
+    def get_process_user() -> str:
+        return ""
+
 
 class TestSessionUserCleanupManager:
     @pytest.fixture
