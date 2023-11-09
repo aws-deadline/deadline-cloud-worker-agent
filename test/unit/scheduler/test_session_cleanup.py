@@ -6,9 +6,13 @@ from typing import Generator
 from unittest.mock import MagicMock, patch
 import subprocess
 
-from openjd.sessions import SessionUser, PosixSessionUser
+from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
 import pytest
 import os
+
+if os.name == "nt":
+    import win32api
+    import win32con
 
 from deadline_worker_agent.scheduler.session_cleanup import (
     SessionUserCleanupManager,
@@ -23,11 +27,6 @@ class FakeSessionUser(SessionUser):
     @staticmethod
     def get_process_user() -> str:
         return ""
-
-
-class WindowsSessionUser(SessionUser):
-    def __init__(self, user: str):
-        self.user = user
 
 
 class TestSessionUserCleanupManager:
@@ -48,7 +47,7 @@ class TestSessionUserCleanupManager:
         if os.name == "posix":
             return PosixSessionUser(user="user", group="group")
         else:
-            return WindowsSessionUser(user="user")
+            return WindowsSessionUser(user=win32api.GetUserNameEx(win32con.NameSamCompatible))
 
     @pytest.fixture
     def session(self, os_user: PosixSessionUser) -> MagicMock:
@@ -218,7 +217,7 @@ class TestSessionUserCleanupManager:
             if os.name == "posix":
                 return PosixSessionUser(user="agent_user", group="agent_group")
             else:
-                return WindowsSessionUser(user="user")
+                return WindowsSessionUser(user=win32api.GetUserNameEx(win32con.NameSamCompatible))
 
         @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         @pytest.fixture(autouse=True)
