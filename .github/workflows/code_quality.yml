@@ -2,7 +2,7 @@ name: Code Quality
 
 on:
   pull_request:
-    branches: [ mainline ]
+    branches: [ mainline, feature_windows ]
 
 jobs:
   Test:
