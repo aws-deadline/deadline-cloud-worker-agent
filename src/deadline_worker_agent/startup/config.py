@@ -21,7 +21,6 @@ _logger = _logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class JobsRunAsUserOverride:
-    # inactive: bool
     run_as_agent: bool
     """True -> All jobs run as the agent process' user."""
 
