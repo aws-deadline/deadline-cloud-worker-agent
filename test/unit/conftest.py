@@ -33,7 +33,7 @@ from deadline_worker_agent.sessions.job_entities.job_attachment_details import (
     JobAttachmentDetails,
     JobAttachmentManifestProperties,
 )
-from deadline_worker_agent.startup.config import ImpersonationOverrides
+from deadline_worker_agent.startup.config import JobsRunAsUserOverride
 
 
 @pytest.fixture

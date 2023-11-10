@@ -25,8 +25,8 @@ def profile() -> Optional[str]:
 
 
 @pytest.fixture
-def impersonation() -> bool:
-    return True
+def jobs_run_as_agent_user() -> bool:
+    return False
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ def worker_credentials_dir() -> MagicMock:
 def config(
     farm_id: str,
     fleet_id: str,
-    impersonation: bool,
+    jobs_run_as_agent_user: bool,
     posix_job_user: str,
     no_shutdown: bool,
     profile: Optional[str],
@@ -67,7 +67,7 @@ def config(
     cli_args = ParsedCommandLineArguments()
     cli_args.farm_id = farm_id
     cli_args.fleet_id = fleet_id
-    cli_args.impersonation = impersonation
+    cli_args.jobs_run_as_agent_user = jobs_run_as_agent_user
     cli_args.posix_job_user = posix_job_user
     cli_args.no_shutdown = no_shutdown
     cli_args.profile = profile

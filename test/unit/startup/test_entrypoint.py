@@ -552,27 +552,22 @@ def test_no_shutdown_only_log(
 # TODO: Add register failure test cases
 
 
-@pytest.mark.parametrize(
-    ("impersonation",),
-    (
-        (True,),
-        (False,),
-    ),
-)
-def test_impersonation(
-    impersonation: bool,
+def test_jobs_run_as_user_override(
     configuration: MagicMock,
 ) -> None:
-    """Assert that the Worker is created with the impersonation kwarg matching the Configuration"""
+    """Assert that the Worker is created with the jobs_run_as_overrides kwarg matching the Configuration"""
     # GIVEN
-    configuration.impersonation = impersonation
+    configuration.jobs_run_as_overrides = MagicMock()
     with patch.object(entrypoint_mod, "Worker") as worker_mock:
         # WHEN
         entrypoint()
 
         # THEN
         assert worker_mock.call_count == 1
-        assert worker_mock.call_args_list[0].kwargs["impersonation"] == impersonation
+        assert (
+            worker_mock.call_args_list[0].kwargs["jobs_run_as_user_override"]
+            == configuration.jobs_run_as_overrides
+        )
 
 
 def test_passes_worker_logs_dir(
@@ -595,7 +590,7 @@ def test_passes_worker_logs_dir(
         s3_client=ANY,
         logs_client=ANY,
         boto_session=ANY,
-        impersonation=ANY,
+        jobs_run_as_user_override=ANY,
         cleanup_session_user_processes=ANY,
         worker_persistence_dir=ANY,
         worker_logs_dir=tmp_path,
