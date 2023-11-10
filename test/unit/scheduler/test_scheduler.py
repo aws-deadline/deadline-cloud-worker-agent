@@ -23,7 +23,7 @@ from deadline_worker_agent.scheduler.scheduler import (
     UPDATE_WORKER_SCHEDULE_MAX_MESSAGE_CHARS,
 )
 from deadline_worker_agent.scheduler.session_action_status import SessionActionStatus
-from deadline_worker_agent.startup.config import ImpersonationOverrides
+from deadline_worker_agent.startup.config import JobsRunAsUserOverride
 from deadline_worker_agent.errors import ServiceShutdown
 import deadline_worker_agent.scheduler.scheduler as scheduler_mod
 from deadline_worker_agent.aws.deadline import (
@@ -51,7 +51,7 @@ def scheduler(
     fleet_id: str,
     worker_id: str,
     client: MagicMock,
-    impersonation: ImpersonationOverrides,
+    jobs_run_as_overrides: JobsRunAsUserOverride,
     boto_session: Mock,
     worker_logs_dir: Path,
 ) -> WorkerScheduler:
@@ -61,7 +61,7 @@ def scheduler(
         fleet_id=fleet_id,
         worker_id=worker_id,
         deadline=client,
-        impersonation=impersonation,
+        jobs_run_as_user_override=jobs_run_as_overrides,
         boto_session=boto_session,
         cleanup_session_user_processes=True,
         worker_persistence_dir=Path("/var/lib/deadline"),

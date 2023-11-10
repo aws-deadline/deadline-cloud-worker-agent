@@ -33,7 +33,7 @@ from deadline_worker_agent.sessions.job_entities.job_attachment_details import (
     JobAttachmentDetails,
     JobAttachmentManifestProperties,
 )
-from deadline_worker_agent.startup.config import ImpersonationOverrides
+from deadline_worker_agent.startup.config import JobsRunAsUserOverride
 
 
 @pytest.fixture
@@ -56,11 +56,11 @@ def posix_job_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
     return request.param
 
 
-@pytest.fixture(params=(False,))
-def impersonation(
+@pytest.fixture(params=(True,))
+def jobs_run_as_overrides(
     request: pytest.FixtureRequest, posix_job_user: Optional[SessionUser]
-) -> ImpersonationOverrides:
-    return ImpersonationOverrides(inactive=request.param, posix_job_user=posix_job_user)
+) -> JobsRunAsUserOverride:
+    return JobsRunAsUserOverride(run_as_agent=request.param, posix_job_user=posix_job_user)
 
 
 @pytest.fixture

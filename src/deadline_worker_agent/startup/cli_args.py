@@ -14,7 +14,9 @@ class ParsedCommandLineArguments(Namespace):
     profile: str | None = None
     verbose: bool | None = None
     no_shutdown: bool | None = None
-    impersonation: bool | None = None
+    # TODO - Remove no_impersonation when removing corresponding CLI option
+    no_impersonation: bool | None = None
+    jobs_run_as_agent_user: bool | None = None
     posix_job_user: str | None = None
     allow_instance_profile: bool | None = None
     logs_dir: Path | None = None
@@ -61,12 +63,22 @@ def get_argument_parser() -> ArgumentParser:
         const=True,
         default=None,
     )
+    # TODO - Remove the no-impersonation option after a deprecation period.
+    #  Remove the test named test_impersonation_mutual_exclusion at the same time
     parser.add_argument(
         "--no-impersonation",
-        help="Does not use OS impersonation to run actions. WARNING: this is insecure - for development use only.",
+        help="(DEPRECATED: use --jobs-run-as-agent-user instead) If set, then all Jobs' session actions will run as the same user as the agent. WARNING: this is insecure - for development use only.",
         action="store_const",
-        const=False,
-        dest="impersonation",
+        const=True,
+        dest="no_impersonation",
+        default=None,
+    )
+    parser.add_argument(
+        "--jobs-run-as-agent-user",
+        help="If set, then all Jobs' session actions will run as the same user as the agent. WARNING: this is insecure - for development use only.",
+        action="store_const",
+        const=True,
+        dest="jobs_run_as_agent_user",
         default=None,
     )
     parser.add_argument(

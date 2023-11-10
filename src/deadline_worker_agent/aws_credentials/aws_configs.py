@@ -76,7 +76,9 @@ class _AWSConfigBase(ABC):
         super().__init__()
 
         if os_user is not None and not isinstance(os_user, PosixSessionUser):
-            raise NotImplementedError("Only posix user impersonation is currently implemented.")
+            raise NotImplementedError(
+                "jobsRunAsUser is currently only implemented for posix systems."
+            )
 
         self._config_path = self._get_path(os_user=os_user.user if os_user is not None else "")
         self._config_parser = ConfigParser()
