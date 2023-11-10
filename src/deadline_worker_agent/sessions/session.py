@@ -847,7 +847,7 @@ class Session:
             queue_id=self._queue_id,  # only used for error message
             job_id=self._queue._job_id,  # only used for error message
             session_dir=self._session.working_directory,
-            fs_permission_settings=fs_permission_settings,
+            fs_permission_settings=fs_permission_settings,  # type: ignore[arg-type]
             storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
             step_dependencies=step_dependencies,
             on_downloading_files=progress_handler,
