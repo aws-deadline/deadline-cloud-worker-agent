@@ -12,7 +12,7 @@ import pytest
 
 from deadline_worker_agent import Worker
 from deadline_worker_agent.errors import ServiceShutdown
-from deadline_worker_agent.startup.config import ImpersonationOverrides
+from deadline_worker_agent.startup.config import JobsRunAsUserOverride
 import deadline_worker_agent.worker as worker_mod
 
 
@@ -48,7 +48,7 @@ def worker(
     client: MagicMock,
     farm_id: str,
     fleet_id: str,
-    impersonation: ImpersonationOverrides,
+    jobs_run_as_overrides: JobsRunAsUserOverride,
     logs_client: MagicMock,
     s3_client: MagicMock,
     worker_id: str,
@@ -63,7 +63,7 @@ def worker(
             deadline_client=client,
             boto_session=boto_session,
             fleet_id=fleet_id,
-            impersonation=impersonation,
+            jobs_run_as_user_override=jobs_run_as_overrides,
             logs_client=logs_client,
             s3_client=s3_client,
             worker_id=worker_id,
@@ -149,7 +149,7 @@ class TestInit:
             farm_id=ANY,
             fleet_id=ANY,
             worker_id=ANY,
-            impersonation=ANY,
+            jobs_run_as_user_override=ANY,
             boto_session=ANY,
             cleanup_session_user_processes=ANY,
             worker_persistence_dir=ANY,
