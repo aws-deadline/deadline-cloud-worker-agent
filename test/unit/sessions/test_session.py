@@ -27,6 +27,7 @@ from openjd.sessions import (
     PathMappingRule,
     SessionUser,
     PosixSessionUser,
+    WindowsSessionUser,
 )
 
 from deadline_worker_agent.api_models import EnvironmentAction, TaskRunAction
@@ -50,7 +51,12 @@ from deadline.job_attachments.models import (
     Attachments,
     JobAttachmentsFileSystem,
 )
-from deadline.job_attachments.os_file_permission import PosixFileSystemPermissionSettings
+from deadline.job_attachments.os_file_permission import (
+    FileSystemPermissionSettings,
+    PosixFileSystemPermissionSettings,
+    WindowsFileSystemPermissionSettings,
+    WindowsPermissionEnum,
+)
 
 import deadline_worker_agent.sessions.session as session_mod
 
@@ -59,6 +65,8 @@ import deadline_worker_agent.sessions.session as session_mod
 def os_user() -> Optional[SessionUser]:
     if os.name == "posix":
         return PosixSessionUser(user="some-user", group="some-group")
+    elif os.name == "nt":
+        return WindowsSessionUser(user="SomeUser", group="SomeGroup", password="qwe123!@#")
     else:
         return None
 
@@ -560,7 +568,60 @@ class TestSessionSyncAssetInputs:
             storage_profiles_path_mapping_rules={},
             step_dependencies=None,
             on_downloading_files=ANY,
-            os_env_vars=ANY,
+        )
+
+    def test_sync_asset_inputs_with_fs_permission_settings(
+        self,
+        session: Session,
+        mock_asset_sync: MagicMock,
+        job_attachment_details: JobAttachmentDetails,
+    ):
+        """
+        Tests that sync_inputs function is called with the correct fs_permission_settings
+        argument based on the current OS.
+        """
+        # GIVEN
+        mock_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
+        mock_sync_inputs.return_value = ({}, {})
+        cancel = Event()
+
+        expected_fs_permission_settings: Optional[FileSystemPermissionSettings] = None
+        if os.name == "posix":
+            expected_fs_permission_settings = PosixFileSystemPermissionSettings(
+                os_user="some-user",
+                os_group="some-group",
+                dir_mode=0o20,
+                file_mode=0o20,
+            )
+        elif os.name == "nt":
+            expected_fs_permission_settings = WindowsFileSystemPermissionSettings(
+                os_user="SomeUser",
+                os_group="SomeGroup",
+                dir_mode=WindowsPermissionEnum.WRITE,
+                file_mode=WindowsPermissionEnum.WRITE,
+            )
+
+        # WHEN
+        session.sync_asset_inputs(
+            cancel=cancel,
+            job_attachment_details=job_attachment_details,
+        )
+
+        # THEN
+        mock_sync_inputs.assert_called_with(
+            s3_settings=ANY,
+            queue_id=ANY,
+            job_id=ANY,
+            session_dir=ANY,
+            attachments=Attachments(
+                manifests=ANY,
+                fileSystem=ANY,
+            ),
+            fs_permission_settings=expected_fs_permission_settings,
+            storage_profiles_path_mapping_rules={},
+            step_dependencies=None,
+            on_downloading_files=ANY,
+            os_env_vars=None,
         )
 
     @pytest.mark.parametrize(
