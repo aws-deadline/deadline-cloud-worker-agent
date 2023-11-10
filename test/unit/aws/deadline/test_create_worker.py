@@ -34,7 +34,7 @@ def config(
     cli_args = ParsedCommandLineArguments()
     cli_args.farm_id = farm_id
     cli_args.fleet_id = fleet_id
-    cli_args.impersonation = False
+    cli_args.jobs_run_as_agent_user = False
     cli_args.no_shutdown = True
     cli_args.profile = "profilename"
     cli_args.verbose = False

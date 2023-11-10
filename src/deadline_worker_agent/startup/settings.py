@@ -44,8 +44,8 @@ class WorkerSettings(BaseSettings):
         Whether to emit more verbose logging
     no_shutdown : bool
         If true, then the Worker will not shut down when the service tells the worker to stop
-    impersonation : bool
-        Whether to use OS user impersonation (e.g. sudo on Linux) when running session actions
+    jobs_run_as_agent_user : bool
+        If true, then all jobs run as the same user as the agent.
     posix_job_user : str
         Which 'user:group' to use instead of the Queue user when turned on.
     allow_instance_profile : bool
@@ -76,7 +76,7 @@ class WorkerSettings(BaseSettings):
     profile: Optional[str] = Field(min_length=1, max_length=64, default=None)
     verbose: bool = False
     no_shutdown: bool = False
-    impersonation: bool = True
+    jobs_run_as_agent_user: bool = False
     posix_job_user: Optional[str] = Field(
         regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
     )
@@ -100,7 +100,7 @@ class WorkerSettings(BaseSettings):
             "profile": {"env": "DEADLINE_WORKER_PROFILE"},
             "verbose": {"env": "DEADLINE_WORKER_VERBOSE"},
             "no_shutdown": {"env": "DEADLINE_WORKER_NO_SHUTDOWN"},
-            "impersonation": {"env": "DEADLINE_WORKER_IMPERSONATION"},
+            "jobs_run_as_agent_user": {"env": "DEADLINE_WORKER_JOBS_RUN_AS_AGENT_USER"},
             "posix_job_user": {"env": "DEADLINE_WORKER_POSIX_JOB_USER"},
             "allow_instance_profile": {"env": "DEADLINE_WORKER_ALLOW_INSTANCE_PROFILE"},
             "capabilities": {"env": "DEADLINE_WORKER_CAPABILITIES"},
