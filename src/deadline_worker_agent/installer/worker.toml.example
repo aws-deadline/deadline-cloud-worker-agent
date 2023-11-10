@@ -157,7 +157,7 @@
 #
 #     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
 #
-# or if the --jobs-run-as-agent-user command-line flag is specified.
+# or if the --job-run-as-agent-user command-line flag is specified.
 #
 # Uncomment the line below to run all session actions as the same user as the worker agent:
 #

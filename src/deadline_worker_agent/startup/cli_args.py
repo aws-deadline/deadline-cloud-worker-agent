@@ -67,14 +67,14 @@ def get_argument_parser() -> ArgumentParser:
     #  Remove the test named test_impersonation_mutual_exclusion at the same time
     parser.add_argument(
         "--no-impersonation",
-        help="(DEPRECATED: use --jobs-run-as-agent-user instead) If set, then all Jobs' session actions will run as the same user as the agent. WARNING: this is insecure - for development use only.",
+        help="(DEPRECATED: use --job-run-as-agent-user instead) If set, then all Jobs' session actions will run as the same user as the agent. WARNING: this is insecure - for development use only.",
         action="store_const",
         const=True,
         dest="no_impersonation",
         default=None,
     )
     parser.add_argument(
-        "--jobs-run-as-agent-user",
+        "--job-run-as-agent-user",
         help="If set, then all Jobs' session actions will run as the same user as the agent. WARNING: this is insecure - for development use only.",
         action="store_const",
         const=True,

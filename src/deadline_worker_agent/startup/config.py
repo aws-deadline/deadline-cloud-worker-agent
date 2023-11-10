@@ -113,7 +113,7 @@ class Configuration:
         if parsed_cli_args.job_run_as_agent_user is not None:
             if parsed_cli_args.no_impersonation is not None:
                 raise ConfigurationError(
-                    "Only one of --no-impersonation or --jobs-run-as-agent-user may be supplied."
+                    "Only one of --no-impersonation or --job-run-as-agent-user may be supplied."
                 )
             settings_kwargs["job_run_as_agent_user"] = parsed_cli_args.job_run_as_agent_user
         elif parsed_cli_args.no_impersonation is not None:
