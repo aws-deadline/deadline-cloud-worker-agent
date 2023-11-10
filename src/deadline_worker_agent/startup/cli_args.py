@@ -16,7 +16,7 @@ class ParsedCommandLineArguments(Namespace):
     no_shutdown: bool | None = None
     # TODO - Remove no_impersonation when removing corresponding CLI option
     no_impersonation: bool | None = None
-    jobs_run_as_agent_user: bool | None = None
+    job_run_as_agent_user: bool | None = None
     posix_job_user: str | None = None
     allow_instance_profile: bool | None = None
     logs_dir: Path | None = None
@@ -78,7 +78,7 @@ def get_argument_parser() -> ArgumentParser:
         help="If set, then all Jobs' session actions will run as the same user as the agent. WARNING: this is insecure - for development use only.",
         action="store_const",
         const=True,
-        dest="jobs_run_as_agent_user",
+        dest="job_run_as_agent_user",
         default=None,
     )
     parser.add_argument(

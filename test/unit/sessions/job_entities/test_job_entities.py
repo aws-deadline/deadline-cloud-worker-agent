@@ -205,7 +205,7 @@ class TestJobEntity:
 
     # TODO: remove test once service no longer sends jobsRunAs
     @pytest.mark.parametrize(
-        ("jobs_run_as_data"),
+        ("job_run_as_data"),
         (
             pytest.param(
                 {
@@ -223,8 +223,8 @@ class TestJobEntity:
             ),
         ),
     )
-    def test_old_jobs_run_as_existence(self, jobs_run_as_data: dict[str, str]) -> None:
-        """Ensures that if we receive the old jobs_run_as field in the response,
+    def test_old_job_run_as_existence(self, job_run_as_data: dict[str, str]) -> None:
+        """Ensures that if we receive the old job_run_as field in the response,
         that we do not error on validating the response and use the newer jobRunAsUser info"""
         # GIVEN
         expected_user = "job-user"
@@ -232,7 +232,7 @@ class TestJobEntity:
         api_response: dict = {
             "jobId": "job-123",
             "jobsRunAs": {
-                "posix": jobs_run_as_data,
+                "posix": job_run_as_data,
             },
             "jobRunAsUser": {
                 "posix": {
@@ -249,15 +249,15 @@ class TestJobEntity:
         entity_obj = JobDetails.from_boto(job_details_data)
 
         # THEN
-        assert not hasattr(entity_obj, "jobs_run_as")
+        assert not hasattr(entity_obj, "job_run_as")
         assert entity_obj.job_run_as_user is not None
         assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
         assert entity_obj.job_run_as_user.posix.user == expected_user
         assert entity_obj.job_run_as_user.posix.group == expected_group
 
     # TODO: remove once service no longer sends jobsRunAs
-    def test_only_old_jobs_run_as(self) -> None:
-        """Ensures that if we only receive the old jobs_run_as field in the response,
+    def test_only_old_job_run_as(self) -> None:
+        """Ensures that if we only receive the old job_run_as field in the response,
         that we do not error on validating the response and we have job_run_as_user info"""
         # GIVEN
         expected_user = "job-user"
@@ -279,15 +279,15 @@ class TestJobEntity:
         entity_obj = JobDetails.from_boto(job_details_data)
 
         # THEN
-        assert not hasattr(entity_obj, "jobs_run_as")
+        assert not hasattr(entity_obj, "job_run_as")
         assert entity_obj.job_run_as_user is not None
         assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
         assert entity_obj.job_run_as_user.posix.user == expected_user
         assert entity_obj.job_run_as_user.posix.group == expected_group
 
     # TODO: remove once service no longer sends jobsRunAs
-    def test_only_empty_old_jobs_run_as(self) -> None:
-        """Ensures that if we only receive the old jobs_run_as field with no user and group,
+    def test_only_empty_old_job_run_as(self) -> None:
+        """Ensures that if we only receive the old job_run_as field with no user and group,
         that we do not error on validating the response and we do not have job_run_as_user info"""
         # GIVEN
         api_response: dict = {
@@ -307,7 +307,7 @@ class TestJobEntity:
         entity_obj = JobDetails.from_boto(job_details_data)
 
         # THEN
-        assert not hasattr(entity_obj, "jobs_run_as")
+        assert not hasattr(entity_obj, "job_run_as")
         assert entity_obj.job_run_as_user is None
 
     @pytest.mark.parametrize(

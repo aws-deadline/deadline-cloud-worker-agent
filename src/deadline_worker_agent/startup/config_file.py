@@ -44,7 +44,7 @@ class LoggingConfigSection(BaseModel):
 
 
 class OsConfigSection(BaseModel):
-    jobs_run_as_agent_user: Optional[bool] = None
+    job_run_as_agent_user: Optional[bool] = None
     posix_job_user: Optional[str] = Field(
         regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
     )
@@ -54,7 +54,7 @@ class OsConfigSection(BaseModel):
     def _disallow_impersonation(cls, values: dict[str, Any]) -> dict[str, Any]:
         if "impersonation" in values:
             raise ValueError(
-                "The 'impersonation' option has been removed. Please use 'jobs_run_as_agent_user' instead."
+                "The 'impersonation' option has been removed. Please use 'job_run_as_agent_user' instead."
             )
         return values
 
@@ -130,8 +130,8 @@ class ConfigFile(BaseModel):
             ] = self.logging.host_metrics_logging_interval_seconds
         if self.os.shutdown_on_stop is not None:
             output_settings["no_shutdown"] = self.os.shutdown_on_stop
-        if self.os.jobs_run_as_agent_user is not None:
-            output_settings["jobs_run_as_agent_user"] = self.os.jobs_run_as_agent_user
+        if self.os.job_run_as_agent_user is not None:
+            output_settings["job_run_as_agent_user"] = self.os.job_run_as_agent_user
         if self.os.posix_job_user is not None:
             output_settings["posix_job_user"] = self.os.posix_job_user
         if self.aws.allow_ec2_instance_profile is not None:

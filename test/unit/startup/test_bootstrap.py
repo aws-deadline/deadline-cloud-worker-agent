@@ -52,7 +52,7 @@ AWSLOGS_LOG_CONFIGURATION = LogConfiguration(
 
 
 @fixture
-def jobs_run_as_agent_user() -> bool:
+def job_run_as_agent_user() -> bool:
     return False
 
 
@@ -100,7 +100,7 @@ def allow_instance_profile() -> bool:
 def config(
     farm_id: str,
     fleet_id: str,
-    jobs_run_as_agent_user: bool,
+    job_run_as_agent_user: bool,
     posix_job_user: str,
     no_shutdown: bool,
     profile: Optional[str],
@@ -114,7 +114,7 @@ def config(
         cli_args = ParsedCommandLineArguments()
         cli_args.farm_id = farm_id
         cli_args.fleet_id = fleet_id
-        cli_args.jobs_run_as_agent_user = jobs_run_as_agent_user
+        cli_args.job_run_as_agent_user = job_run_as_agent_user
         cli_args.posix_job_user = posix_job_user
         cli_args.no_shutdown = no_shutdown
         cli_args.profile = profile
