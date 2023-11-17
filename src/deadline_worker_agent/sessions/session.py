@@ -851,6 +851,7 @@ class Session:
             storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
             step_dependencies=step_dependencies,
             on_downloading_files=progress_handler,
+            os_env_vars=self._env,
         )
 
         ASSET_SYNC_LOGGER.info(
