@@ -560,6 +560,7 @@ class TestSessionSyncAssetInputs:
                 fileSystem=job_attachments_file_system,
             ),
             fs_permission_settings=PosixFileSystemPermissionSettings(
+                os_user="some-user",
                 os_group="some-group",
                 dir_mode=0o20,
                 file_mode=0o20,
