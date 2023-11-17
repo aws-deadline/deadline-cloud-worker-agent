@@ -831,6 +831,7 @@ class Session:
                 if not isinstance(self._os_user, PosixSessionUser):
                     raise ValueError(f"The user must be a posix-user. Got {type(self._os_user)}")
                 fs_permission_settings = PosixFileSystemPermissionSettings(
+                    os_user=self._os_user.user,
                     os_group=self._os_user.group,
                     dir_mode=0o20,
                     file_mode=0o20,

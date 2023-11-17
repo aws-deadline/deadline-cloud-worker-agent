@@ -57,7 +57,6 @@ from deadline.job_attachments.os_file_permission import (
     WindowsFileSystemPermissionSettings,
     WindowsPermissionEnum,
 )
-
 import deadline_worker_agent.sessions.session as session_mod
 
 
@@ -560,6 +559,7 @@ class TestSessionSyncAssetInputs:
                 fileSystem=job_attachments_file_system,
             ),
             fs_permission_settings=PosixFileSystemPermissionSettings(
+                os_user="some-user",
                 os_group="some-group",
                 dir_mode=0o20,
                 file_mode=0o20,

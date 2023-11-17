@@ -8,8 +8,8 @@ dynamic = ["version"]
 dependencies = [
     "requests ~= 2.31",
     "boto3 >= 1.28.80",
-    "deadline == 0.33.*",
-    "openjd-sessions >= 0.2.3, < 0.3.0",
+    "deadline == 0.34.*",
+    "openjd-sessions == 0.2.*",
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",
     "typing_extensions ~= 4.8",
