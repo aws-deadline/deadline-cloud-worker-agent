@@ -52,12 +52,15 @@ from deadline.job_attachments.asset_sync import AssetSync
 from deadline.job_attachments.asset_sync import logger as ASSET_SYNC_LOGGER
 from deadline.job_attachments.models import (
     Attachments,
-    PosixFileSystemPermissionSettings,
     JobAttachmentS3Settings,
     ManifestProperties,
     PathFormat,
 )
 from deadline.job_attachments.progress_tracker import ProgressReportMetadata
+from deadline.job_attachments.os_file_permission import (
+    FileSystemPermissionSettings,
+    PosixFileSystemPermissionSettings,
+)
 
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
@@ -406,7 +409,7 @@ class Session:
         Session.replace_assigned_actions() is a thin wrapper of
         Session._replace_assigned_actions_impl that acquires Session._current_action_lock
         before/after calling this method. The separation exists to more easily test the locking
-        semantics indepdently from the business logic.
+        semantics independently from the business logic.
         """
         running_action_id: str | None = None
         if running_action := self._current_action:
@@ -719,7 +722,7 @@ class Session:
         if not self._active_envs or self._active_envs[-1].job_env_id != job_env_id:
             env_stack_str = ", ".join(env.job_env_id for env in self._active_envs)
             raise ValueError(
-                f"Specified enviornment ({job_env_id}) is not the inner-most active environment."
+                f"Specified environment ({job_env_id}) is not the inner-most active environment."
                 f"Active environments from outer-most to inner-most are: {env_stack_str}"
             )
         active_env = self._active_envs[-1]
@@ -819,12 +822,13 @@ class Session:
             for rule in self._job_details.path_mapping_rules
         }
 
-        fs_permission_settings = None
+        fs_permission_settings: Optional[FileSystemPermissionSettings] = None
         if self._os_user is not None:
             if os.name == "posix":
                 if not isinstance(self._os_user, PosixSessionUser):
                     raise ValueError(f"The user must be a posix-user. Got {type(self._os_user)}")
                 fs_permission_settings = PosixFileSystemPermissionSettings(
+                    os_user=self._os_user.user,
                     os_group=self._os_user.group,
                     dir_mode=0o20,
                     file_mode=0o20,
@@ -959,7 +963,7 @@ class Session:
             # Synchronizing job output attachments is currently bundled together with the
             # RunStepTaskAction. The synchronization happens after the task run succeeds, and both
             # must be successful in order to mark the action as SUCCEEDED. The time when
-            # the action is completed should be the moment when the sunchronization have
+            # the action is completed should be the moment when the synchronization have
             # been finished.
             try:
                 self._sync_asset_outputs(current_action=current_action)

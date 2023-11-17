@@ -47,8 +47,9 @@ from deadline_worker_agent.sessions.job_entities import (
 from deadline.job_attachments.models import (
     Attachments,
     JobAttachmentsFileSystem,
-    PosixFileSystemPermissionSettings,
 )
+from deadline.job_attachments.os_file_permission import PosixFileSystemPermissionSettings
+
 import deadline_worker_agent.sessions.session as session_mod
 
 
@@ -264,7 +265,7 @@ def canceled_action_status(request: pytest.FixtureRequest) -> ActionStatus:
         "no-status-msg",
     ),
 )
-def succeess_action_status(request: pytest.FixtureRequest) -> ActionStatus:
+def success_action_status(request: pytest.FixtureRequest) -> ActionStatus:
     """A fixture providing a successful Open Job Description ActionStatus"""
     return request.param
 
@@ -545,6 +546,7 @@ class TestSessionSyncAssetInputs:
                 fileSystem=job_attachments_file_system,
             ),
             fs_permission_settings=PosixFileSystemPermissionSettings(
+                os_user="some-user",
                 os_group="some-group",
                 dir_mode=0o20,
                 file_mode=0o20,
@@ -712,7 +714,7 @@ class TestSessionInnerRun:
 class TestSessionCancelActions:
     """Test cases for Session.cancel_actions()"""
 
-    def test_locking_sematics(
+    def test_locking_semantics(
         self,
         session: Session,
     ) -> None:
@@ -868,7 +870,7 @@ class TestSessionUpdateAction:
         # We don't use the value of this fixture, but requiring it has the side-effect of assigning
         # it as the current action of the session
         current_action: CurrentAction,
-        succeess_action_status: ActionStatus,
+        success_action_status: ActionStatus,
     ) -> None:
         """Test that asserts that the _current_action_lock is entered before the method calls
         Session._action_updated_impl() and that _current_action_lock is exited afterwards."""
@@ -898,7 +900,7 @@ class TestSessionUpdateAction:
             mock_action_updated_impl.side_effect = mock_action_updated_impl_side_effect
 
             # WHEN
-            session.update_action(succeess_action_status)
+            session.update_action(success_action_status)
 
         # THEN
         mock_action_updated_impl.assert_called_once()
@@ -1052,7 +1054,7 @@ class TestSessionActionUpdatedImpl:
         action_start_time: datetime,
         action_complete_time: datetime,
         step_id: str,
-        succeess_action_status: ActionStatus,
+        success_action_status: ActionStatus,
         task_id: str,
         mock_report_action_update: MagicMock,
     ) -> None:
@@ -1082,7 +1084,7 @@ class TestSessionActionUpdatedImpl:
         queue_cancel_all: MagicMock = session_action_queue.cancel_all
         expected_action_update = SessionActionStatus(
             id=action_id,
-            status=succeess_action_status,
+            status=success_action_status,
             start_time=action_start_time,
             completed_status="SUCCEEDED",
             end_time=action_complete_time,
@@ -1105,7 +1107,7 @@ class TestSessionActionUpdatedImpl:
 
             # WHEN
             session._action_updated_impl(
-                action_status=succeess_action_status,
+                action_status=success_action_status,
                 now=action_complete_time,
             )
 
@@ -1123,7 +1125,7 @@ class TestSessionActionUpdatedImpl:
         action_start_time: datetime,
         action_complete_time: datetime,
         step_id: str,
-        succeess_action_status: ActionStatus,
+        success_action_status: ActionStatus,
         task_id: str,
         mock_report_action_update: MagicMock,
     ) -> None:
@@ -1171,7 +1173,7 @@ class TestSessionActionUpdatedImpl:
         ) as mock_sync_asset_outputs:
             # WHEN
             session._action_updated_impl(
-                action_status=succeess_action_status,
+                action_status=success_action_status,
                 now=action_complete_time,
             )
 
@@ -1191,12 +1193,12 @@ class TestSessionActionUpdatedImpl:
         current_action: CurrentAction,
         mock_mod_logger: MagicMock,
         session: Session,
-        succeess_action_status: ActionStatus,
+        success_action_status: ActionStatus,
     ) -> None:
         """Tests that succeeded actions are logged"""
         # WHEN
         session._action_updated_impl(
-            action_status=succeess_action_status,
+            action_status=success_action_status,
             now=action_complete_time,
         )
 
