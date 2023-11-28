@@ -75,10 +75,10 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(
-        field_name="impersonation",
+        field_name="jobs_run_as_agent_user",
         expected_type=bool,
         expected_required=False,
-        expected_default=True,
+        expected_default=False,
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(

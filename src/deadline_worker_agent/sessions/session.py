@@ -831,6 +831,7 @@ class Session:
                 if not isinstance(self._os_user, PosixSessionUser):
                     raise ValueError(f"The user must be a posix-user. Got {type(self._os_user)}")
                 fs_permission_settings = PosixFileSystemPermissionSettings(
+                    os_user=self._os_user.user,
                     os_group=self._os_user.group,
                     dir_mode=0o20,
                     file_mode=0o20,
@@ -840,6 +841,7 @@ class Session:
                     raise ValueError(f"The user must be a windows-user. Got {type(self._os_user)}")
                 if self._os_user.group is not None:
                     fs_permission_settings = WindowsFileSystemPermissionSettings(
+                        os_user=self._os_user.user,
                         os_group=self._os_user.group,
                         dir_mode=WindowsPermissionEnum.WRITE,
                         file_mode=WindowsPermissionEnum.WRITE,
@@ -853,10 +855,11 @@ class Session:
             queue_id=self._queue_id,  # only used for error message
             job_id=self._queue._job_id,  # only used for error message
             session_dir=self._session.working_directory,
-            fs_permission_settings=fs_permission_settings,
+            fs_permission_settings=fs_permission_settings,  # type: ignore[arg-type]
             storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
             step_dependencies=step_dependencies,
             on_downloading_files=progress_handler,
+            os_env_vars=self._env,
         )
 
         ASSET_SYNC_LOGGER.info(

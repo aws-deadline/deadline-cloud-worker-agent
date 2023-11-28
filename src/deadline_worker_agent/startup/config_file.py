@@ -6,7 +6,7 @@ from typing import Any, Optional
 import sys
 import os
 
-from pydantic import BaseModel, BaseSettings, Field
+from pydantic import BaseModel, BaseSettings, Field, ValidationError, root_validator
 
 try:
     from tomllib import load as load_toml, TOMLDecodeError
@@ -46,11 +46,19 @@ class LoggingConfigSection(BaseModel):
 
 
 class OsConfigSection(BaseModel):
-    impersonation: Optional[bool] = None
+    jobs_run_as_agent_user: Optional[bool] = None
     posix_job_user: Optional[str] = Field(
         regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
     )
     shutdown_on_stop: Optional[bool] = None
+
+    @root_validator(pre=True)
+    def _disallow_impersonation(cls, values: dict[str, Any]) -> dict[str, Any]:
+        if "impersonation" in values:
+            raise ValueError(
+                "The 'impersonation' option has been removed. Please use 'jobs_run_as_agent_user' instead."
+            )
+        return values
 
 
 class ConfigFile(BaseModel):
@@ -65,16 +73,21 @@ class ConfigFile(BaseModel):
         if not config_path:
             config_path = cls.get_config_path()
 
-        # File must be open in binary mode for tomli to ensure the file is utf-8
-        with config_path.open(mode="rb") as fh:
-            toml_doc = load_toml(fh)
-
         try:
-            return cls.parse_obj(toml_doc)
+            # File must be open in binary mode for tomli to ensure the file is utf-8
+            with config_path.open(mode="rb") as fh:
+                toml_doc = load_toml(fh)
         except TOMLDecodeError as toml_error:
             raise ConfigurationError(
                 f"Configuration file ({config_path}) is not valid TOML: {toml_error}"
             ) from toml_error
+
+        try:
+            return cls.parse_obj(toml_doc)
+        except ValidationError as pydantic_error:
+            raise ConfigurationError(
+                f"Parsing errors loading configuration file ({config_path}):\n{str(pydantic_error)}"
+            ) from pydantic_error
 
     @classmethod
     def get_config_path(cls) -> Path:
@@ -119,8 +132,8 @@ class ConfigFile(BaseModel):
             ] = self.logging.host_metrics_logging_interval_seconds
         if self.os.shutdown_on_stop is not None:
             output_settings["no_shutdown"] = self.os.shutdown_on_stop
-        if self.os.impersonation is not None:
-            output_settings["impersonation"] = self.os.impersonation
+        if self.os.jobs_run_as_agent_user is not None:
+            output_settings["jobs_run_as_agent_user"] = self.os.jobs_run_as_agent_user
         if self.os.posix_job_user is not None:
             output_settings["posix_job_user"] = self.os.posix_job_user
         if self.aws.allow_ec2_instance_profile is not None:

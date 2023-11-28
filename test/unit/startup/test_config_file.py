@@ -117,7 +117,7 @@ def logging_config_section_data(
 @pytest.fixture(
     params=(True, False),
 )
-def impersonation(request: pytest.FixtureRequest) -> bool:
+def jobs_run_as_agent_user(request: pytest.FixtureRequest) -> bool:
     return request.param
 
 
@@ -135,12 +135,12 @@ def shutdown_on_stop(request: pytest.FixtureRequest) -> bool:
 
 @pytest.fixture
 def os_config_section_data(
-    impersonation: bool,
+    jobs_run_as_agent_user: bool,
     posix_job_user: str,
     shutdown_on_stop: bool | None,
 ) -> dict[str, Any]:
     return {
-        "impersonation": impersonation,
+        "jobs_run_as_agent_user": jobs_run_as_agent_user,
         "posix_job_user": posix_job_user,
         "shutdown_on_stop": shutdown_on_stop,
     }
@@ -389,22 +389,22 @@ class TestOsConfigSection:
         os_config = OsConfigSection.parse_obj(os_config_section_data)
 
         # THEN
-        assert os_config.impersonation == os_config_section_data["impersonation"]
+        assert os_config.jobs_run_as_agent_user == os_config_section_data["jobs_run_as_agent_user"]
         assert os_config.posix_job_user == os_config_section_data["posix_job_user"]
         assert os_config.shutdown_on_stop == os_config_section_data["shutdown_on_stop"]
 
     @pytest.mark.parametrize(
-        argnames="impersonation",
+        argnames="jobs_run_as_agent_user",
         argvalues=(
             pytest.param("str", id="bad-type-str"),
             pytest.param([1], id="bad-type-list"),
         ),
     )
-    def test_invalid_impersonation(
+    def test_invalid_jobs_run_as_agent_user(
         self,
         os_config_section_data: dict[str, Any],
     ) -> None:
-        """Asserts that AwsConfigSections raises ValidationErrors for non-valid impersonation values"""
+        """Asserts that AwsConfigSections raises ValidationErrors for non-valid jobs_run_as_agent_user values"""
 
         # WHEN
         def when() -> OsConfigSection:
@@ -414,20 +414,20 @@ class TestOsConfigSection:
         with pytest.raises(ValidationError):
             when()
 
-    def test_absent_impersonation(
+    def test_absent_jobs_run_as_agent_user(
         self,
         os_config_section_data: dict[str, Any],
     ) -> None:
-        """Asserts that absent a "impersonation" value in the input to OsConfigSection, it should
+        """Asserts that absent a "jobs_run_as_agent_user" value in the input to OsConfigSection, it should
         have a corresponding attribute value of None"""
         # GIVEN
-        del os_config_section_data["impersonation"]
+        del os_config_section_data["jobs_run_as_agent_user"]
 
         # WHEN
         os_config = OsConfigSection.parse_obj(os_config_section_data)
 
         # THEN
-        assert os_config.impersonation is None
+        assert os_config.jobs_run_as_agent_user is None
 
     @pytest.mark.parametrize(
         argnames="posix_job_user",
@@ -483,7 +483,7 @@ FULL_CONFIG_FILE_DATA = {
         "local_session_logs": False,
     },
     "os": {
-        "impersonation": False,
+        "jobs_run_as_agent_user": False,
         "posix_job_user": "user:group",
         "shutdown_on_stop": False,
     },
@@ -611,7 +611,7 @@ local_session_logs = false
 host_metrics_logging_interval_seconds = 1
 
 [os]
-impersonation = false
+jobs_run_as_agent_user = false
 posix_job_user = "user:group"
 shutdown_on_stop = false
 
@@ -682,7 +682,7 @@ class TestConfigFileLoad:
         assert config.logging.local_session_logs is False
         assert config.logging.host_metrics_logging_interval_seconds == 1
 
-        assert config.os.impersonation is False
+        assert config.os.jobs_run_as_agent_user is False
         assert config.os.posix_job_user == "user:group"
         assert config.os.shutdown_on_stop is False
 
@@ -708,7 +708,7 @@ class TestConfigFileLoad:
             config_path_fh_ctx: MagicMock = config_path_fh.__enter__.return_value
             error_msg = "an error msg"
             toml_decode_error = TOMLDecodeError(error_msg)
-            mock_parse_obj.side_effect = toml_decode_error
+            mock_load_toml.side_effect = toml_decode_error
 
             # THEN
             with pytest.raises(
@@ -723,4 +723,4 @@ class TestConfigFileLoad:
         mock_get_config_path.assert_called_once_with()
         config_path_open.assert_called_once_with(mode="rb")
         mock_load_toml.assert_called_once_with(config_path_fh_ctx)
-        mock_parse_obj.assert_called_once_with(mock_load_toml.return_value)
+        mock_parse_obj.assert_not_called()

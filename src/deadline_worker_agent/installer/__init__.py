@@ -39,6 +39,8 @@ def install() -> None:
         "--scripts-path",
         str(scripts_path),
     ]
+    if args.vfs_install_path:
+        cmd += ["--vfs-install-path", args.vfs_install_path]
     if args.group:
         cmd += ["--group", args.group]
     if args.confirmed:
@@ -75,6 +77,7 @@ class ParsedCommandLineArguments(Namespace):
     allow_shutdown: bool
     install_service: bool
     telemetry_opt_out: bool
+    vfs_install_path: str
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
@@ -136,6 +139,10 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
         help="Confirms the installation and skips the interactive confirmation prompt.",
         action="store_true",
         dest="confirmed",
+    )
+    parser.add_argument(
+        "--vfs-install-path",
+        help="Absolute path for the install location of the deadline vfs.",
     )
 
     return parser
