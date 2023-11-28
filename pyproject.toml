@@ -29,12 +29,12 @@ artifacts = [
 
 [tool.hatch.version]
 source = "vcs"
+# https://setuptools-scm.readthedocs.io/en/latest/extending/#version-number-construction
+# Using "no-guess-dev", GitHub workflows are handling versioning.
+raw-options = { version_scheme = "no-guess-dev", local_scheme = "no-local-version" }
 
 [tool.hatch.build.hooks.vcs]
 version-file = "_version.py"
-
-[tool.hatch.version.raw-options]
-version_scheme = "post-release"
 
 [tool.hatch.build.hooks.custom]
 path = "hatch_version_hook.py"
@@ -158,3 +158,28 @@ source = [ "src/" ]
 [tool.coverage.report]
 show_missing = true
 fail_under = 78
+
+[tool.semantic_release]
+major_on_zero = "false"
+tag_format = "{version}"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = [
+    "build",
+    "chore",
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "style",
+    "refactor",
+    "test",
+]
+minor_tags = []
+patch_tags = [
+  "chore",
+  "feat",
+  "fix",
+  "refactor",
+]
