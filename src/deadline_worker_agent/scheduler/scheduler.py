@@ -52,7 +52,7 @@ from ..aws.deadline import (
 from .log import LOGGER
 from .session_cleanup import SessionUserCleanupManager
 from .session_queue import SessionActionQueue, SessionActionStatus
-from ..startup.config import ImpersonationOverrides
+from ..startup.config import JobsRunAsUserOverride
 from ..utils import MappingWithCallbacks
 from ..set_windows_permissions import set_user_restricted_path_permissions
 import subprocess
@@ -155,7 +155,7 @@ class WorkerScheduler:
     _action_updates_map: dict[str, SessionActionStatus]
     _action_completes: list[SessionActionStatus]
     _action_update_lock: RLock
-    _impersonation: ImpersonationOverrides
+    _jobs_run_as_user_override: JobsRunAsUserOverride
     _boto_session: BotoSession
     _worker_persistence_dir: Path
     _worker_logs_dir: Path | None
@@ -173,7 +173,7 @@ class WorkerScheduler:
         fleet_id: str,
         worker_id: str,
         deadline: DeadlineClient,
-        impersonation: ImpersonationOverrides,
+        jobs_run_as_user_override: JobsRunAsUserOverride,
         boto_session: BotoSession,
         cleanup_session_user_processes: bool,
         worker_persistence_dir: Path,
@@ -204,7 +204,7 @@ class WorkerScheduler:
         self._action_completes = []
         self._action_updates_map = {}
         self._action_update_lock = RLock()
-        self._impersonation = impersonation
+        self._jobs_run_as_user_override = jobs_run_as_user_override
         self._shutdown_grace = None
         self._boto_session = boto_session
         self._queue_aws_credentials = dict[str, QueueAwsCredentials]()
@@ -701,14 +701,17 @@ class WorkerScheduler:
             logger.debug(f"[{new_session_id}] Assigned actions")
 
             os_user: Optional[SessionUser] = None
-            if job_details.job_run_as_user and not self._impersonation.inactive:
-                if os.name != "posix":
-                    # TODO: windows support
-                    raise NotImplementedError(f"{os.name} is not supported")
-                os_user = job_details.job_run_as_user.posix
-
-            if self._impersonation.posix_job_user is not None:
-                os_user = self._impersonation.posix_job_user
+            if not self._jobs_run_as_user_override.run_as_agent:
+                if (
+                    self._jobs_run_as_user_override.posix_job_user is not None
+                    and os.name == "posix"
+                ):
+                    os_user = self._jobs_run_as_user_override.posix_job_user
+                elif job_details.job_run_as_user:
+                    if os.name != "posix":
+                        # TODO: windows support
+                        raise NotImplementedError(f"{os.name} is not supported")
+                    os_user = job_details.job_run_as_user.posix
 
             queue_credentials: QueueAwsCredentials | None = None
             asset_sync: AssetSync | None = None

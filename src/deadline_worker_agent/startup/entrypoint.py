@@ -15,7 +15,10 @@ import psutil
 import shutil
 from pathlib import Path
 
+from openjd.model import version as openjd_model_version
+from openjd.sessions import version as openjd_sessions_version
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
+from deadline.job_attachments import version as deadline_job_attach_version
 from pydantic import PositiveFloat
 
 from .._version import __version__
@@ -161,7 +164,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
                 s3_client=s3_client,
                 logs_client=logs_client,
                 boto_session=session,
-                impersonation=config.impersonation,
+                jobs_run_as_user_override=config.jobs_run_as_overrides,
                 cleanup_session_user_processes=config.cleanup_session_user_processes,
                 worker_persistence_dir=config.worker_persistence_dir,
                 worker_logs_dir=config.worker_logs_dir if config.local_session_logs else None,
@@ -336,11 +339,15 @@ def _remove_logging_handler(handler: logging.Handler) -> None:
 
 
 def _log_agent_info() -> None:
-    _logger.info("Agent Version: %s", __version__)
-    _logger.info("Installed at: %s", str(Path(__file__).resolve().parent.parent))
     _logger.info(f"Python Interpreter: {sys.executable}")
     _logger.info("Python Version: %s", sys.version.replace("\n", " - "))
     _logger.info(f"Platform: {sys.platform}")
+    _logger.info("Agent Version: %s", __version__)
+    _logger.info("Installed at: %s", str(Path(__file__).resolve().parent.parent))
+    _logger.info("Dependency versions installed:")
+    _logger.info("\topenjd.model: %s", openjd_model_version)
+    _logger.info("\topenjd.sessions: %s", openjd_sessions_version)
+    _logger.info("\tdeadline.job_attachments: %s", deadline_job_attach_version)
 
 
 def _get_gpu_count(*, verbose: bool = True) -> int:

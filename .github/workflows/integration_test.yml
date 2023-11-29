@@ -1,12 +1,11 @@
-name: Release Integration Canary
+name: Integration Test
 
 on:
-  schedule:
-    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 jobs:
-  ReleaseIntegrationCanary:
+  IntegrationTest:
+    name: Integration Test
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -15,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: release
+          ref: mainline
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -27,3 +26,7 @@ jobs:
         with:
           project-name: deadline-cloud-worker-agent-IntegTest
           hide-cloudwatch-logs: true
+          env-vars-for-codebuild: |
+            TEST_TYPE
+        env:
+          TEST_TYPE: WHEEL

@@ -12,4 +12,4 @@
 3. `hatch shell`
 4. `source .deployed_resources.sh`
 5. `cd scripts/submit_jobs`
-6. `deadline bundle submit --farm-id $FARM_ID --queue-id $QUEUE_ID --submit-as-json --yes -p DataDir=asset_example asset_example`
+6. `deadline bundle submit --farm-id $FARM_ID --queue-id $QUEUE_ID --yes -p DataDir=asset_example asset_example`

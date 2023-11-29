@@ -33,7 +33,7 @@ from deadline_worker_agent.sessions.job_entities.job_attachment_details import (
     JobAttachmentDetails,
     JobAttachmentManifestProperties,
 )
-from deadline_worker_agent.startup.config import ImpersonationOverrides
+from deadline_worker_agent.startup.config import JobsRunAsUserOverride
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def logs_client() -> MagicMock:
 
 
 @pytest.fixture()
-def os_user() -> Optional[SessionUser]:
+def job_user() -> Optional[SessionUser]:
     if os.name == "posix":
         return PosixSessionUser(user="some-user", group="some-group")
     else:
@@ -60,15 +60,15 @@ def os_user() -> Optional[SessionUser]:
 
 
 @pytest.fixture(params=[(os.name == "posix",)])
-def impersonation(
-    request: pytest.FixtureRequest, os_user: Optional[SessionUser]
-) -> ImpersonationOverrides:
+def jobs_run_as_overrides(
+    request: pytest.FixtureRequest, job_user: Optional[SessionUser]
+) -> JobsRunAsUserOverride:
     (posix_os,) = request.param
 
     if posix_os:
-        return ImpersonationOverrides(inactive=False, posix_job_user=os_user)
+        return JobsRunAsUserOverride(run_as_agent=False, posix_job_user=job_user)
     else:
-        return ImpersonationOverrides(inactive=True)
+        return JobsRunAsUserOverride(run_as_agent=True)
 
 
 @pytest.fixture
