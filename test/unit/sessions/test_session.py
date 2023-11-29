@@ -568,6 +568,7 @@ class TestSessionSyncAssetInputs:
             storage_profiles_path_mapping_rules={},
             step_dependencies=None,
             on_downloading_files=ANY,
+            os_env_vars=None,
         )
 
     def test_sync_asset_inputs_with_fs_permission_settings(
