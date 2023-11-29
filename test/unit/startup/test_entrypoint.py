@@ -152,7 +152,7 @@ def block_rich_import() -> Generator[None, None, None]:
 
 @pytest.fixture(autouse=True)
 def block_telemetry_client() -> Generator[MagicMock, None, None]:
-    with patch.object(entrypoint_mod, "record_worker_start_event") as telem_mock:
+    with patch.object(entrypoint_mod, "record_worker_start_telemetry_event") as telem_mock:
         yield telem_mock
 
 
@@ -443,7 +443,7 @@ def test_system_shutdown(
     configuration: MagicMock,
 ) -> None:
     """
-    Tests that entrypoint._system_shudown() has the correct platform-specific behavior
+    Tests that entrypoint._system_shutdown() has the correct platform-specific behavior
     """
     # GIVEN
     process: MagicMock = subprocess_popen_mock.return_value
@@ -533,7 +533,7 @@ def test_no_shutdown_only_log(
     configuration: MagicMock,
 ) -> None:
     """
-    Tests if the system shudown call is suppressed in a certain case, instead just logs it.
+    Tests if the system shutdown call is suppressed in a certain case, instead just logs it.
     """
     # GIVEN
     configuration.no_shutdown = True
