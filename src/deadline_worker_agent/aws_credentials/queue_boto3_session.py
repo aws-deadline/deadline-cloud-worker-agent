@@ -253,7 +253,7 @@ class QueueBoto3Session(BaseBoto3Session):
                         ),
                         user=self._os_user,
                         user_permission=FileSystemPermissionEnum.READ_WRITE,
-                        group_permission=FileSystemPermissionEnum.READ,
+                        group_permission=FileSystemPermissionEnum.READ_WRITE,
                     )
             credentials_object = cast(SettableCredentials, self.get_credentials())
             credentials_object.set_credentials(temporary_creds.to_deadline())
@@ -290,16 +290,16 @@ class QueueBoto3Session(BaseBoto3Session):
                     dir_path=self._credential_dir,
                     exist_ok=True,
                     parents=True,
-                    user=self._os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
-                    group_permission=FileSystemPermissionEnum.READ_WRITE,
                 )
             else:
                 make_directory(
                     dir_path=self._credential_dir,
                     exist_ok=True,
                     parents=True,
+                    user=self._os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    group_permission=FileSystemPermissionEnum.READ_WRITE,
                 )
 
     def _delete_credentials_directory(self) -> None:
@@ -347,6 +347,7 @@ class QueueBoto3Session(BaseBoto3Session):
                         file_path=self._credentials_process_script_path,
                         user=self._os_user,
                         user_permission=FileSystemPermissionEnum.EXECUTE,
+                        group_permission=FileSystemPermissionEnum.READ_WRITE,
                     )
 
         # install credential process to ~<job-user>/.aws/config and
