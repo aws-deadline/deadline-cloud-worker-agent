@@ -509,6 +509,7 @@ class TestCreateNewSessions:
 
         with (
             patch.object(scheduler_mod, "make_directory") as mock_make_directory,
+            patch.object(scheduler_mod, "touch_file") as mock_touch_file,
             patch.object(scheduler, "_executor"),
             patch.object(scheduler_mod.LogConfiguration, "from_boto") as mock_log_config_from_boto,
             patch.object(
@@ -534,7 +535,10 @@ class TestCreateNewSessions:
         mock_queue_session_log_file_path.assert_called_once_with(
             session_id=session_id, queue_log_dir=queue_log_dir_path
         )
-        session_log_file_path.touch.assert_called_once_with(mode=0o600, exist_ok=True)
+        if os.name == "posix":
+            session_log_file_path.touch.assert_called_once_with(mode=0o600, exist_ok=True)
+        else:
+            mock_touch_file.assert_called_once()
         mock_log_config_from_boto.assert_called_once()
         assert (
             mock_log_config_from_boto.call_args_list[0].kwargs["session_log_file"]
@@ -598,14 +602,19 @@ class TestCreateNewSessions:
         with (
             patch.object(scheduler, "_executor"),
             patch.object(scheduler_mod, "make_directory") as mock_make_directory,
+            patch.object(scheduler_mod, "touch_file") as mock_touch_file,
             patch.object(scheduler_mod.LogConfiguration, "from_boto") as mock_log_config_from_boto,
             patch.object(
                 scheduler, "_queue_log_dir_path", return_value=queue_log_dir_path
             ) as mock_queue_log_dir,
             patch.object(scheduler, "_fail_all_actions") as mock_fail_all_actions,
         ):
-            queue_log_dir_path.mkdir.side_effect = mkdir_side_effect
-            session_log_file_path.touch.side_effect = touch_side_effect
+            if os.name == "posix":
+                queue_log_dir_path.mkdir.side_effect = mkdir_side_effect
+                session_log_file_path.touch.side_effect = touch_side_effect
+            else:
+                mock_make_directory.side_effect = mkdir_side_effect
+                mock_touch_file.side_effect = touch_side_effect
 
             # WHEN
             scheduler._create_new_sessions(assigned_sessions=assigned_sessions)
@@ -614,9 +623,11 @@ class TestCreateNewSessions:
         mock_queue_log_dir.assert_called_once_with(queue_id=queue_id)
         if os.name == "posix":
             queue_log_dir_path.mkdir.assert_called_once_with(mode=0o700, exist_ok=True)
+            session_log_file_path.touch.assert_called_once()
         else:
             mock_make_directory.assert_called_once()
-        session_log_file_path.touch.assert_called_once()
+            mock_touch_file.assert_called_once()
+
         mock_log_config_from_boto.assert_not_called()
         mock_fail_all_actions.assert_called_once_with(
             assigned_sessions[session_id],

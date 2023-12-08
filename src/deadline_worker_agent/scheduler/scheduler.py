@@ -54,7 +54,7 @@ from .session_cleanup import SessionUserCleanupManager
 from .session_queue import SessionActionQueue, SessionActionStatus
 from ..startup.config import JobsRunAsUserOverride
 from ..utils import MappingWithCallbacks
-from ..file_system_operations import FileSystemPermissionEnum, make_directory
+from ..file_system_operations import FileSystemPermissionEnum, make_directory, touch_file
 from ..windows_credentials_resolver import WindowsCredentialsResolver
 
 logger = LOGGER
@@ -669,7 +669,13 @@ class WorkerScheduler:
                     session_id=new_session_id, queue_log_dir=queue_log_dir
                 )
                 try:
-                    session_log_file.touch(mode=stat.S_IWUSR | stat.S_IRUSR, exist_ok=True)
+                    if os.name == "posix":
+                        session_log_file.touch(mode=stat.S_IWUSR | stat.S_IRUSR, exist_ok=True)
+                    else:
+                        touch_file(
+                            file_path=session_log_file,
+                            user_permission=FileSystemPermissionEnum.READ_WRITE,
+                        )
                 except OSError:
                     error_msg = (
                         f"Failed to create local session log file on worker: {session_log_file}"

@@ -119,7 +119,7 @@ def _set_windows_permissions(
             group_sid,
         )
 
-    # Get the security descriptor of the directory
+    # Get the security descriptor of the object
     sd = win32security.GetFileSecurity(str(path.resolve()), win32security.DACL_SECURITY_INFORMATION)
 
     # Set the security descriptor's DACL to the newly-created DACL
@@ -131,7 +131,7 @@ def _set_windows_permissions(
     #    If set to 1, indicates the DACL was defaulted, as in the case of permissions inherited from a parent directory.
     sd.SetSecurityDescriptorDacl(1, dacl, 0)
 
-    # Set the security descriptor to the the directory
+    # Set the security descriptor to the object
     win32security.SetFileSecurity(str(path.resolve()), win32security.DACL_SECURITY_INFORMATION, sd)
 
 
@@ -143,6 +143,7 @@ def _get_ntsecuritycon_mode(mode: FileSystemPermissionEnum) -> int:
         FileSystemPermissionEnum.WRITE.value: ntsecuritycon.FILE_GENERIC_WRITE,
         FileSystemPermissionEnum.READ_WRITE.value: ntsecuritycon.FILE_GENERIC_READ
         | ntsecuritycon.FILE_GENERIC_WRITE,
-        FileSystemPermissionEnum.EXECUTE.value: ntsecuritycon.FILE_GENERIC_EXECUTE,
+        FileSystemPermissionEnum.EXECUTE.value: ntsecuritycon.FILE_GENERIC_EXECUTE
+        | ntsecuritycon.FILE_GENERIC_READ,
     }
     return permission_mapping[mode.value]
