@@ -20,6 +20,7 @@ from deadline_worker_agent.aws.deadline import (
 import deadline_worker_agent.aws_credentials.queue_boto3_session as queue_boto3_session_mod
 from deadline_worker_agent.aws_credentials.queue_boto3_session import QueueBoto3Session
 from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
+from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
 
 
 @pytest.fixture(autouse=True)
@@ -464,25 +465,29 @@ class TestCreateCredentialsDirectory:
             )
 
         with (
-            patch.object(
-                queue_boto3_session_mod, "set_user_restricted_path_permissions"
-            ) as set_user_restricted_path_permissions_mock,
+            patch.object(queue_boto3_session_mod, "make_directory") as mock_make_directory,
             patch.object(queue_boto3_session_mod.shutil, "chown") as mock_chown,
         ):
             # WHEN
             session._create_credentials_directory()
 
         # THEN
-        mock_path.mkdir.assert_called_once_with(
-            exist_ok=True,
-            parents=True,
-            mode=0o750,
-        )
+
         if isinstance(os_user, PosixSessionUser):
+            mock_path.mkdir.assert_called_once_with(
+                exist_ok=True,
+                parents=True,
+                mode=0o750,
+            )
             mock_chown.assert_called_once_with(mock_path, group=os_user.group)
         else:
-            set_user_restricted_path_permissions_mock.assert_called_once_with(
-                path=mock_path, user=os_user
+            mock_make_directory.assert_called_once_with(
+                dir_path=mock_path,
+                exist_ok=True,
+                parents=True,
+                user=os_user,
+                user_permission=FileSystemPermissionEnum.READ_WRITE,
+                group_permission=FileSystemPermissionEnum.READ,
             )
 
     def test_reraises_oserror(
@@ -619,9 +624,7 @@ class TestInstallCredentialProcess:
             patch.object(
                 QueueBoto3Session, "_generate_credential_process_script"
             ) as mock_generate_script,
-            patch.object(
-                queue_boto3_session_mod, "set_user_restricted_path_permissions"
-            ) as set_user_restricted_path_permissions_mock,
+            patch.object(queue_boto3_session_mod, "set_permissions") as mock_set_permissions,
         ):
             # WHEN
             session._install_credential_process()
@@ -661,8 +664,11 @@ class TestInstallCredentialProcess:
                 )
             else:
                 assert isinstance(os_user, WindowsSessionUser)
-                set_user_restricted_path_permissions_mock.assert_called_once_with(
-                    path=credentials_process_script_path, user=os_user
+                mock_set_permissions.assert_called_once_with(
+                    file_path=credentials_process_script_path,
+                    user=os_user,
+                    user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    group_permission=FileSystemPermissionEnum.READ_WRITE,
                 )
 
         aws_config_mock.install_credential_process.assert_called_once_with(

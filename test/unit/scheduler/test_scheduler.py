@@ -607,6 +607,9 @@ class TestCreateNewSessions:
             patch.object(
                 scheduler, "_queue_log_dir_path", return_value=queue_log_dir_path
             ) as mock_queue_log_dir,
+            patch.object(
+                scheduler, "_session_log_file_path", return_value=session_log_file_path
+            ) as mock_queue_session_log_file_path,
             patch.object(scheduler, "_fail_all_actions") as mock_fail_all_actions,
         ):
             if os.name == "posix":
@@ -623,11 +626,22 @@ class TestCreateNewSessions:
         mock_queue_log_dir.assert_called_once_with(queue_id=queue_id)
         if os.name == "posix":
             queue_log_dir_path.mkdir.assert_called_once_with(mode=0o700, exist_ok=True)
-            session_log_file_path.touch.assert_called_once()
+            if mkdir_side_effect:
+                mock_queue_session_log_file_path.assert_not_called()
+            else:
+                mock_queue_session_log_file_path.assert_called_once()
+            if mkdir_side_effect:
+                session_log_file_path.touch.asset_not_called()
+            else:
+                session_log_file_path.touch.assert_called_once()
         else:
+            if mkdir_side_effect:
+                mock_queue_session_log_file_path.assert_not_called()
+            else:
+                mock_queue_session_log_file_path.assert_called_once()
             mock_make_directory.assert_called_once()
-            mock_touch_file.assert_called_once()
-
+            if mkdir_side_effect:
+                session_log_file_path.touch.asset_not_called()
         mock_log_config_from_boto.assert_not_called()
         mock_fail_all_actions.assert_called_once_with(
             assigned_sessions[session_id],
