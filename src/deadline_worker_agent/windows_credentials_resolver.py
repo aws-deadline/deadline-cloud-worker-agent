@@ -5,6 +5,7 @@ from .boto import OTHER_BOTOCORE_CONFIG, Session as BotoSession
 from openjd.sessions import WindowsSessionUser
 from logging import getLogger
 import json
+import os
 from datetime import datetime, timedelta
 
 logger = getLogger(__name__)
@@ -32,6 +33,8 @@ class WindowsCredentialsResolver:
         self,
         boto_session: BotoSession,
     ) -> None:
+        if os.name != "nt":
+            raise RuntimeError("Windows credentials resolver can only be used on Windows")
         self._boto_session = boto_session
         self._user_cache: Dict[str, _WindowsCredentialsCacheEntry] = {}
 
