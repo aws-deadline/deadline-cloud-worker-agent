@@ -32,26 +32,26 @@ def _run_cmd_as(*, user: PosixSessionUser, cmd: list[str]) -> None:
 
 
 def _setup_parent_dir(*, dir_path: Path, owner: SessionUser | None = None) -> None:
-    if owner is None:
-        if os.name == "posix":
+    if os.name == "posix":
+        assert isinstance(owner, PosixSessionUser)
+        if owner is None:
             create_perms: int = stat.S_IRWXU
             dir_path.mkdir(mode=create_perms, exist_ok=True)
         else:
+            _run_cmd_as(user=owner, cmd=["mkdir", "-p", str(dir_path)])
+            _run_cmd_as(user=owner, cmd=["chown", f"{owner.user}:{owner.group}", str(dir_path)])
+            _run_cmd_as(user=owner, cmd=["chmod", "770", str(dir_path)])
+    else:
+        assert isinstance(owner, WindowsSessionUser)
+        if owner is None:
             make_directory(
                 dir_path=dir_path,
                 user_permission=FileSystemPermissionEnum.READ_WRITE,
             )
-    else:
-        if os.name == "posix":
-            assert isinstance(owner, PosixSessionUser)
-            _run_cmd_as(user=owner, cmd=["mkdir", "-p", str(dir_path)])
-            _run_cmd_as(user=owner, cmd=["chown", f"{owner.user}:{owner.group}", str(dir_path)])
-            _run_cmd_as(user=owner, cmd=["chmod", "770", str(dir_path)])
         else:
-            assert isinstance(owner, WindowsSessionUser)
             make_directory(
                 dir_path=dir_path,
-                user=owner,
+                permitted_user=owner,
                 user_permission=FileSystemPermissionEnum.READ_WRITE,
                 group_permission=FileSystemPermissionEnum.READ_WRITE,
                 parents=True,
@@ -60,22 +60,28 @@ def _setup_parent_dir(*, dir_path: Path, owner: SessionUser | None = None) -> No
 
 
 def _setup_file(*, file_path: Path, owner: SessionUser | None = None) -> None:
-    if owner is None:
-        if not file_path.exists():
-            file_path.touch()
-        mode = stat.S_IRUSR | stat.S_IWUSR
-        file_path.chmod(mode=mode)
-    else:
-        if os.name == "posix":
-            assert isinstance(owner, PosixSessionUser)
+    if os.name == "posix":
+        assert isinstance(owner, PosixSessionUser)
+        if owner is None:
+            if not file_path.exists():
+                file_path.touch()
+            mode = stat.S_IRUSR | stat.S_IWUSR
+            file_path.chmod(mode=mode)
+        else:
             _run_cmd_as(user=owner, cmd=["touch", str(file_path)])
             _run_cmd_as(user=owner, cmd=["chown", f"{owner.user}:{owner.group}", str(file_path)])
             _run_cmd_as(user=owner, cmd=["chmod", "660", str(file_path)])
-        else:
-            assert isinstance(owner, WindowsSessionUser)
+    else:
+        assert isinstance(owner, WindowsSessionUser)
+        if owner is None:
             touch_file(
                 file_path=file_path,
-                user=owner,
+                user_permission=FileSystemPermissionEnum.READ_WRITE,
+            )
+        else:
+            touch_file(
+                file_path=file_path,
+                permitted_user=owner,
                 user_permission=FileSystemPermissionEnum.READ_WRITE,
                 group_permission=FileSystemPermissionEnum.READ_WRITE,
             )

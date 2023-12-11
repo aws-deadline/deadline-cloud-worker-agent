@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from typing import Generator
+from typing import Generator, Optional
 from unittest.mock import MagicMock, patch
 
 from deadline.job_attachments.models import JobAttachmentsFileSystem
@@ -65,12 +65,15 @@ def deadline_client() -> MagicMock:
 
 
 @pytest.fixture
-def windows_credentials_resolver() -> MagicMock:
-    resolver = MagicMock()
-    resolver.get_windows_session_user.return_value = WindowsSessionUser(
-        user="user", group="group", password="fakepassword"
-    )
-    return resolver
+def windows_credentials_resolver() -> Optional[MagicMock]:
+    if os.name == "nt":
+        resolver = MagicMock()
+        resolver.get_windows_session_user.return_value = WindowsSessionUser(
+            user="user", group="group", password="fakepassword"
+        )
+        return resolver
+    else:
+        return None
 
 
 @pytest.fixture(autouse=True)

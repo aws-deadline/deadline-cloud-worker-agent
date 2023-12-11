@@ -251,7 +251,7 @@ class QueueBoto3Session(BaseBoto3Session):
                         file_path=(self._credential_dir / self._credentials_filename).with_suffix(
                             ".json"
                         ),
-                        user=self._os_user,
+                        permitted_user=self._os_user,
                         user_permission=FileSystemPermissionEnum.READ_WRITE,
                         group_permission=FileSystemPermissionEnum.READ_WRITE,
                     )
@@ -297,9 +297,9 @@ class QueueBoto3Session(BaseBoto3Session):
                     dir_path=self._credential_dir,
                     exist_ok=True,
                     parents=True,
-                    user=self._os_user,
+                    permitted_user=self._os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
-                    group_permission=FileSystemPermissionEnum.READ_WRITE,
+                    group_permission=FileSystemPermissionEnum.READ,
                 )
 
     def _delete_credentials_directory(self) -> None:
@@ -345,7 +345,7 @@ class QueueBoto3Session(BaseBoto3Session):
                     assert isinstance(self._os_user, WindowsSessionUser)
                     set_permissions(
                         file_path=self._credentials_process_script_path,
-                        user=self._os_user,
+                        permitted_user=self._os_user,
                         user_permission=FileSystemPermissionEnum.EXECUTE,
                         group_permission=FileSystemPermissionEnum.READ_WRITE,
                     )

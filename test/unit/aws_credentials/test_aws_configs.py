@@ -84,7 +84,7 @@ class TestSetupParentDir:
                 assert isinstance(os_user, WindowsSessionUser)
                 mock_make_directory.assert_called_once_with(
                     dir_path=dir_path,
-                    user=os_user,
+                    permitted_user=os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
                     group_permission=FileSystemPermissionEnum.READ,
                     parents=True,
@@ -126,7 +126,7 @@ class TestSetupParentDir:
                 assert isinstance(os_user, WindowsSessionUser)
                 mock_make_directory.assert_called_once_with(
                     dir_path=dir_path,
-                    user=os_user,
+                    permitted_user=os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
                     group_permission=FileSystemPermissionEnum.READ,
                     parents=True,
@@ -189,7 +189,7 @@ class TestSetupFile:
                 assert isinstance(os_user, WindowsSessionUser)
                 mock_touch_file.assert_called_once_with(
                     file_path=file_path,
-                    user=os_user,
+                    permitted_user=os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
                     group_permission=FileSystemPermissionEnum.READ_WRITE,
                 )
@@ -228,7 +228,7 @@ class TestSetupFile:
                 assert isinstance(os_user, WindowsSessionUser)
                 mock_touch_file.assert_called_once_with(
                     file_path=file_path,
-                    user=os_user,
+                    permitted_user=os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
                     group_permission=FileSystemPermissionEnum.READ_WRITE,
                 )
@@ -265,7 +265,7 @@ class TestSetupFile:
                 assert isinstance(os_user, WindowsSessionUser)
                 mock_touch_file.assert_called_once_with(
                     file_path=file_path,
-                    user=os_user,
+                    permitted_user=os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
                     group_permission=FileSystemPermissionEnum.READ_WRITE,
                 )

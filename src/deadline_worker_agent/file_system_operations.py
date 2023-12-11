@@ -1,8 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from typing import Optional
-from openjd.sessions import WindowsSessionUser, PosixSessionUser, SessionUser
-from subprocess import run, DEVNULL, PIPE, STDOUT
+from openjd.sessions import WindowsSessionUser, SessionUser
 import getpass
 from pathlib import Path
 import os
@@ -19,25 +18,19 @@ class FileSystemPermissionEnum(Enum):
     READ_WRITE = "READ_WRITE"
 
 
-def _run_cmd_as(*, user: PosixSessionUser, cmd: list[str]) -> None:
-    sudo = ["sudo", "-u", user.user, "-i"]
-    # Raises: CalledProcessError
-    run(sudo + cmd, stdin=DEVNULL, stderr=STDOUT, stdout=PIPE, check=True)
-
-
 def set_permissions(
     file_path: Path,
     user_permission: FileSystemPermissionEnum,
-    user: Optional[SessionUser] = None,
+    permitted_user: Optional[SessionUser] = None,
     group_permission: Optional[FileSystemPermissionEnum] = None,
 ):
     if os.name == "nt":
-        user = cast(WindowsSessionUser, user)
+        permitted_user = cast(WindowsSessionUser, permitted_user)
 
         _set_windows_permissions(
             path=file_path,
             user_permission=user_permission,
-            user=user,
+            user=permitted_user,
             group_permission=group_permission,
         )
 
@@ -45,11 +38,11 @@ def set_permissions(
 def touch_file(
     file_path: Path,
     user_permission: FileSystemPermissionEnum,
-    user: Optional[SessionUser] = None,
+    permitted_user: Optional[SessionUser] = None,
     group_permission: Optional[FileSystemPermissionEnum] = None,
 ):
     if os.name == "nt":
-        user = cast(WindowsSessionUser, user)
+        permitted_user = cast(WindowsSessionUser, permitted_user)
 
         if not file_path.exists():
             file_path.touch()
@@ -57,7 +50,7 @@ def touch_file(
         _set_windows_permissions(
             path=file_path,
             user_permission=user_permission,
-            user=user,
+            user=permitted_user,
             group_permission=group_permission,
         )
 
@@ -65,20 +58,20 @@ def touch_file(
 def make_directory(
     dir_path: Path,
     user_permission: FileSystemPermissionEnum,
-    user: Optional[SessionUser] = None,
+    permitted_user: Optional[SessionUser] = None,
     group_permission: Optional[FileSystemPermissionEnum] = None,
     exist_ok: bool = True,
     parents: bool = False,
 ):
     if os.name == "nt":
-        user = cast(WindowsSessionUser, user)
+        permitted_user = cast(WindowsSessionUser, permitted_user)
 
         dir_path.mkdir(exist_ok=exist_ok, parents=parents)
 
         _set_windows_permissions(
             path=dir_path,
             user_permission=user_permission,
-            user=user,
+            user=permitted_user,
             group_permission=group_permission,
         )
 
@@ -96,6 +89,8 @@ def _set_windows_permissions(
         username = getpass.getuser()
     else:
         username = user.user
+
+    full_path = str(path.resolve())
 
     # We don't want to propagate existing permissions, so create a new DACL
     dacl = win32security.ACL()
@@ -132,7 +127,7 @@ def _set_windows_permissions(
     sd.SetSecurityDescriptorDacl(1, dacl, 0)
 
     # Set the security descriptor to the object
-    win32security.SetFileSecurity(str(path.resolve()), win32security.DACL_SECURITY_INFORMATION, sd)
+    win32security.SetFileSecurity(full_path, win32security.DACL_SECURITY_INFORMATION, sd)
 
 
 def _get_ntsecuritycon_mode(mode: FileSystemPermissionEnum) -> int:
