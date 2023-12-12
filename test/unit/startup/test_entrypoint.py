@@ -555,9 +555,9 @@ def test_no_shutdown_only_log(
 def test_job_run_as_user_override(
     configuration: MagicMock,
 ) -> None:
-    """Assert that the Worker is created with the job_run_as_overrides kwarg matching the Configuration"""
+    """Assert that the Worker is created with the job_run_as_user_overrides kwarg matching the Configuration"""
     # GIVEN
-    configuration.job_run_as_overrides = MagicMock()
+    configuration.job_run_as_user_overrides = MagicMock()
     with patch.object(entrypoint_mod, "Worker") as worker_mock:
         # WHEN
         entrypoint()
@@ -566,7 +566,7 @@ def test_job_run_as_user_override(
         assert worker_mock.call_count == 1
         assert (
             worker_mock.call_args_list[0].kwargs["job_run_as_user_override"]
-            == configuration.job_run_as_overrides
+            == configuration.job_run_as_user_overrides
         )
 
 

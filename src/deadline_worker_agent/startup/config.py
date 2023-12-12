@@ -51,7 +51,7 @@ class Configuration:
     profile: Optional[str]
     verbose: bool
     no_shutdown: bool
-    job_run_as_overrides: JobsRunAsUserOverride
+    job_run_as_user_overrides: JobsRunAsUserOverride
     allow_instance_profile: bool
     capabilities: Capabilities
     """Whether to use the new Worker Sessions API (UpdateWorkerSchedule)"""
@@ -79,7 +79,7 @@ class Configuration:
         "profile",
         "verbose",
         "no_shutdown",
-        "job_run_as_overrides",
+        "job_run_as_user_overrides",
         "allow_instance_profile",
         "capabilities",
         "worker_persistence_dir",
@@ -139,12 +139,12 @@ class Configuration:
 
         if settings.posix_job_user is not None:
             user, group = self._get_user_and_group_from_posix_job_user(settings.posix_job_user)
-            self.job_run_as_overrides = JobsRunAsUserOverride(
+            self.job_run_as_user_overrides = JobsRunAsUserOverride(
                 run_as_agent=settings.run_jobs_as_agent_user,
                 posix_job_user=PosixSessionUser(user=user, group=group),
             )
         else:
-            self.job_run_as_overrides = JobsRunAsUserOverride(
+            self.job_run_as_user_overrides = JobsRunAsUserOverride(
                 run_as_agent=settings.run_jobs_as_agent_user
             )
 
@@ -184,8 +184,8 @@ class Configuration:
             raise ConfigurationError(f"Fleet ID must be specified, but got {repr(self.fleet_id)})")
 
         if (
-            self.job_run_as_overrides.run_as_agent
-            and self.job_run_as_overrides.posix_job_user is not None
+            self.job_run_as_user_overrides.run_as_agent
+            and self.job_run_as_user_overrides.posix_job_user is not None
         ):
             raise ConfigurationError(
                 "Cannot specify a POSIX job user when the option to running Jobs as the agent user is enabled."

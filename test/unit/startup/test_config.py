@@ -835,20 +835,21 @@ class TestInit:
         )
         assert config.capabilities is mock_worker_settings.capabilities
         assert (
-            config.job_run_as_overrides.run_as_agent == mock_worker_settings.run_jobs_as_agent_user
+            config.job_run_as_user_overrides.run_as_agent
+            == mock_worker_settings.run_jobs_as_agent_user
         )
         if expected_config_posix_job_user:
-            assert isinstance(config.job_run_as_overrides.posix_job_user, PosixSessionUser)
+            assert isinstance(config.job_run_as_user_overrides.posix_job_user, PosixSessionUser)
             assert (
-                config.job_run_as_overrides.posix_job_user.group
+                config.job_run_as_user_overrides.posix_job_user.group
                 == expected_config_posix_job_user.group
             )
             assert (
-                config.job_run_as_overrides.posix_job_user.user
+                config.job_run_as_user_overrides.posix_job_user.user
                 == expected_config_posix_job_user.user
             )
         else:
-            assert config.job_run_as_overrides.posix_job_user is None
+            assert config.job_run_as_user_overrides.posix_job_user is None
         assert config.worker_logs_dir is mock_worker_settings.worker_logs_dir
         assert config.local_session_logs is mock_worker_settings.local_session_logs
         assert config.worker_persistence_dir is mock_worker_settings.worker_persistence_dir

@@ -51,7 +51,7 @@ def scheduler(
     fleet_id: str,
     worker_id: str,
     client: MagicMock,
-    job_run_as_overrides: JobsRunAsUserOverride,
+    job_run_as_user_overrides: JobsRunAsUserOverride,
     boto_session: Mock,
     worker_logs_dir: Path,
 ) -> WorkerScheduler:
@@ -61,7 +61,7 @@ def scheduler(
         fleet_id=fleet_id,
         worker_id=worker_id,
         deadline=client,
-        job_run_as_user_override=job_run_as_overrides,
+        job_run_as_user_override=job_run_as_user_overrides,
         boto_session=boto_session,
         cleanup_session_user_processes=True,
         worker_persistence_dir=Path("/var/lib/deadline"),

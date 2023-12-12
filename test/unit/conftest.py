@@ -57,7 +57,7 @@ def posix_job_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
 
 
 @pytest.fixture(params=(True,))
-def job_run_as_overrides(
+def job_run_as_user_overrides(
     request: pytest.FixtureRequest, posix_job_user: Optional[SessionUser]
 ) -> JobsRunAsUserOverride:
     return JobsRunAsUserOverride(run_as_agent=request.param, posix_job_user=posix_job_user)
