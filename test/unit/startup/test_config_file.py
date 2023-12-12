@@ -117,7 +117,7 @@ def logging_config_section_data(
 @pytest.fixture(
     params=(True, False),
 )
-def job_run_as_agent_user(request: pytest.FixtureRequest) -> bool:
+def run_jobs_as_agent_user(request: pytest.FixtureRequest) -> bool:
     return request.param
 
 
@@ -135,12 +135,12 @@ def shutdown_on_stop(request: pytest.FixtureRequest) -> bool:
 
 @pytest.fixture
 def os_config_section_data(
-    job_run_as_agent_user: bool,
+    run_jobs_as_agent_user: bool,
     posix_job_user: str,
     shutdown_on_stop: bool | None,
 ) -> dict[str, Any]:
     return {
-        "job_run_as_agent_user": job_run_as_agent_user,
+        "run_jobs_as_agent_user": run_jobs_as_agent_user,
         "posix_job_user": posix_job_user,
         "shutdown_on_stop": shutdown_on_stop,
     }
@@ -389,22 +389,22 @@ class TestOsConfigSection:
         os_config = OsConfigSection.parse_obj(os_config_section_data)
 
         # THEN
-        assert os_config.job_run_as_agent_user == os_config_section_data["job_run_as_agent_user"]
+        assert os_config.run_jobs_as_agent_user == os_config_section_data["run_jobs_as_agent_user"]
         assert os_config.posix_job_user == os_config_section_data["posix_job_user"]
         assert os_config.shutdown_on_stop == os_config_section_data["shutdown_on_stop"]
 
     @pytest.mark.parametrize(
-        argnames="job_run_as_agent_user",
+        argnames="run_jobs_as_agent_user",
         argvalues=(
             pytest.param("str", id="bad-type-str"),
             pytest.param([1], id="bad-type-list"),
         ),
     )
-    def test_invalid_job_run_as_agent_user(
+    def test_invalid_run_jobs_as_agent_user(
         self,
         os_config_section_data: dict[str, Any],
     ) -> None:
-        """Asserts that AwsConfigSections raises ValidationErrors for non-valid job_run_as_agent_user values"""
+        """Asserts that AwsConfigSections raises ValidationErrors for non-valid run_jobs_as_agent_user values"""
 
         # WHEN
         def when() -> OsConfigSection:
@@ -414,20 +414,20 @@ class TestOsConfigSection:
         with pytest.raises(ValidationError):
             when()
 
-    def test_absent_job_run_as_agent_user(
+    def test_absent_run_jobs_as_agent_user(
         self,
         os_config_section_data: dict[str, Any],
     ) -> None:
-        """Asserts that absent a "job_run_as_agent_user" value in the input to OsConfigSection, it should
+        """Asserts that absent a "run_jobs_as_agent_user" value in the input to OsConfigSection, it should
         have a corresponding attribute value of None"""
         # GIVEN
-        del os_config_section_data["job_run_as_agent_user"]
+        del os_config_section_data["run_jobs_as_agent_user"]
 
         # WHEN
         os_config = OsConfigSection.parse_obj(os_config_section_data)
 
         # THEN
-        assert os_config.job_run_as_agent_user is None
+        assert os_config.run_jobs_as_agent_user is None
 
     @pytest.mark.parametrize(
         argnames="posix_job_user",
@@ -483,7 +483,7 @@ FULL_CONFIG_FILE_DATA = {
         "local_session_logs": False,
     },
     "os": {
-        "job_run_as_agent_user": False,
+        "run_jobs_as_agent_user": False,
         "posix_job_user": "user:group",
         "shutdown_on_stop": False,
     },
@@ -611,7 +611,7 @@ local_session_logs = false
 host_metrics_logging_interval_seconds = 1
 
 [os]
-job_run_as_agent_user = false
+run_jobs_as_agent_user = false
 posix_job_user = "user:group"
 shutdown_on_stop = false
 
@@ -682,7 +682,7 @@ class TestConfigFileLoad:
         assert config.logging.local_session_logs is False
         assert config.logging.host_metrics_logging_interval_seconds == 1
 
-        assert config.os.job_run_as_agent_user is False
+        assert config.os.run_jobs_as_agent_user is False
         assert config.os.posix_job_user == "user:group"
         assert config.os.shutdown_on_stop is False
 
