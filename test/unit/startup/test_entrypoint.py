@@ -552,12 +552,12 @@ def test_no_shutdown_only_log(
 # TODO: Add register failure test cases
 
 
-def test_jobs_run_as_user_override(
+def test_job_run_as_user_override(
     configuration: MagicMock,
 ) -> None:
-    """Assert that the Worker is created with the jobs_run_as_overrides kwarg matching the Configuration"""
+    """Assert that the Worker is created with the job_run_as_user_overrides kwarg matching the Configuration"""
     # GIVEN
-    configuration.jobs_run_as_overrides = MagicMock()
+    configuration.job_run_as_user_overrides = MagicMock()
     with patch.object(entrypoint_mod, "Worker") as worker_mock:
         # WHEN
         entrypoint()
@@ -565,8 +565,8 @@ def test_jobs_run_as_user_override(
         # THEN
         assert worker_mock.call_count == 1
         assert (
-            worker_mock.call_args_list[0].kwargs["jobs_run_as_user_override"]
-            == configuration.jobs_run_as_overrides
+            worker_mock.call_args_list[0].kwargs["job_run_as_user_override"]
+            == configuration.job_run_as_user_overrides
         )
 
 
@@ -590,7 +590,7 @@ def test_passes_worker_logs_dir(
         s3_client=ANY,
         logs_client=ANY,
         boto_session=ANY,
-        jobs_run_as_user_override=ANY,
+        job_run_as_user_override=ANY,
         cleanup_session_user_processes=ANY,
         worker_persistence_dir=ANY,
         worker_logs_dir=tmp_path,

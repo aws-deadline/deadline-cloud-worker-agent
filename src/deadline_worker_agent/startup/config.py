@@ -51,7 +51,7 @@ class Configuration:
     profile: Optional[str]
     verbose: bool
     no_shutdown: bool
-    jobs_run_as_overrides: JobsRunAsUserOverride
+    job_run_as_user_overrides: JobsRunAsUserOverride
     allow_instance_profile: bool
     capabilities: Capabilities
     """Whether to use the new Worker Sessions API (UpdateWorkerSchedule)"""
@@ -79,7 +79,7 @@ class Configuration:
         "profile",
         "verbose",
         "no_shutdown",
-        "jobs_run_as_overrides",
+        "job_run_as_user_overrides",
         "allow_instance_profile",
         "capabilities",
         "worker_persistence_dir",
@@ -110,14 +110,14 @@ class Configuration:
             settings_kwargs["verbose"] = parsed_cli_args.verbose
         if parsed_cli_args.no_shutdown is not None:
             settings_kwargs["no_shutdown"] = parsed_cli_args.no_shutdown
-        if parsed_cli_args.jobs_run_as_agent_user is not None:
+        if parsed_cli_args.run_jobs_as_agent_user is not None:
             if parsed_cli_args.no_impersonation is not None:
                 raise ConfigurationError(
-                    "Only one of --no-impersonation or --jobs-run-as-agent-user may be supplied."
+                    "Only one of --no-impersonation or --run-jobs-as-agent-user may be supplied."
                 )
-            settings_kwargs["jobs_run_as_agent_user"] = parsed_cli_args.jobs_run_as_agent_user
+            settings_kwargs["run_jobs_as_agent_user"] = parsed_cli_args.run_jobs_as_agent_user
         elif parsed_cli_args.no_impersonation is not None:
-            settings_kwargs["jobs_run_as_agent_user"] = parsed_cli_args.no_impersonation
+            settings_kwargs["run_jobs_as_agent_user"] = parsed_cli_args.no_impersonation
         if parsed_cli_args.posix_job_user is not None:
             settings_kwargs["posix_job_user"] = parsed_cli_args.posix_job_user
         if parsed_cli_args.allow_instance_profile is not None:
@@ -139,13 +139,13 @@ class Configuration:
 
         if settings.posix_job_user is not None:
             user, group = self._get_user_and_group_from_posix_job_user(settings.posix_job_user)
-            self.jobs_run_as_overrides = JobsRunAsUserOverride(
-                run_as_agent=settings.jobs_run_as_agent_user,
+            self.job_run_as_user_overrides = JobsRunAsUserOverride(
+                run_as_agent=settings.run_jobs_as_agent_user,
                 posix_job_user=PosixSessionUser(user=user, group=group),
             )
         else:
-            self.jobs_run_as_overrides = JobsRunAsUserOverride(
-                run_as_agent=settings.jobs_run_as_agent_user
+            self.job_run_as_user_overrides = JobsRunAsUserOverride(
+                run_as_agent=settings.run_jobs_as_agent_user
             )
 
         self.farm_id = settings.farm_id
@@ -184,8 +184,8 @@ class Configuration:
             raise ConfigurationError(f"Fleet ID must be specified, but got {repr(self.fleet_id)})")
 
         if (
-            self.jobs_run_as_overrides.run_as_agent
-            and self.jobs_run_as_overrides.posix_job_user is not None
+            self.job_run_as_user_overrides.run_as_agent
+            and self.job_run_as_user_overrides.posix_job_user is not None
         ):
             raise ConfigurationError(
                 "Cannot specify a POSIX job user when the option to running Jobs as the agent user is enabled."

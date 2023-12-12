@@ -133,7 +133,7 @@ class TestJobSubmission:
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
-    def test_jobs_run_as_user(
+    def test_job_run_as_user(
         self,
         deadline_client: DeadlineClient,
         farm: Farm,
