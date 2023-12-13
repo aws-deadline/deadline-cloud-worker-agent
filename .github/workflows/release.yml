@@ -37,6 +37,7 @@ jobs:
     needs: UnitTests
     name: Integration Tests
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       id-token: write
       contents: read
