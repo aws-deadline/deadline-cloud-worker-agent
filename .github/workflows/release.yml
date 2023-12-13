@@ -87,7 +87,7 @@ jobs:
           echo "Setting next semantic version: $NEXT_SEMVER"
           echo "release-tag-version=$NEXT_SEMVER" >> $GITHUB_OUTPUT
         else
-          echo "Setting override release tag version: $OVERRIDE_RELEASE_TAG_VERSION""
+          echo "Setting override release tag version: $OVERRIDE_RELEASE_TAG_VERSION"
           echo "release-tag-version=$OVERRIDE_RELEASE_TAG_VERSION" >> $GITHUB_OUTPUT
         fi
   
