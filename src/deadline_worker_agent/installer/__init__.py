@@ -8,6 +8,10 @@ from subprocess import CalledProcessError, run
 import sys
 import sysconfig
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 INSTALLER_PATH = {
     "linux": Path(__file__).parent / "install.sh",
@@ -26,35 +30,106 @@ def install() -> None:
     args = arg_parser.parse_args(namespace=ParsedCommandLineArguments)
     scripts_path = Path(sysconfig.get_path("scripts"))
 
+    cmd = []
+    # if sys.platform == "linux":
+    #     cmd = [
+    #         "sudo" if sys.platform == "linux" else "",
+    #         str(INSTALLER_PATH[sys.platform]),
+    #         "--farm-id",
+    #         args.farm_id,
+    #         "--fleet-id",
+    #         args.fleet_id,
+    #         "--region",
+    #         args.region,
+    #         "--user",
+    #         args.user,
+    #         "--scripts-path",
+    #         str(scripts_path),
+    #     ]
+    #     if args.vfs_install_path:
+    #         cmd += ["--vfs-install-path", args.vfs_install_path]
+    #     if args.group:
+    #         cmd += ["--group", args.group]
+    #     if args.confirmed:
+    #         cmd.append("-y")
+    #     if args.service_start:
+    #         cmd.append("--start")
+    #     if args.allow_shutdown:
+    #         cmd.append("--allow-shutdown")
+    #     if not args.install_service:
+    #         cmd.append("--no-install-service")
+    #     if args.telemetry_opt_out:
+    #         cmd.append("--telemetry-opt-out")
+    # elif sys.platform == "win32":
+    #     cmd = [
+    #         "",
+    #         str(INSTALLER_PATH[sys.platform]),
+    #         "-FarmId",
+    #         args.farm_id,
+    #         "-FleetId",
+    #         args.fleet_id,
+    #         "-Region",
+    #         args.region,
+    #         "-User",
+    #         args.user,
+    #     ]
+    #     if args.group:
+    #         cmd += ["-Group", args.group]
+        
+    #     if args.confirmed:
+    #         cmd.append("-Confirm")
+    #     if args.service_start:
+    #         cmd.append("-Start")
+    #     if args.allow_shutdown:
+    #         cmd.append("--allow-shutdown")
+    #     if not args.install_service:
+    #         cmd.append("-NoInstallService")
     cmd = [
         "sudo" if sys.platform == "linux" else "",
         str(INSTALLER_PATH[sys.platform]),
-        "--farm-id",
+        "--farm-id" if sys.platform == "linux" else "-FarmId",
         args.farm_id,
-        "--fleet-id",
+        "--fleet-id" if sys.platform == "linux" else "-FleetId",
         args.fleet_id,
-        "--region",
+        "--region" if sys.platform == "linux" else "-Region",
         args.region,
-        "--user",
+        "--user" if sys.platform == "linux" else "-User",
         args.user,
-        "--scripts-path",
-        str(scripts_path),
     ]
+    if sys.platform == "linux":
+        cmd += ["--scripts-path", str(scripts_path)]
     if args.vfs_install_path:
-        cmd += ["--vfs-install-path", args.vfs_install_path]
+        if sys.platform == "linux":
+            cmd += ["--vfs-install-path", args.vfs_install_path]
+        else:
+            logger.warning("VFS only supported on Linux")
     if args.group:
-        cmd += ["--group", args.group]
+        if sys.platform == "linux":
+            cmd += ["--group", args.group]
+        else:
+            cmd += ["-Group", args.group]
     if args.confirmed:
-        cmd.append("-y")
+        if sys.platform == "linux":
+            cmd.append("-y")
+        else:
+            cmd.append("-Confirm")
     if args.service_start:
-        cmd.append("--start")
+        if sys.platform == "linux":
+            cmd.append("--start")
+        else:
+            cmd.append("-Start")
     if args.allow_shutdown:
         cmd.append("--allow-shutdown")
     if not args.install_service:
         cmd.append("--no-install-service")
+        if sys.platform == "linux":
+            cmd.append("--no-install-service")
+        else:
+            cmd.append("-NoInstallService")
     if args.telemetry_opt_out:
         cmd.append("--telemetry-opt-out")
-
+    
+    
     try:
         run(
             cmd,
@@ -63,6 +138,13 @@ def install() -> None:
     except CalledProcessError as error:
         # Non-zero exit code
         sys.exit(error.returncode)
+    except Exception as e:
+        logger.warning(f"natmatn: {e}")
+        logger.warning(f"cmd: {cmd}")
+        if e.__class__ is CalledProcessError:
+            logger.warning(f"returncode: {e.returncode}")
+            sys.exit(e.returncode)
+        raise e
 
 
 class ParsedCommandLineArguments(Namespace):
