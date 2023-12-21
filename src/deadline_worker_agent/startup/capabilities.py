@@ -6,13 +6,114 @@ from copy import deepcopy
 from typing import Any, Literal, TYPE_CHECKING
 from openjd.model import validate_attribute_capability_name, validate_amount_capability_name
 from openjd.model.v2023_09 import STANDARD_ATTRIBUTE_CAPABILITIES, STANDARD_AMOUNT_CAPABILITIES
+import logging
+import platform
+import shutil
+import subprocess
 
-from pydantic import BaseModel, NonNegativeFloat
+from pydantic import BaseModel, NonNegativeFloat, PositiveFloat
+import psutil
 
 from ..errors import ConfigurationError
 
 if TYPE_CHECKING:
     from pydantic.typing import CallableGenerator
+
+
+_logger = logging.getLogger(__name__)
+
+
+def detect_system_capabilities() -> Capabilities:
+    amounts: dict[AmountCapabilityName, PositiveFloat] = {}
+    attributes: dict[AttributeCapabilityName, list[str]] = {}
+
+    # Determine OpenJobDescription OS
+    platform_system = platform.system().lower()
+    python_system_to_openjd_os_family = {
+        "darwin": "macos",
+        "linux": "linux",
+        "windows": "windows",
+    }
+    if openjd_os_family := python_system_to_openjd_os_family.get(platform_system):
+        attributes[AttributeCapabilityName("attr.worker.os.family")] = [openjd_os_family]
+
+    attributes[AttributeCapabilityName("attr.worker.cpu.arch")] = [_get_arch()]
+
+    amounts[AmountCapabilityName("amount.worker.vcpu")] = float(psutil.cpu_count())
+    amounts[AmountCapabilityName("amount.worker.memory")] = float(psutil.virtual_memory().total) / (
+        1024.0**2
+    )
+    amounts[AmountCapabilityName("amount.worker.disk.scratch")] = int(
+        shutil.disk_usage("/").free // 1024 // 1024
+    )
+    amounts[AmountCapabilityName("amount.worker.gpu")] = _get_gpu_count()
+    amounts[AmountCapabilityName("amount.worker.gpu.memory")] = _get_gpu_memory()
+
+    return Capabilities(amounts=amounts, attributes=attributes)
+
+
+def _get_arch() -> str:
+    # Determine OpenJobDescription architecture
+    python_machine_to_openjd_arch = {
+        "aarch64": "arm64",
+        "amd64": "x86_64",
+    }
+    platform_machine = platform.machine()
+    return python_machine_to_openjd_arch.get(platform_machine, platform_machine)
+
+
+def _get_gpu_count(*, verbose: bool = True) -> int:
+    """
+    Get the number of GPUs available on the machine.
+
+    Returns
+    -------
+    int
+        The number of GPUs available on the machine.
+    """
+    try:
+        output = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"]
+        )
+    except FileNotFoundError:
+        if verbose:
+            _logger.warning("Could not detect GPU count, nvidia-smi not found")
+        return 0
+    except subprocess.CalledProcessError:
+        if verbose:
+            _logger.warning("Could not detect GPU count, error running nvidia-smi")
+        return 0
+    else:
+        if verbose:
+            _logger.info("Number of GPUs: %s", output.decode().strip())
+        return int(output.decode().strip())
+
+
+def _get_gpu_memory(*, verbose: bool = True) -> int:
+    """
+    Get the total GPU memory available on the machine.
+
+    Returns
+    -------
+    int
+        The total GPU memory available on the machine.
+    """
+    try:
+        output = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
+        )
+    except FileNotFoundError:
+        if verbose:
+            _logger.warning("Could not detect GPU memory, nvidia-smi not found")
+        return 0
+    except subprocess.CalledProcessError:
+        if verbose:
+            _logger.warning("Could not detect GPU memory, error running nvidia-smi")
+        return 0
+    else:
+        if verbose:
+            _logger.info("Total GPU Memory: %s", output.decode().strip())
+        return int(output.decode().strip().replace("MiB", ""))
 
 
 def capability_type(capability_name_str: str) -> Literal["amount", "attr"]:
