@@ -23,7 +23,6 @@ from pydantic import PositiveFloat
 
 from .._version import __version__
 from ..api_models import WorkerStatus
-from ..aws.deadline import DeadlineRequestError, delete_worker, update_worker
 from ..boto import DEADLINE_BOTOCORE_CONFIG, OTHER_BOTOCORE_CONFIG
 from ..errors import ServiceShutdown
 from ..log_sync.cloudwatch import stream_cloudwatch_logs
@@ -36,7 +35,7 @@ from ..aws.deadline import (
     DeadlineRequestError,
     delete_worker,
     update_worker,
-    record_worker_start_event,
+    record_worker_start_telemetry_event,
 )
 
 __all__ = ["entrypoint"]
@@ -95,7 +94,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
         # if customer manually provided the capabilities (to be added in this function)
         # then we default to the customer provided ones
         system_capabilities = detect_system_capabilities()
-        record_worker_start_event(system_capabilities)
+        record_worker_start_telemetry_event(system_capabilities)
         config.capabilities = system_capabilities.merge(config.capabilities)
 
         # Log the configuration
@@ -159,7 +158,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
                 s3_client=s3_client,
                 logs_client=logs_client,
                 boto_session=session,
-                jobs_run_as_user_override=config.jobs_run_as_overrides,
+                job_run_as_user_override=config.job_run_as_user_overrides,
                 cleanup_session_user_processes=config.cleanup_session_user_processes,
                 worker_persistence_dir=config.worker_persistence_dir,
                 worker_logs_dir=config.worker_logs_dir if config.local_session_logs else None,

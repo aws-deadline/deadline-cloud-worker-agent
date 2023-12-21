@@ -28,7 +28,7 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "profile": None,
         "verbose": None,
         "no_shutdown": None,
-        "jobs_run_as_agent_user": None,
+        "run_jobs_as_agent_user": None,
         "posix_job_user": None,
         "allow_instance_profile": None,
         "capabilities": None,
@@ -337,7 +337,7 @@ class TestLoad:
     ):
         # GIVEN
         parsed_args.no_impersonation = True
-        parsed_args.jobs_run_as_agent_user = True
+        parsed_args.run_jobs_as_agent_user = True
 
         # THEN
         with pytest.raises(config_mod.ConfigurationError):
@@ -585,17 +585,17 @@ class TestInit:
             assert "no_shutdown" not in call.kwargs
 
     @pytest.mark.parametrize(
-        argnames="jobs_run_as_agent_user",
+        argnames="run_jobs_as_agent_user",
         argvalues=(True, False, None),
     )
-    def test_jobs_run_as_agent_user_passed_to_settings_initializer(
+    def test_run_jobs_as_agent_user_passed_to_settings_initializer(
         self,
-        jobs_run_as_agent_user: bool | None,
+        run_jobs_as_agent_user: bool | None,
         parsed_args: ParsedCommandLineArguments,
         mock_worker_settings_cls: MagicMock,
     ) -> None:
         # GIVEN
-        parsed_args.jobs_run_as_agent_user = jobs_run_as_agent_user
+        parsed_args.run_jobs_as_agent_user = run_jobs_as_agent_user
 
         # WHEN
         config_mod.Configuration(parsed_cli_args=parsed_args)
@@ -604,10 +604,10 @@ class TestInit:
         mock_worker_settings_cls.assert_called_once()
         call = mock_worker_settings_cls.call_args_list[0]
 
-        if jobs_run_as_agent_user is not None:
-            assert call.kwargs.get("jobs_run_as_agent_user") == jobs_run_as_agent_user
+        if run_jobs_as_agent_user is not None:
+            assert call.kwargs.get("run_jobs_as_agent_user") == run_jobs_as_agent_user
         else:
-            assert "jobs_run_as_agent_user" not in call.kwargs
+            assert "run_jobs_as_agent_user" not in call.kwargs
 
     @pytest.mark.parametrize(
         argnames="posix_job_user",
@@ -620,7 +620,7 @@ class TestInit:
         mock_worker_settings_cls: MagicMock,
     ) -> None:
         # GIVEN
-        parsed_args.jobs_run_as_agent_user = False
+        parsed_args.run_jobs_as_agent_user = False
         parsed_args.posix_job_user = posix_job_user
 
         # WHEN
@@ -813,7 +813,7 @@ class TestInit:
         mock_worker_settings_cls.side_effect = None
         mock_worker_settings: MagicMock = mock_worker_settings_cls.return_value
         mock_worker_settings.posix_job_user = posix_job_user_setting
-        mock_worker_settings.jobs_run_as_agent_user = None
+        mock_worker_settings.run_jobs_as_agent_user = None
 
         # Needed because MagicMock does not support gt/lt comparison
         mock_worker_settings.host_metrics_logging_interval_seconds = 10
@@ -835,20 +835,21 @@ class TestInit:
         )
         assert config.capabilities is mock_worker_settings.capabilities
         assert (
-            config.jobs_run_as_overrides.run_as_agent == mock_worker_settings.jobs_run_as_agent_user
+            config.job_run_as_user_overrides.run_as_agent
+            == mock_worker_settings.run_jobs_as_agent_user
         )
         if expected_config_posix_job_user:
-            assert isinstance(config.jobs_run_as_overrides.posix_job_user, PosixSessionUser)
+            assert isinstance(config.job_run_as_user_overrides.posix_job_user, PosixSessionUser)
             assert (
-                config.jobs_run_as_overrides.posix_job_user.group
+                config.job_run_as_user_overrides.posix_job_user.group
                 == expected_config_posix_job_user.group
             )
             assert (
-                config.jobs_run_as_overrides.posix_job_user.user
+                config.job_run_as_user_overrides.posix_job_user.user
                 == expected_config_posix_job_user.user
             )
         else:
-            assert config.jobs_run_as_overrides.posix_job_user is None
+            assert config.job_run_as_user_overrides.posix_job_user is None
         assert config.worker_logs_dir is mock_worker_settings.worker_logs_dir
         assert config.local_session_logs is mock_worker_settings.local_session_logs
         assert config.worker_persistence_dir is mock_worker_settings.worker_persistence_dir

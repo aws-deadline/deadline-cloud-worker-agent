@@ -77,7 +77,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
     ],
 )
 def test_input_validation_failure(data: dict[str, Any]) -> None:
-    """Tests that an invalid iniput dictionary fails Capabilities model validation"""
+    """Tests that an invalid input dictionary fails Capabilities model validation"""
     # WHEN
     with pytest.raises(ValidationError) as excinfo:
         Capabilities.parse_obj(data)
