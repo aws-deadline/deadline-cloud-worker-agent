@@ -220,11 +220,11 @@ class WorkerScheduler:
         The Worker begins by hydrating its assigned work using the UpdateWorkerSchedule API.
 
         The scheduler then enters a loop of processing assigned actions - creating and deleting
-        Worker sessions as required. If no actions are assigned, the Worke idles for 5 seconds.
+        Worker sessions as required. If no actions are assigned, the Worker idles for 5 seconds.
         If any action completes, finishes cancelation, or if the Worker is done idling, an
         UpdateWorkerSchedule API request is made with any relevant changes specified in the request.
 
-        The scheduler is responsible for heartbeating which also includes reporting progress and
+        The scheduler is responsible for heart-beating which also includes reporting progress and
         status of ongoing active session actions, receiving session action cancelations, and
         also receiving commands from the service to shutdown.
 
@@ -361,12 +361,12 @@ class WorkerScheduler:
         Returns
         -------
         int
-            The interval (in seconds) to sync with the service returned in the UpdateWorkerSchedule repsonse
+            The interval (in seconds) to sync with the service returned in the UpdateWorkerSchedule response
         """
 
         logger.info("Synchronizing with service (sending UpdateWorkerSchedule)")
 
-        # 1. collect info to be send in the UpdateWorkerSchedule API request
+        # 1. collect info to be sent in the UpdateWorkerSchedule API request
         #    1.1. finished/in-progress action results
         updated_actions, commit_completed_actions = self._updated_session_actions()
         if updated_actions:
@@ -398,7 +398,6 @@ class WorkerScheduler:
         #    3.3. cancel actions in existing sessions
         #    3.4. update the queues for existing sessions
         #    3.5. persist the idle and healthy timeouts
-        # self._apply_response(response=response)
         self._update_sessions(response=response)
 
         if response.get("desiredWorkerStatus", None) == "STOPPED":

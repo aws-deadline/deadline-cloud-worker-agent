@@ -307,7 +307,7 @@ class TestMonitorEc2Shutdown:
         # THEN
         assert result == worker_mod.WorkerShutdown(
             grace_time=timedelta(minutes=2),
-            fail_message="The Worker receieved an auto-scaling life-cycle change event",
+            fail_message="The Worker received an auto-scaling life-cycle change event",
         )
         logger_info.assert_called_once_with(
             "Auto-scaling life-cycle change event detected. Termination in %s", timedelta(minutes=2)

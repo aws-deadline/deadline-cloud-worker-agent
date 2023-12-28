@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -171,6 +171,7 @@ class Session:
         self._job_details = job_details
         self._report_action_update = action_update_callback
         self._env = env
+        self._executor = ThreadPoolExecutor(max_workers=1)
 
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
@@ -264,6 +265,7 @@ class Session:
         """
 
         with ThreadPoolExecutor(max_workers=1) as executor:
+            self._executor = executor
             while not self._stop.wait(timeout=0.1):
                 # Start session action if needed
                 with (
@@ -280,7 +282,7 @@ class Session:
                     self._current_action_lock,
                 ):
                     if not self._current_action:
-                        self._start_action(executor=executor)
+                        self._start_action()
 
     def _cleanup(self) -> None:
         """Attempt to clean up the session.
@@ -489,11 +491,7 @@ class Session:
         )
         current_action.definition.cancel(session=self, time_limit=time_limit)
 
-    def _start_action(
-        self,
-        *,
-        executor: ThreadPoolExecutor,
-    ) -> None:
+    def _start_action(self) -> None:
         # Imported in function to avoid a circular import
         from .actions import ExitEnvironmentAction
 
@@ -564,7 +562,7 @@ class Session:
             )
             action_definition.start(
                 session=self,
-                executor=executor,
+                executor=self._executor,
             )
         except Exception as e:
             logger.warn(
@@ -970,21 +968,59 @@ class Session:
             and self._asset_sync is not None
         ):
             # Synchronizing job output attachments is currently bundled together with the
-            # RunStepTaskAction. The synchronization happens after the task run succeeds, and both
-            # must be successful in order to mark the action as SUCCEEDED. The time when
-            # the action is completed should be the moment when the synchronization have
-            # been finished.
-            try:
-                self._sync_asset_outputs(current_action=current_action)
-                now = datetime.now(tz=timezone.utc)
-            except Exception as e:
-                # Log and fail the task run action if we are unable to sync output job
-                # attachments
-                fail_message = f"Failed to sync job output attachments for {current_action.definition.human_readable()}: {e}"
-                self.logger.warning(fail_message)
-                action_status = ActionStatus(state=ActionState.FAILED, fail_message=fail_message)
-                is_unsuccessful = True
+            # RunStepTaskAction. The synchronization happens after the task run succeeds,
+            # and both must be successful in order to mark the action as SUCCEEDED.
+            future = self._executor.submit(
+                self._sync_asset_outputs,
+                current_action=current_action,
+            )
+            on_done_with_sync_asset_outputs = partial(
+                self._on_done_with_sync_asset_outputs,
+                is_unsuccessful=is_unsuccessful,
+                action_status=action_status,
+                current_action=current_action,
+            )
+            future.add_done_callback(on_done_with_sync_asset_outputs)
 
+        else:
+            self._handle_action_update(is_unsuccessful, action_status, current_action, now)
+
+    def _on_done_with_sync_asset_outputs(
+        self,
+        future: Future[None],
+        is_unsuccessful: bool,
+        action_status: ActionStatus,
+        current_action: CurrentAction,
+    ):
+        try:
+            future.result()
+        except Exception as e:
+            # Log and fail the task run action if we are unable to sync output job attachments
+            fail_message = f"Failed to sync job output attachments for {current_action.definition.human_readable()}: {e}"
+            self.logger.warning(fail_message)
+            action_status = ActionStatus(state=ActionState.FAILED, fail_message=fail_message)
+            is_unsuccessful = True
+        finally:
+            # The time when the action is completed should be the moment when
+            # the synchronization have been finished.
+            now = datetime.now(tz=timezone.utc)
+            with (
+                # NOTE: Acquire the locks here to ensure thread-safe access during action update.
+                # Lock acquisition order is important. Must be:
+                #     1.  action update lock (scheduler owned)
+                #     2.  current action lock
+                self._action_update_lock,
+                self._current_action_lock,
+            ):
+                self._handle_action_update(is_unsuccessful, action_status, current_action, now)
+
+    def _handle_action_update(
+        self,
+        is_unsuccessful: bool,
+        action_status: ActionStatus,
+        current_action: CurrentAction,
+        now: datetime,
+    ):
         if is_unsuccessful:
             fail_message = (
                 action_status.fail_message

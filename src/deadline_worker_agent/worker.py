@@ -169,7 +169,7 @@ class Worker:
 
     @property
     def sessions(self) -> WorkerSessionCollection:
-        raise NotImplementedError("Worker.sessions property not implemeneted")
+        raise NotImplementedError("Worker.sessions property not implemented")
 
     def run(self) -> None:
         """Runs the main Worker loop for processing sessions."""
@@ -317,7 +317,7 @@ class Worker:
                 )
                 return WorkerShutdown(
                     grace_time=Worker._ASG_LIFECYCLE_SHUTDOWN_GRACE,
-                    fail_message="The Worker receieved an auto-scaling life-cycle change event",
+                    fail_message="The Worker received an auto-scaling life-cycle change event",
                 )
 
         logger.debug("EC2 shutdown monitoring thread exited")

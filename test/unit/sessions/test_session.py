@@ -1,7 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import PurePosixPath, PureWindowsPath
 from threading import Event, RLock
@@ -769,7 +768,7 @@ class TestSessionInnerRun:
 
             action_update_lock_enter.side_effect = action_update_lock_enter_side_effect
 
-            def start_action_side_effect(*, executor: ThreadPoolExecutor) -> CurrentAction | None:
+            def start_action_side_effect() -> CurrentAction | None:
                 action_update_lock_enter.assert_called_once()
                 current_action_lock_enter.assert_called_once()
                 current_action_lock_exit.assert_not_called()
@@ -1273,9 +1272,14 @@ class TestSessionActionUpdatedImpl:
             end_time=action_complete_time,
         )
 
-        with patch.object(
+        def mock_now(*arg, **kwarg) -> datetime:
+            return action_complete_time
+
+        with patch.object(session_module, "datetime") as mock_datetime, patch.object(
             session, "_sync_asset_outputs", side_effect=sync_outputs_exception
         ) as mock_sync_asset_outputs:
+            mock_datetime.now.side_effect = mock_now
+
             # WHEN
             session._action_updated_impl(
                 action_status=success_action_status,
@@ -1665,7 +1669,6 @@ class TestSessionStartAction:
         # GIVEN
         exception = Exception(exception_msg)
         session._initial_action_exception = exception
-        executor = MagicMock()
 
         with (
             patch.object(session, "_report_action_update") as mock_report_action_update,
@@ -1676,7 +1679,7 @@ class TestSessionStartAction:
             now: MagicMock = datetime_mock.now.return_value
 
             # WHEN
-            session._start_action(executor=executor)
+            session._start_action()
 
         # THEN
         mock_report_action_update.assert_called_once_with(
@@ -1729,7 +1732,6 @@ class TestSessionStartAction:
 
         # GIVEN
         exception = Exception(exception_msg)
-        executor = MagicMock()
         logger_info: MagicMock = mock_mod_logger.info
         logger_warn: MagicMock = mock_mod_logger.warn
 
@@ -1743,7 +1745,7 @@ class TestSessionStartAction:
             now: MagicMock = datetime_mock.now.return_value
 
             # WHEN
-            session._start_action(executor=executor)
+            session._start_action()
 
         # THEN
         logger_info.assert_called_once_with(
