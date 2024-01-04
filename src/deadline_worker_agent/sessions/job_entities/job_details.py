@@ -196,14 +196,14 @@ class JobDetails:
     schema_version: SpecificationRevision
     """The Open Job Description schema version"""
 
+    job_run_as_user: JobRunAsUser
+    """The user associated with the job's Amazon Deadline Cloud queue"""
+
     job_attachment_settings: JobAttachmentSettings | None = None
     """The job attachment settings of the job's queue"""
 
     parameters: JobParameterValues = field(default_factory=dict)
     """The job's parameters"""
-
-    job_run_as_user: JobRunAsUser | None = None
-    """The user associated with the job's Amazon Deadline Cloud queue"""
 
     path_mapping_rules: list[OPENJDPathMappingRule] = field(default_factory=list)
     """The path mapping rules for the job"""
