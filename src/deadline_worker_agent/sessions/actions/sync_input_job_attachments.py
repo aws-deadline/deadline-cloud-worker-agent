@@ -76,7 +76,7 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
         session: Session,
         executor: Executor,
     ) -> None:
-        """Initiates the synchonization of the input job attachments
+        """Initiates the synchronization of the input job attachments
 
         Parameters
         ----------
@@ -115,7 +115,7 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
         future : Future[None]
             The future tracking the asset synchronization.
         session : Session
-            The session that the aciton is running in
+            The session that the action is running in
         """
         action_status: ActionStatus = ActionStatus(state=ActionState.SUCCESS)
         try:
