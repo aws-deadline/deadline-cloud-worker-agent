@@ -32,7 +32,6 @@ from deadline_worker_agent.api_models import (
     JobDetails as JobDetailsBoto,
     JobDetailsData,
     JobDetailsIdentifier,
-    JobRunAsUser,
     PathMappingRule,
     StepDetails as StepDetailsBoto,
     StepDetailsData,
@@ -45,6 +44,7 @@ from deadline_worker_agent.sessions.job_entities import (
     JobEntities,
     StepDetails,
 )
+from deadline_worker_agent.sessions.job_entities.job_details import JobRunAsUser
 import deadline_worker_agent.sessions.job_entities.job_entities as job_entities_mod
 
 
@@ -146,6 +146,12 @@ class TestJobEntity:
                 "jobId": job_id,
                 "schemaVersion": "jobtemplate-2023-09",
                 "logGroupName": "fake-name",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "job-user",
+                        "group": "job-group",
+                    },
+                },
             },
         )
         response: BatchGetJobEntityResponse = {
@@ -203,73 +209,6 @@ class TestJobEntity:
         assert entity_obj.job_run_as_user.posix.user == expected_user
         assert entity_obj.job_run_as_user.posix.group == expected_group
 
-    @pytest.mark.parametrize(
-        ("job_run_as_user_data"),
-        (
-            pytest.param(
-                {
-                    "posix": {
-                        "user": "",
-                        "group": "",
-                    }
-                },
-                id="empty user and group",
-            ),
-            pytest.param(
-                {
-                    "posix": {
-                        "user": "job-user",
-                        "group": "",
-                    }
-                },
-                id="empty group",
-            ),
-            pytest.param(
-                {
-                    "posix": {
-                        "user": "",
-                        "group": "job-group",
-                    }
-                },
-                id="empty user",
-            ),
-            pytest.param({"posix": {}}, id="no user/group entries"),
-            pytest.param({}, id="no posix"),
-        ),
-    )
-    def test_job_run_as_user_empty_values(self, job_run_as_user_data: JobRunAsUser | None) -> None:
-        """Ensures that if we are missing values in the job_run_as_user fields
-        that created entity does not have it set (ie. old queues)"""
-        # GIVEN
-        entity_data: JobDetailsData = {
-            "jobId": "job-123",
-            "jobRunAsUser": job_run_as_user_data,
-            "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2023_09.value,
-        }
-
-        # WHEN
-        entity_obj = JobDetails.from_boto(entity_data)
-
-        # THEN
-        assert entity_obj.job_run_as_user is None
-
-    def test_job_run_as_user_not_provided(self) -> None:
-        """Ensures that if we somehow don't receive a job_run_as_user field
-        that the created entity does not have it set (shouldn't happen)"""
-        # GIVEN
-        entity_data: JobDetailsData = {
-            "jobId": "job-123",
-            "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2023_09.value,
-        }
-
-        # WHEN
-        entity_obj = JobDetails.from_boto(entity_data)
-
-        # THEN
-        assert entity_obj.job_run_as_user is None
-
 
 class TestDetails:
     def test_job_details(self, deadline_client: MagicMock, job_id: str):
@@ -279,6 +218,12 @@ class TestDetails:
                 "jobId": job_id,
                 "schemaVersion": "jobtemplate-2023-09",
                 "logGroupName": "fake-name",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "job-user",
+                        "group": "job-group",
+                    },
+                },
             },
         )
         response: BatchGetJobEntityResponse = {
@@ -288,6 +233,9 @@ class TestDetails:
         expected_details = JobDetails(
             schema_version=SchemaVersion("jobtemplate-2023-09"),
             log_group_name="fake-name",
+            job_run_as_user=JobRunAsUser(
+                posix=PosixSessionUser(user="job-user", group="job-group")
+            ),
         )
         deadline_client.batch_get_job_entity.return_value = response
         job_entities = JobEntities(
@@ -302,7 +250,14 @@ class TestDetails:
         details = job_entities.job_details()
 
         # THEN
-        assert details == expected_details
+        assert details.log_group_name == expected_details.log_group_name
+        assert details.schema_version == expected_details.schema_version
+        assert details.job_run_as_user.posix.user == expected_details.job_run_as_user.posix.user
+        assert details.job_run_as_user.posix.group == expected_details.job_run_as_user.posix.group
+        assert details.job_attachment_settings == expected_details.job_attachment_settings
+        assert details.parameters == expected_details.parameters
+        assert details.path_mapping_rules == expected_details.path_mapping_rules
+        assert details.queue_role_arn == expected_details.queue_role_arn
 
     def test_environment_details(self, deadline_client: MagicMock, job_id: str):
         # GIVEN
@@ -464,6 +419,12 @@ class TestCaching:
             "jobId": job_id,
             "logGroupName": "/aws/service/loggroup",
             "schemaVersion": "jobtemplate-2023-09",
+            "jobRunAsUser": {
+                "posix": {
+                    "user": "job-user",
+                    "group": "job-group",
+                },
+            },
         }
         expected_environment_details: EnvironmentDetailsData = {
             "jobId": job_id,

@@ -257,7 +257,7 @@ def job_details(
     queue_job_attachment_settings: JobAttachmentSettings,
     job_parameters: list[Parameter],
     log_group_name: str,
-    job_run_as_user: JobRunAsUser | None,
+    job_run_as_user: JobRunAsUser,
     path_mapping_rules: list[PathMappingRule],
     schema_version: SchemaVersion,
 ) -> JobDetails:

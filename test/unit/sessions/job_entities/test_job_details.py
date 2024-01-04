@@ -14,6 +14,12 @@ from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
                 "jobId": "job-0000",
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "user1",
+                        "group": "group1",
+                    },
+                },
             },
             id="only required fields",
         ),
@@ -30,6 +36,12 @@ from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
                         "path": "param2value",
                     },
                 },
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "user1",
+                        "group": "group1",
+                    },
+                },
             },
             id="valid parameters",
         ),
@@ -39,6 +51,12 @@ from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
                 "pathMappingRules": [],
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "user1",
+                        "group": "group1",
+                    },
+                },
             },
             id="valid pathMappingRules - empty list",
         ),
@@ -54,6 +72,12 @@ from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
                         "destinationPath": "/destination/path",
                     },
                 ],
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "user1",
+                        "group": "group1",
+                    },
+                },
             },
             id="valid pathMappingRules",
         ),
@@ -88,6 +112,12 @@ from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
                 "jobAttachmentSettings": {
                     "s3BucketName": "mybucket",
                     "rootPrefix": "myprefix",
+                },
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "user1",
+                        "group": "group1",
+                    },
                 },
             },
             id="valid jobAttachmentSettings",
