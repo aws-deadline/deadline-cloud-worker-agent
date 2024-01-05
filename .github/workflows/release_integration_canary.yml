@@ -22,6 +22,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_CODEBUILD_RELEASE_CANARY_ROLE }}
           aws-region: us-west-2
           mask-aws-account-id: true
+          role-duration-seconds: 7200 # 2 hours, default is 3600
       - name: Run CodeBuild
         uses: aws-actions/aws-codebuild-run-build@v1
         with:
