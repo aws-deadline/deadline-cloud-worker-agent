@@ -237,6 +237,7 @@ class TestDetails:
                 posix=PosixSessionUser(user="job-user", group="job-group")
             ),
         )
+        assert expected_details.job_run_as_user is not None  # For type checker
         deadline_client.batch_get_job_entity.return_value = response
         job_entities = JobEntities(
             farm_id="farm-id",
@@ -252,6 +253,7 @@ class TestDetails:
         # THEN
         assert details.log_group_name == expected_details.log_group_name
         assert details.schema_version == expected_details.schema_version
+        assert details.job_run_as_user is not None
         assert details.job_run_as_user.posix.user == expected_details.job_run_as_user.posix.user
         assert details.job_run_as_user.posix.group == expected_details.job_run_as_user.posix.group
         assert details.job_attachment_settings == expected_details.job_attachment_settings

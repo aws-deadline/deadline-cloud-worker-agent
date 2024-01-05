@@ -3,7 +3,10 @@
 from typing import Any
 import pytest
 
-from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
+from deadline_worker_agent.sessions.job_entities.job_details import JobDetails, JobRunAsUser
+from deadline_worker_agent.api_models import JobDetailsData
+from openjd.model import SchemaVersion
+from openjd.sessions import PosixSessionUser
 
 
 @pytest.mark.parametrize(
@@ -22,6 +25,20 @@ from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
                 },
             },
             id="only required fields",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "",
+                        "group": "",
+                    },
+                },
+            },
+            id="only required fields, empty user",
         ),
         pytest.param(
             {
@@ -162,6 +179,55 @@ from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
 def test_input_validation_success(data: dict[str, Any]) -> None:
     """Test that validate_entity_data() can successfully handle valid input data."""
     JobDetails.validate_entity_data(entity_data=data)
+
+
+@pytest.mark.parametrize(
+    "data, expected",
+    [
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-2023-09",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "user1",
+                        "group": "group1",
+                    },
+                },
+            },
+            JobDetails(
+                log_group_name="/aws/deadline/queue-0000",
+                schema_version=SchemaVersion.v2023_09,
+                job_run_as_user=JobRunAsUser(posix=PosixSessionUser(user="user1", group="group1")),
+            ),
+            id="only required fields",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-2023-09",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "",
+                        "group": "",
+                    },
+                },
+            },
+            JobDetails(
+                log_group_name="/aws/deadline/queue-0000",
+                schema_version=SchemaVersion.v2023_09,
+            ),
+            id="required with empty user/group",
+        ),
+    ],
+)
+def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) -> None:
+    # WHEN
+    job_details = JobDetails.from_boto(data)
+    # THEN
+    assert job_details == expected
 
 
 @pytest.mark.parametrize(
