@@ -377,7 +377,7 @@ class UpdatedSessionActionInfo(TypedDict):
     progressMessage: NotRequired[str]
     startedAt: NotRequired[datetime]
     endedAt: NotRequired[datetime]
-    updateTime: NotRequired[datetime]
+    updatedAt: NotRequired[datetime]
     progressPercent: NotRequired[float]
 
 
