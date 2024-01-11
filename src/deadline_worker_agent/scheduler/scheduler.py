@@ -507,7 +507,7 @@ class WorkerScheduler:
         if action_updated.completed_status:
             updated_action["completedStatus"] = action_updated.completed_status
         elif action_updated.update_time:
-            updated_action["updateTime"] = action_updated.update_time
+            updated_action["updatedAt"] = action_updated.update_time
         if action_updated.status:
             if action_updated.status.exit_code is not None:
                 updated_action["processExitCode"] = action_updated.status.exit_code
