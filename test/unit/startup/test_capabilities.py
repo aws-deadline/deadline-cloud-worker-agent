@@ -48,40 +48,40 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
         pytest.param({"amounts": {}}, id="missing attributes"),
         pytest.param(
             {"amounts": {"amount": 20}, "attributes": {}},
-            id="invalid amounts - a dictionary key is invalid (no segment)",
+            id="nonvalid amounts - a dictionary key is nonvalid (no segment)",
         ),
         pytest.param(
             {"amounts": {"amount.0seg": 20}, "attributes": {}},
-            id="invalid amounts - a dictionary key is invalid (invalid segment)",
+            id="nonvalid amounts - a dictionary key is nonvalid (nonvalid segment)",
         ),
         pytest.param(
             {"amounts": {"not_amount.slots": 20}, "attributes": {}},
-            id="invalid amounts - a dictionary key is invalid (invalid capability name)",
+            id="nonvalid amounts - a dictionary key is nonvalid (nonvalid capability name)",
         ),
         pytest.param(
             {"amounts": {"amount.slots": -20}, "attributes": {}},
-            id="invalid amounts - a dictionary value is not NonNegativeFloat",
+            id="nonvalid amounts - a dictionary value is not NonNegativeFloat",
         ),
         pytest.param(
             {"amounts": {}, "attributes": {"attr": ["a", "b"]}},
-            id="invalid attributes  - a dictionary key is invalid (no segment)",
+            id="nonvalid attributes  - a dictionary key is nonvalid (no segment)",
         ),
         pytest.param(
             {"amounts": {}, "attributes": {"attr.(seg)": ["a", "b"]}},
-            id="invalid attributes  - a dictionary key is invalid (invalid segment)",
+            id="nonvalid attributes  - a dictionary key is nonvalid (nonvalid segment)",
         ),
         pytest.param(
             {"amounts": {}, "attributes": {"not_attr.groups": ["a", "b"]}},
-            id="invalid attributes  - a dictionary key is invalid (invalid capability name)",
+            id="nonvalid attributes  - a dictionary key is nonvalid (nonvalid capability name)",
         ),
         pytest.param(
             {"amounts": {}, "attributes": {"attr.groups": "a"}},
-            id="invalid attributes  - a dictionary value is not list[str]",
+            id="nonvalid attributes  - a dictionary value is not list[str]",
         ),
     ],
 )
 def test_input_validation_failure(data: dict[str, Any]) -> None:
-    """Tests that an invalid input dictionary fails Capabilities model validation"""
+    """Tests that an nonvalid input dictionary fails Capabilities model validation"""
     # WHEN
     with pytest.raises(ValidationError) as excinfo:
         Capabilities.parse_obj(data)
