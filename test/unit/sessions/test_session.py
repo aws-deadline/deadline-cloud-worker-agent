@@ -574,7 +574,10 @@ class TestSessionSyncAssetInputs:
             os_env_vars=ANY,
         )
 
-        mock_telemetry_event_for_sync_inputs.assert_called_once_with(SummaryStatistics())
+        mock_telemetry_event_for_sync_inputs.assert_called_once_with(
+            "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            SummaryStatistics(),
+        )
 
     @pytest.mark.parametrize(
         "sync_asset_inputs_args_sequence, expected_error",
@@ -646,7 +649,10 @@ class TestSessionSyncAssetInputs:
                 session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
             # THEN
             for call in mock_telemetry_event_for_sync_inputs.call_args_list:
-                assert call[0] == (SummaryStatistics(),)
+                assert call[0] == (
+                    "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    SummaryStatistics(),
+                )
             assert mock_telemetry_event_for_sync_inputs.call_count == len(
                 sync_asset_inputs_args_sequence
             )
@@ -721,7 +727,10 @@ class TestSessionSyncAssetOutputs:
             storage_profiles_path_mapping_rules={},
             on_uploading_files=ANY,
         )
-        mock_telemetry_event_for_sync_outputs.assert_called_once_with(SummaryStatistics())
+        mock_telemetry_event_for_sync_outputs.assert_called_once_with(
+            "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            SummaryStatistics(),
+        )
 
 
 class TestSessionInnerRun:
