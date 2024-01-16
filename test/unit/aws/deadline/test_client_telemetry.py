@@ -62,7 +62,10 @@ def test_record_sync_inputs_telemetry_event():
             transfer_rate=100,
         )
         # WHEN
-        record_sync_inputs_telemetry_event(summary_stats)
+        record_sync_inputs_telemetry_event(
+            queue_id="queue-test",
+            summary=summary_stats,
+        )
 
     # THEN
     mock_telemetry_client.record_event.assert_called_with(
@@ -76,6 +79,7 @@ def test_record_sync_inputs_telemetry_event():
             "skipped_files": 2,
             "skipped_bytes": 200,
             "transfer_rate": 100.0,
+            "queue_id": "queue-test",
         },
     )
 
@@ -101,7 +105,10 @@ def test_record_sync_outputs_telemetry_event():
             transfer_rate=100,
         )
         # WHEN
-        record_sync_outputs_telemetry_event(summary_stats)
+        record_sync_outputs_telemetry_event(
+            queue_id="queue-test",
+            summary=summary_stats,
+        )
 
     # THEN
     mock_telemetry_client.record_event.assert_called_with(
@@ -115,5 +122,6 @@ def test_record_sync_outputs_telemetry_event():
             "skipped_files": 2,
             "skipped_bytes": 200,
             "transfer_rate": 100.0,
+            "queue_id": "queue-test",
         },
     )

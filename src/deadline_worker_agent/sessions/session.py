@@ -862,7 +862,7 @@ class Session:
         )
 
         # Send the summary stats of input syncing through the telemetry client.
-        record_sync_inputs_telemetry_event(download_summary_statistics)
+        record_sync_inputs_telemetry_event(self._queue_id, download_summary_statistics)
 
         job_attachment_path_mappings = [
             PathMappingRule.from_dict(rule) for rule in path_mapping_rules
@@ -1131,7 +1131,7 @@ class Session:
         ASSET_SYNC_LOGGER.info(f"Summary Statistics for file uploads:\n{upload_summary_statistics}")
 
         # Send the summary stats of output syncing through the telemetry client.
-        record_sync_outputs_telemetry_event(upload_summary_statistics)
+        record_sync_outputs_telemetry_event(self._queue_id, upload_summary_statistics)
 
         ASSET_SYNC_LOGGER.info("Finished syncing outputs using Job Attachments")
 
