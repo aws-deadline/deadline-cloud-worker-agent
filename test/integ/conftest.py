@@ -68,7 +68,7 @@ def queue_with_job_run_as_user(
         client=deadline_client,
         display_name=f"Queue with jobsRunAsUser {job_run_as_user.user}",
         farm=farm,
-        job_run_as_user=JobRunAsUser(posix=job_run_as_user),
+        job_run_as_user=JobRunAsUser(posix=job_run_as_user, runAs="QUEUE_CONFIGURED_USER"),
     )
 
     qfa = QueueFleetAssociation.create(

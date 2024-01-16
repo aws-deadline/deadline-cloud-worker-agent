@@ -241,8 +241,9 @@ class PosixUser(TypedDict):
 
 
 class JobRunAsUser(TypedDict):
-    posix: PosixUser
+    posix: NotRequired[PosixUser]
     # TODO: windows support
+    runAs: NotRequired[Literal["QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"]]
 
 
 class JobDetailsData(JobDetailsIdentifierFields):

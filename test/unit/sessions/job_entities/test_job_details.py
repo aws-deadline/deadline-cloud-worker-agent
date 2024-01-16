@@ -117,9 +117,25 @@ from openjd.sessions import PosixSessionUser
                         "user": "user1",
                         "group": "group1",
                     },
+                    # (no "runAs" here)
                 },
             },
-            id="valid jobRunAsUser",
+            id="valid old jobRunAsUser",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "user1",
+                        "group": "group1",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
+            },
+            id="valid new jobRunAsUser",
         ),
         pytest.param(
             {
@@ -210,6 +226,26 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                 "schemaVersion": "jobtemplate-2023-09",
                 "jobRunAsUser": {
                     "posix": {
+                        "user": "user1",
+                        "group": "group1",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
+            },
+            JobDetails(
+                log_group_name="/aws/deadline/queue-0000",
+                schema_version=SchemaVersion.v2023_09,
+                job_run_as_user=JobRunAsUser(posix=PosixSessionUser(user="user1", group="group1")),
+            ),
+            id="required fields with runAs QUEUE_CONFIGURED_USER",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-2023-09",
+                "jobRunAsUser": {
+                    "posix": {
                         "user": "",
                         "group": "",
                     },
@@ -220,6 +256,21 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                 schema_version=SchemaVersion.v2023_09,
             ),
             id="required with empty user/group",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-2023-09",
+                "jobRunAsUser": {
+                    "runAs": "WORKER_AGENT_USER",
+                },
+            },
+            JobDetails(
+                log_group_name="/aws/deadline/queue-0000",
+                schema_version=SchemaVersion.v2023_09,
+            ),
+            id="required with runAs WORKER_AGENT_USER",
         ),
     ],
 )
@@ -237,6 +288,13 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
             {
                 "jobId": "job-0000",
                 "logGroupName": "/aws/deadline/queue-0000",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
             },
             id="missing schemaVersion",
         ),
@@ -244,6 +302,13 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
             {
                 "jobId": "job-0000",
                 "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
             },
             id="missing logGroupName",
         ),
@@ -255,8 +320,15 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
                 "parameters": {
                     "param1": {"string": "param1value", "anotherKey": "value"},
                 },
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
             },
-            id="invalid parameters - a parameter has two keys.",
+            id="nonvalid parameters - a parameter has two keys.",
         ),
         pytest.param(
             {
@@ -268,8 +340,15 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
                         "unknownType": "param1value",
                     },
                 },
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
             },
-            id="invalid parameters - a type key is unknown type.",
+            id="nonvalid parameters - a type key is unknown type.",
         ),
         pytest.param(
             {
@@ -282,8 +361,15 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
                         "destinationPath": "/destination/path",
                     },
                 ],
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
             },
-            id="invalid pathMappingRules - missing sourcePathFormat",
+            id="nonvalid pathMappingRules - missing sourcePathFormat",
         ),
         pytest.param(
             {
@@ -291,8 +377,29 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
                 "pathMappingRules": {},
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
             },
-            id="invalid pathMappingRules - not list",
+            id="nonvalid pathMappingRules - not list",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "group": "group1",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
+            },
+            id="nonvalid jobRunAsUser - missing user",
         ),
         pytest.param(
             {
@@ -303,9 +410,42 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
                     "posix": {
                         "user": "user1",
                     },
+                    "runAs": "QUEUE_CONFIGURED_USER",
                 },
             },
-            id="invalid jobRunAsUser - missing group",
+            id="nonvalid jobRunAsUser - missing group",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        # Empty value
+                        "user": "",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
+            },
+            id="nonvalid new-style jobRunAsUser - empty user",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        # Empty value
+                        "group": "",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
+            },
+            id="nonvalid new-style jobRunAsUser - empty group",
         ),
         pytest.param(
             {
@@ -317,10 +457,34 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
                         "posix": {
                             "user": "user1",
                         },
+                        "runAs": "QUEUE_CONFIGURED_USER",
                     }
                 ],
             },
-            id="invalid jobRunAsUser - not dict",
+            id="nonvalid jobRunAsUser - not dict",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+            },
+            id="missing jobRunAsUser",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "BAD_VALUE",
+                },
+            },
+            id="nonvalid jobRunAsUser runAs",
         ),
         pytest.param(
             {
@@ -330,14 +494,28 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
                 "jobAttachmentSettings": {
                     "s3BucketName": "mybucket",
                 },
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
             },
-            id="invalid jobAttachmentSettings - missing rootPrefix",
+            id="nonvalid jobAttachmentSettings - missing rootPrefix",
         ),
         pytest.param(
             {
                 "jobId": "job-0000",
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
                 "unknown": "field",
             },
             id="unknown field",
@@ -347,6 +525,13 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
                 "jobId": "job-0000",
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
                 "pathMappingRules": [
                     {
                         "sourcePath": "/source/path",
@@ -360,6 +545,6 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails) 
     ],
 )
 def test_input_validation_failure(data: dict[str, Any]) -> None:
-    """Test that validate_entity_data() raises a ValueError when invalid input data is provided."""
+    """Test that validate_entity_data() raises a ValueError when nonvalid input data is provided."""
     with pytest.raises(ValueError):
         JobDetails.validate_entity_data(entity_data=data)

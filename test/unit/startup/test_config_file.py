@@ -166,7 +166,7 @@ class TestWorkerConfigSection:
             pytest.param("", id="empty"),
         ),
     )
-    def test_invalid_farm_id(
+    def test_nonvalid_farm_id(
         self,
         worker_config_section_data: dict[str, Any],
     ) -> None:
@@ -198,7 +198,7 @@ class TestWorkerConfigSection:
             pytest.param("", id="empty"),
         ),
     )
-    def test_invalid_fleet_id(
+    def test_nonvalid_fleet_id(
         self,
         worker_config_section_data: dict[str, Any],
     ) -> None:
@@ -400,7 +400,7 @@ class TestOsConfigSection:
             pytest.param([1], id="bad-type-list"),
         ),
     )
-    def test_invalid_run_jobs_as_agent_user(
+    def test_nonvalid_run_jobs_as_agent_user(
         self,
         os_config_section_data: dict[str, Any],
     ) -> None:
@@ -439,7 +439,7 @@ class TestOsConfigSection:
             pytest.param(":just-a-group", id="str no user"),
         ),
     )
-    def test_invalid_posix_job_user(self, os_config_section_data: dict[str, Any]) -> None:
+    def test_nonvalid_posix_job_user(self, os_config_section_data: dict[str, Any]) -> None:
         """Asserts that AwsConfigSections raises ValidationErrors for not valid posix job values"""
 
         # WHEN
@@ -538,50 +538,50 @@ class TestConfigFileValidation:
         assert config_file.capabilities == Capabilities.parse_obj(config_file_data["capabilities"])
 
     @pytest.mark.parametrize(
-        ("section_to_modify", "invalid_section_data"),
+        ("section_to_modify", "nonvalid_section_data"),
         [
             pytest.param("worker", None, id="missing worker config section"),
             pytest.param(
                 "worker",
                 {"farm_id": "farm-x"},
-                id="invalid worker config section - invalid farm_id (bad format)",
+                id="nonvalid worker config section - nonvalid farm_id (bad format)",
             ),
             pytest.param("aws", None, id="missing aws config section"),
             pytest.param(
                 "aws",
                 {"profile": ""},
-                id="invalid aws config section - profile is an empty string",
+                id="nonvalid aws config section - profile is an empty string",
             ),
             pytest.param("logging", None, id="missing logging config section"),
             pytest.param(
                 "logging",
                 {"verbose": "verbose"},
-                id="invalid logging config section - verbose is not bool",
+                id="nonvalid logging config section - verbose is not bool",
             ),
             pytest.param("os", None, id="missing os config section"),
             pytest.param(
                 "os",
                 {"posix_job_user": " user : group "},
-                id="invalid os config section - invalid posix_job_user value (whitespace)",
+                id="nonvalid os config section - nonvalid posix_job_user value (whitespace)",
             ),
             pytest.param("capabilities", None, id="missing capabilities section"),
             pytest.param(
                 "capabilities",
                 {"amounts": {}},
-                id="invalid capabilities config section - missing attributes",
+                id="nonvalid capabilities config section - missing attributes",
             ),
         ],
     )
     def test_input_validation_failure(
-        self, section_to_modify: str, invalid_section_data: dict[str, Any] | None
+        self, section_to_modify: str, nonvalid_section_data: dict[str, Any] | None
     ):
-        """Tests that an invalid iniput dictionary fails ConfigFile model validation"""
+        """Tests that an nonvalid iniput dictionary fails ConfigFile model validation"""
         config_file_data = FULL_CONFIG_FILE_DATA.copy()
 
-        if invalid_section_data is None:
+        if nonvalid_section_data is None:
             del config_file_data[section_to_modify]
         else:
-            config_file_data[section_to_modify] = invalid_section_data
+            config_file_data[section_to_modify] = nonvalid_section_data
 
         # WHEN
         def when() -> ConfigFile:

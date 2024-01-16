@@ -90,15 +90,24 @@ def job_run_as_user_api_model_to_worker_agent(
     """Converts the 'JobRunAsUser' api model to the 'JobRunAsUser' dataclass
     expected by the Worker Agent.
     """
+    if "runAs" in job_run_as_user_data and job_run_as_user_data["runAs"] == "WORKER_AGENT_USER":
+        return None
+
     if os.name == "posix":
-        job_run_as_user_posix = job_run_as_user_data.get("posix", {})
-        user = job_run_as_user_posix.get("user", "")
-        group = job_run_as_user_posix.get("group", "")
-        if not (user and group):
+        user = ""
+        group = ""
+        if job_run_as_user_posix := job_run_as_user_data.get("posix", None):
+            user = job_run_as_user_posix["user"]
+            group = job_run_as_user_posix["group"]
+
+        if "runAs" not in job_run_as_user_data and not group and not user:
             return None
 
         job_run_as_user = JobRunAsUser(
-            posix=PosixSessionUser(user=user, group=group),
+            posix=PosixSessionUser(
+                user=user,
+                group=group,
+            ),
         )
     else:
         # TODO: windows support
@@ -267,6 +276,11 @@ class JobDetails:
                                 Field(key="group", expected_type=str, required=True),
                             ),
                         ),
+                        Field(
+                            key="runAs",
+                            expected_type=str,
+                            required=False,
+                        ),
                     ),
                 ),
                 Field(
@@ -304,6 +318,30 @@ class JobDetails:
                         Field(key="sourcePath", expected_type=str, required=True),
                         Field(key="destinationPath", expected_type=str, required=True),
                     ),
+                )
+
+        # Validate jobRunAsUser -> runAs is one of ("QUEUE_CONFIGURED_USER" / "WORKER_AGENT_USER")
+        if run_as_value := entity_data["jobRunAsUser"].get("runAs", None):
+            if run_as_value not in ("QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"):
+                raise ValueError(
+                    f'Expected "jobRunAs" -> "runAs" to be one of "QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER" but got "{run_as_value}"'
+                )
+            elif run_as_value == "QUEUE_CONFIGURED_USER":
+                if not (run_as_posix := entity_data["jobRunAsUser"].get("posix", None)):
+                    raise ValueError(
+                        'Expected "jobRunAs" -> "posix" to exist when "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER" but it was not present'
+                    )
+                if run_as_posix["user"] == "":
+                    raise ValueError(
+                        'Got empty "jobRunAs" -> "posix" -> "user" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                    )
+                if run_as_posix["group"] == "":
+                    raise ValueError(
+                        'Got empty "jobRunAs" -> "posix" -> "group" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                    )
+            elif run_as_value == "WORKER_AGENT_USER" and "posix" in entity_data["jobRunAsUser"]:
+                raise ValueError(
+                    f'Expected "jobRunAs" -> "posix" is not valid when "jobRunAs" -> "runAs" is "WORKER_AGENT_USER" but got {entity_data["jobRunAsUser"]["posix"]}'
                 )
 
         return cast(JobDetailsData, entity_data)
