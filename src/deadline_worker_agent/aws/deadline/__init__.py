@@ -802,18 +802,20 @@ def record_worker_start_telemetry_event(capabilities: Capabilities) -> None:
     )
 
 
-def record_sync_inputs_telemetry_event(summary: SummaryStatistics) -> None:
+def record_sync_inputs_telemetry_event(queue_id: str, summary: SummaryStatistics) -> None:
     """Calls the telemetry client to record an event capturing the sync-inputs summary."""
     details: Dict[str, Any] = asdict(summary)
+    details["queue_id"] = queue_id
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.sync_inputs_summary",
         event_details=details,
     )
 
 
-def record_sync_outputs_telemetry_event(summary: SummaryStatistics) -> None:
+def record_sync_outputs_telemetry_event(queue_id: str, summary: SummaryStatistics) -> None:
     """Calls the telemetry client to record an event capturing the sync-outputs summary."""
     details: Dict[str, Any] = asdict(summary)
+    details["queue_id"] = queue_id
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.sync_outputs_summary",
         event_details=details,
