@@ -390,6 +390,21 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
             "job_details_no_user",
             id="required with runAs WORKER_AGENT_USER",
         ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-2023-09",
+                "jobRunAsUser": {
+                    "runAs": "WORKER_AGENT_USER",
+                },
+            },
+            JobDetails(
+                log_group_name="/aws/deadline/queue-0000",
+                schema_version=SchemaVersion.v2023_09,
+            ),
+            id="required with runAs WORKER_AGENT_USER",
+        ),
     ],
 )
 def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, request) -> None:

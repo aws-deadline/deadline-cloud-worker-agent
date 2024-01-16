@@ -400,7 +400,7 @@ class TestOsConfigSection:
             pytest.param([1], id="bad-type-list"),
         ),
     )
-    def test_invalid_run_jobs_as_agent_user(
+    def test_nonvalid_run_jobs_as_agent_user(
         self,
         os_config_section_data: dict[str, Any],
     ) -> None:
