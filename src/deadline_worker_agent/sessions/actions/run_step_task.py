@@ -73,7 +73,7 @@ class RunStepTaskAction(OpenjdAction):
             An executor for running futures
         """
         session.run_task(
-            step_script=self._details.script,
+            step_script=self._details.step_template.script,
             task_parameter_values=self._task_parameter_values,
         )
 

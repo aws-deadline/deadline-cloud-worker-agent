@@ -13,6 +13,7 @@ from openjd.model.v2023_09 import (
     EnvironmentScript,
     StepActions,
     StepScript,
+    StepTemplate,
 )
 from openjd.sessions import PosixSessionUser
 
@@ -339,7 +340,10 @@ class TestDetails:
         # THEN
         assert details == expected_details
 
-    def test_step_details(self, deadline_client: MagicMock, job_id: str):
+    def test_step_details_backwards_compat(self, deadline_client: MagicMock, job_id: str):
+        # TODO - Delete this test once the StepDetails from BatchGetJobEntities is returning
+        #  a StepTemplate instead of a StepScript.
+
         # GIVEN
         step_id = "step-id"
         dependency = "stepId-1234"
@@ -364,7 +368,59 @@ class TestDetails:
         }
 
         expected_details = StepDetails(
-            script=StepScript(actions=StepActions(onRun=Action(command="test.exe"))),
+            step_template=StepTemplate(
+                name="Placeholder",
+                script=StepScript(actions=StepActions(onRun=Action(command="test.exe"))),
+            ),
+            dependencies=[dependency],
+        )
+        deadline_client.batch_get_job_entity.return_value = response
+        job_entities = JobEntities(
+            farm_id="farm-id",
+            fleet_id="fleet-id",
+            worker_id="worker-id",
+            job_id=job_id,
+            deadline_client=deadline_client,
+        )
+
+        # WHEN
+        details = job_entities.step_details(step_id=step_id)
+
+        # THEN
+        assert details == expected_details
+
+    def test_step_details(self, deadline_client: MagicMock, job_id: str):
+        # GIVEN
+        step_id = "step-id"
+        dependency = "stepId-1234"
+        details_boto = StepDetailsBoto(
+            stepDetails=StepDetailsData(
+                jobId=job_id,
+                stepId=step_id,
+                schemaVersion="jobtemplate-2023-09",
+                template={
+                    "name": "Test",
+                    "script": {
+                        "actions": {
+                            "onRun": {
+                                "command": "test.exe",
+                            },
+                        },
+                    },
+                },
+                dependencies=[dependency],
+            )
+        )
+        response: BatchGetJobEntityResponse = {
+            "entities": [details_boto],
+            "errors": [],
+        }
+
+        expected_details = StepDetails(
+            step_template=StepTemplate(
+                name="Test",
+                script=StepScript(actions=StepActions(onRun=Action(command="test.exe"))),
+            ),
             dependencies=[dependency],
         )
         deadline_client.batch_get_job_entity.return_value = response
