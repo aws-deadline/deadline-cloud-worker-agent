@@ -14,6 +14,7 @@ from openjd.model.v2023_09 import (
     Action,
     StepScript,
     StepActions,
+    StepTemplate,
 )
 from openjd.sessions import Parameter, ParameterType
 import pytest
@@ -66,7 +67,9 @@ _TEST_ENVIRONMENT = Environment(
     name="TestEnv",
     script=_TEST_ENVIRONMENT_SCRIPT,
 )
-_TEST_STEP_SCRIPT = StepScript(actions=StepActions(onRun=Action(command="test.exe")))
+_TEST_STEP_TEMPLATE = StepTemplate(
+    name="TestStep", script=StepScript(actions=StepActions(onRun=Action(command="test.exe")))
+)
 
 
 @pytest.fixture
@@ -148,7 +151,7 @@ class TestSessionActionQueueDequeue:
                     id="id",
                     step_id="stepId",
                     task_id="taskId",
-                    details=StepDetails(script=_TEST_STEP_SCRIPT),
+                    details=StepDetails(step_template=_TEST_STEP_TEMPLATE),
                     task_parameter_values=[
                         Parameter(ParameterType.STRING, "oldstrP", "stringValue"),
                         Parameter(ParameterType.STRING, "strP", "stringValue"),
@@ -187,7 +190,9 @@ class TestSessionActionQueueDequeue:
                 ),
                 SyncInputJobAttachmentsAction(
                     id="id",
-                    step_details=StepDetails(script=_TEST_STEP_SCRIPT, dependencies=["step-1"]),
+                    step_details=StepDetails(
+                        step_template=_TEST_STEP_TEMPLATE, dependencies=["step-1"]
+                    ),
                 ),
                 id="sync input job attachments with step Id",
             ),

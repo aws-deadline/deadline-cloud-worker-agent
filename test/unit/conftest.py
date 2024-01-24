@@ -277,6 +277,11 @@ def step_script() -> MagicMock:
 
 
 @pytest.fixture
+def step_template() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
 def hostname() -> str:
     return "workerhostname"
 

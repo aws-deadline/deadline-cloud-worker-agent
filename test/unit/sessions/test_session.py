@@ -16,6 +16,7 @@ from openjd.model.v2023_09 import (
     EnvironmentScript,
     StepActions,
     StepScript,
+    StepTemplate,
 )
 from openjd.sessions import (
     ActionState,
@@ -169,12 +170,15 @@ def run_step_task_action(
     """A fixture that provides a RunStepTaskAction"""
     return RunStepTaskAction(
         details=StepDetails(
-            script=StepScript(
-                actions=StepActions(
-                    onRun=Action(
-                        command=command,
-                        args=on_run_args,
-                        cancelation=None,
+            step_template=StepTemplate(
+                name="Test",
+                script=StepScript(
+                    actions=StepActions(
+                        onRun=Action(
+                            command=command,
+                            args=on_run_args,
+                            cancelation=None,
+                        ),
                     ),
                 ),
             ),
@@ -686,11 +690,14 @@ class TestSessionSyncAssetOutputs:
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
-                    script=StepScript(
-                        actions=StepActions(
-                            onRun=Action(
-                                command="echo",
-                                args=["hello"],
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command="echo",
+                                    args=["hello"],
+                                ),
                             ),
                         ),
                     ),
@@ -1113,11 +1120,14 @@ class TestSessionActionUpdatedImpl:
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
-                    script=StepScript(
-                        actions=StepActions(
-                            onRun=Action(
-                                command="echo",
-                                args=["hello"],
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command="echo",
+                                    args=["hello"],
+                                ),
                             ),
                         ),
                     ),
@@ -1177,11 +1187,14 @@ class TestSessionActionUpdatedImpl:
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
-                    script=StepScript(
-                        actions=StepActions(
-                            onRun=Action(
-                                command="echo",
-                                args=["hello"],
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command="echo",
+                                    args=["hello"],
+                                ),
                             ),
                         ),
                     ),
@@ -1249,11 +1262,14 @@ class TestSessionActionUpdatedImpl:
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
-                    script=StepScript(
-                        actions=StepActions(
-                            onRun=Action(
-                                command="echo",
-                                args=["hello"],
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command="echo",
+                                    args=["hello"],
+                                ),
                             ),
                         ),
                     ),
