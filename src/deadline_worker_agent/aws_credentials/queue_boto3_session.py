@@ -299,7 +299,7 @@ class QueueBoto3Session(BaseBoto3Session):
                     parents=True,
                     permitted_user=self._os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
-                    group_permission=FileSystemPermissionEnum.READ,
+                    group_permission=FileSystemPermissionEnum.READ_WRITE,
                 )
 
     def _delete_credentials_directory(self) -> None:
