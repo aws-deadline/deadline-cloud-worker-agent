@@ -11,7 +11,7 @@ import logging
 import pytest
 import os
 
-from openjd.sessions import SessionUser, WindowsSessionUser, PosixSessionUser
+from openjd.sessions import SessionUser, PosixSessionUser
 
 from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
 from deadline_worker_agent.startup import config as config_mod
@@ -31,8 +31,6 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "no_shutdown": None,
         "jobs_run_as_agent_user": None,
         "posix_job_user": None,
-        "windows_job_user": None,
-        "windows_job_user_password_arn": None,
         "allow_instance_profile": None,
         "capabilities": None,
         "worker_logs_dir": Path("/var/log/amazon/deadline"),
@@ -79,11 +77,11 @@ def arg_parser(
 
 
 @pytest.fixture
-def os_user() -> SessionUser:
+def os_user() -> Optional[SessionUser]:
     if os.name == "posix":
         return PosixSessionUser(user="user", group="group")
     else:
-        return WindowsSessionUser(user="user", group="group", password="fakepassword")
+        return None
 
 
 class TestLoad:
@@ -815,30 +813,18 @@ class TestInit:
             assert "local_session_logs" not in call.kwargs
 
     @pytest.mark.parametrize(
-        argnames=(
-            "posix_job_user_setting",
-            "expected_config_posix_job_user",
-            "windows_job_user_setting",
-            "windows_job_user_password_arn_setting",
-            "expected_config_windows_job_user",
-        ),
+        argnames=("posix_job_user_setting", "expected_config_posix_job_user"),
         argvalues=(
             pytest.param(
                 "user:group",
                 "os_user",
-                None,
-                None,
-                None,
                 id="has-posix-job-user-setting",
                 marks=pytest.mark.skipif(os.name != "posix", reason="Posix-only test."),
             ),
             pytest.param(
                 None,
                 None,
-                None,
-                None,
-                None,
-                id="no-posix-or-windows-job-user-setting",
+                id="no-posix-job-user-setting",
             ),
         ),
     )
@@ -846,9 +832,6 @@ class TestInit:
         self,
         posix_job_user_setting: str | None,
         expected_config_posix_job_user: PosixSessionUser | None,
-        windows_job_user_setting: str | None,
-        windows_job_user_password_arn_setting: str | None,
-        expected_config_windows_job_user: WindowsSessionUser | None,
         parsed_args: ParsedCommandLineArguments,
         mock_worker_settings_cls: MagicMock,
         request,
@@ -863,8 +846,6 @@ class TestInit:
         mock_worker_settings: MagicMock = mock_worker_settings_cls.return_value
         mock_worker_settings.posix_job_user = posix_job_user_setting
         mock_worker_settings.jobs_run_as_agent_user = None
-        mock_worker_settings.windows_job_user = windows_job_user_setting
-        mock_worker_settings.windows_job_user_password_arn = windows_job_user_password_arn_setting
 
         # Needed because MagicMock does not support gt/lt comparison
         mock_worker_settings.host_metrics_logging_interval_seconds = 10

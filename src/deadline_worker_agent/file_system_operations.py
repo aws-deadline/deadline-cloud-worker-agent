@@ -20,9 +20,10 @@ class FileSystemPermissionEnum(Enum):
 
 def set_permissions(
     file_path: Path,
-    user_permission: FileSystemPermissionEnum,
+    user_permission: Optional[FileSystemPermissionEnum] = None,
     permitted_user: Optional[SessionUser] = None,
     group_permission: Optional[FileSystemPermissionEnum] = None,
+    agent_user_permission: Optional[FileSystemPermissionEnum] = None,
 ):
     if os.name == "nt":
         permitted_user = cast(WindowsSessionUser, permitted_user)
@@ -32,14 +33,16 @@ def set_permissions(
             user_permission=user_permission,
             user=permitted_user,
             group_permission=group_permission,
+            agent_user_permission=agent_user_permission,
         )
 
 
 def touch_file(
     file_path: Path,
-    user_permission: FileSystemPermissionEnum,
+    user_permission: Optional[FileSystemPermissionEnum] = None,
     permitted_user: Optional[SessionUser] = None,
     group_permission: Optional[FileSystemPermissionEnum] = None,
+    agent_user_permission: Optional[FileSystemPermissionEnum] = None,
 ):
     if os.name == "nt":
         permitted_user = cast(WindowsSessionUser, permitted_user)
@@ -52,14 +55,16 @@ def touch_file(
             user_permission=user_permission,
             user=permitted_user,
             group_permission=group_permission,
+            agent_user_permission=agent_user_permission,
         )
 
 
 def make_directory(
     dir_path: Path,
-    user_permission: FileSystemPermissionEnum,
+    user_permission: Optional[FileSystemPermissionEnum] = None,
     permitted_user: Optional[SessionUser] = None,
     group_permission: Optional[FileSystemPermissionEnum] = None,
+    agent_user_permission: Optional[FileSystemPermissionEnum] = None,
     exist_ok: bool = True,
     parents: bool = False,
 ):
@@ -73,39 +78,55 @@ def make_directory(
             user_permission=user_permission,
             user=permitted_user,
             group_permission=group_permission,
+            agent_user_permission=agent_user_permission,
         )
 
 
 def _set_windows_permissions(
     path: Path,
-    user_permission: FileSystemPermissionEnum,
+    user_permission: Optional[FileSystemPermissionEnum] = None,
     user: Optional[WindowsSessionUser] = None,
     group_permission: Optional[FileSystemPermissionEnum] = None,
+    agent_user_permission: Optional[FileSystemPermissionEnum] = None,
 ):
     import win32security
     import ntsecuritycon
 
-    if not user:
-        username = getpass.getuser()
-    else:
-        username = user.user
-
+    agent_username = getpass.getuser()
     full_path = str(path.resolve())
+
+    if user_permission is not None and user is None:
+        raise ValueError("A SessionUser must be specified to set user permissions")
+
+    if group_permission is not None and user is None:
+        raise ValueError("A SessionUser must be specified to set group permissions")
 
     # We don't want to propagate existing permissions, so create a new DACL
     dacl = win32security.ACL()
 
-    # Add an ACE to the DACL giving the user the required access and inheritance of the ACE
-    user_sid, _, _ = win32security.LookupAccountName(None, username)
-    dacl.AddAccessAllowedAceEx(
-        win32security.ACL_REVISION,
-        ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE,
-        _get_ntsecuritycon_mode(user_permission),
-        user_sid,
-    )
+    # Add an ACE to the DACL giving the agent user the required access and inheritance of the ACE
+    if agent_user_permission is not None:
+        user_sid, _, _ = win32security.LookupAccountName(None, agent_username)
+        dacl.AddAccessAllowedAceEx(
+            win32security.ACL_REVISION,
+            ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE,
+            _get_ntsecuritycon_mode(agent_user_permission),
+            user_sid,
+        )
+
+    # Add an ACE to the DACL giving the additional user the required access and inheritance of the ACE
+    if user_permission is not None and user is not None:
+        user_sid, _, _ = win32security.LookupAccountName(None, user.user)
+        dacl.AddAccessAllowedAceEx(
+            win32security.ACL_REVISION,
+            ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE,
+            _get_ntsecuritycon_mode(user_permission),
+            user_sid,
+        )
 
     # Add an ACE to the DACL giving the group the required access and inheritance of the ACE
     if group_permission is not None and user is not None:
+        # Note that despite the name LookupAccountName returns SIDs for groups too
         group_sid, _, _ = win32security.LookupAccountName(None, user.group)
         dacl.AddAccessAllowedAceEx(
             win32security.ACL_REVISION,
@@ -137,7 +158,8 @@ def _get_ntsecuritycon_mode(mode: FileSystemPermissionEnum) -> int:
         FileSystemPermissionEnum.READ.value: ntsecuritycon.FILE_GENERIC_READ,
         FileSystemPermissionEnum.WRITE.value: ntsecuritycon.FILE_GENERIC_WRITE,
         FileSystemPermissionEnum.READ_WRITE.value: ntsecuritycon.FILE_GENERIC_READ
-        | ntsecuritycon.FILE_GENERIC_WRITE,
+        | ntsecuritycon.FILE_GENERIC_WRITE
+        | ntsecuritycon.FILE_DELETE_CHILD,
         FileSystemPermissionEnum.EXECUTE.value: ntsecuritycon.FILE_GENERIC_EXECUTE
         | ntsecuritycon.FILE_GENERIC_READ,
     }

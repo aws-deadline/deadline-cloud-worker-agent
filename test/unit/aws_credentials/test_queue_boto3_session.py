@@ -486,7 +486,7 @@ class TestCreateCredentialsDirectory:
                 exist_ok=True,
                 parents=True,
                 permitted_user=os_user,
-                user_permission=FileSystemPermissionEnum.READ_WRITE,
+                agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
                 group_permission=FileSystemPermissionEnum.READ,
             )
 
@@ -667,8 +667,8 @@ class TestInstallCredentialProcess:
                 mock_set_permissions.assert_called_once_with(
                     file_path=credentials_process_script_path,
                     permitted_user=os_user,
-                    user_permission=FileSystemPermissionEnum.READ_WRITE,
-                    group_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    group_permission=FileSystemPermissionEnum.EXECUTE,
                 )
 
         aws_config_mock.install_credential_process.assert_called_once_with(

@@ -252,8 +252,8 @@ class QueueBoto3Session(BaseBoto3Session):
                             ".json"
                         ),
                         permitted_user=self._os_user,
-                        user_permission=FileSystemPermissionEnum.READ_WRITE,
-                        group_permission=FileSystemPermissionEnum.READ_WRITE,
+                        agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                        group_permission=FileSystemPermissionEnum.READ,
                     )
             credentials_object = cast(SettableCredentials, self.get_credentials())
             credentials_object.set_credentials(temporary_creds.to_deadline())
@@ -290,7 +290,7 @@ class QueueBoto3Session(BaseBoto3Session):
                     dir_path=self._credential_dir,
                     exist_ok=True,
                     parents=True,
-                    user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
                 )
             else:
                 make_directory(
@@ -298,8 +298,8 @@ class QueueBoto3Session(BaseBoto3Session):
                     exist_ok=True,
                     parents=True,
                     permitted_user=self._os_user,
-                    user_permission=FileSystemPermissionEnum.READ_WRITE,
-                    group_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    group_permission=FileSystemPermissionEnum.READ,
                 )
 
     def _delete_credentials_directory(self) -> None:
@@ -346,8 +346,8 @@ class QueueBoto3Session(BaseBoto3Session):
                     set_permissions(
                         file_path=self._credentials_process_script_path,
                         permitted_user=self._os_user,
-                        user_permission=FileSystemPermissionEnum.EXECUTE,
-                        group_permission=FileSystemPermissionEnum.READ_WRITE,
+                        agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                        group_permission=FileSystemPermissionEnum.EXECUTE,
                     )
 
         # install credential process to ~<job-user>/.aws/config and

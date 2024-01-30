@@ -19,8 +19,6 @@ class ParsedCommandLineArguments(Namespace):
     no_impersonation: bool | None = None
     jobs_run_as_agent_user: bool | None = None
     posix_job_user: str | None = None
-    windows_job_user: str | None = None
-    windows_job_user_password_arn: str | None = None
     allow_instance_profile: bool | None = None
     logs_dir: Path | None = None
     local_session_logs: bool | None = None
@@ -89,18 +87,6 @@ def get_argument_parser() -> ArgumentParser:
             "--posix-job-user",
             help="Overrides the posix user that the Worker Agent impersonates. Format: 'user:group'. "
             "If not set, defaults to what the service sets.",
-            default=None,
-        )
-    else:
-        parser.add_argument(
-            "--windows-job-user",
-            help="Overrides the windows user that the Worker Agent impersonates. Format: 'user:group:'. "
-            "If not set, defaults to what the service sets.",
-            default=None,
-        )
-        parser.add_argument(
-            "--windows-job-user-password-arn",
-            help="Overrides AWS Secrets Manager secret ARN that contains the password for the Windows user the Worker Agent impersonates",
             default=None,
         )
 

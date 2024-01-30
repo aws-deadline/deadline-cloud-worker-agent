@@ -10,7 +10,7 @@ from typing import Any, Optional, Sequence, Tuple, cast
 
 from pydantic import ValidationError
 
-from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
+from openjd.sessions import PosixSessionUser, SessionUser
 
 from ..errors import ConfigurationError
 from .capabilities import Capabilities
@@ -20,16 +20,13 @@ from .settings import WorkerSettings
 _logger = _logging.getLogger(__name__)
 
 
-@dataclass()
+@dataclass(frozen=True)
 class JobsRunAsUserOverride:
     run_as_agent: bool
     """True -> All jobs run as the agent process' user."""
 
     job_user: Optional[SessionUser] = None
     """If provided and run_as_agent is False, then all Jobs run by this agent will run as this user."""
-
-    job_user_password_arn: Optional[str] = None
-    """If provided, then this ARN will retrieve the password for the job user."""
 
 
 # Default paths for the Worker persistence directory subdirectories.
@@ -124,12 +121,6 @@ class Configuration:
             settings_kwargs["jobs_run_as_agent_user"] = parsed_cli_args.no_impersonation
         if parsed_cli_args.posix_job_user is not None:
             settings_kwargs["posix_job_user"] = parsed_cli_args.posix_job_user
-        if parsed_cli_args.windows_job_user is not None:
-            settings_kwargs["windows_job_user"] = parsed_cli_args.windows_job_user
-        if parsed_cli_args.windows_job_user_password_arn is not None:
-            settings_kwargs[
-                "windows_job_user_password_arn"
-            ] = parsed_cli_args.windows_job_user_password_arn
         if parsed_cli_args.allow_instance_profile is not None:
             settings_kwargs["allow_instance_profile"] = parsed_cli_args.allow_instance_profile
         if parsed_cli_args.logs_dir is not None:
@@ -152,19 +143,6 @@ class Configuration:
             self.jobs_run_as_overrides = JobsRunAsUserOverride(
                 run_as_agent=settings.jobs_run_as_agent_user,
                 job_user=PosixSessionUser(user=user, group=group),
-            )
-        elif (
-            os.name == "nt"
-            and settings.windows_job_user is not None
-            and settings.windows_job_user_password_arn is not None
-        ):
-            user, group = self._get_user_and_group_from_job_user(settings.windows_job_user)
-            self.jobs_run_as_overrides = JobsRunAsUserOverride(
-                run_as_agent=settings.jobs_run_as_agent_user,
-                # Can't provide the password here because we don't have the worker bootstrapped yet
-                # in order to make boto calls
-                job_user=WindowsSessionUser(user=user, group=group, password=""),
-                job_user_password_arn=settings.windows_job_user_password_arn,
             )
         else:
             self.jobs_run_as_overrides = JobsRunAsUserOverride(

@@ -59,23 +59,21 @@ class WindowsCredentialsResolver:
         self, user: str, group: Optional[str], passwordArn: str
     ) -> WindowsSessionUser:
         # Create a composite key using user and arn
-        user_arn = f"{user}_{passwordArn}"
+        user_key = f"{user}_{passwordArn}"
 
         # Prune the cache before fetching or returning the user
         self.prune_cache()
 
         # Check if the user is already in the cache and if it's less than CACHE_EXPIRATION hours old
-        if user_arn in self._user_cache:
-            cached_data = self._user_cache[user_arn]
-            last_fetched_at = cached_data.last_fetched_at
+        if user_key in self._user_cache:
+            cached_data = self._user_cache[user_key]
             windows_session_user = cached_data.windows_session_user
 
-            if datetime.utcnow() - last_fetched_at < self.CACHE_EXPIRATION:
-                # Update last accessed time
-                self._user_cache[user_arn].last_accessed = datetime.utcnow()
+            # Update last accessed time
+            self._user_cache[user_key].last_accessed = datetime.utcnow()
 
-                logger.info("Using cached WindowsSessionUser for %s", user)
-                return windows_session_user
+            logger.info("Using cached WindowsSessionUser for %s", user)
+            return windows_session_user
 
         # Fetch the secret from Secrets Manager if not in the cache or if it's too old
         secret = self._fetch_secret_from_secrets_manager(passwordArn)
@@ -85,7 +83,7 @@ class WindowsCredentialsResolver:
         windows_session_user = WindowsSessionUser(user=user, group=group, password=password)
 
         # Cache the WindowsSessionUser object, last fetched at, and last accessed time for future use
-        self._user_cache[user_arn] = _WindowsCredentialsCacheEntry(
+        self._user_cache[user_key] = _WindowsCredentialsCacheEntry(
             windows_session_user=windows_session_user,
             last_fetched_at=datetime.utcnow(),
             last_accessed=datetime.utcnow(),

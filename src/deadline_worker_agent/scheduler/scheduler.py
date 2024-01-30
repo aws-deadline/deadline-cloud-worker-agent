@@ -18,7 +18,7 @@ import logging
 import os
 import stat
 
-from openjd.sessions import ActionState, ActionStatus, WindowsSessionUser, SessionUser
+from openjd.sessions import ActionState, ActionStatus, SessionUser
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
 from openjd.sessions import ActionState, ActionStatus
 from deadline.job_attachments.asset_sync import AssetSync
@@ -215,21 +215,6 @@ class WorkerScheduler:
 
         if os.name == "nt":
             self._windows_credentials_resolver = WindowsCredentialsResolver(self._boto_session)
-            # Now that we can determine the password, replace the job user
-            if (
-                self._jobs_run_as_user_override.job_user is not None
-                and self._jobs_run_as_user_override.job_user_password_arn is not None
-            ):
-                job_user: WindowsSessionUser = cast(
-                    WindowsSessionUser, self._jobs_run_as_user_override.job_user
-                )
-                self._jobs_run_as_user_override.job_user = (
-                    self._windows_credentials_resolver.get_windows_session_user(
-                        user=job_user.user,
-                        group=job_user.group,
-                        passwordArn=self._jobs_run_as_user_override.job_user_password_arn,
-                    )
-                )
         else:
             self._windows_credentials_resolver = None
 
@@ -656,7 +641,7 @@ class WorkerScheduler:
                         make_directory(
                             dir_path=queue_log_dir,
                             exist_ok=True,
-                            user_permission=FileSystemPermissionEnum.READ_WRITE,
+                            agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
                         )
                 except OSError:
                     error_msg = (
@@ -674,7 +659,7 @@ class WorkerScheduler:
                     else:
                         touch_file(
                             file_path=session_log_file,
-                            user_permission=FileSystemPermissionEnum.READ_WRITE,
+                            agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
                         )
                 except OSError:
                     error_msg = (
