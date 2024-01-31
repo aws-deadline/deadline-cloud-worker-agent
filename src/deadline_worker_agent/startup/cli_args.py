@@ -3,6 +3,7 @@
 from __future__ import annotations
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
+import os
 
 
 class ParsedCommandLineArguments(Namespace):
@@ -81,12 +82,14 @@ def get_argument_parser() -> ArgumentParser:
         dest="jobs_run_as_agent_user",
         default=None,
     )
-    parser.add_argument(
-        "--posix-job-user",
-        help="Overrides the posix user that the Worker Agent impersonates. Format: 'user:group'. "
-        "If not set, defaults to what the service sets.",
-        default=None,
-    )
+    if os.name == "posix":
+        parser.add_argument(
+            "--posix-job-user",
+            help="Overrides the posix user that the Worker Agent impersonates. Format: 'user:group'. "
+            "If not set, defaults to what the service sets.",
+            default=None,
+        )
+
     parser.add_argument(
         "--logs-dir",
         help="Overrides the directory where the Worker Agent writes its logs.",

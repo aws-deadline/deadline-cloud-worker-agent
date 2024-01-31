@@ -66,7 +66,7 @@ def impersonation(
     (posix_os,) = request.param
 
     if posix_os:
-        return ImpersonationOverrides(inactive=False, posix_job_user=os_user)
+        return ImpersonationOverrides(inactive=False, job_user=os_user)
     else:
         return ImpersonationOverrides(inactive=True)
 

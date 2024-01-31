@@ -54,6 +54,8 @@ class WorkerSettings(BaseSettings):
         If true, then all jobs run as the same user as the agent.
     posix_job_user : str
         Which 'user:group' to use instead of the Queue user when turned on.
+    windows_job_user_password_arn : str
+        The ARN of an AWS Secrets Manager secret containing the password of the job user for Windows.
     allow_instance_profile : bool
         If false (the default) and the worker is running on an EC2 instance with IMDS, then the
         worker will wait until the instance profile is disassociated before running worker sessions.
@@ -86,6 +88,12 @@ class WorkerSettings(BaseSettings):
     posix_job_user: Optional[str] = Field(
         regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
     )
+    windows_job_user: Optional[str] = Field(
+        regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
+    )
+    windows_job_user_password_arn: Optional[str] = Field(
+        regex=r"^arn:aws:secretsmanager:[a-z0-9\-]+:\d{12}:secret\/[a-zA-Z0-9/_+=.@-]+$"
+    )
     allow_instance_profile: bool = False
     capabilities: Capabilities = Field(
         default_factory=lambda: Capabilities(amounts={}, attributes={})
@@ -114,6 +122,10 @@ class WorkerSettings(BaseSettings):
             "no_shutdown": {"env": "DEADLINE_WORKER_NO_SHUTDOWN"},
             "jobs_run_as_agent_user": {"env": "DEADLINE_WORKER_JOBS_RUN_AS_AGENT_USER"},
             "posix_job_user": {"env": "DEADLINE_WORKER_POSIX_JOB_USER"},
+            "windows_job_user": {"env": "DEADLINE_WORKER_WINDOWS_JOB_USER"},
+            "windows_job_user_password_arn": {
+                "env": "DEADLINE_WORKER_WINDOWS_JOB_USER_PASSWORD_ARN"
+            },
             "allow_instance_profile": {"env": "DEADLINE_WORKER_ALLOW_INSTANCE_PROFILE"},
             "capabilities": {"env": "DEADLINE_WORKER_CAPABILITIES"},
             "worker_logs_dir": {"env": "DEADLINE_WORKER_LOGS_DIR"},

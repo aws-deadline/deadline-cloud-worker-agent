@@ -873,11 +873,11 @@ class TestInit:
             # TODO: This is needed because we are using a fixture with a parameterized call
             # but let's revisit whether this can be simplified when Windows impersonation is added
             posix_user: PosixSessionUser = request.getfixturevalue(expected_config_posix_job_user)
-            assert isinstance(config.impersonation.posix_job_user, PosixSessionUser)
-            assert config.impersonation.posix_job_user.group == posix_user.group
-            assert config.impersonation.posix_job_user.user == posix_user.user
+            assert isinstance(config.jobs_run_as_overrides.job_user, PosixSessionUser)
+            assert config.jobs_run_as_overrides.job_user.group == posix_user.group
+            assert config.jobs_run_as_overrides.job_user.user == posix_user.user
         else:
-            assert config.jobs_run_as_overrides.posix_job_user is None
+            assert config.jobs_run_as_overrides.job_user is None
         assert config.worker_logs_dir is mock_worker_settings.worker_logs_dir
         assert config.local_session_logs is mock_worker_settings.local_session_logs
         assert config.worker_persistence_dir is mock_worker_settings.worker_persistence_dir
@@ -893,7 +893,7 @@ class TestInit:
 
 
 class TestLog:
-    """Tests for Configutation.log()"""
+    """Tests for Configuration.log()"""
 
     @pytest.mark.parametrize(
         ("farm_id", "fleet_id", "profile", "verbose"),
