@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from typing import Generator
+from typing import Generator, Optional
 from unittest.mock import MagicMock, patch
 
 from deadline.job_attachments.models import JobAttachmentsFileSystem
@@ -14,7 +14,7 @@ from openjd.model.v2023_09 import (
     StepActions,
     StepScript,
 )
-from openjd.sessions import PosixSessionUser
+from openjd.sessions import PosixSessionUser, WindowsSessionUser
 
 
 import pytest
@@ -64,6 +64,18 @@ def deadline_client() -> MagicMock:
     return client
 
 
+@pytest.fixture
+def windows_credentials_resolver() -> Optional[MagicMock]:
+    if os.name == "nt":
+        resolver = MagicMock()
+        resolver.get_windows_session_user.return_value = WindowsSessionUser(
+            user="user", group="group", password="fakepassword"
+        )
+        return resolver
+    else:
+        return None
+
+
 @pytest.fixture(autouse=True)
 def mock_client_batch_get_job_entity_max_identifiers(
     deadline_client: MagicMock,
@@ -84,6 +96,7 @@ def mock_client_batch_get_job_entity_max_identifiers(
 @pytest.fixture
 def job_entities(
     deadline_client: MagicMock,
+    windows_credentials_resolver: MagicMock,
     job_id: str,
 ) -> Generator[JobEntities, None, None]:
     job_entities = JobEntities(
@@ -92,6 +105,7 @@ def job_entities(
         worker_id="worker-id",
         job_id=job_id,
         deadline_client=deadline_client,
+        windows_credentials_resolver=windows_credentials_resolver,
     )
 
     yield job_entities
@@ -138,6 +152,7 @@ class TestJobEntity:
     def test_has_path_mapping_rules(
         self,
         deadline_client: MagicMock,
+        windows_credentials_resolver: MagicMock,
         path_mapping_rules: list[PathMappingRule] | None,
     ) -> None:
         # GIVEN
@@ -162,6 +177,7 @@ class TestJobEntity:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN
@@ -383,7 +399,9 @@ class TestJobEntity:
 
 
 class TestDetails:
-    def test_job_details(self, deadline_client: MagicMock, job_id: str):
+    def test_job_details(
+        self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
+    ):
         # GIVEN
         job_details_boto = JobDetailsBoto(
             jobDetails={
@@ -407,6 +425,7 @@ class TestDetails:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN
@@ -415,7 +434,9 @@ class TestDetails:
         # THEN
         assert details == expected_details
 
-    def test_environment_details(self, deadline_client: MagicMock, job_id: str):
+    def test_environment_details(
+        self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
+    ):
         # GIVEN
         environment_id = "env-id"
         env_name = "TestEnv"
@@ -455,6 +476,7 @@ class TestDetails:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN
@@ -463,7 +485,9 @@ class TestDetails:
         # THEN
         assert details == expected_details
 
-    def test_job_attachment_details(self, deadline_client: MagicMock, job_id: str):
+    def test_job_attachment_details(
+        self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
+    ):
         # GIVEN
         details_boto = JobAttachmentDetailsBoto(
             jobAttachmentDetails=JobAttachmentDetailsData(
@@ -485,6 +509,7 @@ class TestDetails:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN
@@ -493,7 +518,9 @@ class TestDetails:
         # THEN
         assert details == expected_details
 
-    def test_step_details(self, deadline_client: MagicMock, job_id: str):
+    def test_step_details(
+        self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
+    ):
         # GIVEN
         step_id = "step-id"
         dependency = "stepId-1234"
@@ -528,6 +555,7 @@ class TestDetails:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN

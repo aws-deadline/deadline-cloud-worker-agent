@@ -10,10 +10,6 @@ from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
 import pytest
 import os
 
-if os.name == "nt":
-    import win32api
-    import win32con
-
 from deadline_worker_agent.scheduler.session_cleanup import (
     SessionUserCleanupManager,
 )
@@ -47,7 +43,7 @@ class TestSessionUserCleanupManager:
         if os.name == "posix":
             return PosixSessionUser(user="user", group="group")
         else:
-            return WindowsSessionUser(user=win32api.GetUserNameEx(win32con.NameSamCompatible))
+            return WindowsSessionUser(user="user", group="group", password="fakepassword")
 
     @pytest.fixture
     def session(self, os_user: PosixSessionUser) -> MagicMock:
@@ -88,25 +84,6 @@ class TestSessionUserCleanupManager:
             manager.register(session)
 
             # THEN
-            assert len(manager.registered_sessions) == 0
-            user_session_map_lock_mock.__enter__.assert_not_called()
-            user_session_map_lock_mock.__exit__.assert_not_called()
-
-        def test_register_raises_windows_not_supported(
-            self,
-            manager: SessionUserCleanupManager,
-            session: MagicMock,
-            user_session_map_lock_mock: MagicMock,
-        ):
-            # GIVEN
-            session.os_user = FakeSessionUser("user-123")
-
-            # WHEN
-            with pytest.raises(NotImplementedError) as raised_err:
-                manager.register(session)
-
-            # THEN
-            assert str(raised_err.value) == "Windows not supported"
             assert len(manager.registered_sessions) == 0
             user_session_map_lock_mock.__enter__.assert_not_called()
             user_session_map_lock_mock.__exit__.assert_not_called()
@@ -156,25 +133,6 @@ class TestSessionUserCleanupManager:
             user_session_map_lock_mock.__enter__.assert_not_called()
             user_session_map_lock_mock.__exit__.assert_not_called()
 
-        def test_deregister_raises_windows_not_supported(
-            self,
-            manager: SessionUserCleanupManager,
-            session: MagicMock,
-            user_session_map_lock_mock: MagicMock,
-        ):
-            # GIVEN
-            session.os_user = FakeSessionUser("user-123")
-
-            # WHEN
-            with pytest.raises(NotImplementedError) as raised_err:
-                manager.deregister(session)
-
-            # THEN
-            assert str(raised_err.value) == "Windows not supported"
-            assert len(manager.registered_sessions) == 0
-            user_session_map_lock_mock.__enter__.assert_not_called()
-            user_session_map_lock_mock.__exit__.assert_not_called()
-
     class TestCleanupSessionUser:
         @pytest.fixture
         def cleanup_session_user_processes_mock(self) -> Generator[MagicMock, None, None]:
@@ -217,7 +175,7 @@ class TestSessionUserCleanupManager:
             if os.name == "posix":
                 return PosixSessionUser(user="agent_user", group="agent_group")
             else:
-                return WindowsSessionUser(user=win32api.GetUserNameEx(win32con.NameSamCompatible))
+                return WindowsSessionUser(user="user", group="group", password="fakepassword")
 
         @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         @pytest.fixture(autouse=True)
@@ -264,21 +222,6 @@ class TestSessionUserCleanupManager:
                 text=True,
             )
             assert "Stopped processes:\n" in caplog.text
-
-        def test_not_posix_user(
-            self,
-            subprocess_run_mock: MagicMock,
-        ):
-            # GIVEN
-            fake_user = FakeSessionUser("user-123")
-
-            # WHEN
-            with pytest.raises(NotImplementedError) as raised_err:
-                SessionUserCleanupManager.cleanup_session_user_processes(fake_user)
-
-            # THEN
-            assert str(raised_err.value) == "Windows not supported"
-            subprocess_run_mock.assert_not_called()
 
         @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_no_processes_to_clean_up(

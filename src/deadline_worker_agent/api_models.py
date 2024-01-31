@@ -240,9 +240,20 @@ class PosixUser(TypedDict):
     """The posix group name associated with session file ownership"""
 
 
+class WindowsUser(TypedDict):
+    user: str
+    """The windows user name to run session actions as, as well as session file ownership"""
+
+    group: str
+    """The windows group name associated with session file ownership"""
+
+    passwordArn: str
+    """The ARN of a AWS Secrets Manager secret that the password of the user name to run actions as"""
+
+
 class JobRunAsUser(TypedDict):
     posix: PosixUser
-    # TODO: windows support
+    windows: WindowsUser
 
 
 class JobDetailsData(JobDetailsIdentifierFields):
@@ -251,10 +262,10 @@ class JobDetailsData(JobDetailsIdentifierFields):
 
     # TODO: remove once service no longer sends this
     jobsRunAs: NotRequired[JobRunAsUser | None]
-    """Deprecated: The queue's info on how to run the job processes (ie. posix user/group)"""
+    """Deprecated: The queue's info on how to run the job processes (ie. posix or windows user/group)"""
 
     jobRunAsUser: NotRequired[JobRunAsUser | None]
-    """The queue's info on how to run the job processes (ie. posix user/group)"""
+    """The queue's info on how to run the job processes (ie. posix or windows user/group)"""
 
     logGroupName: str
     """The name of the CloudWatch Log Group containing the Worker session's Log Stream"""
