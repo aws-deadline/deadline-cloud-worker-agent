@@ -374,7 +374,7 @@ class TestLoad:
 
 
 class TestInit:
-    """Tests for Configutation.__init__"""
+    """Tests for Configuration.__init__"""
 
     @pytest.mark.parametrize(
         argnames=("farm_id", "fleet_id", "profile", "verbose"),
