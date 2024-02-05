@@ -14,6 +14,7 @@ fi
 USE_LDAP="False"
 DO_BUILD="False"
 BUILD_ONLY="False"
+OVERRIDE_JOB_USER="False"
 while [[ "${1:-}" != "" ]]; do
     case $1 in
         -h|--help)
@@ -27,6 +28,10 @@ while [[ "${1:-}" != "" ]]; do
             echo "Using the LDAP client container image for testing."
             USE_LDAP="True"
             ;;
+        --override-job-user)
+            echo "Using the LDAP client container image which overrides the jobRunAsUSer"
+            OVERRIDE_JOB_USER="True"
+            ;;
         --build-only)
             BUILD_ONLY="True"
             ;;
@@ -37,6 +42,11 @@ while [[ "${1:-}" != "" ]]; do
     esac
     shift
 done
+
+if test "${OVERRIDE_JOB_USER}" == "True" && test "${USE_LDAP}" == "True"; then
+    echo "ERROR: Cannot use --ldap and --override-job-user together"
+    exit 1
+fi
 
 if ! test -d ${HOME}/.aws/models/deadline
 then
@@ -52,8 +62,13 @@ if test "${USE_LDAP}" == "True"; then
     CONTAINER_IMAGE_DIR="posix_ldap_multiuser"
 else
     ARGS="${ARGS} -h localuser.environment.internal"
-    CONTAINER_IMAGE_TAG="agent_posix_local_multiuser"
-    CONTAINER_IMAGE_DIR="posix_local_multiuser"
+    if test "${OVERRIDE_JOB_USER}" == "True"; then
+        CONTAINER_IMAGE_TAG="agent_posix_local_multiuser"
+        CONTAINER_IMAGE_DIR="posix_local_multiuser"
+    else
+        CONTAINER_IMAGE_TAG="agent_posix_local_multiuser_jobrunasuser"
+        CONTAINER_IMAGE_DIR="posix_local_multiuser_jobRunAsUser"
+    fi
 fi
 
 if test "${DO_BUILD}" == "True"; then

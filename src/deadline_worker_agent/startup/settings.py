@@ -50,7 +50,7 @@ class WorkerSettings(BaseSettings):
         Whether to emit more verbose logging
     no_shutdown : bool
         If true, then the Worker will not shut down when the service tells the worker to stop
-    jobs_run_as_agent_user : bool
+    run_jobs_as_agent_user : bool
         If true, then all jobs run as the same user as the agent.
     posix_job_user : str
         Which 'user:group' to use instead of the Queue user when turned on.
@@ -84,7 +84,7 @@ class WorkerSettings(BaseSettings):
     profile: Optional[str] = Field(min_length=1, max_length=64, default=None)
     verbose: bool = False
     no_shutdown: bool = False
-    jobs_run_as_agent_user: bool = False
+    run_jobs_as_agent_user: bool = False
     posix_job_user: Optional[str] = Field(
         regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
     )
@@ -120,7 +120,7 @@ class WorkerSettings(BaseSettings):
             "profile": {"env": "DEADLINE_WORKER_PROFILE"},
             "verbose": {"env": "DEADLINE_WORKER_VERBOSE"},
             "no_shutdown": {"env": "DEADLINE_WORKER_NO_SHUTDOWN"},
-            "jobs_run_as_agent_user": {"env": "DEADLINE_WORKER_JOBS_RUN_AS_AGENT_USER"},
+            "run_jobs_as_agent_user": {"env": "DEADLINE_WORKER_RUN_JOBS_AS_AGENT_USER"},
             "posix_job_user": {"env": "DEADLINE_WORKER_POSIX_JOB_USER"},
             "windows_job_user": {"env": "DEADLINE_WORKER_WINDOWS_JOB_USER"},
             "windows_job_user_password_arn": {

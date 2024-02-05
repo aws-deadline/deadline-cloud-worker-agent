@@ -60,9 +60,9 @@ def os_user() -> Optional[SessionUser]:
 
 
 @pytest.fixture(params=[(os.name == "posix",)])
-def impersonation(
-    request: pytest.FixtureRequest, os_user: Optional[SessionUser]
-) -> ImpersonationOverrides:
+def job_run_as_user_overrides(
+    request: pytest.FixtureRequest, job_user: Optional[SessionUser]
+) -> JobsRunAsUserOverride:
     (posix_os,) = request.param
 
     if posix_os:
@@ -265,7 +265,7 @@ def job_details(
     queue_job_attachment_settings: JobAttachmentSettings,
     job_parameters: list[Parameter],
     log_group_name: str,
-    job_run_as_user: JobRunAsUser | None,
+    job_run_as_user: JobRunAsUser,
     path_mapping_rules: list[PathMappingRule],
     schema_version: SchemaVersion,
 ) -> JobDetails:
@@ -281,6 +281,11 @@ def job_details(
 
 @pytest.fixture
 def step_script() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
+def step_template() -> MagicMock:
     return MagicMock()
 
 

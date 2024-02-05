@@ -89,7 +89,7 @@ class TestStart:
         self,
         executor: Mock,
         session: Mock,
-        step_script: Mock,
+        step_template: Mock,
         action_id: str,
         step_dependencies: list[str],
     ) -> None:
@@ -102,7 +102,7 @@ class TestStart:
         action = SyncInputJobAttachmentsAction(
             id=action_id,
             step_details=StepDetails(
-                script=step_script,
+                step_template=step_template,
                 dependencies=step_dependencies,
             ),
         )

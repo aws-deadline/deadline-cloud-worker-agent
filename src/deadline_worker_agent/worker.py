@@ -83,7 +83,7 @@ class Worker:
         s3_client: boto3.client,
         logs_client: boto3.client,
         boto_session: WorkerBoto3Session,
-        jobs_run_as_user_override: JobsRunAsUserOverride,
+        job_run_as_user_override: JobsRunAsUserOverride,
         cleanup_session_user_processes: bool,
         worker_persistence_dir: Path,
         worker_logs_dir: Path | None,
@@ -102,7 +102,7 @@ class Worker:
             farm_id=farm_id,
             fleet_id=fleet_id,
             worker_id=worker_id,
-            jobs_run_as_user_override=jobs_run_as_user_override,
+            job_run_as_user_override=job_run_as_user_override,
             boto_session=boto_session,
             cleanup_session_user_processes=cleanup_session_user_processes,
             worker_persistence_dir=worker_persistence_dir,
@@ -320,7 +320,7 @@ class Worker:
                 )
                 return WorkerShutdown(
                     grace_time=Worker._ASG_LIFECYCLE_SHUTDOWN_GRACE,
-                    fail_message="The Worker receieved an auto-scaling life-cycle change event",
+                    fail_message="The Worker received an auto-scaling life-cycle change event",
                 )
 
         logger.debug("EC2 shutdown monitoring thread exited")

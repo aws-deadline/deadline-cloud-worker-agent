@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from typing import Generator, Optional
+from typing import Generator, Optional, cast
 from unittest.mock import MagicMock, patch
 
 from deadline.job_attachments.models import JobAttachmentsFileSystem
@@ -13,8 +13,9 @@ from openjd.model.v2023_09 import (
     EnvironmentScript,
     StepActions,
     StepScript,
+    StepTemplate,
 )
-from openjd.sessions import PosixSessionUser, WindowsSessionUser
+from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
 
 
 import pytest
@@ -33,7 +34,6 @@ from deadline_worker_agent.api_models import (
     JobDetails as JobDetailsBoto,
     JobDetailsData,
     JobDetailsIdentifier,
-    JobRunAsUser,
     PathMappingRule,
     StepDetails as StepDetailsBoto,
     StepDetailsData,
@@ -45,6 +45,10 @@ from deadline_worker_agent.sessions.job_entities import (
     JobDetails,
     JobEntities,
     StepDetails,
+)
+from deadline_worker_agent.sessions.job_entities.job_details import (
+    JobRunAsUser,
+    JobRunAsWindowsUser,
 )
 import deadline_worker_agent.sessions.job_entities.job_entities as job_entities_mod
 
@@ -65,15 +69,39 @@ def deadline_client() -> MagicMock:
 
 
 @pytest.fixture
-def windows_credentials_resolver() -> Optional[MagicMock]:
+def os_user() -> SessionUser:
+    if os.name == "posix":
+        return PosixSessionUser(user="user", group="group")
+    else:
+        return WindowsSessionUser(user="user", group="group", password="fakepassword")
+
+
+@pytest.fixture
+def windows_credentials_resolver(os_user: MagicMock) -> Optional[MagicMock]:
     if os.name == "nt":
         resolver = MagicMock()
-        resolver.get_windows_session_user.return_value = WindowsSessionUser(
-            user="user", group="group", password="fakepassword"
-        )
+        resolver.get_windows_session_user.return_value = os_user
         return resolver
     else:
         return None
+
+
+@pytest.fixture
+def job_details_with_user(os_user: MagicMock) -> JobDetails:
+    if os.name == "posix":
+        posix_user = cast(PosixSessionUser, os_user)
+        return JobDetails(
+            log_group_name="/aws/deadline/queue-0000",
+            schema_version=SchemaVersion.v2023_09,
+            job_run_as_user=JobRunAsUser(posix=posix_user),
+        )
+    else:
+        windows_user = cast(WindowsSessionUser, os_user)
+        return JobDetails(
+            log_group_name="/aws/deadline/queue-0000",
+            schema_version=SchemaVersion.v2023_09,
+            job_run_as_user=JobRunAsUser(windows=windows_user),
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -162,6 +190,17 @@ class TestJobEntity:
                 "jobId": job_id,
                 "schemaVersion": "jobtemplate-2023-09",
                 "logGroupName": "fake-name",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "job-user",
+                        "group": "job-group",
+                    },
+                    "windows": {
+                        "user": "job-user",
+                        "group": "job-group",
+                        "passwordArn": "job-password-arn",
+                    },
+                },
             },
         )
         response: BatchGetJobEntityResponse = {
@@ -191,20 +230,27 @@ class TestJobEntity:
             assert job_details.path_mapping_rules not in (None, [])
             assert len(job_details.path_mapping_rules) == len(path_mapping_rules)
 
-    @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
-    def test_job_run_as_user(self) -> None:
+    def test_job_run_as_user(
+        self,
+    ) -> None:
         """Ensures that if we receive a job_run_as_user field in the response,
-        that the created entity has a (Posix) SessionUser created with the
+        that the created entity has a SessionUser created with the
         proper values"""
         # GIVEN
         expected_user = "job-user"
         expected_group = "job-group"
+        expected_password_arn = "job-password-arn"
         api_response: dict = {
             "jobId": "job-123",
             "jobRunAsUser": {
                 "posix": {
                     "user": expected_user,
                     "group": expected_group,
+                },
+                "windows": {
+                    "user": expected_user,
+                    "group": expected_group,
+                    "passwordArn": expected_password_arn,
                 },
             },
             "logGroupName": "TEST",
@@ -217,207 +263,54 @@ class TestJobEntity:
 
         # THEN
         assert entity_obj.job_run_as_user is not None
-        assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
-        assert entity_obj.job_run_as_user.posix.user == expected_user
-        assert entity_obj.job_run_as_user.posix.group == expected_group
-
-    # TODO: remove test once service no longer sends jobsRunAs
-    @pytest.mark.parametrize(
-        ("jobs_run_as_data"),
-        (
-            pytest.param(
-                {
-                    "user": "",
-                    "group": "",
-                },
-                id="empty user and group",
-            ),
-            pytest.param(
-                {
-                    "user": "diff-user",
-                    "group": "diff-group",
-                },
-                id="set user and group",
-            ),
-        ),
-    )
-    def test_old_jobs_run_as_existence(self, jobs_run_as_data: dict[str, str]) -> None:
-        """Ensures that if we receive the old jobs_run_as field in the response,
-        that we do not error on validating the response and use the newer jobRunAsUser info"""
-        # GIVEN
-        expected_user = "job-user"
-        expected_group = "job-group"
-        api_response: dict = {
-            "jobId": "job-123",
-            "jobsRunAs": {
-                "posix": jobs_run_as_data,
-            },
-            "jobRunAsUser": {
-                "posix": {
-                    "user": expected_user,
-                    "group": expected_group,
-                },
-            },
-            "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2023_09.value,
-        }
-
-        # WHEN
-        job_details_data = JobDetails.validate_entity_data(api_response)
-        entity_obj = JobDetails.from_boto(job_details_data)
-
-        # THEN
-        assert not hasattr(entity_obj, "jobs_run_as")
         if os.name == "posix":
-            assert entity_obj.job_run_as_user is not None
             assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
             assert entity_obj.job_run_as_user.posix.user == expected_user
             assert entity_obj.job_run_as_user.posix.group == expected_group
-
-    # TODO: remove once service no longer sends jobsRunAs
-    def test_only_old_jobs_run_as(self) -> None:
-        """Ensures that if we only receive the old jobs_run_as field in the response,
-        that we do not error on validating the response and we have job_run_as_user info"""
-        # GIVEN
-        expected_user = "job-user"
-        expected_group = "job-group"
-        api_response: dict = {
-            "jobId": "job-123",
-            "jobsRunAs": {
-                "posix": {
-                    "user": expected_user,
-                    "group": expected_group,
-                },
-            },
-            "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2023_09.value,
-        }
-
-        # WHEN
-        job_details_data = JobDetails.validate_entity_data(api_response)
-        entity_obj = JobDetails.from_boto(job_details_data)
-
-        # THEN
-        assert not hasattr(entity_obj, "jobs_run_as")
-        if os.name == "posix":
-            assert entity_obj.job_run_as_user is not None
-            assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
-            assert entity_obj.job_run_as_user.posix.user == expected_user
-            assert entity_obj.job_run_as_user.posix.group == expected_group
-
-    # TODO: remove once service no longer sends jobsRunAs
-    def test_only_empty_old_jobs_run_as(self) -> None:
-        """Ensures that if we only receive the old jobs_run_as field with no user and group,
-        that we do not error on validating the response and we do not have job_run_as_user info"""
-        # GIVEN
-        api_response: dict = {
-            "jobId": "job-123",
-            "jobsRunAs": {
-                "posix": {
-                    "user": "",
-                    "group": "",
-                },
-            },
-            "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2023_09.value,
-        }
-
-        # WHEN
-        job_details_data = JobDetails.validate_entity_data(api_response)
-        entity_obj = JobDetails.from_boto(job_details_data)
-
-        # THEN
-        assert not hasattr(entity_obj, "jobs_run_as")
-        assert entity_obj.job_run_as_user is None
-
-    @pytest.mark.parametrize(
-        ("job_run_as_user_data"),
-        (
-            pytest.param(
-                {
-                    "posix": {
-                        "user": "",
-                        "group": "",
-                    }
-                },
-                id="empty user and group",
-            ),
-            pytest.param(
-                {
-                    "posix": {
-                        "user": "job-user",
-                        "group": "",
-                    }
-                },
-                id="empty group",
-            ),
-            pytest.param(
-                {
-                    "posix": {
-                        "user": "",
-                        "group": "job-group",
-                    }
-                },
-                id="empty user",
-            ),
-            pytest.param({"posix": {}}, id="no user/group entries"),
-            pytest.param({}, id="no posix"),
-        ),
-    )
-    def test_job_run_as_user_empty_values(self, job_run_as_user_data: JobRunAsUser | None) -> None:
-        """Ensures that if we are missing values in the job_run_as_user fields
-        that created entity does not have it set (ie. old queues)"""
-        # GIVEN
-        entity_data: JobDetailsData = {
-            "jobId": "job-123",
-            "jobRunAsUser": job_run_as_user_data,
-            "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2023_09.value,
-        }
-
-        # WHEN
-        entity_obj = JobDetails.from_boto(entity_data)
-
-        # THEN
-        assert entity_obj.job_run_as_user is None
-
-    def test_job_run_as_user_not_provided(self) -> None:
-        """Ensures that if we somehow don't receive a job_run_as_user field
-        that the created entity does not have it set (shouldn't happen)"""
-        # GIVEN
-        entity_data: JobDetailsData = {
-            "jobId": "job-123",
-            "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2023_09.value,
-        }
-
-        # WHEN
-        entity_obj = JobDetails.from_boto(entity_data)
-
-        # THEN
-        assert entity_obj.job_run_as_user is None
+        else:
+            assert isinstance(entity_obj.job_run_as_user.windows_settings, JobRunAsWindowsUser)
+            assert entity_obj.job_run_as_user.windows_settings.user == expected_user
+            assert entity_obj.job_run_as_user.windows_settings.group == expected_group
 
 
 class TestDetails:
     def test_job_details(
-        self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
+        self,
+        deadline_client: MagicMock,
+        windows_credentials_resolver: MagicMock,
+        job_details_with_user: MagicMock,
+        os_user: MagicMock,
+        job_id: str,
     ):
         # GIVEN
         job_details_boto = JobDetailsBoto(
             jobDetails={
                 "jobId": job_id,
                 "schemaVersion": "jobtemplate-2023-09",
-                "logGroupName": "fake-name",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "job-user",
+                        "group": "job-group",
+                    },
+                    "windows": {
+                        "user": "job-user",
+                        "group": "job-group",
+                        "passwordArn": "job-password-arn",
+                    },
+                },
             },
         )
         response: BatchGetJobEntityResponse = {
             "entities": [job_details_boto],
             "errors": [],
         }
-        expected_details = JobDetails(
-            schema_version=SchemaVersion("jobtemplate-2023-09"),
-            log_group_name="fake-name",
-        )
+        expected_details = job_details_with_user
+        assert expected_details.job_run_as_user is not None  # For type checker
+        if os.name == "posix":
+            assert expected_details.job_run_as_user.posix is not None  # For type checker
+        else:
+            assert expected_details.job_run_as_user.windows is not None  # For type checker
         deadline_client.batch_get_job_entity.return_value = response
         job_entities = JobEntities(
             farm_id="farm-id",
@@ -432,7 +325,33 @@ class TestDetails:
         details = job_entities.job_details()
 
         # THEN
-        assert details == expected_details
+        assert details.log_group_name == expected_details.log_group_name
+        assert details.schema_version == expected_details.schema_version
+        assert details.job_run_as_user is not None
+        if os.name == "posix":
+            assert details.job_run_as_user.windows is None
+            assert details.job_run_as_user.posix is not None
+            assert details.job_run_as_user.posix.user == expected_details.job_run_as_user.posix.user
+            assert (
+                details.job_run_as_user.posix.group == expected_details.job_run_as_user.posix.group
+            )
+        else:
+            assert details.job_run_as_user.windows is not None
+            assert details.job_run_as_user.posix is None
+            print(f"expected {expected_details}")
+            print(f"got {details}")
+            assert (
+                details.job_run_as_user.windows.user
+                == expected_details.job_run_as_user.windows.user
+            )
+            assert (
+                details.job_run_as_user.windows.group
+                == expected_details.job_run_as_user.windows.group
+            )
+        assert details.job_attachment_settings == expected_details.job_attachment_settings
+        assert details.parameters == expected_details.parameters
+        assert details.path_mapping_rules == expected_details.path_mapping_rules
+        assert details.queue_role_arn == expected_details.queue_role_arn
 
     def test_environment_details(
         self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
@@ -518,9 +437,12 @@ class TestDetails:
         # THEN
         assert details == expected_details
 
-    def test_step_details(
+    def test_step_details_backwards_compat(
         self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
     ):
+        # TODO - Delete this test once the StepDetails from BatchGetJobEntities is returning
+        #  a StepTemplate instead of a StepScript.
+
         # GIVEN
         step_id = "step-id"
         dependency = "stepId-1234"
@@ -545,7 +467,62 @@ class TestDetails:
         }
 
         expected_details = StepDetails(
-            script=StepScript(actions=StepActions(onRun=Action(command="test.exe"))),
+            step_template=StepTemplate(
+                name="Placeholder",
+                script=StepScript(actions=StepActions(onRun=Action(command="test.exe"))),
+            ),
+            dependencies=[dependency],
+        )
+        deadline_client.batch_get_job_entity.return_value = response
+        job_entities = JobEntities(
+            farm_id="farm-id",
+            fleet_id="fleet-id",
+            worker_id="worker-id",
+            job_id=job_id,
+            deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
+        )
+
+        # WHEN
+        details = job_entities.step_details(step_id=step_id)
+
+        # THEN
+        assert details == expected_details
+
+    def test_step_details(
+        self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
+    ):
+        # GIVEN
+        step_id = "step-id"
+        dependency = "stepId-1234"
+        details_boto = StepDetailsBoto(
+            stepDetails=StepDetailsData(
+                jobId=job_id,
+                stepId=step_id,
+                schemaVersion="jobtemplate-2023-09",
+                template={
+                    "name": "Test",
+                    "script": {
+                        "actions": {
+                            "onRun": {
+                                "command": "test.exe",
+                            },
+                        },
+                    },
+                },
+                dependencies=[dependency],
+            )
+        )
+        response: BatchGetJobEntityResponse = {
+            "entities": [details_boto],
+            "errors": [],
+        }
+
+        expected_details = StepDetails(
+            step_template=StepTemplate(
+                name="Test",
+                script=StepScript(actions=StepActions(onRun=Action(command="test.exe"))),
+            ),
             dependencies=[dependency],
         )
         deadline_client.batch_get_job_entity.return_value = response
@@ -603,6 +580,17 @@ class TestCaching:
             "jobId": job_id,
             "logGroupName": "/aws/service/loggroup",
             "schemaVersion": "jobtemplate-2023-09",
+            "jobRunAsUser": {
+                "posix": {
+                    "user": "job-user",
+                    "group": "job-group",
+                },
+                "windows": {
+                    "user": "job-user",
+                    "group": "job-group",
+                    "passwordArn": "job-password-arn",
+                },
+            },
         }
         expected_environment_details: EnvironmentDetailsData = {
             "jobId": job_id,

@@ -10,68 +10,32 @@ import subprocess
 import sys
 from logging.handlers import TimedRotatingFileHandler
 from typing import Optional
-import platform
-import psutil
-import shutil
 from pathlib import Path
 
 from openjd.model import version as openjd_model_version
 from openjd.sessions import version as openjd_sessions_version
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
 from deadline.job_attachments import version as deadline_job_attach_version
-from pydantic import PositiveFloat
 
 from .._version import __version__
 from ..api_models import WorkerStatus
-from ..aws.deadline import DeadlineRequestError, delete_worker, update_worker
 from ..boto import DEADLINE_BOTOCORE_CONFIG, OTHER_BOTOCORE_CONFIG
 from ..errors import ServiceShutdown
 from ..log_sync.cloudwatch import stream_cloudwatch_logs
 from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger
 from ..worker import Worker
 from .bootstrap import bootstrap_worker
-from .capabilities import AmountCapabilityName, AttributeCapabilityName, Capabilities
-from .config import Capabilities, Configuration, ConfigurationError
+from .capabilities import detect_system_capabilities
+from .config import Configuration, ConfigurationError
 from ..aws.deadline import (
     DeadlineRequestError,
     delete_worker,
     update_worker,
-    record_worker_start_event,
+    record_worker_start_telemetry_event,
 )
 
 __all__ = ["entrypoint"]
 _logger = logging.getLogger(__name__)
-
-
-def detect_system_capabilities() -> Capabilities:
-    amounts: dict[AmountCapabilityName, PositiveFloat] = {}
-    attributes: dict[AttributeCapabilityName, list[str]] = {}
-
-    platform_system = platform.system().lower()
-    python_system_to_openjd_os_family = {
-        "darwin": "macos",
-        "linux": "linux",
-        "windows": "windows",
-    }
-    platform_machine = platform.machine().lower()
-    python_machine_to_openjd_cpu_arch = {"x86_64": "x86_64", "amd64": "x86_64"}
-    if openjd_os_family := python_system_to_openjd_os_family.get(platform_system):
-        attributes[AttributeCapabilityName("attr.worker.os.family")] = [openjd_os_family]
-    if openjd_cpu_arch := python_machine_to_openjd_cpu_arch.get(platform_machine):
-        attributes[AttributeCapabilityName("attr.worker.cpu.arch")] = [openjd_cpu_arch]
-    else:
-        raise NotImplementedError(f"{platform_machine} not supported")
-    amounts[AmountCapabilityName("amount.worker.vcpu")] = float(psutil.cpu_count())
-    amounts[AmountCapabilityName("amount.worker.memory")] = float(psutil.virtual_memory().total) / (
-        1024.0**2
-    )
-    amounts[AmountCapabilityName("amount.worker.disk.scratch")] = int(
-        shutil.disk_usage("/").free // 1024 // 1024
-    )
-    amounts[AmountCapabilityName("amount.worker.gpu")] = _get_gpu_count()
-    amounts[AmountCapabilityName("amount.worker.gpu.memory")] = _get_gpu_memory()
-
-    return Capabilities(amounts=amounts, attributes=attributes)
 
 
 def entrypoint(cli_args: Optional[list[str]] = None) -> None:
@@ -100,7 +64,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
         # if customer manually provided the capabilities (to be added in this function)
         # then we default to the customer provided ones
         system_capabilities = detect_system_capabilities()
-        record_worker_start_event(system_capabilities)
+        record_worker_start_telemetry_event(system_capabilities)
         config.capabilities = system_capabilities.merge(config.capabilities)
 
         # Log the configuration
@@ -164,7 +128,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
                 s3_client=s3_client,
                 logs_client=logs_client,
                 boto_session=session,
-                jobs_run_as_user_override=config.jobs_run_as_overrides,
+                job_run_as_user_override=config.job_run_as_user_overrides,
                 cleanup_session_user_processes=config.cleanup_session_user_processes,
                 worker_persistence_dir=config.worker_persistence_dir,
                 worker_logs_dir=config.worker_logs_dir if config.local_session_logs else None,
@@ -348,57 +312,3 @@ def _log_agent_info() -> None:
     _logger.info("\topenjd.model: %s", openjd_model_version)
     _logger.info("\topenjd.sessions: %s", openjd_sessions_version)
     _logger.info("\tdeadline.job_attachments: %s", deadline_job_attach_version)
-
-
-def _get_gpu_count(*, verbose: bool = True) -> int:
-    """
-    Get the number of GPUs available on the machine.
-
-    Returns
-    -------
-    int
-        The number of GPUs available on the machine.
-    """
-    try:
-        output = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"]
-        )
-    except FileNotFoundError:
-        if verbose:
-            _logger.warning("Could not detect GPU count, nvidia-smi not found")
-        return 0
-    except subprocess.CalledProcessError:
-        if verbose:
-            _logger.warning("Could not detect GPU count, error running nvidia-smi")
-        return 0
-    else:
-        if verbose:
-            _logger.info("Number of GPUs: %s", output.decode().strip())
-        return int(output.decode().strip())
-
-
-def _get_gpu_memory(*, verbose: bool = True) -> int:
-    """
-    Get the total GPU memory available on the machine.
-
-    Returns
-    -------
-    int
-        The total GPU memory available on the machine.
-    """
-    try:
-        output = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
-        )
-    except FileNotFoundError:
-        if verbose:
-            _logger.warning("Could not detect GPU memory, nvidia-smi not found")
-        return 0
-    except subprocess.CalledProcessError:
-        if verbose:
-            _logger.warning("Could not detect GPU memory, error running nvidia-smi")
-        return 0
-    else:
-        if verbose:
-            _logger.info("Total GPU Memory: %s", output.decode().strip())
-        return int(output.decode().strip().replace("MiB", ""))

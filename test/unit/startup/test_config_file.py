@@ -117,7 +117,7 @@ def logging_config_section_data(
 @pytest.fixture(
     params=(True, False),
 )
-def jobs_run_as_agent_user(request: pytest.FixtureRequest) -> bool:
+def run_jobs_as_agent_user(request: pytest.FixtureRequest) -> bool:
     return request.param
 
 
@@ -135,12 +135,12 @@ def shutdown_on_stop(request: pytest.FixtureRequest) -> bool:
 
 @pytest.fixture
 def os_config_section_data(
-    jobs_run_as_agent_user: bool,
+    run_jobs_as_agent_user: bool,
     posix_job_user: str,
     shutdown_on_stop: bool | None,
 ) -> dict[str, Any]:
     return {
-        "jobs_run_as_agent_user": jobs_run_as_agent_user,
+        "run_jobs_as_agent_user": run_jobs_as_agent_user,
         "posix_job_user": posix_job_user,
         "shutdown_on_stop": shutdown_on_stop,
     }
@@ -166,7 +166,7 @@ class TestWorkerConfigSection:
             pytest.param("", id="empty"),
         ),
     )
-    def test_invalid_farm_id(
+    def test_nonvalid_farm_id(
         self,
         worker_config_section_data: dict[str, Any],
     ) -> None:
@@ -198,7 +198,7 @@ class TestWorkerConfigSection:
             pytest.param("", id="empty"),
         ),
     )
-    def test_invalid_fleet_id(
+    def test_nonvalid_fleet_id(
         self,
         worker_config_section_data: dict[str, Any],
     ) -> None:
@@ -389,22 +389,22 @@ class TestOsConfigSection:
         os_config = OsConfigSection.parse_obj(os_config_section_data)
 
         # THEN
-        assert os_config.jobs_run_as_agent_user == os_config_section_data["jobs_run_as_agent_user"]
+        assert os_config.run_jobs_as_agent_user == os_config_section_data["run_jobs_as_agent_user"]
         assert os_config.posix_job_user == os_config_section_data["posix_job_user"]
         assert os_config.shutdown_on_stop == os_config_section_data["shutdown_on_stop"]
 
     @pytest.mark.parametrize(
-        argnames="jobs_run_as_agent_user",
+        argnames="run_jobs_as_agent_user",
         argvalues=(
             pytest.param("str", id="bad-type-str"),
             pytest.param([1], id="bad-type-list"),
         ),
     )
-    def test_invalid_jobs_run_as_agent_user(
+    def test_nonvalid_run_jobs_as_agent_user(
         self,
         os_config_section_data: dict[str, Any],
     ) -> None:
-        """Asserts that AwsConfigSections raises ValidationErrors for non-valid jobs_run_as_agent_user values"""
+        """Asserts that AwsConfigSections raises ValidationErrors for non-valid run_jobs_as_agent_user values"""
 
         # WHEN
         def when() -> OsConfigSection:
@@ -414,20 +414,20 @@ class TestOsConfigSection:
         with pytest.raises(ValidationError):
             when()
 
-    def test_absent_jobs_run_as_agent_user(
+    def test_absent_run_jobs_as_agent_user(
         self,
         os_config_section_data: dict[str, Any],
     ) -> None:
-        """Asserts that absent a "jobs_run_as_agent_user" value in the input to OsConfigSection, it should
+        """Asserts that absent a "run_jobs_as_agent_user" value in the input to OsConfigSection, it should
         have a corresponding attribute value of None"""
         # GIVEN
-        del os_config_section_data["jobs_run_as_agent_user"]
+        del os_config_section_data["run_jobs_as_agent_user"]
 
         # WHEN
         os_config = OsConfigSection.parse_obj(os_config_section_data)
 
         # THEN
-        assert os_config.jobs_run_as_agent_user is None
+        assert os_config.run_jobs_as_agent_user is None
 
     @pytest.mark.parametrize(
         argnames="posix_job_user",
@@ -439,7 +439,7 @@ class TestOsConfigSection:
             pytest.param(":just-a-group", id="str no user"),
         ),
     )
-    def test_invalid_posix_job_user(self, os_config_section_data: dict[str, Any]) -> None:
+    def test_nonvalid_posix_job_user(self, os_config_section_data: dict[str, Any]) -> None:
         """Asserts that AwsConfigSections raises ValidationErrors for not valid posix job values"""
 
         # WHEN
@@ -483,7 +483,7 @@ FULL_CONFIG_FILE_DATA = {
         "local_session_logs": False,
     },
     "os": {
-        "jobs_run_as_agent_user": False,
+        "run_jobs_as_agent_user": False,
         "posix_job_user": "user:group",
         "shutdown_on_stop": False,
     },
@@ -538,50 +538,50 @@ class TestConfigFileValidation:
         assert config_file.capabilities == Capabilities.parse_obj(config_file_data["capabilities"])
 
     @pytest.mark.parametrize(
-        ("section_to_modify", "invalid_section_data"),
+        ("section_to_modify", "nonvalid_section_data"),
         [
             pytest.param("worker", None, id="missing worker config section"),
             pytest.param(
                 "worker",
                 {"farm_id": "farm-x"},
-                id="invalid worker config section - invalid farm_id (bad format)",
+                id="nonvalid worker config section - nonvalid farm_id (bad format)",
             ),
             pytest.param("aws", None, id="missing aws config section"),
             pytest.param(
                 "aws",
                 {"profile": ""},
-                id="invalid aws config section - profile is an empty string",
+                id="nonvalid aws config section - profile is an empty string",
             ),
             pytest.param("logging", None, id="missing logging config section"),
             pytest.param(
                 "logging",
                 {"verbose": "verbose"},
-                id="invalid logging config section - verbose is not bool",
+                id="nonvalid logging config section - verbose is not bool",
             ),
             pytest.param("os", None, id="missing os config section"),
             pytest.param(
                 "os",
                 {"posix_job_user": " user : group "},
-                id="invalid os config section - invalid posix_job_user value (whitespace)",
+                id="nonvalid os config section - nonvalid posix_job_user value (whitespace)",
             ),
             pytest.param("capabilities", None, id="missing capabilities section"),
             pytest.param(
                 "capabilities",
                 {"amounts": {}},
-                id="invalid capabilities config section - missing attributes",
+                id="nonvalid capabilities config section - missing attributes",
             ),
         ],
     )
     def test_input_validation_failure(
-        self, section_to_modify: str, invalid_section_data: dict[str, Any] | None
+        self, section_to_modify: str, nonvalid_section_data: dict[str, Any] | None
     ):
-        """Tests that an invalid iniput dictionary fails ConfigFile model validation"""
+        """Tests that an nonvalid iniput dictionary fails ConfigFile model validation"""
         config_file_data = FULL_CONFIG_FILE_DATA.copy()
 
-        if invalid_section_data is None:
+        if nonvalid_section_data is None:
             del config_file_data[section_to_modify]
         else:
-            config_file_data[section_to_modify] = invalid_section_data
+            config_file_data[section_to_modify] = nonvalid_section_data
 
         # WHEN
         def when() -> ConfigFile:
@@ -611,7 +611,7 @@ local_session_logs = false
 host_metrics_logging_interval_seconds = 1
 
 [os]
-jobs_run_as_agent_user = false
+run_jobs_as_agent_user = false
 posix_job_user = "user:group"
 shutdown_on_stop = false
 
@@ -682,7 +682,7 @@ class TestConfigFileLoad:
         assert config.logging.local_session_logs is False
         assert config.logging.host_metrics_logging_interval_seconds == 1
 
-        assert config.os.jobs_run_as_agent_user is False
+        assert config.os.run_jobs_as_agent_user is False
         assert config.os.posix_job_user == "user:group"
         assert config.os.shutdown_on_stop is False
 
