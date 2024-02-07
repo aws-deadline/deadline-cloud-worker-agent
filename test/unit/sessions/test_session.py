@@ -107,6 +107,13 @@ def mock_openjd_session(mock_openjd_session_cls: MagicMock) -> MagicMock:
 
 
 @pytest.fixture
+def mock_fus3_process_manager_cls() -> Generator[MagicMock, None, None]:
+    """Mocks the Worker Agent Session module's import of the Fus3 Process Manager class"""
+    with patch.object(session_mod, "Fus3ProcessManager") as mock_fus3_process_manager:
+        yield mock_fus3_process_manager
+
+
+@pytest.fixture
 def action_update_callback() -> MagicMock:
     """MagicMock action as the action update callback"""
     return MagicMock()
@@ -1661,6 +1668,20 @@ class TestSessionCleanup:
 
         # THEN
         openjd_session_cleanup.assert_called_once_with()
+
+    def test_calls_fus3_kill(
+        self,
+        session: Session,
+        mock_fus3_process_manager_cls,
+    ) -> None:
+        # Mock Session._monitor_action which is used to poll the Open Job Description session status
+        with patch.object(session, "_monitor_action", return_value=[]):
+            # WHEN
+            session._cleanup()
+
+        # THEN
+        mock_fus3_process_manager_cls.find_fus3.assert_called_once()
+        mock_fus3_process_manager_cls.kill_all_processes.assert_called()
 
 
 class TestSessionStartAction:
