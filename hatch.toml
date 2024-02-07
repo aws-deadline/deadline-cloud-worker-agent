@@ -46,3 +46,11 @@ build = "hatch build {args:}"
 version = "hatch version"
 metadata = "hatch project metadata {args:}"
 integ-test = "pytest --no-cov test/integ {args:}"
+[envs.release]
+pre-install-commands = [
+  "pip install -r requirements-release.txt"
+]
+
+[envs.release.scripts]
+bump = "semantic-release -v --strict version --no-push --no-commit --no-tag --skip-build {args}"
+version = "semantic-release -v --strict version --print {args}"
