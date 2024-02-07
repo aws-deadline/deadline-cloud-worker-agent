@@ -100,6 +100,8 @@ def job_run_as_user_api_model_to_worker_agent(
         if job_run_as_user_posix := job_run_as_user_data.get("posix", None):
             user = job_run_as_user_posix["user"]
             group = job_run_as_user_posix["group"]
+        else:
+            return None
 
         if "runAs" not in job_run_as_user_data and not group and not user:
             return None

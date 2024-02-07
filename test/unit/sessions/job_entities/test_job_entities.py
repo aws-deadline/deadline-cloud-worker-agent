@@ -290,8 +290,8 @@ class TestDetails:
                 "logGroupName": "/aws/deadline/queue-0000",
                 "jobRunAsUser": {
                     "posix": {
-                        "user": "job-user",
-                        "group": "job-group",
+                        "user": "user",
+                        "group": "group",
                     },
                     "windows": {
                         "user": "job-user",
@@ -338,8 +338,6 @@ class TestDetails:
         else:
             assert details.job_run_as_user.windows is not None
             assert details.job_run_as_user.posix is None
-            print(f"expected {expected_details}")
-            print(f"got {details}")
             assert (
                 details.job_run_as_user.windows.user
                 == expected_details.job_run_as_user.windows.user

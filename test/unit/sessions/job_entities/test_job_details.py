@@ -23,7 +23,7 @@ def os_user() -> SessionUser:
 
 
 @pytest.fixture
-def job_details_with_user() -> JobDetails:
+def job_details_with_user(os_user) -> JobDetails:
     if os.name == "posix":
         posix_user = cast(PosixSessionUser, os_user)
         return JobDetails(
@@ -383,6 +383,8 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
     job_details = JobDetails.from_boto(data)
     expected_job_details: JobDetails = request.getfixturevalue(expected)
     # THEN
+    print(f"expected {expected_job_details}")
+    print(f"got {job_details}")
     assert job_details == expected_job_details
 
 
