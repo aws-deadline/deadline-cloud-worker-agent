@@ -160,8 +160,9 @@ show_missing = true
 fail_under = 78
 
 [tool.semantic_release]
-major_on_zero = "false"
-tag_format = "{version}"
+# Can be removed or set to true once we are v1
+major_on_zero = false
+tag_format = "v{version}"
 
 [tool.semantic_release.commit_parser_options]
 allowed_tags = [
@@ -183,3 +184,16 @@ patch_tags = [
   "fix",
   "refactor",
 ]
+
+[tool.semantic_release.publish]
+upload_to_vcs_release = false
+
+[tool.semantic_release.changelog]
+template_dir = ".semantic_release"
+
+[tool.semantic_release.changelog.environment]
+trim_blocks = true
+lstrip_blocks = true
+
+[tool.semantic_release.branches.release]
+match = "(mainline|release)"
