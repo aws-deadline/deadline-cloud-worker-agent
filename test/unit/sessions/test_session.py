@@ -107,13 +107,6 @@ def mock_openjd_session(mock_openjd_session_cls: MagicMock) -> MagicMock:
 
 
 @pytest.fixture
-def mock_fus3_process_manager_cls() -> Generator[MagicMock, None, None]:
-    """Mocks the Worker Agent Session module's import of the Fus3 Process Manager class"""
-    with patch.object(session_mod, "Fus3ProcessManager") as mock_fus3_process_manager:
-        yield mock_fus3_process_manager
-
-
-@pytest.fixture
 def action_update_callback() -> MagicMock:
     """MagicMock action as the action update callback"""
     return MagicMock()
@@ -1669,19 +1662,30 @@ class TestSessionCleanup:
         # THEN
         openjd_session_cleanup.assert_called_once_with()
 
-    def test_calls_fus3_kill(
+    @pytest.fixture()
+    def mock_asset_sync(self, session: Session) -> Generator[MagicMock, None, None]:
+        with patch.object(session, "_asset_sync") as mock_asset_sync:
+            yield mock_asset_sync
+
+    def test_calls_asset_sync_cleanup(
         self,
         session: Session,
-        mock_fus3_process_manager_cls,
+        job_attachment_details: JobAttachmentDetails,
+        mock_asset_sync: MagicMock,
+        mock_openjd_session: MagicMock,
     ) -> None:
-        # Mock Session._monitor_action which is used to poll the Open Job Description session status
-        with patch.object(session, "_monitor_action", return_value=[]):
-            # WHEN
-            session._cleanup()
+        # GIVEN
+        mock_asset_sync_cleanup: MagicMock = mock_asset_sync.cleanup_session
+        session._job_attachment_details = job_attachment_details
+
+        # WHEN
+        session._cleanup()
 
         # THEN
-        mock_fus3_process_manager_cls.find_fus3.assert_called_once()
-        mock_fus3_process_manager_cls.kill_all_processes.assert_called()
+        mock_asset_sync_cleanup.assert_called_once_with(
+            session_dir=mock_openjd_session.working_directory,
+            file_system=job_attachment_details.job_attachments_file_system,
+        )
 
 
 class TestSessionStartAction:

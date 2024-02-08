@@ -52,8 +52,6 @@ from openjd.sessions import LOG as OPENJD_LOG
 
 from deadline.job_attachments.asset_sync import AssetSync
 from deadline.job_attachments.asset_sync import logger as ASSET_SYNC_LOGGER
-from deadline.job_attachments.exceptions import Fus3ExecutableMissingError
-from deadline.job_attachments.fus3 import Fus3ProcessManager
 from deadline.job_attachments.models import (
     Attachments,
     JobAttachmentS3Settings,
@@ -375,12 +373,12 @@ class Session:
                     logger.info("%s successful", desc)
                 cur_time = monotonic()
         finally:
-            try:
-                Fus3ProcessManager.find_fus3()
-                # Shutdown all running Deadline VFS processes since session is complete
-                Fus3ProcessManager.kill_all_processes(session_dir=self._session.working_directory)
-            except Fus3ExecutableMissingError:
-                logger.error("Virtual File System not found, no processes to kill.")
+            if self._asset_sync is not None and self._job_attachment_details is not None:
+                # terminate any running virtual file systems
+                self._asset_sync.cleanup_session(
+                    session_dir=self._session.working_directory,
+                    file_system=self._job_attachment_details.job_attachments_file_system,
+                )
             # Clean-up the Open Job Description session
             self._session.cleanup()
 
