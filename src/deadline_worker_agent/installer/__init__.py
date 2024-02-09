@@ -1,12 +1,15 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Any
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from subprocess import CalledProcessError, run
 import sys
 import sysconfig
+
+if sys.platform == "win32":
+    from deadline_worker_agent.installer.win_installer import start_windows_installer
 
 
 INSTALLER_PATH = {
@@ -17,51 +20,67 @@ INSTALLER_PATH = {
 def install() -> None:
     """Installer entrypoint for the Amazon Deadline Cloud Worker Agent"""
 
-    if sys.platform != "linux":
+    if sys.platform not in ["linux", "win32"]:
         print(f"ERROR: Unsupported platform {sys.platform}")
         sys.exit(1)
 
     arg_parser = get_argument_parser()
     args = arg_parser.parse_args(namespace=ParsedCommandLineArguments)
     scripts_path = Path(sysconfig.get_path("scripts"))
-
-    cmd = [
-        "sudo",
-        str(INSTALLER_PATH[sys.platform]),
-        "--farm-id",
-        args.farm_id,
-        "--fleet-id",
-        args.fleet_id,
-        "--region",
-        args.region,
-        "--user",
-        args.user,
-        "--scripts-path",
-        str(scripts_path),
-    ]
-    if args.vfs_install_path:
-        cmd += ["--vfs-install-path", args.vfs_install_path]
-    if args.group:
-        cmd += ["--group", args.group]
-    if args.confirmed:
-        cmd.append("-y")
-    if args.service_start:
-        cmd.append("--start")
-    if args.allow_shutdown:
-        cmd.append("--allow-shutdown")
-    if not args.install_service:
-        cmd.append("--no-install-service")
-    if args.telemetry_opt_out:
-        cmd.append("--telemetry-opt-out")
-
-    try:
-        run(
-            cmd,
-            check=True,
+    if sys.platform == "win32":
+        installer_args: dict[str, Any] = dict(
+            farm_id=args.farm_id,
+            fleet_id=args.fleet_id,
+            region=args.region,
+            worker_agent_program=str(scripts_path),
+            no_install_service=False if args.install_service else False,
+            start=True if args.service_start else False,
+            confirm=True if args.confirmed else False,
         )
-    except CalledProcessError as error:
-        # Non-zero exit code
-        sys.exit(error.returncode)
+        if args.user:
+            installer_args.update(user_name=args.user)
+        if args.group:
+            installer_args.update(group_name=args.group)
+
+        start_windows_installer(**installer_args)
+    else:
+        cmd = [
+            "sudo",
+            str(INSTALLER_PATH[sys.platform]),
+            "--farm-id",
+            args.farm_id,
+            "--fleet-id",
+            args.fleet_id,
+            "--region",
+            args.region,
+            "--user",
+            args.user,
+            "--scripts-path",
+            str(scripts_path),
+        ]
+        if args.vfs_install_path:
+            cmd += ["--vfs-install-path", args.vfs_install_path]
+        if args.group:
+            cmd += ["--group", args.group]
+        if args.confirmed:
+            cmd.append("-y")
+        if args.service_start:
+            cmd.append("--start")
+        if args.allow_shutdown:
+            cmd.append("--allow-shutdown")
+        if not args.install_service:
+            cmd.append("--no-install-service")
+        if args.telemetry_opt_out:
+            cmd.append("--telemetry-opt-out")
+
+        try:
+            run(
+                cmd,
+                check=True,
+            )
+        except CalledProcessError as error:
+            # Non-zero exit code
+            sys.exit(error.returncode)
 
 
 class ParsedCommandLineArguments(Namespace):

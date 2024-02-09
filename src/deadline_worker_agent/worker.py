@@ -122,7 +122,7 @@ class Worker:
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
         # TODO: Remove this once WA is stable or put behind a debug flag
-        signal.signal(signal.SIGUSR1, self._output_thread_stacks)
+        signal.signal(signal.SIGUSR1, self._output_thread_stacks)  # type: ignore[attr-defined]
 
     def _signal_handler(self, signum: int, frame: FrameType | None = None) -> None:
         """
@@ -147,7 +147,7 @@ class Worker:
         This signal is designated for application-defined behaviors. In our case, we want to output
         stack traces for all running threads.
         """
-        if signum in (signal.SIGUSR1,):
+        if signum in (signal.SIGUSR1,):  # type: ignore[attr-defined]
             logger.info(f"Received signal {signum}. Initiating application shutdown.")
             # OUTPUT STACK TRACE FOR ALL THREADS
             print("\n*** STACKTRACE - START ***\n", file=sys.stderr)
