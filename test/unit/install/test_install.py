@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Generator
 from unittest.mock import MagicMock, patch
@@ -24,6 +25,18 @@ VFS_DEFAULT_INSTALL_PATH = "/opt/deadline_vfs"
 def mock_subprocess_run() -> Generator[MagicMock, None, None]:
     with patch.object(installer_mod, "run") as mock_subprocess_run:
         yield mock_subprocess_run
+
+
+def test_installer_path(platform: str) -> None:
+    """Tests the value of deadline_worker_agent.installer.INSTALLER_PATH"""
+    # GIVEN
+    if platform == "linux":
+        expected_value = Path(installer_mod.__file__).parent / "install.sh"
+    else:
+        expected_value = Path(installer_mod.__file__).parent / "win_installer.sh"
+
+    # THEN
+    assert installer_mod.INSTALLER_PATH[platform] == expected_value
 
 
 @pytest.fixture(autouse=True)

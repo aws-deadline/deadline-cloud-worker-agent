@@ -1,14 +1,15 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 import logging
-import subprocess
 import re
+
 
 import sys
 from typing import Optional
 
 import win32com
 import win32com.client
+import win32netcon
 import winerror
 
 import pywintypes
@@ -34,6 +35,8 @@ def print_usage():
         The AWS region of the Amazon Deadline Cloud farm. Defaults to $Region.
     -User <USER>
         A user name that the Amazon Deadline Cloud Worker Agent will run as. Defaults to deadline-worker.
+    -Password <PASSWORD>
+        The password that the Amazon Deadline Cloud Worker Agent will use to log in.
     -Group <GROUP>
         A group name that the Worker Agent shares with the user(s) that Jobs will be running as.
         Do not use the primary/effective group of the Worker Agent user specified in -User as
@@ -136,34 +139,38 @@ def validate_deadline_id(prefix: str, text: str) -> bool:
     return re.match(pattern, text) is not None
 
 
-def create_local_user_with_powershell(username: str) -> None:
+def create_local_user_with_password(username: str, password: str) -> None:
     """
-    This function invokes a PowerShell command from Python to create a new local user with the following properties:
-    - No password
-    - Account never expires
+    Creates a local user account on Windows with a specified password and sets the account to never expire.
+    The function sets the UF_DONT_EXPIRE_PASSWD flag to ensure the account's password never expires.
 
     Args:
-    username (str): The username of the new local user to be created.
+    username (str): The username of the new account.
+    password (str): The password for the new account. Ensure it meets Windows' password policy requirements.
 
-    Note: This method requires PowerShell access and appropriate permissions to create local users.
     """
-    if not check_user_existence(username):
-        logging.info(f"Creating user {username}")
-        # TODO: Need to figure out Why we create No Password accounts here?
-        # Pywin32 doesn't allow us to create account without password.
-        powershell_command = f"New-LocalUser -Name {username} -NoPassword -AccountNeverExpires"
-        try:
-            subprocess.run(["powershell", "-Command", powershell_command], check=True)
-            logging.info(f"User {username} created successfully.")
-        except subprocess.CalledProcessError as e:
-            logging.info(f"Failed to create user: {e}")
-            raise e
-        logging.info("Done creating user")
-    else:
+    if check_user_existence(username):
         logging.info(f"User {username} already exists")
+    else:
+        logging.info(f"Creating user {username}")
+        user_info = {
+            "name": username,
+            "password": password,
+            "priv": win32netcon.USER_PRIV_USER,  # User privilege level, Standard User
+            "home_dir": None,
+            "comment": "Amazon Deadline Cloud Worker Agent User",
+            "flags": win32netcon.UF_DONT_EXPIRE_PASSWD,
+            "script_path": None,
+        }
+
+        try:
+            win32net.NetUserAdd(None, 1, user_info)
+            logging.info(f"User '{username}' created successfully.")
+        except Exception as e:
+            logging.error(f"Failed to create user '{username}'. Error: {e}")
 
 
-def add_user_to_group(group_name, user_name):
+def add_user_to_group(group_name: str, user_name: str) -> None:
     """
     Adds a specified user to a specified local group if they are not already a member.
 
@@ -199,6 +206,7 @@ def start_windows_installer(
     fleet_id: str,
     region: str,
     worker_agent_program: str,
+    password: str,
     user_name: str = default_wa_user,
     group_name: str = default_job_group,
     no_install_service: bool = False,
@@ -244,7 +252,7 @@ def start_windows_installer(
                 logging.warning("Not a valid choice, try again")
 
     # Check if the worker agent user exists, and create it if not
-    create_local_user_with_powershell(user_name)
+    create_local_user_with_password(user_name, password)
 
     # Check if the job group exists, and create it if not
     create_local_group(group_name)

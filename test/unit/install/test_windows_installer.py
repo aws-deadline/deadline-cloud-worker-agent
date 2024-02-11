@@ -11,10 +11,10 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from deadline_worker_agent import installer as installer_mod
-from deadline_worker_agent.installer import ParsedCommandLineArguments, install
+from deadline_worker_agent.installer import ParsedCommandLineArguments, install, generate_password
 from deadline_worker_agent.installer.win_installer import (
     check_user_existence,
-    create_local_user_with_powershell,
+    create_local_user_with_password,
     validate_deadline_id,
     create_local_group,
     add_user_to_group,
@@ -66,12 +66,12 @@ def user_setup_and_teardown():
     Pytest fixture to create a user before the test and ensure it is deleted after the test.
     """
     username = "InstallerTestUser"
-    create_local_user_with_powershell(username)
+    create_local_user_with_password(username, generate_password())
     yield username  # This is where the test function will execute
     delete_local_user(username)
 
 
-def test_create_local_user_with_powershell(user_setup_and_teardown):
+def test_create_local_user_with_password(user_setup_and_teardown):
     """
     Tests the creation of a local user and validates it exists.
     """
@@ -105,6 +105,7 @@ def test_start_windows_installer(
                 fleet_id="fleet-123e4567e89b12d3a456426655444321",
                 region="us-west-2",
                 worker_agent_program=str(Path(sysconfig.get_path("scripts"))),
+                password=parsed_args.password,
                 user_name="wa_user",
                 group_name="wa_group",
                 no_install_service=False,

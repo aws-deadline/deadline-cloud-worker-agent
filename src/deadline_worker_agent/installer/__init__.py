@@ -7,6 +7,8 @@ from pathlib import Path
 from subprocess import CalledProcessError, run
 import sys
 import sysconfig
+import secrets
+import string
 
 if sys.platform == "win32":
     from deadline_worker_agent.installer.win_installer import start_windows_installer
@@ -15,6 +17,23 @@ if sys.platform == "win32":
 INSTALLER_PATH = {
     "linux": Path(__file__).parent / "install.sh",
 }
+
+
+def generate_password(length: int = 12) -> str:
+    """
+    Generate password of given length.
+
+    Parameters
+        length: Given password length
+
+    Returns
+        str: password
+    """
+    """Generate a strong password of given length."""
+    alphabet = string.ascii_letters + string.digits + string.punctuation
+    # Use secrets.choice to ensure a secure random selection of characters
+    password = "".join(secrets.choice(alphabet) for _ in range(length))
+    return password
 
 
 def install() -> None:
@@ -41,6 +60,10 @@ def install() -> None:
             installer_args.update(user_name=args.user)
         if args.group:
             installer_args.update(group_name=args.group)
+        if args.password:
+            installer_args.update(password=args.password)
+        else:
+            installer_args.update(password=generate_password())
 
         start_windows_installer(**installer_args)
     else:
@@ -90,6 +113,7 @@ class ParsedCommandLineArguments(Namespace):
     fleet_id: str
     region: str
     user: str
+    password: Optional[str]
     group: Optional[str]
     confirmed: bool
     service_start: bool
