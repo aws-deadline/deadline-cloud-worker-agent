@@ -256,17 +256,6 @@ class DeadlineClient:
                             "logGroupName": "/aws/deadline/queue-abc",
                             "jobRunAsUser": {
                                 "posix": {
-                                    "user": "",
-                                    "group": "",
-                                },
-                                "windows": {
-                                    "user": "",
-                                    "group": "",
-                                    "passwordArn": "",
-                                },
-                            },
-                            "jobRunAsUser": {
-                                "posix": {
                                     "user": "job-user",
                                     "group": "job-group",
                                 },
