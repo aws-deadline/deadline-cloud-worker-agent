@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any, Literal, TYPE_CHECKING
 from openjd.model import validate_attribute_capability_name, validate_amount_capability_name
 from openjd.model.v2023_09 import STANDARD_ATTRIBUTE_CAPABILITIES, STANDARD_AMOUNT_CAPABILITIES
+
 import logging
 import platform
 import shutil
@@ -27,21 +28,18 @@ def detect_system_capabilities() -> Capabilities:
     amounts: dict[AmountCapabilityName, PositiveFloat] = {}
     attributes: dict[AttributeCapabilityName, list[str]] = {}
 
-    # Determine OpenJobDescription OS and CPU Arch
+    # Determine OpenJobDescription OS
     platform_system = platform.system().lower()
     python_system_to_openjd_os_family = {
         "darwin": "macos",
         "linux": "linux",
         "windows": "windows",
     }
-    platform_machine = platform.machine().lower()
-    python_machine_to_openjd_cpu_arch = {"x86_64": "x86_64", "amd64": "x86_64"}
     if openjd_os_family := python_system_to_openjd_os_family.get(platform_system):
         attributes[AttributeCapabilityName("attr.worker.os.family")] = [openjd_os_family]
-    if openjd_cpu_arch := python_machine_to_openjd_cpu_arch.get(platform_machine):
-        attributes[AttributeCapabilityName("attr.worker.cpu.arch")] = [openjd_cpu_arch]
-    else:
-        raise NotImplementedError(f"{platform_machine} not supported")
+
+    attributes[AttributeCapabilityName("attr.worker.cpu.arch")] = [_get_arch()]
+
     amounts[AmountCapabilityName("amount.worker.vcpu")] = float(psutil.cpu_count())
     amounts[AmountCapabilityName("amount.worker.memory")] = float(psutil.virtual_memory().total) / (
         1024.0**2
@@ -58,6 +56,7 @@ def detect_system_capabilities() -> Capabilities:
 def _get_arch() -> str:
     # Determine OpenJobDescription architecture
     python_machine_to_openjd_arch = {
+        "x86_64": "x86_64",
         "aarch64": "arm64",
         "amd64": "x86_64",
     }

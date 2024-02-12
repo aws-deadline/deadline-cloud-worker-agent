@@ -589,7 +589,7 @@ class TestSessionSyncAssetInputs:
             storage_profiles_path_mapping_rules={},
             step_dependencies=None,
             on_downloading_files=ANY,
-            os_env_vars=ANY,
+            os_env_vars=None,
         )
 
     def test_sync_asset_inputs_with_fs_permission_settings(
@@ -610,12 +610,14 @@ class TestSessionSyncAssetInputs:
         expected_fs_permission_settings: Optional[FileSystemPermissionSettings] = None
         if os.name == "posix":
             expected_fs_permission_settings = PosixFileSystemPermissionSettings(
+                os_user="some-user",
                 os_group="some-group",
                 dir_mode=0o20,
                 file_mode=0o20,
             )
         elif os.name == "nt":
             expected_fs_permission_settings = WindowsFileSystemPermissionSettings(
+                os_user="SomeUser",
                 os_group="SomeGroup",
                 dir_mode=WindowsPermissionEnum.WRITE,
                 file_mode=WindowsPermissionEnum.WRITE,
@@ -641,6 +643,7 @@ class TestSessionSyncAssetInputs:
             storage_profiles_path_mapping_rules={},
             step_dependencies=None,
             on_downloading_files=ANY,
+            os_env_vars=None,
         )
 
     @pytest.mark.parametrize(

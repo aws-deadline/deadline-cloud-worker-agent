@@ -102,20 +102,6 @@ def job_details_no_user() -> JobDetails:
                 "jobId": "job-0000",
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
-                "jobRunAsUser": {
-                    "posix": {
-                        "user": "",
-                        "group": "",
-                    },
-                },
-            },
-            id="only required fields, empty user",
-        ),
-        pytest.param(
-            {
-                "jobId": "job-0000",
-                "logGroupName": "/aws/deadline/queue-0000",
-                "schemaVersion": "jobtemplate-0000-00",
                 "parameters": {
                     "param1": {
                         "string": "param1value",
@@ -390,21 +376,6 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
             "job_details_no_user",
             id="required with runAs WORKER_AGENT_USER",
         ),
-        pytest.param(
-            {
-                "jobId": "job-0000",
-                "logGroupName": "/aws/deadline/queue-0000",
-                "schemaVersion": "jobtemplate-2023-09",
-                "jobRunAsUser": {
-                    "runAs": "WORKER_AGENT_USER",
-                },
-            },
-            JobDetails(
-                log_group_name="/aws/deadline/queue-0000",
-                schema_version=SchemaVersion.v2023_09,
-            ),
-            id="required with runAs WORKER_AGENT_USER",
-        ),
     ],
 )
 def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, request) -> None:
@@ -412,8 +383,6 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
     job_details = JobDetails.from_boto(data)
     expected_job_details: JobDetails = request.getfixturevalue(expected)
     # THEN
-    print(f"expected {expected_job_details}")
-    print(f"got {job_details}")
     assert job_details == expected_job_details
 
 

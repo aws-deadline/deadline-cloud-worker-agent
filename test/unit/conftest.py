@@ -52,7 +52,7 @@ def logs_client() -> MagicMock:
 
 
 @pytest.fixture()
-def os_user() -> Optional[SessionUser]:
+def job_user() -> Optional[SessionUser]:
     if os.name == "posix":
         return PosixSessionUser(user="some-user", group="some-group")
     else:
@@ -66,9 +66,9 @@ def job_run_as_user_overrides(
     (posix_os,) = request.param
 
     if posix_os:
-        return ImpersonationOverrides(inactive=False, job_user=os_user)
+        return JobsRunAsUserOverride(run_as_agent=False, job_user=job_user)
     else:
-        return ImpersonationOverrides(inactive=True)
+        return JobsRunAsUserOverride(run_as_agent=True)
 
 
 @pytest.fixture
@@ -265,7 +265,7 @@ def job_details(
     queue_job_attachment_settings: JobAttachmentSettings,
     job_parameters: list[Parameter],
     log_group_name: str,
-    job_run_as_user: JobRunAsUser,
+    job_run_as_user: JobRunAsUser | None,
     path_mapping_rules: list[PathMappingRule],
     schema_version: SchemaVersion,
 ) -> JobDetails:
