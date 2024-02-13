@@ -60,7 +60,7 @@ def _get_arch() -> str:
         "aarch64": "arm64",
         "amd64": "x86_64",
     }
-    platform_machine = platform.machine()
+    platform_machine = platform.machine().lower()
     return python_machine_to_openjd_arch.get(platform_machine, platform_machine)
 
 
