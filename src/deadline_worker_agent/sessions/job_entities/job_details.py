@@ -305,7 +305,6 @@ class JobDetails:
                     expected_type=list,
                     required=False,
                 ),
-                # TODO: remove jobsRunAs once service no longer responds with jobsRunAs
                 Field(
                     key="jobRunAsUser",
                     expected_type=dict,
@@ -324,32 +323,6 @@ class JobDetails:
                             key="runAs",
                             expected_type=str,
                             required=False,
-                        ),
-                        Field(
-                            key="windows",
-                            expected_type=dict,
-                            required=False,
-                            fields=(
-                                Field(key="user", expected_type=str, required=True),
-                                Field(key="group", expected_type=str, required=True),
-                                Field(key="passwordArn", expected_type=str, required=True),
-                            ),
-                        ),
-                    ),
-                ),
-                Field(
-                    key="jobRunAsUser",
-                    expected_type=dict,
-                    required=False,
-                    fields=(
-                        Field(
-                            key="posix",
-                            expected_type=dict,
-                            required=False,
-                            fields=(
-                                Field(key="user", expected_type=str, required=True),
-                                Field(key="group", expected_type=str, required=True),
-                            ),
                         ),
                         Field(
                             key="windows",
