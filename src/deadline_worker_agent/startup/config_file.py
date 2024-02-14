@@ -116,6 +116,8 @@ class ConfigFile(BaseModel):
             output_settings["worker_persistence_dir"] = self.worker.worker_persistence_dir
         if self.aws.profile is not None:
             output_settings["profile"] = self.aws.profile
+        if self.aws.allow_ec2_instance_profile is not None:
+            output_settings["allow_instance_profile"] = self.aws.allow_ec2_instance_profile
         if self.logging.verbose is not None:
             output_settings["verbose"] = self.logging.verbose
         if self.logging.worker_logs_dir is not None:
@@ -129,13 +131,11 @@ class ConfigFile(BaseModel):
                 "host_metrics_logging_interval_seconds"
             ] = self.logging.host_metrics_logging_interval_seconds
         if self.os.shutdown_on_stop is not None:
-            output_settings["no_shutdown"] = self.os.shutdown_on_stop
+            output_settings["no_shutdown"] = not self.os.shutdown_on_stop
         if self.os.run_jobs_as_agent_user is not None:
             output_settings["run_jobs_as_agent_user"] = self.os.run_jobs_as_agent_user
         if self.os.posix_job_user is not None:
             output_settings["posix_job_user"] = self.os.posix_job_user
-        if self.aws.allow_ec2_instance_profile is not None:
-            output_settings["allow_instance_profile"] = self.aws.allow_ec2_instance_profile
         if self.capabilities is not None:
             output_settings["capabilities"] = self.capabilities
 
