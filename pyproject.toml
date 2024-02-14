@@ -95,14 +95,16 @@ module = [
 ]
 
 [tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
 ignore = [
   "E501",
   "E722",
   "F811",
 ]
-line-length = 100
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = [
   "deadline_worker_agent",
   "deadline",

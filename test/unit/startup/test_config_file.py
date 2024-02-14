@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from deadline_worker_agent.startup.capabilities import Capabilities
 
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseSettings
 import pytest
 
 try:
@@ -608,6 +608,7 @@ allow_ec2_instance_profile = true
 verbose = true
 worker_logs_dir = "/var/log/amazon/deadline"
 local_session_logs = false
+host_metrics_logging = true
 host_metrics_logging_interval_seconds = 1
 
 [os]
@@ -680,6 +681,7 @@ class TestConfigFileLoad:
         assert config.logging.verbose is True
         assert config.logging.worker_logs_dir == Path("/var/log/amazon/deadline")
         assert config.logging.local_session_logs is False
+        assert config.logging.host_metrics_logging is True
         assert config.logging.host_metrics_logging_interval_seconds == 1
 
         assert config.os.run_jobs_as_agent_user is False
@@ -724,3 +726,48 @@ class TestConfigFileLoad:
         config_path_open.assert_called_once_with(mode="rb")
         mock_load_toml.assert_called_once_with(config_path_fh_ctx)
         mock_parse_obj.assert_not_called()
+
+    def test_config_full_toml_as_settings(
+        self,
+    ) -> None:
+        # GIVEN
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_file = Path(tmpdir) / "config_file.toml"
+            with config_file.open("w", encoding="utf-8") as fh:
+                fh.write(FULL_CONFIG_FILE)
+            config = ConfigFile.load(config_file)
+
+        # WHEN
+        settings = config.as_settings(BaseSettings())
+
+        # THEN
+        expected = {
+            # worker
+            "cleanup_session_user_processes": True,
+            "farm_id": "farm-1f0ece77172c441ebe295491a51cf6d5",
+            "fleet_id": "fleet-c4a9481caa88404fa878a7fb98f8a4dd",
+            "worker_persistence_dir": Path("/my/worker/persistence"),
+            # aws
+            "profile": "my_aws_profile_name",
+            "allow_instance_profile": True,
+            # logging
+            "verbose": True,
+            "worker_logs_dir": Path("/var/log/amazon/deadline"),
+            "local_session_logs": False,
+            "host_metrics_logging": True,
+            "host_metrics_logging_interval_seconds": 1,
+            # os
+            "run_jobs_as_agent_user": False,
+            "posix_job_user": "user:group",
+            "no_shutdown": True,  # opposite of 'shutdown_on_stop'
+            # capabilities
+            "capabilities": Capabilities(
+                amounts={"amount.slots": 20, "deadline:amount.pets": 99},
+                attributes={
+                    "attr.groups": ["simulation", "maya", "nuke"],
+                    "acmewidgetsco:attr.admins": ["bob", "alice"],
+                },
+            ),
+        }
+
+        assert settings == expected
