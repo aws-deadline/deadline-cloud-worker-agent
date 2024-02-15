@@ -16,6 +16,7 @@ class FileSystemPermissionEnum(Enum):
     WRITE = "WRITE"
     EXECUTE = "EXECUTE"
     READ_WRITE = "READ_WRITE"
+    FULL_CONTROL = "FULL_CONTROL"
 
 
 def set_permissions(
@@ -162,5 +163,6 @@ def _get_ntsecuritycon_mode(mode: FileSystemPermissionEnum) -> int:
         | ntsecuritycon.FILE_DELETE_CHILD,
         FileSystemPermissionEnum.EXECUTE.value: ntsecuritycon.FILE_GENERIC_EXECUTE
         | ntsecuritycon.FILE_GENERIC_READ,
+        FileSystemPermissionEnum.FULL_CONTROL.value: ntsecuritycon.GENERIC_ALL,
     }
     return permission_mapping[mode.value]
