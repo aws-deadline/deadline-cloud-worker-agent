@@ -1,14 +1,16 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from unittest.mock import patch
 from datetime import datetime, timedelta
 from openjd.sessions import WindowsSessionUser
 from unittest.mock import patch, MagicMock
 from typing import Generator
 from pytest import fixture, mark
+import botocore
 import os
+import pytest
 
 import deadline_worker_agent.windows_credentials_resolver as credentials_mod
+from deadline_worker_agent.aws.deadline import DeadlineRequestUnrecoverableError
 
 
 class TestWindowsCredentialsResolver:
@@ -122,3 +124,59 @@ class TestWindowsCredentialsResolver:
         assert result.user == user
         assert result.group == group
         assert result.password == "fake_cached_password"
+
+    @pytest.mark.parametrize(
+        "exception_code",
+        [
+            "ResourceNotFoundException",
+            "InvalidRequestException",
+            "DecryptionFailure",
+        ],
+    )
+    @mark.skipif(os.name != "nt", reason="Windows-only test.")
+    @patch(
+        "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
+    )
+    def test_fetch_secrets_manager_non_retirable_exception(
+        self, fetch_secret_mock: MagicMock, exception_code: str
+    ):
+        mock_boto_session = MagicMock()
+        resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
+        password_arn = "password_arn"
+
+        exc = botocore.exceptions.ClientError(
+            {"Error": {"Code": exception_code, "Message": "A message"}}, "GetSecretValue"
+        )
+
+        fetch_secret_mock.side_effect = exc
+        with pytest.raises(DeadlineRequestUnrecoverableError):
+            resolver._fetch_secret_from_secrets_manager(password_arn)
+
+    @pytest.mark.parametrize(
+        "exception_code",
+        [
+            "InternalServiceError",
+            "ThrottlingException",
+        ],
+    )
+    @mark.skipif(os.name != "nt", reason="Windows-only test.")
+    @patch(
+        "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
+    )
+    def test_fetch_secrets_manager_retirable_exception(
+        self, fetch_secret_mock: MagicMock, exception_code: str
+    ):
+        mock_boto_session = MagicMock()
+        resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
+        password_arn = "password_arn"
+
+        exc = botocore.exceptions.ClientError(
+            {"Error": {"Code": exception_code, "Message": "A message"}}, "GetSecretValue"
+        )
+
+        fetch_secret_mock.side_effect = exc
+
+        # Assert raising DeadlineRequestUnrecoverableError after 10 retries
+        with pytest.raises(DeadlineRequestUnrecoverableError):
+            resolver._fetch_secret_from_secrets_manager(password_arn)
+            assert fetch_secret_mock.call_count == 10
