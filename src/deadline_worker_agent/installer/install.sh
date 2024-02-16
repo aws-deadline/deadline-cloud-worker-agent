@@ -31,7 +31,7 @@ SCRIPT_DIR=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Defaults
 default_wa_user=deadline-worker
-default_job_group=deadline-job-users
+default_job_group=job-group
 farm_id=unset
 fleet_id=unset
 wa_user=$default_wa_user

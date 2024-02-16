@@ -108,7 +108,7 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     )
     parser.add_argument(
         "--group",
-        help='The POSIX group that is shared between the Agent user and the user(s) that jobs run as. Defaults to "deadline-job-users".',
+        help='The POSIX group that is shared between the Agent user and the user(s) that jobs run as. Defaults to "job-group".',
     )
     parser.add_argument(
         "--start",
