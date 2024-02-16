@@ -5,7 +5,7 @@
         {
             "name": "duration",
             "type": "INT",
-            "default": 45,
+            "default": 60,
             "minValue": 10,
             "maxValue": 600
         }
@@ -17,7 +17,8 @@
                 "actions": {
                     "onRun": {
                         "command": "{{ Task.File.runScript }}",
-                        "args": ["{{ Param.duration }}"]
+                        "args": ["{{ Param.duration }}"],
+                        "timeout": 45
                     }
                 },
                 "embeddedFiles": [

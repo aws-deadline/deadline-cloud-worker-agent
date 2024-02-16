@@ -37,7 +37,7 @@ from ..sessions.errors import (
     JobEntityUnsupportedSchemaError,
     StepDetailsError,
 )
-from ..sessions.job_entities.job_details import parameters_data_to_list
+from ..sessions.job_entities.job_details import parameters_from_api_response
 
 if TYPE_CHECKING:
     from ..sessions.job_entities import JobEntities
@@ -374,7 +374,7 @@ class SessionActionQueue:
                 except (ValueError, RuntimeError) as e:
                     raise StepDetailsError(action_id, str(e)) from e
                 task_parameters_data: dict = action_definition.get("parameters", {})
-                task_parameters = parameters_data_to_list(task_parameters_data)
+                task_parameters = parameters_from_api_response(task_parameters_data)
 
                 next_action = RunStepTaskAction(
                     id=action_id,

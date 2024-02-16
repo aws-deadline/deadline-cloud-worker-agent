@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
-from openjd.model import parse_model, SchemaVersion, UnsupportedSchema
+from openjd.model import parse_model, TemplateSpecificationVersion, UnsupportedSchema
 from openjd.model.v2023_09 import StepTemplate as StepTemplate_2023_09
 
 from ...api_models import StepDetailsData
@@ -53,9 +53,9 @@ class StepDetails:
             If the environment's Open Job Description schema version not unsupported
         """
 
-        schema_version = SchemaVersion(step_details_data["schemaVersion"])
+        schema_version = TemplateSpecificationVersion(step_details_data["schemaVersion"])
 
-        if schema_version == SchemaVersion.v2023_09:
+        if schema_version == TemplateSpecificationVersion.JOBTEMPLATE_v2023_09:
             # Jan 23, 2024: Forwards compatibility. The 'template' field is changing from a StepScript to
             # a StepTemplate. Remove the StepScript case after the transition is complete.
             details_data = step_details_data["template"]

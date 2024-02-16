@@ -5,7 +5,7 @@ import pytest
 
 from deadline_worker_agent.sessions.job_entities.job_details import JobDetails, JobRunAsUser
 from deadline_worker_agent.api_models import JobDetailsData
-from openjd.model import SchemaVersion
+from openjd.model import SpecificationRevision
 from openjd.sessions import PosixSessionUser
 
 
@@ -214,7 +214,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
             },
             JobDetails(
                 log_group_name="/aws/deadline/queue-0000",
-                schema_version=SchemaVersion.v2023_09,
+                schema_version=SpecificationRevision.v2023_09,
                 job_run_as_user=JobRunAsUser(posix=PosixSessionUser(user="user1", group="group1")),
             ),
             id="only required fields",
@@ -234,7 +234,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
             },
             JobDetails(
                 log_group_name="/aws/deadline/queue-0000",
-                schema_version=SchemaVersion.v2023_09,
+                schema_version=SpecificationRevision.v2023_09,
                 job_run_as_user=JobRunAsUser(posix=PosixSessionUser(user="user1", group="group1")),
             ),
             id="required fields with runAs QUEUE_CONFIGURED_USER",
@@ -253,7 +253,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
             },
             JobDetails(
                 log_group_name="/aws/deadline/queue-0000",
-                schema_version=SchemaVersion.v2023_09,
+                schema_version=SpecificationRevision.v2023_09,
             ),
             id="required with empty user/group",
         ),
@@ -268,7 +268,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
             },
             JobDetails(
                 log_group_name="/aws/deadline/queue-0000",
-                schema_version=SchemaVersion.v2023_09,
+                schema_version=SpecificationRevision.v2023_09,
             ),
             id="required with runAs WORKER_AGENT_USER",
         ),
