@@ -212,7 +212,7 @@ class TestSessionUserCleanupManager:
             with patch.object(
                 session_cleanup_mod.subprocess,
                 "check_output",
-                return_value=agent_user.user,
+                return_value=f"{agent_user.user}\n",
             ) as mock:
                 yield mock
 
