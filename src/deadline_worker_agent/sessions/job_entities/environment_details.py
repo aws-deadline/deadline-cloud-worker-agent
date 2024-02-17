@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
-from openjd.model import parse_model, SchemaVersion, UnsupportedSchema
+from openjd.model import parse_model, TemplateSpecificationVersion, UnsupportedSchema
 from openjd.model.v2023_09 import Environment as Environment_2023_09
 from openjd.sessions import EnvironmentModel
 
@@ -44,9 +44,12 @@ class EnvironmentDetails:
             If the environment's Open Job Description schema version not unsupported
         """
 
-        schema_version = SchemaVersion(environment_details_data["schemaVersion"])
+        schema_version = TemplateSpecificationVersion(environment_details_data["schemaVersion"])
 
-        if schema_version == SchemaVersion.v2023_09:
+        if schema_version in (
+            TemplateSpecificationVersion.JOBTEMPLATE_v2023_09,
+            TemplateSpecificationVersion.ENVIRONMENT_v2023_09,
+        ):
             environment = parse_model(
                 model=Environment_2023_09, obj=environment_details_data["template"]
             )

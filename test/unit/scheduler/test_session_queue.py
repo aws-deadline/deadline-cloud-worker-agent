@@ -6,7 +6,12 @@ from unittest.mock import MagicMock, Mock, patch
 from collections import OrderedDict
 
 from deadline.job_attachments.models import JobAttachmentsFileSystem
-from openjd.model import SchemaVersion, UnsupportedSchema
+from openjd.model import (
+    ParameterValue,
+    ParameterValueType,
+    TemplateSpecificationVersion,
+    UnsupportedSchema,
+)
 from openjd.model.v2023_09 import (
     Environment,
     EnvironmentScript,
@@ -16,7 +21,6 @@ from openjd.model.v2023_09 import (
     StepActions,
     StepTemplate,
 )
-from openjd.sessions import Parameter, ParameterType
 import pytest
 
 from deadline_worker_agent.scheduler.session_queue import (
@@ -139,7 +143,6 @@ class TestSessionActionQueueDequeue:
                         stepId="stepId",
                         # ordered so that the list order is predictable on output
                         parameters=OrderedDict(
-                            oldstrP="stringValue",
                             strP={"string": "stringValue"},
                             pathP={"path": "/tmp"},
                             intP={"int": "12"},
@@ -152,13 +155,12 @@ class TestSessionActionQueueDequeue:
                     step_id="stepId",
                     task_id="taskId",
                     details=StepDetails(step_template=_TEST_STEP_TEMPLATE),
-                    task_parameter_values=[
-                        Parameter(ParameterType.STRING, "oldstrP", "stringValue"),
-                        Parameter(ParameterType.STRING, "strP", "stringValue"),
-                        Parameter(ParameterType.PATH, "pathP", "/tmp"),
-                        Parameter(ParameterType.INT, "intP", "12"),
-                        Parameter(ParameterType.FLOAT, "floatP", "1.2"),
-                    ],
+                    task_parameter_values={
+                        "strP": ParameterValue(type=ParameterValueType.STRING, value="stringValue"),
+                        "pathP": ParameterValue(type=ParameterValueType.PATH, value="/tmp"),
+                        "intP": ParameterValue(type=ParameterValueType.INT, value="12"),
+                        "floatP": ParameterValue(type=ParameterValueType.FLOAT, value="1.2"),
+                    },
                 ),
                 id="task run",
             ),
@@ -333,7 +335,7 @@ class TestSessionActionQueueDequeue:
         session_queue._actions = [queue_entry]
         session_queue._actions_by_id[queue_entry.definition["sessionActionId"]] = queue_entry
 
-        inner_error = UnsupportedSchema(SchemaVersion.UNDEFINED.value)
+        inner_error = UnsupportedSchema(TemplateSpecificationVersion.UNDEFINED.value)
         job_entity_mock = MagicMock()
         job_entity_mock.environment_details.side_effect = inner_error
         job_entity_mock.step_details.side_effect = inner_error
@@ -384,7 +386,6 @@ class TestCancelAll:
                     stepId="stepId",
                     # ordered so that the list order is predictable on output
                     parameters=OrderedDict(
-                        oldstrP="stringValue",
                         strP={"string": "stringValue"},
                         pathP={"path": "/tmp"},
                         intP={"int": "12"},
