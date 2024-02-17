@@ -399,7 +399,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
             },
             JobDetails(
                 log_group_name="/aws/deadline/queue-0000",
-                schema_version=SchemaVersion.v2023_09,
+                schema_version=SpecificationRevision.v2023_09,
             ),
             id="required with runAs WORKER_AGENT_USER",
         ),
