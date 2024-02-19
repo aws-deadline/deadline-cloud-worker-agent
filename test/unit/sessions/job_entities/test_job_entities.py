@@ -5,7 +5,12 @@ from typing import Generator, Optional, cast
 from unittest.mock import MagicMock, patch
 
 from deadline.job_attachments.models import JobAttachmentsFileSystem
-from openjd.model import SchemaVersion
+from openjd.model import (
+    ParameterValue,
+    ParameterValueType,
+    SpecificationRevision,
+    TemplateSpecificationVersion,
+)
 from openjd.model.v2023_09 import (
     Action,
     Environment,
@@ -87,20 +92,32 @@ def windows_credentials_resolver(os_user: MagicMock) -> Optional[MagicMock]:
 
 
 @pytest.fixture
-def job_details_with_user(os_user: MagicMock) -> JobDetails:
+def job_details_parameters() -> dict[str, ParameterValue]:
+    return {
+        "p_string": ParameterValue(type=ParameterValueType.STRING, value="string_value"),
+        "p_int": ParameterValue(type=ParameterValueType.INT, value="1"),
+        "p_float": ParameterValue(type=ParameterValueType.FLOAT, value="1.2"),
+        "p_path": ParameterValue(type=ParameterValueType.PATH, value="/tmp/share"),
+    }
+
+
+@pytest.fixture
+def job_details_with_user(os_user: MagicMock, job_details_parameters: MagicMock) -> JobDetails:
     if os.name == "posix":
         posix_user = cast(PosixSessionUser, os_user)
         return JobDetails(
             log_group_name="/aws/deadline/queue-0000",
-            schema_version=SchemaVersion.v2023_09,
+            schema_version=SpecificationRevision("2023-09"),
             job_run_as_user=JobRunAsUser(posix=posix_user),
+            parameters=job_details_parameters,
         )
     else:
         windows_user = cast(WindowsSessionUser, os_user)
         return JobDetails(
             log_group_name="/aws/deadline/queue-0000",
-            schema_version=SchemaVersion.v2023_09,
+            schema_version=SpecificationRevision("2023-09"),
             job_run_as_user=JobRunAsUser(windows=windows_user),
+            parameters=job_details_parameters,
         )
 
 
@@ -254,7 +271,7 @@ class TestJobEntity:
                 },
             },
             "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2023_09.value,
+            "schemaVersion": TemplateSpecificationVersion.JOBTEMPLATE_v2023_09.value,
         }
 
         # WHEN
@@ -298,6 +315,12 @@ class TestDetails:
                         "group": "job-group",
                         "passwordArn": "job-password-arn",
                     },
+                },
+                "parameters": {
+                    "p_string": {"string": "string_value"},
+                    "p_int": {"int": "1"},
+                    "p_float": {"float": "1.2"},
+                    "p_path": {"path": "/tmp/share"},
                 },
             },
         )
@@ -588,6 +611,12 @@ class TestCaching:
                     "group": "job-group",
                     "passwordArn": "job-password-arn",
                 },
+            },
+            "parameters": {
+                "p_string": {"string": "string_value"},
+                "p_int": {"int": "1"},
+                "p_float": {"float": "1.2"},
+                "p_path": {"path": "/tmp/share"},
             },
         }
         expected_environment_details: EnvironmentDetailsData = {

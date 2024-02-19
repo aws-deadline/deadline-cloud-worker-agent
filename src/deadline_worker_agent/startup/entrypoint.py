@@ -169,6 +169,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
 
             # conditional shutdown
             if shutdown_requested:
+                _logger.info("The service has requested that the host be shutdown")
                 _system_shutdown(config=config)
     except ConfigurationError as e:
         sys.stderr.write(f"ERROR: {e}{os.linesep}")
@@ -186,7 +187,11 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
 def _system_shutdown(config: Configuration) -> None:
     """Shuts the system down"""
 
-    _logger.info("Shutting down the instance")
+    if config.no_shutdown:
+        _logger.info("NOT shutting down the host. Local configuration settings say not to.")
+        return
+
+    _logger.info("Shutting down the host")
 
     shutdown_command: list[str]
 
@@ -194,12 +199,6 @@ def _system_shutdown(config: Configuration) -> None:
         shutdown_command = ["shutdown", "-s"]
     else:
         shutdown_command = ["sudo", "shutdown", "now"]
-
-    if config.no_shutdown:
-        _logger.debug(
-            f"Skipping system shutdown. The following command would have been run: '{shutdown_command}'"
-        )
-        return
 
     # flush all the logs before initiating the shutdown command.
     for handler in _logger.handlers:

@@ -9,7 +9,7 @@ dependencies = [
     "requests ~= 2.31",
     "boto3 >= 1.28.80",
     "deadline == 0.37.*",
-    "openjd-sessions == 0.2.*",
+    "openjd-sessions == 0.5.*",
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",
     "typing_extensions ~= 4.8",
@@ -95,14 +95,16 @@ module = [
 ]
 
 [tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
 ignore = [
   "E501",
   "E722",
   "F811",
 ]
-line-length = 100
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = [
   "deadline_worker_agent",
   "deadline",

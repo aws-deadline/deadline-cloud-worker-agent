@@ -465,7 +465,7 @@ def test_system_shutdown(
         entrypoint_mod._system_shutdown(config=configuration)
 
     # THEN
-    logger_info_mock.assert_any_call("Shutting down the instance")
+    logger_info_mock.assert_any_call("Shutting down the host")
     subprocess_popen_mock.assert_called_once_with(
         expected_command,
         stdout=subprocess.PIPE,
@@ -510,7 +510,7 @@ def test_system_shutdown_failure(
         entrypoint_mod._system_shutdown(config=configuration)
 
     # THEN
-    logger_mock.info.assert_any_call("Shutting down the instance")
+    logger_mock.info.assert_any_call("Shutting down the host")
     subprocess_popen_mock.assert_called_once_with(
         expected_command,
         stdout=subprocess.PIPE,
@@ -551,9 +551,8 @@ def test_no_shutdown_only_log(
         entrypoint_mod._system_shutdown(config=configuration)
 
     # THEN
-    logger_info_mock.assert_called_with("Shutting down the instance")
-    logger_debug_mock.assert_called_with(
-        f"Skipping system shutdown. The following command would have been run: '{expected_command}'"
+    logger_info_mock.assert_called_with(
+        "NOT shutting down the host. Local configuration settings say not to."
     )
     system_mock.assert_not_called()
 

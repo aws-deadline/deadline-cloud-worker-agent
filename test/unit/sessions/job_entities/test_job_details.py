@@ -9,7 +9,7 @@ from deadline_worker_agent.sessions.job_entities.job_details import (
     JobRunAsWindowsUser,
 )
 from deadline_worker_agent.api_models import JobDetailsData
-from openjd.model import SchemaVersion
+from openjd.model import SpecificationRevision
 from openjd.sessions import PosixSessionUser, SessionUser, WindowsSessionUser
 import os
 
@@ -28,13 +28,13 @@ def job_details_with_user(os_user) -> JobDetails:
         posix_user = cast(PosixSessionUser, os_user)
         return JobDetails(
             log_group_name="/aws/deadline/queue-0000",
-            schema_version=SchemaVersion.v2023_09,
+            schema_version=SpecificationRevision.v2023_09,
             job_run_as_user=JobRunAsUser(posix=posix_user),
         )
     else:
         return JobDetails(
             log_group_name="/aws/deadline/queue-0000",
-            schema_version=SchemaVersion.v2023_09,
+            schema_version=SpecificationRevision.v2023_09,
             job_run_as_user=JobRunAsUser(
                 windows_settings=JobRunAsWindowsUser(
                     user="user1", group="group1", passwordArn="anarn"
@@ -47,7 +47,7 @@ def job_details_with_user(os_user) -> JobDetails:
 def job_details_no_user() -> JobDetails:
     return JobDetails(
         log_group_name="/aws/deadline/queue-0000",
-        schema_version=SchemaVersion.v2023_09,
+        schema_version=SpecificationRevision.v2023_09,
     )
 
 
@@ -82,6 +82,20 @@ def job_details_no_user() -> JobDetails:
                 },
             },
             id="only required fields - windows",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "",
+                        "group": "",
+                    },
+                },
+            },
+            id="only required fields, empty user",
         ),
         pytest.param(
             {

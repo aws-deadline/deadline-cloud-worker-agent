@@ -6,10 +6,15 @@ from pathlib import PurePath, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 import os
 
-from openjd.model import SchemaVersion, UnsupportedSchema
+from openjd.model import (
+    JobParameterValues,
+    ParameterValue,
+    ParameterValueType,
+    SpecificationRevision,
+    TemplateSpecificationVersion,
+    UnsupportedSchema,
+)
 from openjd.sessions import (
-    Parameter,
-    ParameterType,
     PathFormat,
     PosixSessionUser,
     WindowsSessionUser,
@@ -30,31 +35,27 @@ from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
 
 
-def parameters_data_to_list(
+def parameters_from_api_response(
     params: dict[str, StringParameter | PathParameter | IntParameter | FloatParameter | str]
-) -> list[Parameter]:
-    result = list[Parameter]()
+) -> dict[str, ParameterValue]:
+    result = dict[str, ParameterValue]()
     for name, value in params.items():
-        # TODO: Change to the correct type once typing information is available
-        # in the task_run action details.
-        if isinstance(value, str):
-            # old style for the API - TODO remove this once the assign API is updated
-            result.append(Parameter(ParameterType.STRING, name, value))
-        elif "string" in value:
+        print(name, value)
+        if "string" in value:
             value = cast(StringParameter, value)
-            result.append(Parameter(ParameterType.STRING, name, value["string"]))
+            param_value = ParameterValue(type=ParameterValueType.STRING, value=value["string"])
         elif "int" in value:
             value = cast(IntParameter, value)
-            result.append(Parameter(ParameterType.INT, name, value["int"]))
+            param_value = ParameterValue(type=ParameterValueType.INT, value=value["int"])
         elif "float" in value:
             value = cast(FloatParameter, value)
-            result.append(Parameter(ParameterType.FLOAT, name, value["float"]))
+            param_value = ParameterValue(type=ParameterValueType.FLOAT, value=value["float"])
         elif "path" in value:
             value = cast(PathParameter, value)
-            result.append(Parameter(ParameterType.PATH, name, value["path"]))
+            param_value = ParameterValue(type=ParameterValueType.PATH, value=value["path"])
         else:
-            # TODO - PATH parameter types
             raise ValueError(f"Parameter {name} -- unknown form in API response: {str(value)}")
+        result[name] = param_value
     return result
 
 
@@ -196,13 +197,13 @@ class JobDetails:
     log_group_name: str
     """The name of the log group for the session"""
 
-    schema_version: SchemaVersion
+    schema_version: SpecificationRevision
     """The Open Job Description schema version"""
 
     job_attachment_settings: JobAttachmentSettings | None = None
     """The job attachment settings of the job's queue"""
 
-    parameters: list[Parameter] = field(default_factory=list)
+    parameters: JobParameterValues = field(default_factory=dict)
     """The job's parameters"""
 
     job_run_as_user: JobRunAsUser | None = None
@@ -230,7 +231,7 @@ class JobDetails:
         """
 
         job_parameters_data: dict = job_details_data.get("parameters", {})
-        job_parameters = parameters_data_to_list(job_parameters_data)
+        job_parameters = parameters_from_api_response(job_parameters_data)
         path_mapping_rules: list[OPENJDPathMappingRule] = []
         path_mapping_rules_data = job_details_data.get("pathMappingRules", None)
         if path_mapping_rules_data:
@@ -252,10 +253,12 @@ class JobDetails:
             or None
         )
 
-        schema_version = SchemaVersion(job_details_data["schemaVersion"])
+        given_schema_version = TemplateSpecificationVersion(job_details_data["schemaVersion"])
 
-        if schema_version != SchemaVersion.v2023_09:
-            raise UnsupportedSchema(schema_version.value)
+        if given_schema_version == TemplateSpecificationVersion.JOBTEMPLATE_v2023_09:
+            schema_version = SpecificationRevision.v2023_09
+        else:
+            raise UnsupportedSchema(given_schema_version.value)
 
         return JobDetails(
             parameters=job_parameters,
