@@ -1,7 +1,15 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+from botocore.client import BaseClient
+from botocore.exceptions import ClientError
+from botocore.retries.standard import RetryContext
 from typing import Optional, Dict
-from .boto import OTHER_BOTOCORE_CONFIG, Session as BotoSession
+from .aws.deadline import DeadlineRequestUnrecoverableError
+from .boto import (
+    OTHER_BOTOCORE_CONFIG,
+    NoOverflowExponentialBackoff as Backoff,
+    Session as BotoSession,
+)
 from openjd.sessions import WindowsSessionUser
 from logging import getLogger
 import json
@@ -38,12 +46,43 @@ class WindowsCredentialsResolver:
         self._boto_session = boto_session
         self._user_cache: Dict[str, _WindowsCredentialsCacheEntry] = {}
 
-    def _fetch_secret_from_secrets_manager(self, secretArn: str) -> dict:
+    def _get_secrets_manager_client(self) -> BaseClient:
         secrets_manager_client = self._boto_session.client(
             "secretsmanager", config=OTHER_BOTOCORE_CONFIG
         )
-        response = secrets_manager_client.get_secret_value(SecretId=secretArn)  # type: ignore
-        logger.info("Fetched %s", secretArn)
+        return secrets_manager_client
+
+    def _fetch_secret_from_secrets_manager(self, secretArn: str) -> dict:
+        backoff = Backoff(max_backoff=10)
+        retry = 0
+        while True:
+            try:
+                secrets_manager_client = self._get_secrets_manager_client()
+                logger.info(
+                    f"Fetching the secret with secretArn: {secretArn} from Secrets Manager if not in the cache or if it's too old"
+                )
+                response = secrets_manager_client.get_secret_value(SecretId=secretArn)  # type: ignore
+                break
+            # Possible client error exceptions that could happen here are
+            # Can be retried: InternalServiceError, ThrottlingException
+            # Can't be retired: ResourceNotFoundException, InvalidRequestException, DecryptionFailure
+            except ClientError as e:
+                delay = backoff.delay_amount(RetryContext(retry))
+                code = e.response.get("Error", {}).get("Code", None)
+                if code in ["InternalServiceError", "ThrottlingException"] and retry <= 10:
+                    logger.warning(
+                        f"GetSecretValue received {code} ({str(e)}). Retrying in {delay} seconds..."
+                    )
+                else:
+                    raise DeadlineRequestUnrecoverableError(e) from None
+                retry += 1
+            except Exception as e:
+                # General catch-all for the unexpected, so that the agent can try to handle it gracefully.
+                logger.critical(
+                    "Unexpected exception calling GetSecretValue. Please report this to the service team.",
+                    exc_info=True,
+                )
+                raise DeadlineRequestUnrecoverableError(e)
         return json.loads(response.get("SecretString"))
 
     def prune_cache(self):
