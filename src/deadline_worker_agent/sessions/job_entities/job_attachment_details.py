@@ -4,46 +4,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
-from openjd.sessions import Parameter, ParameterType
 from deadline.job_attachments.models import JobAttachmentsFileSystem
 
 from ...api_models import (
-    FloatParameter,
-    IntParameter,
     JobAttachmentDetailsData,
-    PathParameter,
-    StringParameter,
 )
 from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
-
-
-def parameters_data_to_list(
-    params: dict[str, StringParameter | PathParameter | IntParameter | FloatParameter | str]
-) -> list[Parameter]:
-    result = list[Parameter]()
-    for name, value in params.items():
-        # TODO: Change to the correct type once typing information is available
-        # in the task_run action details.
-        if isinstance(value, str):
-            # old style for the API - TODO remove this once the assign API is updated
-            result.append(Parameter(ParameterType.STRING, name, value))
-        elif "string" in value:
-            value = cast(StringParameter, value)
-            result.append(Parameter(ParameterType.STRING, name, value["string"]))
-        elif "int" in value:
-            value = cast(IntParameter, value)
-            result.append(Parameter(ParameterType.INT, name, value["int"]))
-        elif "float" in value:
-            value = cast(FloatParameter, value)
-            result.append(Parameter(ParameterType.FLOAT, name, value["float"]))
-        elif "path" in value:
-            value = cast(PathParameter, value)
-            result.append(Parameter(ParameterType.PATH, name, value["path"]))
-        else:
-            # TODO - PATH parameter types
-            raise ValueError(f"Parameter {name} -- unknown form in API response: {str(value)}")
-    return result
 
 
 @dataclass(frozen=True)

@@ -9,6 +9,7 @@ from typing import Generator, Iterable, Literal, Optional
 from unittest.mock import patch, MagicMock, ANY
 
 import pytest
+from openjd.model import ParameterValue
 from openjd.model.v2023_09 import (
     Action,
     Environment,
@@ -186,7 +187,7 @@ def run_step_task_action(
         id=action_id,
         step_id=step_id,
         task_id=task_id,
-        task_parameter_values=[],
+        task_parameter_values=dict[str, ParameterValue](),
     )
 
 
@@ -705,7 +706,7 @@ class TestSessionSyncAssetOutputs:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )
@@ -1135,7 +1136,7 @@ class TestSessionActionUpdatedImpl:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )
@@ -1202,7 +1203,7 @@ class TestSessionActionUpdatedImpl:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )
@@ -1277,7 +1278,7 @@ class TestSessionActionUpdatedImpl:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )

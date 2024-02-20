@@ -36,19 +36,19 @@ if TYPE_CHECKING:
     from .actions import SessionActionDefinition
     from .job_entities import JobAttachmentDetails, JobDetails
 
+from openjd.model import TaskParameterSet
 from openjd.sessions import (
     ActionState,
     ActionStatus,
     EnvironmentIdentifier,
     EnvironmentModel,
-    Parameter,
+    LOG as OPENJD_LOG,
     PathMappingRule,
     PosixSessionUser,
     StepScriptModel,
+    Session as OPENJDSession,
     SessionUser,
 )
-from openjd.sessions import Session as OPENJDSession
-from openjd.sessions import LOG as OPENJD_LOG
 
 from deadline.job_attachments.asset_sync import AssetSync
 from deadline.job_attachments.asset_sync import logger as ASSET_SYNC_LOGGER
@@ -79,6 +79,7 @@ OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
     ActionState.CANCELED: "CANCELED",
     ActionState.FAILED: "FAILED",
     ActionState.SUCCESS: "SUCCEEDED",
+    ActionState.TIMEOUT: "FAILED",
 }
 TIME_DELTA_ZERO = timedelta()
 
@@ -966,7 +967,11 @@ class Session:
             assert self._stop.is_set(), "current_action is None or stopping"
             return
 
-        is_unsuccessful = action_status.state in (ActionState.FAILED, ActionState.CANCELED)
+        is_unsuccessful = action_status.state in (
+            ActionState.FAILED,
+            ActionState.CANCELED,
+            ActionState.TIMEOUT,
+        )
 
         if (
             action_status.state == ActionState.SUCCESS
@@ -1145,7 +1150,7 @@ class Session:
         self,
         *,
         step_script: StepScriptModel,
-        task_parameter_values: list[Parameter],
+        task_parameter_values: TaskParameterSet,
     ) -> None:
         self._session.run_task(
             step_script=step_script,
