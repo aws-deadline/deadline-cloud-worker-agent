@@ -327,6 +327,7 @@ fi
 # Provision log directory
 echo "Provisioning log directory (/var/log/amazon/deadline)"
 mkdir -p /var/log/amazon/deadline
+chmod 755 /var/log/amazon
 chown -R "${wa_user}:${wa_user}" /var/log/amazon/deadline
 chmod -R 750 /var/log/amazon/deadline
 echo "Done provisioning log directory (/var/log/amazon/deadline)"
