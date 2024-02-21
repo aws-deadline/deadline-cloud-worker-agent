@@ -1,6 +1,5 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 import os
-import string
 import sys
 import pytest
 
@@ -8,32 +7,19 @@ if sys.platform != "win32":
     pytest.skip("Windows-specific tests", allow_module_level=True)
 
 import time
-from unittest.mock import patch
 from deadline_worker_agent.installer.win_installer import (
     check_user_existence,
     ensure_local_agent_user,
-    validate_deadline_id,
-    ensure_local_group_exists,
+    ensure_local_queue_user_group_exists,
     add_user_to_group,
     generate_password,
-    DEFAULT_PASSWORD_LENGTH,
 )
+
+import pywintypes
 import win32net
 import win32api
-
-
-@patch("deadline_worker_agent.installer.win_installer.secrets.choice")
-def test_generate_password(mock_choice):
-    # Given
-    characters = string.ascii_letters[:DEFAULT_PASSWORD_LENGTH]
-    mock_choice.side_effect = characters
-
-    # When
-    password = generate_password()
-
-    # Then
-    expected_password = "".join(characters)
-    assert password == expected_password
+import win32security
+import winerror
 
 
 def test_user_existence():
@@ -45,18 +31,6 @@ def test_user_existence():
 def test_user_existence_with_without_existing_user():
     result = check_user_existence("ImpossibleUser")
     assert not result
-
-
-def test_validate_deadline_id():
-    assert validate_deadline_id("deadline", "deadline-123e4567e89b12d3a456426655441234")
-
-
-def test_non_valid_deadline_id1():
-    assert not validate_deadline_id("deadline", "deadline-123")
-
-
-def test_non_valid_deadline_id_with_wrong_prefix():
-    assert not validate_deadline_id("deadline", "line-123e4567e89b12d3a456426655441234")
 
 
 def delete_local_user(username):
@@ -98,16 +72,32 @@ def test_ensure_local_agent_user(user_setup_and_teardown):
     """
     Tests the creation of a local user and validates it exists.
     """
+    MAX_RETRIES = 5
     username = user_setup_and_teardown
+
     # Wait for user creation
     time.sleep(0.1)
-    try:
-        user_info = win32net.NetUserGetInfo(None, username, 1)
-    except win32net.error as e:
-        pytest.fail(f"User {username} could not be found: {e}")
 
-    assert user_info is not None, "User info should not be None"
-    assert user_info["name"] == username, f"Expected username to be '{username}'"
+    retry_count = 0
+    while retry_count < MAX_RETRIES:
+        try:
+            sid, _, _ = win32security.LookupAccountName(None, username)
+            actual_username, _, _ = win32security.LookupAccountSid(None, sid)
+        except pywintypes.error as e:
+            if e.winerror == winerror.ERROR_NONE_MAPPED:
+                # LookupAccountSid can throw ERROR_NONE_MAPPED if a network timeout is reached
+                # Retry a few times to reduce risk of failing due to temporary network outage
+                # See https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-lookupaccountsida#remarks
+                retry_count += 1
+            else:
+                pytest.fail(f"User {username} could not be found: {e}")
+                break
+        else:
+            break
+
+    assert (
+        actual_username == username
+    ), f"Expected username to be '{username}', but got '{actual_username}'"
 
 
 def group_exists(group_name: str) -> bool:
@@ -150,13 +140,13 @@ def test_ensure_local_group_exists(setup_and_teardown_group):
     group_name = setup_and_teardown_group
     # Ensure the group does not exist initially
     assert not group_exists(group_name), "Group already exists before test."
-    ensure_local_group_exists(group_name)
+    ensure_local_queue_user_group_exists(group_name)
     assert group_exists(group_name), "Group was not created as expected."
 
 
 def test_add_user_to_group(setup_and_teardown_group, user_setup_and_teardown):
     group_name = setup_and_teardown_group
-    ensure_local_group_exists(group_name)
+    ensure_local_queue_user_group_exists(group_name)
     user_name = user_setup_and_teardown
     add_user_to_group(group_name, user_name)
     assert is_user_in_group(group_name, user_name), "User was not added to group as expected."

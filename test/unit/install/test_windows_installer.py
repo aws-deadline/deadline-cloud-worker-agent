@@ -1,5 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+import string
 import sys
 import pytest
 
@@ -9,8 +10,10 @@ if sys.platform != "win32":
 import pywintypes
 from pywintypes import error as PyWinTypesError
 from deadline_worker_agent.installer.win_installer import (
-    ensure_local_group_exists,
+    ensure_local_queue_user_group_exists,
     ensure_local_agent_user,
+    generate_password,
+    validate_deadline_id,
 )
 import sysconfig
 from pathlib import Path
@@ -64,7 +67,7 @@ def test_group_creation_failure(group_name):
         "win32net.NetLocalGroupAdd", side_effect=Exception("Test Failure")
     ), patch("logging.error") as mock_log_error:
         with pytest.raises(Exception):
-            ensure_local_group_exists(group_name)
+            ensure_local_queue_user_group_exists(group_name)
         mock_log_error.assert_called_with(
             f"Failed to create group {group_name}. Error: Test Failure"
         )
@@ -75,7 +78,7 @@ def test_unexpected_error_code_handling(group_name):
         "win32net.NetLocalGroupAdd"
     ) as mock_group_add, patch("logging.error"):
         with pytest.raises(pywintypes.error):
-            ensure_local_group_exists(group_name)
+            ensure_local_queue_user_group_exists(group_name)
         mock_group_add.assert_not_called()
 
 
@@ -98,13 +101,15 @@ def test_ensure_local_agent_user_raises_exception_on_creation_failure():
         )
 
 
-def test_ensure_local_agent_user_logs_info_if_user_exists():
+@patch("win32net.NetUserAdd")
+def test_ensure_local_agent_user_logs_info_if_user_exists(mock_net_user_add: MagicMock):
     username = "existinguser"
     password = "password123"
     with patch(
         "deadline_worker_agent.installer.win_installer.check_user_existence", return_value=True
     ), patch("deadline_worker_agent.installer.win_installer.logging.info") as mocked_logging_info:
         ensure_local_agent_user(username, password)
+        mock_net_user_add.assert_not_called()
         mocked_logging_info.assert_called_once_with(f"Agent User {username} already exists")
 
 
@@ -127,3 +132,30 @@ def test_ensure_local_agent_user_correct_parameters_passed_to_netuseradd():
         }
 
         mocked_net_user_add.assert_called_once_with(None, 1, expected_user_info)
+
+
+@patch("deadline_worker_agent.installer.win_installer.secrets.choice")
+def test_generate_password(mock_choice):
+    # Given
+    password_length = 27
+    characters = string.ascii_letters[:password_length]
+    mock_choice.side_effect = characters
+
+    # When
+    password = generate_password(password_length)
+
+    # Then
+    expected_password = "".join(characters)
+    assert password == expected_password
+
+
+def test_validate_deadline_id():
+    assert validate_deadline_id("deadline", "deadline-123e4567e89b12d3a456426655441234")
+
+
+def test_non_valid_deadline_id1():
+    assert not validate_deadline_id("deadline", "deadline-123")
+
+
+def test_non_valid_deadline_id_with_wrong_prefix():
+    assert not validate_deadline_id("deadline", "line-123e4567e89b12d3a456426655441234")

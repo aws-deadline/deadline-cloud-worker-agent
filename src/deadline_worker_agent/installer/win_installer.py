@@ -21,10 +21,9 @@ import win32security
 DEFAULT_WA_USER = "deadline-worker"
 DEFAULT_JOB_GROUP = "deadline-job-users"
 DEFAULT_PASSWORD_LENGTH = 12
-logging.basicConfig(level=logging.INFO)
 
 
-def generate_password() -> str:
+def generate_password(length: int = DEFAULT_PASSWORD_LENGTH) -> str:
     """
     Generate password of given length.
 
@@ -34,7 +33,7 @@ def generate_password() -> str:
     alphabet = string.ascii_letters + string.digits + string.punctuation
     # Use secrets.choice to ensure a secure random selection of characters
     # https://docs.python.org/3/library/secrets.html#recipes-and-best-practices
-    password = "".join(secrets.choice(alphabet) for _ in range(DEFAULT_PASSWORD_LENGTH))
+    password = "".join(secrets.choice(alphabet) for _ in range(length))
     return password
 
 
@@ -72,9 +71,9 @@ def check_user_existence(user_name: str) -> Optional[bool]:
             raise
 
 
-def ensure_local_group_exists(group_name: str) -> None:
+def ensure_local_queue_user_group_exists(group_name: str) -> None:
     """
-    Check if a user group exists on the system. If it doesn't exit then create it.
+    Check if a queue user group exists on the system. If it doesn't exit then create it.
 
     Parameters:
     group (str): The name of the group to check for existence and creation.
@@ -92,7 +91,11 @@ def ensure_local_group_exists(group_name: str) -> None:
                     1,
                     {
                         "name": group_name,
-                        "comment": "This is a local group created by the Agent Installer.",
+                        "comment": (
+                            "This is a local group created by the Deadline Cloud Worker Agent Installer. "
+                            "This group should contain all OS users defined on the Deadline Cloud queue that "
+                            "the worker agent is configured for."
+                        ),
                     },
                 )
             except Exception as e:
@@ -181,7 +184,7 @@ def add_user_to_group(group_name: str, user_name: str) -> None:
         logging.error(
             f"An error occurred during adding user {user_name} to the user group {group_name}: {e}"
         )
-        raise e
+        raise
 
 
 def start_windows_installer(
@@ -197,6 +200,8 @@ def start_windows_installer(
     start: bool = False,
     confirm: bool = False,
 ):
+    logging.basicConfig(level=logging.INFO)
+
     # Validate command line arguments
     def print_helping_info_and_exit():
         parser.format_help()
@@ -245,6 +250,6 @@ def start_windows_installer(
     ensure_local_agent_user(user_name, password)
 
     # Check if the job group exists, and create it if not
-    ensure_local_group_exists(group_name)
+    ensure_local_queue_user_group_exists(group_name)
     # Add the worker agent user to the job group
     add_user_to_group(group_name, user_name)
