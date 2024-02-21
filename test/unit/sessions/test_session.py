@@ -1663,6 +1663,31 @@ class TestSessionCleanup:
         # THEN
         openjd_session_cleanup.assert_called_once_with()
 
+    @pytest.fixture()
+    def mock_asset_sync(self, session: Session) -> Generator[MagicMock, None, None]:
+        with patch.object(session, "_asset_sync") as mock_asset_sync:
+            yield mock_asset_sync
+
+    def test_calls_asset_sync_cleanup(
+        self,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+        mock_asset_sync: MagicMock,
+        mock_openjd_session: MagicMock,
+    ) -> None:
+        # GIVEN
+        mock_asset_sync_cleanup: MagicMock = mock_asset_sync.cleanup_session
+        session._job_attachment_details = job_attachment_details
+
+        # WHEN
+        session._cleanup()
+
+        # THEN
+        mock_asset_sync_cleanup.assert_called_once_with(
+            session_dir=mock_openjd_session.working_directory,
+            file_system=job_attachment_details.job_attachments_file_system,
+        )
+
 
 class TestSessionStartAction:
     """Tests for Session._start_action()"""
