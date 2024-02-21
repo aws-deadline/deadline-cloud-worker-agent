@@ -68,7 +68,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                 "schemaVersion": "jobtemplate-0000-00",
                 "unknown": "unknown",
             },
-            id="invalid template - not dict",
+            id="nonvalid template - not dict",
         ),
         pytest.param(
             {
@@ -83,6 +83,6 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
     ],
 )
 def test_input_validation_failure(data: dict[str, Any]) -> None:
-    """Test that validate_entity_data() raises a ValueError when invalid input data is provided."""
+    """Test that validate_entity_data() raises a ValueError when nonvalid input data is provided."""
     with pytest.raises(ValueError):
         EnvironmentDetails.validate_entity_data(entity_data=data)

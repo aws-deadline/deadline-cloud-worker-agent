@@ -4,7 +4,7 @@ from __future__ import annotations
 from concurrent.futures import Executor
 from typing import Any, TYPE_CHECKING
 
-from openjd.sessions import Parameter
+from openjd.model import TaskParameterSet
 
 from .openjd_action import OpenjdAction
 
@@ -26,14 +26,14 @@ class RunStepTaskAction(OpenjdAction):
         The environment details
     task_id : str
         The unique task identifier
-    task_parameter_values : list[Parameter]
+    task_parameter_values : TaskParameterSet
         The task parameter values
     """
 
     step_id: str
     task_id: str
     _details: StepDetails
-    _task_parameter_values: list[Parameter]
+    _task_parameter_values: TaskParameterSet
 
     def __init__(
         self,
@@ -42,7 +42,7 @@ class RunStepTaskAction(OpenjdAction):
         step_id: str,
         details: StepDetails,
         task_id: str,
-        task_parameter_values: list[Parameter],
+        task_parameter_values: TaskParameterSet,
     ) -> None:
         super(RunStepTaskAction, self).__init__(
             id=id,
@@ -73,12 +73,12 @@ class RunStepTaskAction(OpenjdAction):
             An executor for running futures
         """
         session.run_task(
-            step_script=self._details.script,
+            step_script=self._details.step_template.script,
             task_parameter_values=self._task_parameter_values,
         )
 
     def human_readable(self) -> str:
         param_str = ", ".join(
-            f"{param.name}={repr(param.value)}" for param in self._task_parameter_values
+            f"{name}={repr(param.value)}" for name, param in self._task_parameter_values.items()
         )
         return f"step[{self.step_id}].run({param_str})"

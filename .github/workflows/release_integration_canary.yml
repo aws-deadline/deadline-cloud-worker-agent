@@ -8,7 +8,7 @@ on:
 jobs:
   ReleaseIntegrationCanary:
     runs-on: ubuntu-latest
-    environment: release
+    environment: canary
     permissions:
       id-token: write
       contents: read
@@ -19,11 +19,11 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_CODEBUILD_RELEASE_INTEG_ROLE }}
+          role-to-assume: ${{ secrets.AWS_CODEBUILD_RELEASE_CANARY_ROLE }}
           aws-region: us-west-2
           mask-aws-account-id: true
       - name: Run CodeBuild
         uses: aws-actions/aws-codebuild-run-build@v1
         with:
-          project-name: deadline-cloud-worker-agent-IntegTest
+          project-name: deadline-cloud-worker-agent-Canary
           hide-cloudwatch-logs: true

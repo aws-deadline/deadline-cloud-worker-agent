@@ -8,8 +8,8 @@ dynamic = ["version"]
 dependencies = [
     "requests ~= 2.31",
     "boto3 >= 1.28.80",
-    "deadline == 0.34.*",
-    "openjd-sessions == 0.2.*",
+    "deadline == 0.37.*",
+    "openjd-sessions == 0.5.*",
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",
     "typing_extensions ~= 4.8",
@@ -29,12 +29,12 @@ artifacts = [
 
 [tool.hatch.version]
 source = "vcs"
+# https://setuptools-scm.readthedocs.io/en/latest/extending/#version-number-construction
+# Using "no-guess-dev", GitHub workflows are handling versioning.
+raw-options = { version_scheme = "no-guess-dev", local_scheme = "no-local-version" }
 
 [tool.hatch.build.hooks.vcs]
 version-file = "_version.py"
-
-[tool.hatch.version.raw-options]
-version_scheme = "post-release"
 
 [tool.hatch.build.hooks.custom]
 path = "hatch_version_hook.py"
@@ -95,14 +95,16 @@ module = [
 ]
 
 [tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
 ignore = [
   "E501",
   "E722",
   "F811",
 ]
-line-length = 100
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = [
   "deadline_worker_agent",
   "deadline",
@@ -158,3 +160,42 @@ source = [ "src/" ]
 [tool.coverage.report]
 show_missing = true
 fail_under = 78
+
+[tool.semantic_release]
+# Can be removed or set to true once we are v1
+major_on_zero = false
+tag_format = "v{version}"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = [
+    "build",
+    "chore",
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "style",
+    "refactor",
+    "test",
+]
+minor_tags = []
+patch_tags = [
+  "chore",
+  "feat",
+  "fix",
+  "refactor",
+]
+
+[tool.semantic_release.publish]
+upload_to_vcs_release = false
+
+[tool.semantic_release.changelog]
+template_dir = ".semantic_release"
+
+[tool.semantic_release.changelog.environment]
+trim_blocks = true
+lstrip_blocks = true
+
+[tool.semantic_release.branches.release]
+match = "(mainline|release)"

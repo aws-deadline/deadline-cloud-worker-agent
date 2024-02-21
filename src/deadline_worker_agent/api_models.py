@@ -252,19 +252,16 @@ class WindowsUser(TypedDict):
 
 
 class JobRunAsUser(TypedDict):
-    posix: PosixUser
-    windows: WindowsUser
+    posix: NotRequired[PosixUser]
+    windows: NotRequired[WindowsUser]
+    runAs: NotRequired[Literal["QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"]]
 
 
 class JobDetailsData(JobDetailsIdentifierFields):
     jobAttachmentSettings: NotRequired[JobAttachmentQueueSettings]
     """The queue's job attachment settings"""
 
-    # TODO: remove once service no longer sends this
-    jobsRunAs: NotRequired[JobRunAsUser | None]
-    """Deprecated: The queue's info on how to run the job processes (ie. posix or windows user/group)"""
-
-    jobRunAsUser: NotRequired[JobRunAsUser | None]
+    jobRunAsUser: JobRunAsUser
     """The queue's info on how to run the job processes (ie. posix or windows user/group)"""
 
     logGroupName: str
@@ -392,7 +389,7 @@ class UpdatedSessionActionInfo(TypedDict):
     progressMessage: NotRequired[str]
     startedAt: NotRequired[datetime]
     endedAt: NotRequired[datetime]
-    updateTime: NotRequired[datetime]
+    updatedAt: NotRequired[datetime]
     progressPercent: NotRequired[float]
 
 

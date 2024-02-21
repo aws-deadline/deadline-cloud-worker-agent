@@ -2,15 +2,16 @@
 
 import logging
 from time import sleep, monotonic
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 from threading import Event
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import random
 
 from botocore.retries.standard import RetryContext
 from botocore.exceptions import ClientError
 
 from deadline.client.api import get_telemetry_client, TelemetryClient
+from deadline.job_attachments.progress_tracker import SummaryStatistics
 
 from ..._version import __version__ as version  # noqa
 from ...startup.config import Configuration
@@ -80,7 +81,7 @@ class DeadlineRequestConditionallyRecoverableError(DeadlineRequestError):
 
 class DeadlineRequestWorkerOfflineError(DeadlineRequestConditionallyRecoverableError):
     """Raised by some APIs when invoking the API discovers that the requesting
-    Worker is no longer condidered to be online in the service (e.g. its
+    Worker is no longer considered to be online in the service (e.g. its
     status has been set to NOT_RESPONDING))
     """
 
@@ -794,8 +795,28 @@ def _get_deadline_telemetry_client() -> TelemetryClient:
     return get_telemetry_client("deadline-cloud-worker-agent", version)
 
 
-def record_worker_start_event(capabilities: Capabilities) -> None:
+def record_worker_start_telemetry_event(capabilities: Capabilities) -> None:
     """Calls the telemetry client to record an event capturing generic machine information."""
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.start", event_details=capabilities.dict()
+    )
+
+
+def record_sync_inputs_telemetry_event(queue_id: str, summary: SummaryStatistics) -> None:
+    """Calls the telemetry client to record an event capturing the sync-inputs summary."""
+    details: Dict[str, Any] = asdict(summary)
+    details["queue_id"] = queue_id
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.sync_inputs_summary",
+        event_details=details,
+    )
+
+
+def record_sync_outputs_telemetry_event(queue_id: str, summary: SummaryStatistics) -> None:
+    """Calls the telemetry client to record an event capturing the sync-outputs summary."""
+    details: Dict[str, Any] = asdict(summary)
+    details["queue_id"] = queue_id
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.sync_outputs_summary",
+        event_details=details,
     )

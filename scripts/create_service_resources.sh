@@ -10,10 +10,10 @@ if test $# -lt 1
 then
     echo "Usage: $0 <Fleet Role Arn> <s3 bucket name> [<Queue#1 Role Arn> [<Queue#2 Role Arn]]"
     echo "where:"
-    echo "  <s3 bucketname>: The name of an S3 bucket to configure on the Queues for use"
-    echo "                   with the Job Attachments feature."
     echo "  <Fleet Role Arn>: The ARN of the Worker Role to attach to the Fleet;"
     echo "                    this is used by the worker agent during operations."
+    echo "  <s3 bucketname>: The name of an S3 bucket to configure on the Queues for use"
+    echo "                   with the Job Attachments feature."
     echo "  <Queue* Role Arn>: The ARN of the Role whose credentials will be provided"
     echo "                      to the running jobs."
     exit 1
@@ -34,6 +34,7 @@ then
         
     echo "Creating Amazon Deadline Cloud Farm $farm_name"
     FARM_ID=$(aws deadline create-farm --display-name $farm_name | jq -r ".farmId")
+    echo "Created Farm: ${FARM_ID}"
 fi
 
 if [ "${QUEUE_ID_1:-}" == "" ]
@@ -47,12 +48,12 @@ then
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "IDLE",
     "jobRunAsUser": {
         "posix": {
-            "user": "",
-            "group": ""
-        }
+            "user": "jobuser",
+            "group": "jobuser"
+        },
+        "runAs": "QUEUE_CONFIGURED_USER"
     },
     "jobAttachmentSettings": {
         "s3BucketName": "${assets_s3_bucket}",
@@ -65,13 +66,13 @@ EOF
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "IDLE",
     "roleArn": "$queue_1_iam_role",
     "jobRunAsUser": {
         "posix": {
-            "user": "",
-            "group": ""
-        }
+            "user": "jobuser",
+            "group": "jobuser"
+        },
+        "runAs": "QUEUE_CONFIGURED_USER"
     },
     "jobAttachmentSettings": {
         "s3BucketName": "${assets_s3_bucket}",
@@ -110,12 +111,12 @@ then
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "IDLE",
     "jobRunAsUser": {
         "posix": {
-            "user": "",
-            "group": ""
-        }
+            "user": "jobuser",
+            "group": "jobuser"
+        },
+        "runAs": "QUEUE_CONFIGURED_USER"
     },
     "jobAttachmentSettings": {
         "s3BucketName": "${assets_s3_bucket}",
@@ -128,13 +129,13 @@ EOF
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "IDLE",
     "roleArn": "$queue_2_iam_role",
     "jobRunAsUser": {
         "posix": {
-            "user": "",
-            "group": ""
-        }
+            "user": "jobuser",
+            "group": "jobuser"
+        },
+        "runAs": "QUEUE_CONFIGURED_USER"
     },
     "jobAttachmentSettings": {
         "s3BucketName": "${assets_s3_bucket}",

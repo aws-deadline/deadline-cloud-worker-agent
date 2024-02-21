@@ -1,7 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import PurePosixPath, PureWindowsPath
 from threading import Event, RLock
@@ -10,6 +9,7 @@ from typing import Generator, Iterable, Literal, Optional
 from unittest.mock import patch, MagicMock, ANY
 
 import pytest
+from openjd.model import ParameterValue
 import os
 
 from openjd.model.v2023_09 import (
@@ -19,6 +19,7 @@ from openjd.model.v2023_09 import (
     EnvironmentScript,
     StepActions,
     StepScript,
+    StepTemplate,
 )
 from openjd.sessions import (
     ActionState,
@@ -50,6 +51,7 @@ from deadline_worker_agent.sessions.job_entities import (
 from deadline.job_attachments.models import (
     Attachments,
     JobAttachmentsFileSystem,
+    JobAttachmentS3Settings,
 )
 from deadline.job_attachments.os_file_permission import (
     FileSystemPermissionSettings,
@@ -57,6 +59,7 @@ from deadline.job_attachments.os_file_permission import (
     WindowsFileSystemPermissionSettings,
     WindowsPermissionEnum,
 )
+from deadline.job_attachments.progress_tracker import SummaryStatistics
 
 import deadline_worker_agent.sessions.session as session_mod
 
@@ -129,6 +132,20 @@ def action_update_lock() -> MagicMock:
     return MagicMock()
 
 
+@pytest.fixture(autouse=True)
+def mock_telemetry_event_for_sync_inputs() -> Generator[MagicMock, None, None]:
+    with patch.object(session_module, "record_sync_inputs_telemetry_event") as mock_telemetry_event:
+        yield mock_telemetry_event
+
+
+@pytest.fixture(autouse=True)
+def mock_telemetry_event_for_sync_outputs() -> Generator[MagicMock, None, None]:
+    with patch.object(
+        session_module, "record_sync_outputs_telemetry_event"
+    ) as mock_telemetry_event:
+        yield mock_telemetry_event
+
+
 @pytest.fixture
 def session(
     asset_sync: MagicMock,
@@ -167,12 +184,15 @@ def run_step_task_action(
     """A fixture that provides a RunStepTaskAction"""
     return RunStepTaskAction(
         details=StepDetails(
-            script=StepScript(
-                actions=StepActions(
-                    onRun=Action(
-                        command=command,
-                        args=on_run_args,
-                        cancelation=None,
+            step_template=StepTemplate(
+                name="Test",
+                script=StepScript(
+                    actions=StepActions(
+                        onRun=Action(
+                            command=command,
+                            args=on_run_args,
+                            cancelation=None,
+                        ),
                     ),
                 ),
             ),
@@ -180,7 +200,7 @@ def run_step_task_action(
         id=action_id,
         step_id=step_id,
         task_id=task_id,
-        task_parameter_values=[],
+        task_parameter_values=dict[str, ParameterValue](),
     )
 
 
@@ -536,13 +556,15 @@ class TestSessionSyncAssetInputs:
         session: Session,
         job_attachments_file_system: JobAttachmentsFileSystem,
         mock_asset_sync: MagicMock,
+        mock_telemetry_event_for_sync_inputs: MagicMock,
         job_attachment_details: JobAttachmentDetails,
     ) -> None:
         """Tests that the job_attachments_file_system specified in session._job_details is properly passed to the sync_inputs function"""
         # GIVEN
-        mock_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
-        mock_sync_inputs.return_value = ({}, {})
+        mock_ja_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
+        mock_ja_sync_inputs.return_value = (SummaryStatistics(), {})
         cancel = Event()
+
         # WHEN
         session.sync_asset_inputs(
             cancel=cancel,
@@ -550,7 +572,7 @@ class TestSessionSyncAssetInputs:
         )
 
         # THEN
-        mock_sync_inputs.assert_called_with(
+        mock_ja_sync_inputs.assert_called_with(
             s3_settings=ANY,
             queue_id=ANY,
             job_id=ANY,
@@ -664,6 +686,7 @@ class TestSessionSyncAssetInputs:
         self,
         session: Session,
         mock_asset_sync: MagicMock,
+        mock_telemetry_event_for_sync_inputs: MagicMock,
         sync_asset_inputs_args_sequence: list[dict[str, JobAttachmentDetails | list[str]]],
         expected_error: bool,
     ):
@@ -671,22 +694,114 @@ class TestSessionSyncAssetInputs:
         Tests 'sync_asset_inputs' with a sequence of arguments and checks if it raises an error as expected.
         For each test case, 'sync_asset_inputs' is called with each argument in the 'sync_asset_inputs_args_sequence'.
         It then checks whether the function raises an error or not, which should match the 'expected_error'.
+        Also, asserts that 'record_sync_inputs_telemetry_event' is called with the correct arguments.
         """
         # GIVEN
-        mock_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
-        mock_sync_inputs.return_value = ({}, {})
+        mock_ja_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
+        mock_ja_sync_inputs.return_value = (SummaryStatistics(), {})
         cancel = Event()
 
-        for args in sync_asset_inputs_args_sequence:
-            if expected_error:
-                with pytest.raises(RuntimeError) as raise_ctx:
+        if expected_error:
+            # WHEN
+            with pytest.raises(RuntimeError) as raise_ctx:
+                for args in sync_asset_inputs_args_sequence:
                     session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
-                assert (
-                    raise_ctx.value.args[0]
-                    == "Job attachments must be synchronized before downloading Step dependencies."
-                )
-            else:
+            # THEN
+            assert (
+                raise_ctx.value.args[0]
+                == "Job attachments must be synchronized before downloading Step dependencies."
+            )
+        else:
+            # WHEN
+            for args in sync_asset_inputs_args_sequence:
                 session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
+            # THEN
+            for call in mock_telemetry_event_for_sync_inputs.call_args_list:
+                assert call[0] == (
+                    "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    SummaryStatistics(),
+                )
+            assert mock_telemetry_event_for_sync_inputs.call_count == len(
+                sync_asset_inputs_args_sequence
+            )
+
+
+class TestSessionSyncAssetOutputs:
+    @pytest.fixture(autouse=True)
+    def mock_asset_sync(self, session: Session) -> Generator[MagicMock, None, None]:
+        with patch.object(session, "_asset_sync") as mock_asset_sync:
+            yield mock_asset_sync
+
+    def test_sync_asset_outputs(
+        self,
+        action_id: str,
+        queue_id: str,
+        step_id: str,
+        task_id: str,
+        action_start_time: datetime,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+        mock_asset_sync: MagicMock,
+        mock_telemetry_event_for_sync_outputs: MagicMock,
+    ):
+        """
+        Tests that session's '_sync_asset_outputs' calls Job Attachment's method 'sync_outputs' correctly.
+        Also, asserts that 'record_sync_outputs_telemetry_event' is called once with the correct arguments.
+        """
+        # GIVEN
+        mock_ja_sync_outputs: MagicMock = mock_asset_sync.sync_outputs
+        mock_ja_sync_outputs.return_value = SummaryStatistics()
+        current_action = CurrentAction(
+            definition=RunStepTaskAction(
+                details=StepDetails(
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command="echo",
+                                    args=["hello"],
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                id=action_id,
+                step_id=step_id,
+                task_id=task_id,
+                task_parameter_values=dict[str, ParameterValue](),
+            ),
+            start_time=action_start_time,
+        )
+        session._job_attachment_details = job_attachment_details
+
+        # WHEN
+        session._sync_asset_outputs(current_action=current_action)
+
+        # THEN
+        mock_ja_sync_outputs.assert_called_once_with(
+            s3_settings=JobAttachmentS3Settings(
+                rootPrefix="job_attachments",
+                s3BucketName="job_attachments_bucket",
+            ),
+            attachments=Attachments(
+                manifests=ANY,
+                fileSystem=JobAttachmentsFileSystem.COPIED,
+            ),
+            queue_id=queue_id,
+            job_id=ANY,
+            step_id=step_id,
+            task_id=task_id,
+            session_action_id=action_id,
+            start_time=ANY,
+            session_dir=ANY,
+            storage_profiles_path_mapping_rules={},
+            on_uploading_files=ANY,
+        )
+        mock_telemetry_event_for_sync_outputs.assert_called_once_with(
+            "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            SummaryStatistics(),
+        )
 
 
 class TestSessionInnerRun:
@@ -733,7 +848,7 @@ class TestSessionInnerRun:
 
             action_update_lock_enter.side_effect = action_update_lock_enter_side_effect
 
-            def start_action_side_effect(*, executor: ThreadPoolExecutor) -> CurrentAction | None:
+            def start_action_side_effect() -> CurrentAction | None:
                 action_update_lock_enter.assert_called_once()
                 current_action_lock_enter.assert_called_once()
                 current_action_lock_exit.assert_not_called()
@@ -1069,11 +1184,14 @@ class TestSessionActionUpdatedImpl:
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
-                    script=StepScript(
-                        actions=StepActions(
-                            onRun=Action(
-                                command="echo",
-                                args=["hello"],
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command="echo",
+                                    args=["hello"],
+                                ),
                             ),
                         ),
                     ),
@@ -1081,7 +1199,7 @@ class TestSessionActionUpdatedImpl:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )
@@ -1133,11 +1251,14 @@ class TestSessionActionUpdatedImpl:
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
-                    script=StepScript(
-                        actions=StepActions(
-                            onRun=Action(
-                                command="echo",
-                                args=["hello"],
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command="echo",
+                                    args=["hello"],
+                                ),
                             ),
                         ),
                     ),
@@ -1145,7 +1266,7 @@ class TestSessionActionUpdatedImpl:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )
@@ -1205,11 +1326,14 @@ class TestSessionActionUpdatedImpl:
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
-                    script=StepScript(
-                        actions=StepActions(
-                            onRun=Action(
-                                command="echo",
-                                args=["hello"],
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command="echo",
+                                    args=["hello"],
+                                ),
                             ),
                         ),
                     ),
@@ -1217,7 +1341,7 @@ class TestSessionActionUpdatedImpl:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )
@@ -1237,9 +1361,14 @@ class TestSessionActionUpdatedImpl:
             end_time=action_complete_time,
         )
 
-        with patch.object(
+        def mock_now(*arg, **kwarg) -> datetime:
+            return action_complete_time
+
+        with patch.object(session_module, "datetime") as mock_datetime, patch.object(
             session, "_sync_asset_outputs", side_effect=sync_outputs_exception
         ) as mock_sync_asset_outputs:
+            mock_datetime.now.side_effect = mock_now
+
             # WHEN
             session._action_updated_impl(
                 action_status=success_action_status,
@@ -1629,7 +1758,6 @@ class TestSessionStartAction:
         # GIVEN
         exception = Exception(exception_msg)
         session._initial_action_exception = exception
-        executor = MagicMock()
 
         with (
             patch.object(session, "_report_action_update") as mock_report_action_update,
@@ -1640,7 +1768,7 @@ class TestSessionStartAction:
             now: MagicMock = datetime_mock.now.return_value
 
             # WHEN
-            session._start_action(executor=executor)
+            session._start_action()
 
         # THEN
         mock_report_action_update.assert_called_once_with(
@@ -1693,7 +1821,6 @@ class TestSessionStartAction:
 
         # GIVEN
         exception = Exception(exception_msg)
-        executor = MagicMock()
         logger_info: MagicMock = mock_mod_logger.info
         logger_warn: MagicMock = mock_mod_logger.warn
 
@@ -1707,7 +1834,7 @@ class TestSessionStartAction:
             now: MagicMock = datetime_mock.now.return_value
 
             # WHEN
-            session._start_action(executor=executor)
+            session._start_action()
 
         # THEN
         logger_info.assert_called_once_with(
