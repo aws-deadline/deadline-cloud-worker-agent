@@ -166,7 +166,7 @@ class JobRunAsUser:
         else:
             posix_eq = self.posix is None and other.posix is None
 
-        if self.windows:
+        if self.windows and other.windows:
             windows_eq = (
                 self.windows.user == other.windows.user
                 and self.windows.group == other.windows.group
@@ -385,9 +385,13 @@ class JobDetails:
             elif run_as_value == "QUEUE_CONFIGURED_USER":
                 run_as_posix = entity_data["jobRunAsUser"].get("posix", None)
                 run_as_windows = entity_data["jobRunAsUser"].get("windows", None)
-                if not run_as_posix and not run_as_windows:
+                if os.name == "nt" and not run_as_windows:
                     raise ValueError(
-                        'Expected "jobRunAs" -> "posix" and/or "jobRunAs" -> "windows" to exist when "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER" but neither were present'
+                        'Expected ""jobRunAs" -> "windows" to exist when "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER" but it was not present'
+                    )
+                if os.name == "posix" and not run_as_posix:
+                    raise ValueError(
+                        'Expected "jobRunAs" -> "posix" to exist when "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER" but it was not present'
                     )
                 if run_as_posix:
                     if run_as_posix["user"] == "":

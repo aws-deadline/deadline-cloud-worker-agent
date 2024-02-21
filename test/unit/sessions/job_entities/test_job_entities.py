@@ -102,7 +102,9 @@ def job_details_parameters() -> dict[str, ParameterValue]:
 
 
 @pytest.fixture
-def job_details_with_user(os_user: MagicMock, job_details_parameters: MagicMock) -> JobDetails:
+def job_details_with_user(
+    os_user: SessionUser, job_details_parameters: dict[str, ParameterValue]
+) -> JobDetails:
     if os.name == "posix":
         posix_user = cast(PosixSessionUser, os_user)
         return JobDetails(
