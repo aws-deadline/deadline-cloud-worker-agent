@@ -9,6 +9,7 @@ from typing import Generator, Iterable, Literal, Optional
 from unittest.mock import patch, MagicMock, ANY
 
 import pytest
+from openjd.model import ParameterValue
 from openjd.model.v2023_09 import (
     Action,
     Environment,
@@ -186,7 +187,7 @@ def run_step_task_action(
         id=action_id,
         step_id=step_id,
         task_id=task_id,
-        task_parameter_values=[],
+        task_parameter_values=dict[str, ParameterValue](),
     )
 
 
@@ -705,7 +706,7 @@ class TestSessionSyncAssetOutputs:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )
@@ -1135,7 +1136,7 @@ class TestSessionActionUpdatedImpl:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )
@@ -1202,7 +1203,7 @@ class TestSessionActionUpdatedImpl:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )
@@ -1277,7 +1278,7 @@ class TestSessionActionUpdatedImpl:
                 id=action_id,
                 step_id=step_id,
                 task_id=task_id,
-                task_parameter_values=[],
+                task_parameter_values=dict[str, ParameterValue](),
             ),
             start_time=action_start_time,
         )
@@ -1661,6 +1662,31 @@ class TestSessionCleanup:
 
         # THEN
         openjd_session_cleanup.assert_called_once_with()
+
+    @pytest.fixture()
+    def mock_asset_sync(self, session: Session) -> Generator[MagicMock, None, None]:
+        with patch.object(session, "_asset_sync") as mock_asset_sync:
+            yield mock_asset_sync
+
+    def test_calls_asset_sync_cleanup(
+        self,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+        mock_asset_sync: MagicMock,
+        mock_openjd_session: MagicMock,
+    ) -> None:
+        # GIVEN
+        mock_asset_sync_cleanup: MagicMock = mock_asset_sync.cleanup_session
+        session._job_attachment_details = job_attachment_details
+
+        # WHEN
+        session._cleanup()
+
+        # THEN
+        mock_asset_sync_cleanup.assert_called_once_with(
+            session_dir=mock_openjd_session.working_directory,
+            file_system=job_attachment_details.job_attachments_file_system,
+        )
 
 
 class TestSessionStartAction:

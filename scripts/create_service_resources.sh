@@ -34,6 +34,7 @@ then
         
     echo "Creating Amazon Deadline Cloud Farm $farm_name"
     FARM_ID=$(aws deadline create-farm --display-name $farm_name | jq -r ".farmId")
+    echo "Created Farm: ${FARM_ID}"
 fi
 
 if [ "${QUEUE_ID_1:-}" == "" ]
@@ -47,7 +48,6 @@ then
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "IDLE",
     "jobRunAsUser": {
         "posix": {
             "user": "jobuser",
@@ -66,7 +66,6 @@ EOF
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "IDLE",
     "roleArn": "$queue_1_iam_role",
     "jobRunAsUser": {
         "posix": {
@@ -112,7 +111,6 @@ then
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "IDLE",
     "jobRunAsUser": {
         "posix": {
             "user": "jobuser",
@@ -131,7 +129,6 @@ EOF
 {
     "farmId": "$FARM_ID",
     "displayName": "$queue_name",
-    "status": "IDLE",
     "roleArn": "$queue_2_iam_role",
     "jobRunAsUser": {
         "posix": {

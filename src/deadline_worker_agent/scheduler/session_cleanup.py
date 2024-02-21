@@ -99,7 +99,7 @@ class SessionUserCleanupManager:
             raise NotImplementedError("Windows not supported")
 
         # Check that the session user isn't the current user (agent user)
-        current_user = subprocess.check_output(["/usr/bin/whoami"], text=True)
+        current_user = subprocess.check_output(["/usr/bin/whoami"], text=True).strip()
         if current_user == user.user:
             logger.info(
                 f"Skipping cleaning up processes because the session user matches the agent user '{current_user}'"

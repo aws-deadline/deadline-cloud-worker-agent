@@ -5,7 +5,12 @@ from typing import Generator
 from unittest.mock import MagicMock, patch
 
 from deadline.job_attachments.models import JobAttachmentsFileSystem
-from openjd.model import SchemaVersion
+from openjd.model import (
+    ParameterValue,
+    ParameterValueType,
+    SpecificationRevision,
+    TemplateSpecificationVersion,
+)
 from openjd.model.v2023_09 import (
     Action,
     Environment,
@@ -197,7 +202,7 @@ class TestJobEntity:
                 },
             },
             "logGroupName": "TEST",
-            "schemaVersion": SchemaVersion.v2023_09.value,
+            "schemaVersion": TemplateSpecificationVersion.JOBTEMPLATE_v2023_09.value,
         }
 
         # WHEN
@@ -225,6 +230,12 @@ class TestDetails:
                         "group": "job-group",
                     },
                 },
+                "parameters": {
+                    "p_string": {"string": "string_value"},
+                    "p_int": {"int": "1"},
+                    "p_float": {"float": "1.2"},
+                    "p_path": {"path": "/tmp/share"},
+                },
             },
         )
         response: BatchGetJobEntityResponse = {
@@ -232,11 +243,17 @@ class TestDetails:
             "errors": [],
         }
         expected_details = JobDetails(
-            schema_version=SchemaVersion("jobtemplate-2023-09"),
+            schema_version=SpecificationRevision("2023-09"),
             log_group_name="fake-name",
             job_run_as_user=JobRunAsUser(
                 posix=PosixSessionUser(user="job-user", group="job-group")
             ),
+            parameters={
+                "p_string": ParameterValue(type=ParameterValueType.STRING, value="string_value"),
+                "p_int": ParameterValue(type=ParameterValueType.INT, value="1"),
+                "p_float": ParameterValue(type=ParameterValueType.FLOAT, value="1.2"),
+                "p_path": ParameterValue(type=ParameterValueType.PATH, value="/tmp/share"),
+            },
         )
         assert expected_details.job_run_as_user is not None  # For type checker
         deadline_client.batch_get_job_entity.return_value = response
