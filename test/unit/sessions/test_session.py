@@ -1088,6 +1088,40 @@ class TestSessionUpdateAction:
         current_action_lock_exit.assert_called_once()
         mock_report_action_update.assert_not_called()
 
+    def test_timeout_messaging(
+        self,
+        session: Session,
+        # We don't use the value of this fixture, but requiring it has the side-effect of assigning
+        # it as the current action of the session
+        current_action: CurrentAction,
+    ) -> None:
+        """Test that when an action is reported as TIMEOUT then we:
+        1) Cancel all subsequent tasks as NEVER_ATTEMPTED; and
+        2) Have an appropriate failure message on the action.
+        """
+        # GIVEN
+        status = ActionStatus(state=ActionState.TIMEOUT, exit_code=-1, progress=24.4)
+        with (
+            patch.object(session._queue, "cancel_all") as mock_cancel_all,
+            patch.object(session, "_report_action_update") as mock_report_action_update,
+        ):
+            # WHEN
+            session.update_action(status)
+
+        # THEN
+        mock_cancel_all.assert_called_once_with(
+            cancel_outcome="NEVER_ATTEMPTED", message=ANY, ignore_env_exits=True
+        )
+        assert "TIMEOUT" in mock_cancel_all.call_args.kwargs["message"]
+        mock_report_action_update.assert_called_once()
+        session_status = mock_report_action_update.call_args.args[0]
+        assert session_status.completed_status == "FAILED"
+        called_with_status = session_status.status
+        assert called_with_status.state == ActionState.TIMEOUT
+        assert "TIMEOUT" in called_with_status.fail_message
+        assert called_with_status.exit_code == status.exit_code
+        assert called_with_status.progress == status.progress
+
 
 class TestSessionActionUpdatedImpl:
     """Test cases for Session._action_updated_impl()"""
@@ -1135,7 +1169,7 @@ class TestSessionActionUpdatedImpl:
         session._current_action = current_action
         queue_cancel_all: MagicMock = session_action_queue.cancel_all
         expected_next_action_message = failed_action_status.fail_message or (
-            f"Action {current_action.definition.human_readable()} failed"
+            f"Previous action failed: {current_action.definition.human_readable()}"
         )
         expected_action_update = SessionActionStatus(
             id=action_id,
@@ -1203,7 +1237,7 @@ class TestSessionActionUpdatedImpl:
         session._current_action = current_action
         queue_cancel_all: MagicMock = session_action_queue.cancel_all
         expected_next_action_message = failed_action_status.fail_message or (
-            f"Action {current_action.definition.human_readable()} failed"
+            f"Previous action failed: {current_action.definition.human_readable()}"
         )
         expected_action_update = SessionActionStatus(
             id=action_id,

@@ -1040,9 +1040,10 @@ class Session:
         now: datetime,
     ):
         if is_unsuccessful:
-            fail_message = (
-                action_status.fail_message
-                or f"Action {current_action.definition.human_readable()} failed"
+            fail_message = action_status.fail_message or (
+                f"TIMEOUT - Previous action exceeded runtime limit: {current_action.definition.human_readable()}"
+                if action_status.state == ActionState.TIMEOUT
+                else f"Previous action failed: {current_action.definition.human_readable()}"
             )
 
             # If the current action failed, we mark future actions assigned to the session as
@@ -1058,6 +1059,19 @@ class Session:
             # needs to be able to determine if the Session is idle and make an immediate
             # UpdateWorkerSchedule request if so.
             self._current_action = None
+
+        if action_status.state == ActionState.TIMEOUT:
+            # If the action ended via timeout, then we're reporting this as a failed action
+            # but also surface the timeout was the reason for the fail so that they don't have
+            # to go log diving.
+            action_status = ActionStatus(
+                # Preserve properties
+                state=action_status.state,
+                progress=action_status.progress,
+                exit_code=action_status.exit_code,
+                # Replace the message to let the customer know that the action reached its runtime limit.
+                fail_message="TIMEOUT - Exceeded the allotted runtime limit.",
+            )
 
         completed_status = OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
             action_status.state, None
