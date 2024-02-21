@@ -6,10 +6,15 @@ from pathlib import PurePath, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 import os
 
-from openjd.model import SchemaVersion, UnsupportedSchema
+from openjd.model import (
+    JobParameterValues,
+    ParameterValue,
+    ParameterValueType,
+    SpecificationRevision,
+    TemplateSpecificationVersion,
+    UnsupportedSchema,
+)
 from openjd.sessions import (
-    Parameter,
-    ParameterType,
     PathFormat,
     PosixSessionUser,
     WindowsSessionUser,
@@ -30,31 +35,27 @@ from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
 
 
-def parameters_data_to_list(
+def parameters_from_api_response(
     params: dict[str, StringParameter | PathParameter | IntParameter | FloatParameter | str]
-) -> list[Parameter]:
-    result = list[Parameter]()
+) -> dict[str, ParameterValue]:
+    result = dict[str, ParameterValue]()
     for name, value in params.items():
-        # TODO: Change to the correct type once typing information is available
-        # in the task_run action details.
-        if isinstance(value, str):
-            # old style for the API - TODO remove this once the assign API is updated
-            result.append(Parameter(ParameterType.STRING, name, value))
-        elif "string" in value:
+        print(name, value)
+        if "string" in value:
             value = cast(StringParameter, value)
-            result.append(Parameter(ParameterType.STRING, name, value["string"]))
+            param_value = ParameterValue(type=ParameterValueType.STRING, value=value["string"])
         elif "int" in value:
             value = cast(IntParameter, value)
-            result.append(Parameter(ParameterType.INT, name, value["int"]))
+            param_value = ParameterValue(type=ParameterValueType.INT, value=value["int"])
         elif "float" in value:
             value = cast(FloatParameter, value)
-            result.append(Parameter(ParameterType.FLOAT, name, value["float"]))
+            param_value = ParameterValue(type=ParameterValueType.FLOAT, value=value["float"])
         elif "path" in value:
             value = cast(PathParameter, value)
-            result.append(Parameter(ParameterType.PATH, name, value["path"]))
+            param_value = ParameterValue(type=ParameterValueType.PATH, value=value["path"])
         else:
-            # TODO - PATH parameter types
             raise ValueError(f"Parameter {name} -- unknown form in API response: {str(value)}")
+        result[name] = param_value
     return result
 
 
@@ -86,23 +87,30 @@ def path_mapping_api_model_to_openjd(
 
 
 def job_run_as_user_api_model_to_worker_agent(
-    job_run_as_user_data: JobRunAsUserModel | None,
+    job_run_as_user_data: JobRunAsUserModel,
 ) -> JobRunAsUser | None:
     """Converts the 'JobRunAsUser' api model to the 'JobRunAsUser' dataclass
     expected by the Worker Agent.
     """
-    job_run_as_user: JobRunAsUser | None = None
-    if not job_run_as_user_data:
+    if "runAs" in job_run_as_user_data and job_run_as_user_data["runAs"] == "WORKER_AGENT_USER":
         return None
 
     if os.name == "posix":
-        job_run_as_user_posix = job_run_as_user_data.get("posix", {})
-        user = job_run_as_user_posix.get("user", "")
-        group = job_run_as_user_posix.get("group", "")
-        if not (user and group):
+        user = ""
+        group = ""
+        if job_run_as_user_posix := job_run_as_user_data.get("posix", None):
+            user = job_run_as_user_posix["user"]
+            group = job_run_as_user_posix["group"]
+        else:
+            return None
+
+        if "runAs" not in job_run_as_user_data and not group and not user:
             return None
         job_run_as_user = JobRunAsUser(
-            posix=PosixSessionUser(user=user, group=group),
+            posix=PosixSessionUser(
+                user=user,
+                group=group,
+            ),
         )
     else:
         job_run_as_user_windows = job_run_as_user_data.get("windows", {})
@@ -149,6 +157,35 @@ class JobRunAsUser:
     windows: WindowsSessionUser | None = None
     windows_settings: JobRunAsWindowsUser | None = None
 
+    def __eq__(self, other: Any) -> bool:
+        if other is None:
+            return False
+
+        if self.posix and other.posix:
+            posix_eq = self.posix.user == other.posix.user and self.posix.group == other.posix.group
+        else:
+            posix_eq = self.posix is None and other.posix is None
+
+        if self.windows and other.windows:
+            windows_eq = (
+                self.windows.user == other.windows.user
+                and self.windows.group == other.windows.group
+                and self.windows.password == other.windows.password
+            )
+        else:
+            windows_eq = self.windows is None and other.windows is None
+
+        if self.windows_settings and other.windows_settings:
+            windows_settings_eq = (
+                self.windows_settings.user == other.windows_settings.user
+                and self.windows_settings.group == other.windows_settings.group
+                and self.windows_settings.passwordArn == other.windows_settings.passwordArn
+            )
+        else:
+            windows_settings_eq = self.windows_settings is None and other.windows_settings is None
+
+        return posix_eq and windows_eq and windows_settings_eq
+
 
 @dataclass(frozen=True)
 class JobDetails:
@@ -160,13 +197,13 @@ class JobDetails:
     log_group_name: str
     """The name of the log group for the session"""
 
-    schema_version: SchemaVersion
+    schema_version: SpecificationRevision
     """The Open Job Description schema version"""
 
     job_attachment_settings: JobAttachmentSettings | None = None
     """The job attachment settings of the job's queue"""
 
-    parameters: list[Parameter] = field(default_factory=list)
+    parameters: JobParameterValues = field(default_factory=dict)
     """The job's parameters"""
 
     job_run_as_user: JobRunAsUser | None = None
@@ -194,7 +231,7 @@ class JobDetails:
         """
 
         job_parameters_data: dict = job_details_data.get("parameters", {})
-        job_parameters = parameters_data_to_list(job_parameters_data)
+        job_parameters = parameters_from_api_response(job_parameters_data)
         path_mapping_rules: list[OPENJDPathMappingRule] = []
         path_mapping_rules_data = job_details_data.get("pathMappingRules", None)
         if path_mapping_rules_data:
@@ -204,10 +241,7 @@ class JobDetails:
         if job_attachment_settings_boto := job_details_data.get("jobAttachmentSettings", None):
             job_attachment_settings = JobAttachmentSettings.from_boto(job_attachment_settings_boto)
 
-        # Use jobRunAsUser if it exists, otherwise jobsRunAs if it exists, otherwise None.
-        job_run_as_user_data = job_details_data.get(
-            "jobRunAsUser", job_details_data.get("jobsRunAs", None)
-        )
+        job_run_as_user_data = job_details_data["jobRunAsUser"]
         job_run_as_user: JobRunAsUser | None = job_run_as_user_api_model_to_worker_agent(
             job_run_as_user_data
         )
@@ -219,10 +253,12 @@ class JobDetails:
             or None
         )
 
-        schema_version = SchemaVersion(job_details_data["schemaVersion"])
+        given_schema_version = TemplateSpecificationVersion(job_details_data["schemaVersion"])
 
-        if schema_version != SchemaVersion.v2023_09:
-            raise UnsupportedSchema(schema_version.value)
+        if given_schema_version == TemplateSpecificationVersion.JOBTEMPLATE_v2023_09:
+            schema_version = SpecificationRevision.v2023_09
+        else:
+            raise UnsupportedSchema(given_schema_version.value)
 
         return JobDetails(
             parameters=job_parameters,
@@ -272,11 +308,10 @@ class JobDetails:
                     expected_type=list,
                     required=False,
                 ),
-                # TODO: remove jobsRunAs once service no longer responds with jobsRunAs
                 Field(
-                    key="jobsRunAs",
+                    key="jobRunAsUser",
                     expected_type=dict,
-                    required=False,
+                    required=True,
                     fields=(
                         Field(
                             key="posix",
@@ -287,21 +322,10 @@ class JobDetails:
                                 Field(key="group", expected_type=str, required=True),
                             ),
                         ),
-                    ),
-                ),
-                Field(
-                    key="jobRunAsUser",
-                    expected_type=dict,
-                    required=False,
-                    fields=(
                         Field(
-                            key="posix",
-                            expected_type=dict,
+                            key="runAs",
+                            expected_type=str,
                             required=False,
-                            fields=(
-                                Field(key="user", expected_type=str, required=True),
-                                Field(key="group", expected_type=str, required=True),
-                            ),
                         ),
                         Field(
                             key="windows",
@@ -350,6 +374,50 @@ class JobDetails:
                         Field(key="sourcePath", expected_type=str, required=True),
                         Field(key="destinationPath", expected_type=str, required=True),
                     ),
+                )
+
+        # Validate jobRunAsUser -> runAs is one of ("QUEUE_CONFIGURED_USER" / "WORKER_AGENT_USER")
+        if run_as_value := entity_data["jobRunAsUser"].get("runAs", None):
+            if run_as_value not in ("QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"):
+                raise ValueError(
+                    f'Expected "jobRunAs" -> "runAs" to be one of "QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER" but got "{run_as_value}"'
+                )
+            elif run_as_value == "QUEUE_CONFIGURED_USER":
+                run_as_posix = entity_data["jobRunAsUser"].get("posix", None)
+                run_as_windows = entity_data["jobRunAsUser"].get("windows", None)
+                if os.name == "nt" and not run_as_windows:
+                    raise ValueError(
+                        'Expected ""jobRunAs" -> "windows" to exist when "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER" but it was not present'
+                    )
+                if os.name == "posix" and not run_as_posix:
+                    raise ValueError(
+                        'Expected "jobRunAs" -> "posix" to exist when "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER" but it was not present'
+                    )
+                if run_as_posix:
+                    if run_as_posix["user"] == "":
+                        raise ValueError(
+                            'Got empty "jobRunAs" -> "posix" -> "user" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                        )
+                    if run_as_posix["group"] == "":
+                        raise ValueError(
+                            'Got empty "jobRunAs" -> "posix" -> "group" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                        )
+                if run_as_windows:
+                    if run_as_windows["user"] == "":
+                        raise ValueError(
+                            'Got empty "jobRunAs" -> "windows" -> "user" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                        )
+                    if run_as_windows["group"] == "":
+                        raise ValueError(
+                            'Got empty "jobRunAs" -> "windows" -> "group" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                        )
+                    if run_as_windows["passwordArn"] == "":
+                        raise ValueError(
+                            'Got empty "jobRunAs" -> "windows" -> "passwordArn" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                        )
+            elif run_as_value == "WORKER_AGENT_USER" and "posix" in entity_data["jobRunAsUser"]:
+                raise ValueError(
+                    f'Expected "jobRunAs" -> "posix" is not valid when "jobRunAs" -> "runAs" is "WORKER_AGENT_USER" but got {entity_data["jobRunAsUser"]["posix"]}'
                 )
 
         return cast(JobDetailsData, entity_data)

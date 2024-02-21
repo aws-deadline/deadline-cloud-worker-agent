@@ -334,12 +334,16 @@ echo "Done provisioning log directory (/var/log/amazon/deadline)"
 # Provision ownership/persistence on persistence directory
 echo "Provisioning persistence directory (/var/lib/deadline)"
 mkdir -p /var/lib/deadline/queues
+mkdir -p /var/lib/deadline/credentials
 chown "${wa_user}:${job_group}" \
     /var/lib/deadline \
     /var/lib/deadline/queues
+chown "${wa_user}" /var/lib/deadline/credentials
 chmod 750 \
     /var/lib/deadline \
     /var/lib/deadline/queues
+chmod 700 \
+    /var/lib/deadline/credentials
 if [ -f /var/lib/deadline/worker.json ]; then
     chown "${wa_user}:${wa_user}" /var/lib/deadline/worker.json
     chmod 600 /var/lib/deadline/worker.json

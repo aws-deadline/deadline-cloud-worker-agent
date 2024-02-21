@@ -48,7 +48,7 @@ def worker(
     client: MagicMock,
     farm_id: str,
     fleet_id: str,
-    jobs_run_as_overrides: JobsRunAsUserOverride,
+    job_run_as_user_overrides: JobsRunAsUserOverride,
     logs_client: MagicMock,
     s3_client: MagicMock,
     worker_id: str,
@@ -63,7 +63,7 @@ def worker(
             deadline_client=client,
             boto_session=boto_session,
             fleet_id=fleet_id,
-            jobs_run_as_user_override=jobs_run_as_overrides,
+            job_run_as_user_override=job_run_as_user_overrides,
             logs_client=logs_client,
             s3_client=s3_client,
             worker_id=worker_id,
@@ -149,7 +149,7 @@ class TestInit:
             farm_id=ANY,
             fleet_id=ANY,
             worker_id=ANY,
-            jobs_run_as_user_override=ANY,
+            job_run_as_user_override=ANY,
             boto_session=ANY,
             cleanup_session_user_processes=ANY,
             worker_persistence_dir=ANY,
@@ -307,7 +307,7 @@ class TestMonitorEc2Shutdown:
         # THEN
         assert result == worker_mod.WorkerShutdown(
             grace_time=timedelta(minutes=2),
-            fail_message="The Worker receieved an auto-scaling life-cycle change event",
+            fail_message="The Worker received an auto-scaling life-cycle change event",
         )
         logger_info.assert_called_once_with(
             "Auto-scaling life-cycle change event detected. Termination in %s", timedelta(minutes=2)

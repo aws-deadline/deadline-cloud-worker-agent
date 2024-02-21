@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from openjd.model import parse_model, SchemaVersion, UnsupportedSchema
-from openjd.model.v2023_09 import StepScript as StepScript_2023_09
-from openjd.sessions import StepScriptModel
+from openjd.model import parse_model, TemplateSpecificationVersion, UnsupportedSchema
+from openjd.model.v2023_09 import StepTemplate as StepTemplate_2023_09
 
 from ...api_models import StepDetailsData
 from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
+
+if TYPE_CHECKING:
+    # Replace with `StepTemplate` from openjd-model once that lib adds one.
+    StepTemplate = StepTemplate_2023_09
+else:
+    StepTemplate = Any
 
 
 @dataclass
@@ -20,8 +25,9 @@ class StepDetails:
     ENTITY_TYPE = JobEntityType.STEP_DETAILS.value
     """The JobEntityType handled by this class"""
 
-    script: StepScriptModel
-    """The step's Open Job Description script"""
+    step_template: StepTemplate
+    """The step's Open Job Description step template.
+    """
 
     dependencies: list[str] = field(default_factory=list)
     """The dependencies (a list of IDs) that the step depends on"""
@@ -47,15 +53,26 @@ class StepDetails:
             If the environment's Open Job Description schema version not unsupported
         """
 
-        schema_version = SchemaVersion(step_details_data["schemaVersion"])
+        schema_version = TemplateSpecificationVersion(step_details_data["schemaVersion"])
 
-        if schema_version == SchemaVersion.v2023_09:
-            step_script = parse_model(model=StepScript_2023_09, obj=step_details_data["template"])
+        if schema_version == TemplateSpecificationVersion.JOBTEMPLATE_v2023_09:
+            # Jan 23, 2024: Forwards compatibility. The 'template' field is changing from a StepScript to
+            # a StepTemplate. Remove the StepScript case after the transition is complete.
+            details_data = step_details_data["template"]
+            if "name" in details_data:
+                # New API shape -- 'template' contains a StepTemplate
+                step_template = parse_model(model=StepTemplate_2023_09, obj=details_data)
+            else:
+                # Old API shape -- 'template' contains a StepScript.
+                # If we're GA and you're reading this, then delete this code path.
+                step_template = parse_model(
+                    model=StepTemplate_2023_09, obj={"name": "Placeholder", "script": details_data}
+                )
         else:
             raise UnsupportedSchema(schema_version.value)
 
         return StepDetails(
-            script=step_script,
+            step_template=step_template,
             dependencies=step_details_data["dependencies"],
         )
 

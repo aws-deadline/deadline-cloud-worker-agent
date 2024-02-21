@@ -15,12 +15,17 @@ from deadline.job_attachments.models import (
     ManifestProperties,
     PathFormat,
 )
-from openjd.model import SchemaVersion
+from openjd.model import (
+    JobParameterValues,
+    ParameterValue,
+    SpecificationRevision,
+    TemplateSpecificationVersion,
+)
 from openjd.sessions import (
-    Parameter,
     PathMappingRule,
     SessionUser,
     PosixSessionUser,
+    WindowsSessionUser,
 )
 
 from deadline_worker_agent.api_models import HostProperties, IpAddresses
@@ -49,6 +54,12 @@ def s3_client() -> MagicMock:
 @pytest.fixture
 def logs_client() -> MagicMock:
     return MagicMock()
+
+
+@pytest.fixture(autouse=True)
+def patch_windows_session_user_validate():
+    with patch.object(WindowsSessionUser, "validate_username_password"):
+        yield
 
 
 @pytest.fixture()
@@ -187,9 +198,14 @@ def log_group_name() -> str:
 
 
 @pytest.fixture
-def schema_version() -> SchemaVersion:
+def job_template_version() -> TemplateSpecificationVersion:
     """The Open Job Description schema version"""
-    return SchemaVersion.v2023_09
+    return TemplateSpecificationVersion.JOBTEMPLATE_v2023_09
+
+
+@pytest.fixture
+def specification_revision() -> SpecificationRevision:
+    return SpecificationRevision.v2023_09
 
 
 @pytest.fixture
@@ -240,9 +256,9 @@ def job_attachment_details(
 
 
 @pytest.fixture
-def job_parameters() -> list[Parameter]:
+def job_parameters() -> JobParameterValues:
     """The job's parameters"""
-    return []
+    return dict[str, ParameterValue]()
 
 
 @pytest.fixture
@@ -263,11 +279,11 @@ def path_mapping_rules() -> list[PathMappingRule] | None:
 @pytest.fixture
 def job_details(
     queue_job_attachment_settings: JobAttachmentSettings,
-    job_parameters: list[Parameter],
+    job_parameters: JobParameterValues,
     log_group_name: str,
-    job_run_as_user: JobRunAsUser | None,
+    job_run_as_user: JobRunAsUser,
     path_mapping_rules: list[PathMappingRule],
-    schema_version: SchemaVersion,
+    specification_revision: SpecificationRevision,
 ) -> JobDetails:
     return JobDetails(
         job_attachment_settings=queue_job_attachment_settings,
@@ -275,12 +291,17 @@ def job_details(
         job_run_as_user=job_run_as_user,
         path_mapping_rules=path_mapping_rules,
         log_group_name=log_group_name,
-        schema_version=schema_version,
+        schema_version=specification_revision,
     )
 
 
 @pytest.fixture
 def step_script() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
+def step_template() -> MagicMock:
     return MagicMock()
 
 

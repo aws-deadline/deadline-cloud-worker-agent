@@ -125,7 +125,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                     "fileSystem": "copied",
                 },
             },
-            id="invalid attachments - missing manifests",
+            id="nonvalid attachments - missing manifests",
         ),
         pytest.param(
             {
@@ -139,7 +139,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                     ],
                 },
             },
-            id="invalid manifests - missing rootPathFormat",
+            id="nonvalid manifests - missing rootPathFormat",
         ),
         pytest.param(
             {
@@ -148,7 +148,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                     "manifests": {},
                 },
             },
-            id="invalid manifests - not list",
+            id="nonvalid manifests - not list",
         ),
         pytest.param(
             {
@@ -166,7 +166,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                     "fileSystem": "copied",
                 },
             },
-            id="invalid outputRelativeDirectories - not list",
+            id="nonvalid outputRelativeDirectories - not list",
         ),
         pytest.param(
             {
@@ -191,6 +191,6 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
     ],
 )
 def test_input_validation_failure(data: dict[str, Any]) -> None:
-    """Test that validate_entity_data() raises a ValueError when invalid input data is provided."""
+    """Test that validate_entity_data() raises a ValueError when nonvalid input data is provided."""
     with pytest.raises(ValueError):
         JobAttachmentDetails.validate_entity_data(entity_data=data)

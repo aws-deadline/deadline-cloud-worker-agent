@@ -161,7 +161,7 @@ def block_rich_import() -> Generator[None, None, None]:
 
 @pytest.fixture(autouse=True)
 def block_telemetry_client() -> Generator[MagicMock, None, None]:
-    with patch.object(entrypoint_mod, "record_worker_start_event") as telem_mock:
+    with patch.object(entrypoint_mod, "record_worker_start_telemetry_event") as telem_mock:
         yield telem_mock
 
 
@@ -452,7 +452,7 @@ def test_system_shutdown(
     configuration: MagicMock,
 ) -> None:
     """
-    Tests that entrypoint._system_shudown() has the correct platform-specific behavior
+    Tests that entrypoint._system_shutdown() has the correct platform-specific behavior
     """
     # GIVEN
     process: MagicMock = subprocess_popen_mock.return_value
@@ -465,7 +465,7 @@ def test_system_shutdown(
         entrypoint_mod._system_shutdown(config=configuration)
 
     # THEN
-    logger_info_mock.assert_any_call("Shutting down the instance")
+    logger_info_mock.assert_any_call("Shutting down the host")
     subprocess_popen_mock.assert_called_once_with(
         expected_command,
         stdout=subprocess.PIPE,
@@ -510,7 +510,7 @@ def test_system_shutdown_failure(
         entrypoint_mod._system_shutdown(config=configuration)
 
     # THEN
-    logger_mock.info.assert_any_call("Shutting down the instance")
+    logger_mock.info.assert_any_call("Shutting down the host")
     subprocess_popen_mock.assert_called_once_with(
         expected_command,
         stdout=subprocess.PIPE,
@@ -542,7 +542,7 @@ def test_no_shutdown_only_log(
     configuration: MagicMock,
 ) -> None:
     """
-    Tests if the system shudown call is suppressed in a certain case, instead just logs it.
+    Tests if the system shutdown call is suppressed in a certain case, instead just logs it.
     """
     # GIVEN
     configuration.no_shutdown = True
@@ -551,9 +551,8 @@ def test_no_shutdown_only_log(
         entrypoint_mod._system_shutdown(config=configuration)
 
     # THEN
-    logger_info_mock.assert_called_with("Shutting down the instance")
-    logger_debug_mock.assert_called_with(
-        f"Skipping system shutdown. The following command would have been run: '{expected_command}'"
+    logger_info_mock.assert_called_with(
+        "NOT shutting down the host. Local configuration settings say not to."
     )
     system_mock.assert_not_called()
 
@@ -561,12 +560,12 @@ def test_no_shutdown_only_log(
 # TODO: Add register failure test cases
 
 
-def test_jobs_run_as_user_override(
+def test_job_run_as_user_override(
     configuration: MagicMock,
 ) -> None:
-    """Assert that the Worker is created with the jobs_run_as_overrides kwarg matching the Configuration"""
+    """Assert that the Worker is created with the job_run_as_user_overrides kwarg matching the Configuration"""
     # GIVEN
-    configuration.jobs_run_as_overrides = MagicMock()
+    configuration.job_run_as_user_overrides = MagicMock()
     with patch.object(entrypoint_mod, "Worker") as worker_mock:
         # WHEN
         entrypoint()
@@ -574,8 +573,8 @@ def test_jobs_run_as_user_override(
         # THEN
         assert worker_mock.call_count == 1
         assert (
-            worker_mock.call_args_list[0].kwargs["jobs_run_as_user_override"]
-            == configuration.jobs_run_as_overrides
+            worker_mock.call_args_list[0].kwargs["job_run_as_user_override"]
+            == configuration.job_run_as_user_overrides
         )
 
 
@@ -599,7 +598,7 @@ def test_passes_worker_logs_dir(
         s3_client=ANY,
         logs_client=ANY,
         boto_session=ANY,
-        jobs_run_as_user_override=ANY,
+        job_run_as_user_override=ANY,
         cleanup_session_user_processes=ANY,
         worker_persistence_dir=ANY,
         worker_logs_dir=tmp_path,
@@ -671,97 +670,3 @@ class TestCloudWatchLogStreaming:
         )
         context_mgr_enter.assert_called_once_with()
         context_mgr_exit.assert_called_once()
-
-    @patch.object(entrypoint_mod.subprocess, "check_output")
-    def test_get_gpu_count(
-        self,
-        check_output_mock: MagicMock,
-    ) -> None:
-        """
-        Tests that the _get_gpu_count function returns the correct number of GPUs
-        """
-        # GIVEN
-        check_output_mock.return_value = b"2"
-
-        # WHEN
-        result = entrypoint_mod._get_gpu_count()
-
-        # THEN
-        check_output_mock.assert_called_once_with(
-            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"]
-        )
-        assert result == 2
-
-    @pytest.mark.parametrize(
-        ("exception", "expected_result"),
-        (
-            pytest.param(FileNotFoundError("nvidia-smi not found"), 0, id="FileNotFoundError"),
-            pytest.param(subprocess.CalledProcessError(1, "command"), 0, id="CalledProcessError"),
-        ),
-    )
-    @patch.object(entrypoint_mod.subprocess, "check_output")
-    def test_get_gpu_count_nvidia_smi_error(
-        self, check_output_mock: MagicMock, exception, expected_result
-    ) -> None:
-        """
-        Tests that the _get_gpu_count function returns 0 when nvidia-smi is not found or fails
-        """
-        # GIVEN
-        check_output_mock.side_effect = exception
-
-        # WHEN
-        result = entrypoint_mod._get_gpu_count()
-
-        # THEN
-        check_output_mock.assert_called_once_with(
-            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"]
-        )
-
-        assert result == expected_result
-
-    @patch.object(entrypoint_mod.subprocess, "check_output")
-    def test_get_gpu_memory(
-        self,
-        check_output_mock: MagicMock,
-    ) -> None:
-        """
-        Tests that the _get_gpu_memory function returns total memory
-        """
-        # GIVEN
-        check_output_mock.return_value = b"6800 MiB"
-
-        # WHEN
-        result = entrypoint_mod._get_gpu_memory()
-
-        # THEN
-        check_output_mock.assert_called_once_with(
-            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
-        )
-        assert result == 6800
-
-    @pytest.mark.parametrize(
-        ("exception", "expected_result"),
-        (
-            pytest.param(FileNotFoundError("nvidia-smi not found"), 0, id="FileNotFoundError"),
-            pytest.param(subprocess.CalledProcessError(1, "command"), 0, id="CalledProcessError"),
-        ),
-    )
-    @patch.object(entrypoint_mod.subprocess, "check_output")
-    def test_get_gpu_memory_nvidia_smi_error(
-        self, check_output_mock: MagicMock, exception, expected_result
-    ) -> None:
-        """
-        Tests that the _get_gpu_memory function returns 0 when nvidia-smi is not found or fails
-        """
-        # GIVEN
-        check_output_mock.side_effect = exception
-
-        # WHEN
-        result = entrypoint_mod._get_gpu_memory()
-
-        # THEN
-        check_output_mock.assert_called_once_with(
-            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
-        )
-
-        assert result == expected_result

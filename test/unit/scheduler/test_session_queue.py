@@ -6,7 +6,12 @@ from unittest.mock import MagicMock, Mock, patch
 from collections import OrderedDict
 
 from deadline.job_attachments.models import JobAttachmentsFileSystem
-from openjd.model import SchemaVersion, UnsupportedSchema
+from openjd.model import (
+    ParameterValue,
+    ParameterValueType,
+    TemplateSpecificationVersion,
+    UnsupportedSchema,
+)
 from openjd.model.v2023_09 import (
     Environment,
     EnvironmentScript,
@@ -14,8 +19,8 @@ from openjd.model.v2023_09 import (
     Action,
     StepScript,
     StepActions,
+    StepTemplate,
 )
-from openjd.sessions import Parameter, ParameterType
 import pytest
 
 from deadline_worker_agent.scheduler.session_queue import (
@@ -66,7 +71,9 @@ _TEST_ENVIRONMENT = Environment(
     name="TestEnv",
     script=_TEST_ENVIRONMENT_SCRIPT,
 )
-_TEST_STEP_SCRIPT = StepScript(actions=StepActions(onRun=Action(command="test.exe")))
+_TEST_STEP_TEMPLATE = StepTemplate(
+    name="TestStep", script=StepScript(actions=StepActions(onRun=Action(command="test.exe")))
+)
 
 
 @pytest.fixture
@@ -136,7 +143,6 @@ class TestSessionActionQueueDequeue:
                         stepId="stepId",
                         # ordered so that the list order is predictable on output
                         parameters=OrderedDict(
-                            oldstrP="stringValue",
                             strP={"string": "stringValue"},
                             pathP={"path": "/tmp"},
                             intP={"int": "12"},
@@ -148,14 +154,13 @@ class TestSessionActionQueueDequeue:
                     id="id",
                     step_id="stepId",
                     task_id="taskId",
-                    details=StepDetails(script=_TEST_STEP_SCRIPT),
-                    task_parameter_values=[
-                        Parameter(ParameterType.STRING, "oldstrP", "stringValue"),
-                        Parameter(ParameterType.STRING, "strP", "stringValue"),
-                        Parameter(ParameterType.PATH, "pathP", "/tmp"),
-                        Parameter(ParameterType.INT, "intP", "12"),
-                        Parameter(ParameterType.FLOAT, "floatP", "1.2"),
-                    ],
+                    details=StepDetails(step_template=_TEST_STEP_TEMPLATE),
+                    task_parameter_values={
+                        "strP": ParameterValue(type=ParameterValueType.STRING, value="stringValue"),
+                        "pathP": ParameterValue(type=ParameterValueType.PATH, value="/tmp"),
+                        "intP": ParameterValue(type=ParameterValueType.INT, value="12"),
+                        "floatP": ParameterValue(type=ParameterValueType.FLOAT, value="1.2"),
+                    },
                 ),
                 id="task run",
             ),
@@ -187,7 +192,9 @@ class TestSessionActionQueueDequeue:
                 ),
                 SyncInputJobAttachmentsAction(
                     id="id",
-                    step_details=StepDetails(script=_TEST_STEP_SCRIPT, dependencies=["step-1"]),
+                    step_details=StepDetails(
+                        step_template=_TEST_STEP_TEMPLATE, dependencies=["step-1"]
+                    ),
                 ),
                 id="sync input job attachments with step Id",
             ),
@@ -328,7 +335,7 @@ class TestSessionActionQueueDequeue:
         session_queue._actions = [queue_entry]
         session_queue._actions_by_id[queue_entry.definition["sessionActionId"]] = queue_entry
 
-        inner_error = UnsupportedSchema(SchemaVersion.UNDEFINED.value)
+        inner_error = UnsupportedSchema(TemplateSpecificationVersion.UNDEFINED.value)
         job_entity_mock = MagicMock()
         job_entity_mock.environment_details.side_effect = inner_error
         job_entity_mock.step_details.side_effect = inner_error
@@ -379,7 +386,6 @@ class TestCancelAll:
                     stepId="stepId",
                     # ordered so that the list order is predictable on output
                     parameters=OrderedDict(
-                        oldstrP="stringValue",
                         strP={"string": "stringValue"},
                         pathP={"path": "/tmp"},
                         intP={"int": "12"},

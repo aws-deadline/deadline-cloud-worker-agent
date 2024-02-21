@@ -88,7 +88,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                 "stepId": "step-0000",
                 "dependencies": "",
             },
-            id="invalid dependencies - not list",
+            id="nonvalid dependencies - not list",
         ),
         pytest.param(
             {
@@ -103,6 +103,6 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
     ],
 )
 def test_input_validation_failure(data: dict[str, Any]) -> None:
-    """Test that validate_entity_data() raises a ValueError when invalid input data is provided."""
+    """Test that validate_entity_data() raises a ValueError when nonvalid input data is provided."""
     with pytest.raises(ValueError):
         StepDetails.validate_entity_data(entity_data=data)

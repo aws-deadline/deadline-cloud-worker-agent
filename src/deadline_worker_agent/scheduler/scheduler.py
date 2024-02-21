@@ -155,7 +155,7 @@ class WorkerScheduler:
     _action_updates_map: dict[str, SessionActionStatus]
     _action_completes: list[SessionActionStatus]
     _action_update_lock: RLock
-    _jobs_run_as_user_override: JobsRunAsUserOverride
+    _job_run_as_user_override: JobsRunAsUserOverride
     _boto_session: BotoSession
     _worker_persistence_dir: Path
     _worker_logs_dir: Path | None
@@ -173,7 +173,7 @@ class WorkerScheduler:
         fleet_id: str,
         worker_id: str,
         deadline: DeadlineClient,
-        jobs_run_as_user_override: JobsRunAsUserOverride,
+        job_run_as_user_override: JobsRunAsUserOverride,
         boto_session: BotoSession,
         cleanup_session_user_processes: bool,
         worker_persistence_dir: Path,
@@ -204,7 +204,7 @@ class WorkerScheduler:
         self._action_completes = []
         self._action_updates_map = {}
         self._action_update_lock = RLock()
-        self._jobs_run_as_user_override = jobs_run_as_user_override
+        self._job_run_as_user_override = job_run_as_user_override
         self._shutdown_grace = None
         self._boto_session = boto_session
         self._queue_aws_credentials = dict[str, QueueAwsCredentials]()
@@ -231,7 +231,7 @@ class WorkerScheduler:
         If any action completes, finishes cancelation, or if the Worker is done idling, an
         UpdateWorkerSchedule API request is made with any relevant changes specified in the request.
 
-        The scheduler is responsible for heartbeating which also includes reporting progress and
+        The scheduler is responsible for heart-beating which also includes reporting progress and
         status of ongoing active session actions, receiving session action cancelations, and
         also receiving commands from the service to shutdown.
 
@@ -368,12 +368,12 @@ class WorkerScheduler:
         Returns
         -------
         int
-            The interval (in seconds) to sync with the service returned in the UpdateWorkerSchedule repsonse
+            The interval (in seconds) to sync with the service returned in the UpdateWorkerSchedule response
         """
 
         logger.info("Synchronizing with service (sending UpdateWorkerSchedule)")
 
-        # 1. collect info to be send in the UpdateWorkerSchedule API request
+        # 1. collect info to be sent in the UpdateWorkerSchedule API request
         #    1.1. finished/in-progress action results
         updated_actions, commit_completed_actions = self._updated_session_actions()
         if updated_actions:
@@ -405,7 +405,6 @@ class WorkerScheduler:
         #    3.3. cancel actions in existing sessions
         #    3.4. update the queues for existing sessions
         #    3.5. persist the idle and healthy timeouts
-        # self._apply_response(response=response)
         self._update_sessions(response=response)
 
         if response.get("desiredWorkerStatus", None) == "STOPPED":
@@ -515,7 +514,7 @@ class WorkerScheduler:
         if action_updated.completed_status:
             updated_action["completedStatus"] = action_updated.completed_status
         elif action_updated.update_time:
-            updated_action["updateTime"] = action_updated.update_time
+            updated_action["updatedAt"] = action_updated.update_time
         if action_updated.status:
             if action_updated.status.exit_code is not None:
                 updated_action["processExitCode"] = action_updated.status.exit_code
@@ -717,9 +716,9 @@ class WorkerScheduler:
             logger.debug(f"[{new_session_id}] Assigned actions")
 
             os_user: Optional[SessionUser] = None
-            if not self._jobs_run_as_user_override.run_as_agent:
-                if self._jobs_run_as_user_override.job_user is not None:
-                    os_user = self._jobs_run_as_user_override.job_user
+            if not self._job_run_as_user_override.run_as_agent:
+                if self._job_run_as_user_override.job_user is not None:
+                    os_user = self._job_run_as_user_override.job_user
                 elif job_details.job_run_as_user:
                     if os.name == "posix":
                         os_user = job_details.job_run_as_user.posix

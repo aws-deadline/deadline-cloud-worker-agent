@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -15,8 +15,10 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Dict,
     Generator,
     Iterable,
+    List,
     Literal,
     Optional,
     Tuple,
@@ -34,20 +36,20 @@ if TYPE_CHECKING:
     from .actions import SessionActionDefinition
     from .job_entities import JobAttachmentDetails, JobDetails
 
+from openjd.model import TaskParameterSet
 from openjd.sessions import (
     ActionState,
     ActionStatus,
     EnvironmentIdentifier,
     EnvironmentModel,
-    Parameter,
+    LOG as OPENJD_LOG,
     PathMappingRule,
     PosixSessionUser,
     StepScriptModel,
+    Session as OPENJDSession,
     SessionUser,
     WindowsSessionUser,
 )
-from openjd.sessions import Session as OPENJDSession
-from openjd.sessions import LOG as OPENJD_LOG
 
 from deadline.job_attachments.asset_sync import AssetSync
 from deadline.job_attachments.asset_sync import logger as ASSET_SYNC_LOGGER
@@ -57,14 +59,15 @@ from deadline.job_attachments.models import (
     ManifestProperties,
     PathFormat,
 )
-from deadline.job_attachments.progress_tracker import ProgressReportMetadata
 from deadline.job_attachments.os_file_permission import (
     FileSystemPermissionSettings,
     PosixFileSystemPermissionSettings,
     WindowsFileSystemPermissionSettings,
     WindowsPermissionEnum,
 )
+from deadline.job_attachments.progress_tracker import ProgressReportMetadata, SummaryStatistics
 
+from ..aws.deadline import record_sync_inputs_telemetry_event, record_sync_outputs_telemetry_event
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
 
@@ -79,6 +82,7 @@ OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
     ActionState.CANCELED: "CANCELED",
     ActionState.FAILED: "FAILED",
     ActionState.SUCCESS: "SUCCEEDED",
+    ActionState.TIMEOUT: "FAILED",
 }
 TIME_DELTA_ZERO = timedelta()
 
@@ -171,6 +175,7 @@ class Session:
         self._job_details = job_details
         self._report_action_update = action_update_callback
         self._env = env
+        self._executor = ThreadPoolExecutor(max_workers=1)
 
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
@@ -264,6 +269,7 @@ class Session:
         """
 
         with ThreadPoolExecutor(max_workers=1) as executor:
+            self._executor = executor
             while not self._stop.wait(timeout=0.1):
                 # Start session action if needed
                 with (
@@ -280,7 +286,7 @@ class Session:
                     self._current_action_lock,
                 ):
                     if not self._current_action:
-                        self._start_action(executor=executor)
+                        self._start_action()
 
     def _cleanup(self) -> None:
         """Attempt to clean up the session.
@@ -489,11 +495,7 @@ class Session:
         )
         current_action.definition.cancel(session=self, time_limit=time_limit)
 
-    def _start_action(
-        self,
-        *,
-        executor: ThreadPoolExecutor,
-    ) -> None:
+    def _start_action(self) -> None:
         # Imported in function to avoid a circular import
         from .actions import ExitEnvironmentAction
 
@@ -564,7 +566,7 @@ class Session:
             )
             action_definition.start(
                 session=self,
-                executor=executor,
+                executor=self._executor,
             )
         except Exception as e:
             logger.warn(
@@ -848,6 +850,8 @@ class Session:
 
         # Add path mapping rules for root paths in job attachments
         ASSET_SYNC_LOGGER.info("Syncing inputs using Job Attachments")
+        download_summary_statistics: SummaryStatistics
+        path_mapping_rules: List[Dict[str, str]]
         (download_summary_statistics, path_mapping_rules) = self._asset_sync.sync_inputs(
             s3_settings=s3_settings,
             attachments=attachments,
@@ -864,6 +868,9 @@ class Session:
         ASSET_SYNC_LOGGER.info(
             f"Summary Statistics for file downloads:\n{download_summary_statistics}"
         )
+
+        # Send the summary stats of input syncing through the telemetry client.
+        record_sync_inputs_telemetry_event(self._queue_id, download_summary_statistics)
 
         job_attachment_path_mappings = [
             PathMappingRule.from_dict(rule) for rule in path_mapping_rules
@@ -961,7 +968,11 @@ class Session:
             assert self._stop.is_set(), "current_action is None or stopping"
             return
 
-        is_unsuccessful = action_status.state in (ActionState.FAILED, ActionState.CANCELED)
+        is_unsuccessful = action_status.state in (
+            ActionState.FAILED,
+            ActionState.CANCELED,
+            ActionState.TIMEOUT,
+        )
 
         if (
             action_status.state == ActionState.SUCCESS
@@ -969,21 +980,59 @@ class Session:
             and self._asset_sync is not None
         ):
             # Synchronizing job output attachments is currently bundled together with the
-            # RunStepTaskAction. The synchronization happens after the task run succeeds, and both
-            # must be successful in order to mark the action as SUCCEEDED. The time when
-            # the action is completed should be the moment when the synchronization have
-            # been finished.
-            try:
-                self._sync_asset_outputs(current_action=current_action)
-                now = datetime.now(tz=timezone.utc)
-            except Exception as e:
-                # Log and fail the task run action if we are unable to sync output job
-                # attachments
-                fail_message = f"Failed to sync job output attachments for {current_action.definition.human_readable()}: {e}"
-                self.logger.warning(fail_message)
-                action_status = ActionStatus(state=ActionState.FAILED, fail_message=fail_message)
-                is_unsuccessful = True
+            # RunStepTaskAction. The synchronization happens after the task run succeeds,
+            # and both must be successful in order to mark the action as SUCCEEDED.
+            future = self._executor.submit(
+                self._sync_asset_outputs,
+                current_action=current_action,
+            )
+            on_done_with_sync_asset_outputs = partial(
+                self._on_done_with_sync_asset_outputs,
+                is_unsuccessful=is_unsuccessful,
+                action_status=action_status,
+                current_action=current_action,
+            )
+            future.add_done_callback(on_done_with_sync_asset_outputs)
 
+        else:
+            self._handle_action_update(is_unsuccessful, action_status, current_action, now)
+
+    def _on_done_with_sync_asset_outputs(
+        self,
+        future: Future[None],
+        is_unsuccessful: bool,
+        action_status: ActionStatus,
+        current_action: CurrentAction,
+    ):
+        try:
+            future.result()
+        except Exception as e:
+            # Log and fail the task run action if we are unable to sync output job attachments
+            fail_message = f"Failed to sync job output attachments for {current_action.definition.human_readable()}: {e}"
+            self.logger.warning(fail_message)
+            action_status = ActionStatus(state=ActionState.FAILED, fail_message=fail_message)
+            is_unsuccessful = True
+        finally:
+            # The time when the action is completed should be the moment when
+            # the synchronization have been finished.
+            now = datetime.now(tz=timezone.utc)
+            with (
+                # NOTE: Acquire the locks here to ensure thread-safe access during action update.
+                # Lock acquisition order is important. Must be:
+                #     1.  action update lock (scheduler owned)
+                #     2.  current action lock
+                self._action_update_lock,
+                self._current_action_lock,
+            ):
+                self._handle_action_update(is_unsuccessful, action_status, current_action, now)
+
+    def _handle_action_update(
+        self,
+        is_unsuccessful: bool,
+        action_status: ActionStatus,
+        current_action: CurrentAction,
+        now: datetime,
+    ):
         if is_unsuccessful:
             fail_message = (
                 action_status.fail_message
@@ -1077,7 +1126,7 @@ class Session:
         from .actions import RunStepTaskAction
 
         assert isinstance(current_action.definition, RunStepTaskAction)
-        upload_summary_statistics = self._asset_sync.sync_outputs(
+        upload_summary_statistics: SummaryStatistics = self._asset_sync.sync_outputs(
             s3_settings=s3_settings,
             attachments=attachments,
             queue_id=self._queue_id,
@@ -1093,13 +1142,16 @@ class Session:
 
         ASSET_SYNC_LOGGER.info(f"Summary Statistics for file uploads:\n{upload_summary_statistics}")
 
+        # Send the summary stats of output syncing through the telemetry client.
+        record_sync_outputs_telemetry_event(self._queue_id, upload_summary_statistics)
+
         ASSET_SYNC_LOGGER.info("Finished syncing outputs using Job Attachments")
 
     def run_task(
         self,
         *,
         step_script: StepScriptModel,
-        task_parameter_values: list[Parameter],
+        task_parameter_values: TaskParameterSet,
     ) -> None:
         self._session.run_task(
             step_script=step_script,
