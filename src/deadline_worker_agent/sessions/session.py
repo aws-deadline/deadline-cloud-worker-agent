@@ -377,6 +377,12 @@ class Session:
                     logger.info("%s successful", desc)
                 cur_time = monotonic()
         finally:
+            if self._asset_sync is not None and self._job_attachment_details is not None:
+                # terminate any running virtual file systems
+                self._asset_sync.cleanup_session(
+                    session_dir=self._session.working_directory,
+                    file_system=self._job_attachment_details.job_attachments_file_system,
+                )
             # Clean-up the Open Job Description session
             self._session.cleanup()
 
