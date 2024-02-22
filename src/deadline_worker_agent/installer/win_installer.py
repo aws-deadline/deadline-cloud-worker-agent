@@ -7,7 +7,6 @@ import string
 
 import sys
 from argparse import ArgumentParser
-from typing import Optional
 
 import win32netcon
 import winerror
@@ -45,30 +44,39 @@ def print_banner():
     )
 
 
-def check_user_existence(user_name: str) -> Optional[bool]:
+def check_user_existence(user_name: str) -> bool:
     """
     Checks if a user exists on the system by attempting to resolve the user's SID.
     This method could be used in both Ad and Non-Ad environments.
 
     Args:
-    user (str): The username to check for existence.
+    user_name (str): The username to check for existence.
 
     Returns:
     bool: True if the user exists, otherwise False.
     """
+    MAX_RETRIES = 5
 
-    try:
-        # Resolve the username to an SID
-        sid, _, _ = win32security.LookupAccountName(None, user_name)
+    retry_count = 0
+    while retry_count < MAX_RETRIES:
+        try:
+            # Resolve the username to an SID
+            sid, _, _ = win32security.LookupAccountName(None, user_name)
 
-        # Resolve the SID back to a username as an additional check
-        win32security.LookupAccountSid(None, sid)
-        return True
-    except pywintypes.error as e:
-        if e.winerror == winerror.ERROR_NONE_MAPPED:
-            return False
+            # Resolve the SID back to a username as an additional check
+            win32security.LookupAccountSid(None, sid)
+        except pywintypes.error as e:
+            if e.winerror == winerror.ERROR_NONE_MAPPED:
+                # LookupAccountSid can throw ERROR_NONE_MAPPED if a network timeout is reached
+                # Retry a few times to reduce risk of failing due to temporary network outage
+                # See https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-lookupaccountsida#remarks
+                retry_count += 1
+            else:
+                raise
         else:
-            raise
+            return True
+
+    return False
 
 
 def ensure_local_queue_user_group_exists(group_name: str) -> None:
@@ -93,8 +101,8 @@ def ensure_local_queue_user_group_exists(group_name: str) -> None:
                         "name": group_name,
                         "comment": (
                             "This is a local group created by the Deadline Cloud Worker Agent Installer. "
-                            "This group should contain all OS users defined on the Deadline Cloud queue that "
-                            "the worker agent is configured for."
+                            "This group should contain the jobRunAs OS user for all queues associated with "
+                            "the worker's fleet"
                         ),
                     },
                 )

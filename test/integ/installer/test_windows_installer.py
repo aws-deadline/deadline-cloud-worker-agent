@@ -6,7 +6,7 @@ import pytest
 if sys.platform != "win32":
     pytest.skip("Windows-specific tests", allow_module_level=True)
 
-import time
+
 from deadline_worker_agent.installer.win_installer import (
     check_user_existence,
     ensure_local_agent_user,
@@ -15,11 +15,8 @@ from deadline_worker_agent.installer.win_installer import (
     generate_password,
 )
 
-import pywintypes
 import win32net
 import win32api
-import win32security
-import winerror
 
 
 def test_user_existence():
@@ -72,32 +69,7 @@ def test_ensure_local_agent_user(user_setup_and_teardown):
     """
     Tests the creation of a local user and validates it exists.
     """
-    MAX_RETRIES = 5
-    username = user_setup_and_teardown
-
-    # Wait for user creation
-    time.sleep(0.1)
-
-    retry_count = 0
-    while retry_count < MAX_RETRIES:
-        try:
-            sid, _, _ = win32security.LookupAccountName(None, username)
-            actual_username, _, _ = win32security.LookupAccountSid(None, sid)
-        except pywintypes.error as e:
-            if e.winerror == winerror.ERROR_NONE_MAPPED:
-                # LookupAccountSid can throw ERROR_NONE_MAPPED if a network timeout is reached
-                # Retry a few times to reduce risk of failing due to temporary network outage
-                # See https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-lookupaccountsida#remarks
-                retry_count += 1
-            else:
-                pytest.fail(f"User {username} could not be found: {e}")
-                break
-        else:
-            break
-
-    assert (
-        actual_username == username
-    ), f"Expected username to be '{username}', but got '{actual_username}'"
+    assert check_user_existence(user_setup_and_teardown)
 
 
 def group_exists(group_name: str) -> bool:
