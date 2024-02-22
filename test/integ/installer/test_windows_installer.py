@@ -7,7 +7,6 @@ import pytest
 
 import win32api
 import win32net
-import win32security
 
 from deadline_worker_agent.installer.win_installer import (
     add_user_to_group,
@@ -169,22 +168,3 @@ def test_configure_farm_and_fleet_creates_backup(setup_example_config):
 
     assert os.path.isfile(worker_config_file), "Worker config file was not created"
     assert os.path.isfile(backup_worker_config), "Backup of worker config file was not created"
-
-
-def check_directory_permissions(path, user_sid, expected_permission_flags):
-    sd = win32security.GetFileSecurity(path, win32security.DACL_SECURITY_INFORMATION)
-    dacl = sd.GetSecurityDescriptorDacl()
-    for i in range(dacl.GetAceCount()):
-        ace = dacl.GetAce(i)
-        ace_sid = ace[2]
-        ace_mask = ace[1]
-        if ace_sid == user_sid:
-            return ace_mask == expected_permission_flags
-    return False
-
-
-@pytest.fixture
-def current_user_sid():
-    username = os.getlogin()
-    sid, _, _ = win32security.LookupAccountName("", username)
-    return sid

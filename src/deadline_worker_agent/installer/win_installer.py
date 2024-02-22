@@ -10,7 +10,6 @@ import string
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
-from typing import Dict
 
 from deadline_worker_agent.file_system_operations import set_permissions
 
@@ -381,4 +380,4 @@ def start_windows_installer(
     add_user_to_group(group_name, user_name)
 
     agent_dirs = provision_directories(user_name)
-    configure_farm_and_fleet(agent_dirs.deadline_config_subdir, farm_id, fleet_id)
+    configure_farm_and_fleet(str(agent_dirs.deadline_config_subdir), farm_id, fleet_id)
