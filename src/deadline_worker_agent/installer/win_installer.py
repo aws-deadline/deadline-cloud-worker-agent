@@ -11,7 +11,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Dict
 
-from deadline_worker_agent.file_system_operations import set_permissions, FileSystemPermissionEnum
+from deadline_worker_agent.file_system_operations import set_permissions
 
 import ntsecuritycon as con
 import pywintypes
@@ -269,25 +269,6 @@ def start_windows_installer(
     add_user_to_group(group_name, user_name)
 
 
-def set_directory_permissions(path: str, user: str, permission_flags: FileSystemPermissionEnum):
-    """
-    Sets directory permissions, removes existing inheritance, and adds specific user permissions.
-    This function modifies the directory's ACL to include specific permissions for the provided
-    user and administrators.
-
-    Args:
-    path (str): The directory path to set permissions on.
-    user (str): The username to apply the permissions for.
-    permission (FileSystemPermissionEnum): The permission level to set.
-
-    """
-
-    # TODO: Need to do a code refactoring in OpenJD to allow create a WindowsSessionUser
-    #  for another user without password.
-    agent_user = WindowsSessionUser(user=user, group="Administrators", password="")
-    set_permissions(Path(path), permission_flags, agent_user, permission_flags, None)
-
-
 def configure_farm_and_fleet(
     deadline_config_sub_directory: str, farm_id: str, fleet_id: str
 ) -> None:
@@ -362,7 +343,10 @@ def provision_directories(agent_username: str) -> Dict[str, str]:
     deadline_dir = os.path.join(program_data_path, r"Amazon\Deadline")
     logging.info(f"Provisioning root directory ({deadline_dir})")
     os.makedirs(deadline_dir, exist_ok=True)
-    set_directory_permissions(deadline_dir, agent_username, con.FILE_ALL_ACCESS)
+    # TODO: Need to do a code refactoring in OpenJD to allow create a WindowsSessionUser
+    #  for another user without password.
+    agent_user = WindowsSessionUser(user=agent_username, group="Administrators", password="")
+    set_permissions(Path(deadline_dir), con.FILE_ALL_ACCESS, agent_user, con.FILE_ALL_ACCESS, None)
     logging.info(f"Done provisioning root directory ({deadline_dir})")
 
     deadline_log_subdir = os.path.join(deadline_dir, "Logs")

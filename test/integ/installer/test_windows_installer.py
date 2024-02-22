@@ -5,7 +5,6 @@ import sys
 
 import pytest
 
-import ntsecuritycon as con
 import win32api
 import win32net
 import win32security
@@ -17,9 +16,7 @@ from deadline_worker_agent.installer.win_installer import (
     ensure_local_agent_user,
     ensure_local_queue_user_group_exists,
     generate_password,
-    set_directory_permissions,
 )
-from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
 
 if sys.platform != "win32":
     pytest.skip("Windows-specific tests", allow_module_level=True)
@@ -191,25 +188,3 @@ def current_user_sid():
     username = os.getlogin()
     sid, _, _ = win32security.LookupAccountName("", username)
     return sid
-
-
-@pytest.mark.integration
-def test_set_directory_permissions(tmp_path, current_user_sid):
-    directory_path = os.path.join(tmp_path, "testdir")
-    os.mkdir(directory_path)
-
-    permission_flags = con.FILE_ALL_ACCESS
-    username = os.getlogin()
-
-    set_directory_permissions(directory_path, username, FileSystemPermissionEnum.FULL_CONTROL)
-
-    # Verify the permissions are set correctly
-    assert check_directory_permissions(
-        directory_path, current_user_sid, permission_flags
-    ), "Permissions not set as expected"
-
-    # check for administrator permissions as well
-    admins_sid = win32security.CreateWellKnownSid(win32security.WinBuiltinAdministratorsSid, None)
-    assert check_directory_permissions(
-        directory_path, admins_sid, permission_flags
-    ), "Admin permissions not set as expected"
