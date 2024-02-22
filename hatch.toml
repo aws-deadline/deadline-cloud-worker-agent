@@ -49,8 +49,8 @@ integ-test = "pytest --no-cov test/integ {args:}"
 
 [envs.release]
 detached = true
-pre-install-commands = [
-  "pip install -r requirements-release.txt"
+dependencies = [
+  "python-semantic-release == 8.7.*"
 ]
 
 [envs.release.scripts]
