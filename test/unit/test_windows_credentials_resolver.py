@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from datetime import datetime, timedelta
-from openjd.sessions import WindowsSessionUser
+from openjd.sessions import WindowsSessionUser, BadCredentialsException
 from unittest.mock import patch, MagicMock
 from typing import Generator
 from pytest import fixture, mark
@@ -10,7 +10,6 @@ import os
 import pytest
 
 import deadline_worker_agent.windows_credentials_resolver as credentials_mod
-from deadline_worker_agent.aws.deadline import DeadlineRequestUnrecoverableError
 
 
 class TestWindowsCredentialsResolver:
@@ -96,6 +95,29 @@ class TestWindowsCredentialsResolver:
     @patch(
         "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
     )
+    def test_get_windows_session_user_no_password_in_secret(self, fetch_secret_mock, datetime_mock):
+        # GIVEN
+        mock_boto_session = MagicMock()
+        now = datetime(2023, 1, 1, 12, 0, 0)
+        datetime_mock.utcnow.return_value = now
+        resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
+        secret_data = {"something-other-than-password": "fake_password"}
+        fetch_secret_mock.return_value = secret_data
+        user = "new_user"
+        group = "new_group"
+        password_arn = "new_password_arn"
+
+        # WHEN
+        with pytest.raises(ValueError):
+            resolver.get_windows_session_user(user, group, password_arn)
+
+        # THEN
+        fetch_secret_mock.assert_called_once_with(password_arn)
+
+    @mark.skipif(os.name != "nt", reason="Windows-only test.")
+    @patch(
+        "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
+    )
     def test_get_windows_session_user_cached(self, fetch_secret_mock, datetime_mock):
         # GIVEN
         mock_boto_session = MagicMock()
@@ -125,6 +147,31 @@ class TestWindowsCredentialsResolver:
         assert result.group == group
         assert result.password == "fake_cached_password"
 
+    @mark.skipif(os.name != "nt", reason="Windows-only test.")
+    @patch(
+        "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
+    )
+    def test_get_windows_session_user_invalid_credentials(self, fetch_secret_mock, datetime_mock):
+        # GIVEN
+        mock_boto_session = MagicMock()
+        now = datetime(2023, 1, 1, 12, 0, 0)
+        datetime_mock.utcnow.return_value = now
+        resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
+        secret_data = {"password": "fake_password"}
+        fetch_secret_mock.return_value = secret_data
+        user = "new_user"
+        group = "new_group"
+        password_arn = "new_password_arn"
+
+        with patch(
+            "deadline_worker_agent.windows_credentials_resolver.WindowsSessionUser",
+            side_effect=BadCredentialsException("Invalid credentials"),
+        ):
+            # WHEN
+            with pytest.raises(ValueError):
+                resolver.get_windows_session_user(user, group, password_arn)
+                assert resolver._user_cache[f"{user}_{password_arn}"].windows_session_user is None
+
     @pytest.mark.parametrize(
         "exception_code",
         [
@@ -137,19 +184,20 @@ class TestWindowsCredentialsResolver:
     @patch(
         "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
     )
-    def test_fetch_secrets_manager_non_retirable_exception(
+    def test_fetch_secrets_manager_non_retriable_exception(
         self, fetch_secret_mock: MagicMock, exception_code: str
     ):
+        # GIVEN
         mock_boto_session = MagicMock()
         resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
         password_arn = "password_arn"
-
         exc = botocore.exceptions.ClientError(
             {"Error": {"Code": exception_code, "Message": "A message"}}, "GetSecretValue"
         )
-
         fetch_secret_mock.side_effect = exc
-        with pytest.raises(DeadlineRequestUnrecoverableError):
+
+        # THEN
+        with pytest.raises(RuntimeError):
             resolver._fetch_secret_from_secrets_manager(password_arn)
 
     @pytest.mark.parametrize(
@@ -163,20 +211,39 @@ class TestWindowsCredentialsResolver:
     @patch(
         "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
     )
-    def test_fetch_secrets_manager_retirable_exception(
+    def test_fetch_secrets_manager_retriable_exception(
         self, fetch_secret_mock: MagicMock, exception_code: str
     ):
+        # GIVEN
         mock_boto_session = MagicMock()
         resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
         password_arn = "password_arn"
-
         exc = botocore.exceptions.ClientError(
             {"Error": {"Code": exception_code, "Message": "A message"}}, "GetSecretValue"
         )
-
         fetch_secret_mock.side_effect = exc
 
+        # THEN
         # Assert raising DeadlineRequestUnrecoverableError after 10 retries
-        with pytest.raises(DeadlineRequestUnrecoverableError):
+        with pytest.raises(RuntimeError):
+            resolver._fetch_secret_from_secrets_manager(password_arn)
+            assert fetch_secret_mock.call_count == 10
+
+    @mark.skipif(os.name != "nt", reason="Windows-only test.")
+    @patch(
+        "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
+    )
+    def test_fetch_secrets_manager_non_json_secret_exception(
+        self,
+        fetch_secret_mock: MagicMock,
+    ):
+        # GIVEN
+        mock_boto_session = MagicMock()
+        resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
+        password_arn = "password_arn"
+        fetch_secret_mock.return_value = {"SecretString": "_a string_"}
+
+        # THEN
+        with pytest.raises(RuntimeError):
             resolver._fetch_secret_from_secrets_manager(password_arn)
             assert fetch_secret_mock.call_count == 10
