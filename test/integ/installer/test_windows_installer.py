@@ -1,5 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+import pathlib
 import os
 import sys
 
@@ -15,6 +16,8 @@ from deadline_worker_agent.installer.win_installer import (
     ensure_local_agent_user,
     ensure_local_queue_user_group_exists,
     generate_password,
+    provision_directories,
+    WorkerAgentDirectories,
 )
 
 if sys.platform != "win32":
@@ -168,3 +171,27 @@ def test_configure_farm_and_fleet_creates_backup(setup_example_config):
 
     assert os.path.isfile(worker_config_file), "Worker config file was not created"
     assert os.path.isfile(backup_worker_config), "Backup of worker config file was not created"
+
+def test_provision_directories(user_setup_and_teardown: str):
+    # GIVEN
+    program_data_path = pathlib.Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData"))
+    expected_dirs = WorkerAgentDirectories(
+        deadline_dir=program_data_path / "Amazon" / "Deadline",
+        deadline_log_subdir=program_data_path / "Amazon" / "Deadline" / "Logs",
+        deadline_persistence_subdir=program_data_path / "Amazon" / "Deadline" / "Cache",
+        deadline_config_subdir=program_data_path / "Amazon" / "Deadline" / "Config",
+    )
+    assert not expected_dirs.deadline_dir.exists()
+    assert not expected_dirs.deadline_log_subdir.exists()
+    assert not expected_dirs.deadline_persistence_subdir.exists()
+    assert not expected_dirs.deadline_config_subdir.exists()
+
+    # WHEN
+    actual_dirs = provision_directories(user_setup_and_teardown)
+
+    # THEN
+    assert actual_dirs == expected_dirs
+    assert actual_dirs.deadline_dir.exists()
+    assert actual_dirs.deadline_log_subdir.exists()
+    assert actual_dirs.deadline_persistence_subdir.exists()
+    assert actual_dirs.deadline_config_subdir.exists()
