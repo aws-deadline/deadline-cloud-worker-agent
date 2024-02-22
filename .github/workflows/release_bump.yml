@@ -15,7 +15,6 @@ on:
 
 jobs:
   UnitTests:
-    needs: Setup
     name: Unit Tests
     uses: ./.github/workflows/reuse_python_build.yml
     with:
