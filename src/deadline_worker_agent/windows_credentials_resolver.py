@@ -88,8 +88,8 @@ class WindowsCredentialsResolver:
                 raise RuntimeError(e)
         try:
             return json.loads(response.get("SecretString"))
-        except Exception as e:
-            raise ValueError(f"Error parsing secret {secretArn}: {(str(e))}.")
+        except Exception:
+            raise ValueError(f"Contents of secret {secretArn} is not valid JSON.")
 
     def prune_cache(self):
         now = datetime.utcnow()
@@ -104,6 +104,8 @@ class WindowsCredentialsResolver:
         self, user: str, group: Optional[str], passwordArn: str
     ) -> WindowsSessionUser:
         # Raises ValueError on problems so that the scheduler can cleanly fail the associated jobs
+        # Any failure here should be cached so that we wait self.RETRY_AFTER minutes before fetching
+        # again
 
         # Create a composite key using user and arn
         should_fetch = True
@@ -130,24 +132,34 @@ class WindowsCredentialsResolver:
                     should_fetch = False
 
         if should_fetch:
-            # Fetch the secret from Secrets Manager if not in the cache or if it's too old
-            secret = self._fetch_secret_from_secrets_manager(passwordArn)
-
-            # Create WindowsSessionUser object
-            password = secret.get("password")
-
-            if not password:
-                raise ValueError(f"Secret {passwordArn} did not have the expected format")
-
+            # Fetch the secret from Secrets Manager
             try:
-                # OpenJD will test the validity of the credentials
-                windows_session_user = WindowsSessionUser(user=user, group=group, password=password)
-            except BadCredentialsException as e:
-                windows_session_user = None
-                error = str(e)
+                secret = self._fetch_secret_from_secrets_manager(passwordArn)
+            except Exception:
+                logger.error(
+                    f"Contents of secret {passwordArn} could not be fetched or were not valid"
+                )
+            else:
+                password = secret.get("password")
+                if not password:
+                    windows_session_user = None
+                    logger.error(
+                        f'Contents of secret {passwordArn} did not match the expected format: {"password":"value"}'
+                    )
+                else:
+                    try:
+                        # OpenJD will test the ultimate validity of the credentials when creating a WindowsSessionUser
+                        windows_session_user = WindowsSessionUser(
+                            user=user, group=group, password=password
+                        )
+                    except BadCredentialsException:
+                        windows_session_user = None
+                        logger.error(
+                            f"Username and/or password within {passwordArn} were not correct"
+                        )
 
         # Cache the WindowsSessionUser object, last fetched at, and last accessed time for future use
-        # If the credentials were invalid cache that too to prevent repeated calls to SecretsManager
+        # If the credentials were not valid cache that too to prevent repeated calls to SecretsManager
         self._user_cache[user_key] = _WindowsCredentialsCacheEntry(
             windows_session_user=windows_session_user,
             last_fetched_at=datetime.utcnow(),
@@ -155,6 +167,8 @@ class WindowsCredentialsResolver:
         )
 
         if not windows_session_user:
-            raise ValueError(f"Credentials were invalid: {error}")
+            raise ValueError(
+                f"No valid credentials for {user} available. Credentials will be fetched again {self.RETRY_AFTER.total_seconds()//60} minutes after last fetch"
+            )
 
         return windows_session_user

@@ -185,7 +185,7 @@ class TestWindowsCredentialsResolver:
         "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
     )
     def test_fetch_secrets_manager_non_retriable_exception(
-        self, fetch_secret_mock: MagicMock, exception_code: str
+        self, secrets_manager_client_mock: MagicMock, exception_code: str
     ):
         # GIVEN
         mock_boto_session = MagicMock()
@@ -194,7 +194,7 @@ class TestWindowsCredentialsResolver:
         exc = botocore.exceptions.ClientError(
             {"Error": {"Code": exception_code, "Message": "A message"}}, "GetSecretValue"
         )
-        fetch_secret_mock.side_effect = exc
+        secrets_manager_client_mock.side_effect = exc
 
         # THEN
         with pytest.raises(RuntimeError):
@@ -212,7 +212,7 @@ class TestWindowsCredentialsResolver:
         "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
     )
     def test_fetch_secrets_manager_retriable_exception(
-        self, fetch_secret_mock: MagicMock, exception_code: str
+        self, secrets_manager_client_mock: MagicMock, exception_code: str
     ):
         # GIVEN
         mock_boto_session = MagicMock()
@@ -221,13 +221,13 @@ class TestWindowsCredentialsResolver:
         exc = botocore.exceptions.ClientError(
             {"Error": {"Code": exception_code, "Message": "A message"}}, "GetSecretValue"
         )
-        fetch_secret_mock.side_effect = exc
+        secrets_manager_client_mock.side_effect = exc
 
         # THEN
         # Assert raising DeadlineRequestUnrecoverableError after 10 retries
         with pytest.raises(RuntimeError):
             resolver._fetch_secret_from_secrets_manager(password_arn)
-            assert fetch_secret_mock.call_count == 10
+            assert secrets_manager_client_mock.call_count == 10
 
     @mark.skipif(os.name != "nt", reason="Windows-only test.")
     @patch(
@@ -235,15 +235,14 @@ class TestWindowsCredentialsResolver:
     )
     def test_fetch_secrets_manager_non_json_secret_exception(
         self,
-        fetch_secret_mock: MagicMock,
+        secrets_manager_client_mock: MagicMock,
     ):
         # GIVEN
         mock_boto_session = MagicMock()
         resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
         password_arn = "password_arn"
-        fetch_secret_mock.return_value = {"SecretString": "_a string_"}
+        secrets_manager_client_mock.get_secret_value.return_value = {"SecretString": "_a string_"}
 
         # THEN
-        with pytest.raises(RuntimeError):
+        with pytest.raises(ValueError):
             resolver._fetch_secret_from_secrets_manager(password_arn)
-            assert fetch_secret_mock.call_count == 10
