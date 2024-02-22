@@ -88,6 +88,7 @@ jobs:
           fi
 
           # Backup actual changelog to preserve its contents
+          touch CHANGELOG.md
           cp CHANGELOG.md CHANGELOG.bak.md
 
           # Run semantic-release to generate new changelog
