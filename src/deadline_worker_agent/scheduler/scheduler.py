@@ -705,16 +705,19 @@ class WorkerScheduler:
                         raise NotImplementedError(f"{os.name} is not supported")
                     os_user = job_details.job_run_as_user.posix
 
-                if os.name == "posix":
+                if os_user and os.name == "posix":
                     os_user_error_messages = []
                     try:
-                        pwd.getpwnam(os_user.user)  # type: ignore
+                        pwd.getpwnam(os_user.user)
                     except KeyError:
-                        os_user_error_messages.append(f"User not found: {os_user.user}.")  # type: ignore
-                    try:
-                        grp.getgrnam(os_user.group)  # type: ignore
-                    except KeyError:
-                        os_user_error_messages.append(f"User group not found: {os_user.group}.")  # type: ignore
+                        os_user_error_messages.append(f"User not found: {os_user.user}.")
+                    if hasattr(os_user, "group"):
+                        try:
+                            grp.getgrnam(os_user.group)
+                        except KeyError:
+                            os_user_error_messages.append(f"User group not found: {os_user.group}.")
+                    else:
+                        os_user_error_messages.append("User group not defined.")
 
                     if os_user_error_messages:
                         for message in os_user_error_messages:
@@ -740,11 +743,11 @@ class WorkerScheduler:
                     RuntimeError,
                 ) as e:
                     # Terminal error. We need to fail the Session.
-                    message = (
-                        "Unrecoverable error trying to obtain AWS Credentials for the Queue Role."
-                    )
+                    message = f"Unrecoverable error trying to obtain AWS Credentials for the Queue Role: {e}"
+                    if str(e).startswith("Can't determine home directory"):
+                        message += ". Possible invalid username."
                     self._fail_all_actions(session_spec, message)
-                    logger.warning("[%s] %s: %s", new_session_id, message, str(e))
+                    logger.warning("[%s] %s", new_session_id, message)
                     # Force an immediate UpdateWorkerSchedule request
                     self._wakeup.set()
                     continue
