@@ -72,7 +72,7 @@ jobs:
 
       - name: ConfigureGit
         run: |
-          git config --local user.email "client-software-ci@amazon.com"
+          git config --local user.email "129794699+client-software-ci@users.noreply.github.com"
           git config --local user.name "client-software-ci"
 
       - name: MergePushRelease
