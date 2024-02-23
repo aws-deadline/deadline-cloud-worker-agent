@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import subprocess
 import os
+import getpass
 from threading import Lock
 
 from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
-from typing import cast
 from .log import LOGGER
 from ..sessions import Session
 
@@ -38,25 +38,16 @@ class SessionUserCleanupManager:
         self._user_session_map = {}
         self._cleanup_session_user_processes = cleanup_session_user_processes
 
-    def _get_user(self, session: Session):
-        if os.name == "posix":
-            posix_user: PosixSessionUser = cast(PosixSessionUser, session.os_user)
-            return posix_user.user
-        else:
-            windows_user: WindowsSessionUser = cast(WindowsSessionUser, session._os_user)
-            return windows_user.user
-
     def register(self, session: Session):
         if session.os_user is None:
             return
 
         with self._user_session_map_lock:
-            user_name = self._get_user(session)
+            user_name = session.os_user.user
             session_dict = self._user_session_map.get(user_name, None)
             if session_dict is None:
                 session_dict = {}
                 self._user_session_map[user_name] = session_dict
-
             session_dict[session.id] = session
 
     def deregister(self, session: Session):
@@ -64,7 +55,7 @@ class SessionUserCleanupManager:
             return
 
         with self._user_session_map_lock:
-            user_name = self._get_user(session)
+            user_name = session.os_user.user
             session_dict = self._user_session_map.get(user_name, None)
             if session_dict is None:
                 return
@@ -90,23 +81,13 @@ class SessionUserCleanupManager:
                 logger.warn(f"Failed to stop session user processes: {e}")
 
     @staticmethod
-    def cleanup_session_user_processes(user: SessionUser):
-        if not isinstance(user, PosixSessionUser):
-            # TODO: Windows support
-            logger.warning(
-                "Stopping session user processes will be skipped because this feature is only supported on POSIX systems"
-            )
-            raise NotImplementedError("Windows not supported")
+    def _is_current_user(user: SessionUser):
+        current_user = getpass.getuser()
+        return user.user == current_user
 
-        # Check that the session user isn't the current user (agent user)
-        current_user = subprocess.check_output(["/usr/bin/whoami"], text=True).strip()
-        if current_user == user.user:
-            logger.info(
-                f"Skipping cleaning up processes because the session user matches the agent user '{current_user}'"
-            )
-            return
-
-        logger.info(f"Cleaning up remaining session user processes for '{user.user}'")
+    @staticmethod
+    def _posix_cleanup_user_processes(user: SessionUser):
+        assert isinstance(user, PosixSessionUser)
         try:
             pkill_result = subprocess.run(
                 args=["sudo", "-u", user.user, "/usr/bin/pkill", "-eU", user.user],
@@ -130,3 +111,43 @@ class SessionUserCleanupManager:
             #  etc.
             pkill_output = "\n".join([pkill_result.stdout, pkill_result.stderr]).rstrip()
             logger.info(f"Stopped processes:\n{pkill_output}")
+
+    @staticmethod
+    def _windows_cleanup_user_processes(user: SessionUser):
+        assert isinstance(user, WindowsSessionUser)
+        try:
+            powershell_command = f"""
+$password = ConvertTo-SecureString -String '{user.password}' -AsPlainText -Force;
+$credential = New-Object System.Management.Automation.PSCredential("{user.user}", $password);
+Start-Process -FilePath "powershell.exe" -ArgumentList "-Command taskkill.exe /F /FI 'username eq {user.user}'" -Credential $credential
+"""
+            taskkill_output = subprocess.run(
+                args=["powershell.exe", "-Command", powershell_command],
+                shell=True,
+                capture_output=True,
+                check=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to stop processes running as '{user.user}': {e}")
+            raise
+        else:
+            output = "\n".join([taskkill_output.stdout, taskkill_output.stderr]).rstrip()
+            logger.info(f"Stopped processes:\n{output}")
+
+    @staticmethod
+    def cleanup_session_user_processes(user: SessionUser):
+        # Check that the session user isn't the current user (agent user)
+        current_user = getpass.getuser()
+        if current_user == user.user:
+            logger.info(
+                f"Skipping cleaning up processes because the session user matches the agent user '{current_user}'"
+            )
+            return
+
+        logger.info(f"Cleaning up remaining session user processes for '{user.user}'")
+
+        if os.name == "posix":
+            SessionUserCleanupManager._posix_cleanup_user_processes(user)
+        else:
+            SessionUserCleanupManager._windows_cleanup_user_processes(user)
