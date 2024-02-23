@@ -70,7 +70,7 @@ class TestFileSystemOperations:
         )
 
         # THEN
-        dacl_mocked_obj.AddAccessAllowedAceEx.assert_called_once()
+        dacl_mocked_obj.AddAccessAllowedAceEx.assert_called_once_with(2, 3, 1179926, mock.Mock)
         sd_mocked_obj.SetSecurityDescriptorDacl.assert_called_once_with(1, dacl_mocked_obj, 0)
 
     @patch("win32security.SetFileSecurity", return_value=mock.Mock)
@@ -103,7 +103,12 @@ class TestFileSystemOperations:
         )
 
         # THEN
-        assert dacl_mocked_obj.AddAccessAllowedAceEx.call_count == 2
+        dacl_mocked_obj.AddAccessAllowedAceEx.assert_has_calls(
+            [
+                mock.call(2, 3, 1179926, mock.Mock),
+                mock.call(2, 3, 1179926, mock.Mock),
+            ]
+        )
         sd_mocked_obj.SetSecurityDescriptorDacl.assert_called_once_with(1, dacl_mocked_obj, 0)
 
     @patch("win32security.SetFileSecurity", return_value=mock.Mock)
