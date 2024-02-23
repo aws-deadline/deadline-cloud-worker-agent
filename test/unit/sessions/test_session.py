@@ -30,8 +30,10 @@ from openjd.sessions import (
 
 from deadline_worker_agent.api_models import EnvironmentAction, TaskRunAction
 from deadline_worker_agent.sessions import Session
-from deadline_worker_agent.sessions import session as session_module
+import deadline_worker_agent.sessions.session as session_mod
 from deadline_worker_agent.sessions.session import (
+    LOW_TRANSFER_RATE_THRESHOLD,
+    LOW_TRANSFER_COUNT_THRESHOLD,
     CurrentAction,
     SessionActionStatus,
 )
@@ -51,9 +53,11 @@ from deadline.job_attachments.models import (
     JobAttachmentS3Settings,
 )
 from deadline.job_attachments.os_file_permission import PosixFileSystemPermissionSettings
-from deadline.job_attachments.progress_tracker import SummaryStatistics
-
-import deadline_worker_agent.sessions.session as session_mod
+from deadline.job_attachments.progress_tracker import (
+    ProgressReportMetadata,
+    ProgressStatus,
+    SummaryStatistics,
+)
 
 
 @pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"),))
@@ -121,15 +125,13 @@ def action_update_lock() -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def mock_telemetry_event_for_sync_inputs() -> Generator[MagicMock, None, None]:
-    with patch.object(session_module, "record_sync_inputs_telemetry_event") as mock_telemetry_event:
+    with patch.object(session_mod, "record_sync_inputs_telemetry_event") as mock_telemetry_event:
         yield mock_telemetry_event
 
 
 @pytest.fixture(autouse=True)
 def mock_telemetry_event_for_sync_outputs() -> Generator[MagicMock, None, None]:
-    with patch.object(
-        session_module, "record_sync_outputs_telemetry_event"
-    ) as mock_telemetry_event:
+    with patch.object(session_mod, "record_sync_outputs_telemetry_event") as mock_telemetry_event:
         yield mock_telemetry_event
 
 
@@ -661,6 +663,77 @@ class TestSessionSyncAssetInputs:
             assert mock_telemetry_event_for_sync_inputs.call_count == len(
                 sync_asset_inputs_args_sequence
             )
+
+    def test_sync_asset_inputs_cancellation_by_low_transfer_rate(
+        self,
+        session: Session,
+        mock_asset_sync: MagicMock,
+    ):
+        """
+        Tests that the session is canceled if it observes a series of alarmingly low transfer rates.
+        """
+
+        # Mock out the Job Attachment's sync_inputs function to report multiple consecutive low transfer rates
+        # (lower than the threshold) via callback function.
+        def mock_sync_inputs(on_downloading_files, *args, **kwargs):
+            low_transfer_rate_report = ProgressReportMetadata(
+                status=ProgressStatus.DOWNLOAD_IN_PROGRESS,
+                progress=0.0,
+                transferRate=LOW_TRANSFER_RATE_THRESHOLD / 2,
+                progressMessage="",
+            )
+            for _ in range(LOW_TRANSFER_COUNT_THRESHOLD):
+                on_downloading_files(low_transfer_rate_report)
+            return ({}, {})
+
+        mock_asset_sync.sync_inputs = mock_sync_inputs
+        mock_cancel = MagicMock(spec=Event)
+
+        with patch.object(session, "update_action") as mock_update_action, patch.object(
+            session_mod, "record_sync_inputs_fail_telemetry_event"
+        ) as mock_record_sync_inputs_fail_telemetry_event:
+            session.sync_asset_inputs(
+                cancel=mock_cancel,
+                job_attachment_details=JobAttachmentDetails(
+                    manifests=[],
+                    job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
+                ),
+            )
+        mock_cancel.set.assert_called_once()
+        mock_update_action.assert_called_with(
+            ActionStatus(
+                state=ActionState.FAILED,
+                fail_message=(
+                    f"Input syncing failed due to successive low transfer rates (< {LOW_TRANSFER_RATE_THRESHOLD / 1000} KB/s). "
+                    f"The transfer rate was below the threshold for the last {session._seconds_to_minutes_str(LOW_TRANSFER_COUNT_THRESHOLD)}."
+                ),
+            ),
+        )
+        mock_record_sync_inputs_fail_telemetry_event.assert_called_once_with(
+            queue_id="queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            failure_reason=(
+                "Insufficient download speed: "
+                f"Input syncing failed due to successive low transfer rates (< {LOW_TRANSFER_RATE_THRESHOLD / 1000} KB/s). "
+                f"The transfer rate was below the threshold for the last {session._seconds_to_minutes_str(LOW_TRANSFER_COUNT_THRESHOLD)}."
+            ),
+        )
+
+    @pytest.mark.parametrize(
+        "seconds, expected_str",
+        [
+            (0, "0 seconds"),
+            (1, "1 second"),
+            (30, "30 seconds"),
+            (60, "1 minute"),
+            (61, "1 minute 1 second"),
+            (90, "1 minute 30 seconds"),
+            (120, "2 minutes"),
+            (121, "2 minutes 1 second"),
+            (150, "2 minutes 30 seconds"),
+        ],
+    )
+    def test_seconds_to_minutes_str(self, session: Session, seconds: int, expected_str: str):
+        assert session._seconds_to_minutes_str(seconds) == expected_str
 
 
 class TestSessionSyncAssetOutputs:
@@ -1254,7 +1327,7 @@ class TestSessionActionUpdatedImpl:
         def mock_now(*arg, **kwarg) -> datetime:
             return action_complete_time
 
-        with patch.object(session_module, "datetime") as mock_datetime, patch.object(
+        with patch.object(session_mod, "datetime") as mock_datetime, patch.object(
             session, "_sync_asset_outputs"
         ) as mock_sync_asset_outputs:
             mock_datetime.now.side_effect = mock_now
@@ -1335,7 +1408,7 @@ class TestSessionActionUpdatedImpl:
         def mock_now(*arg, **kwarg) -> datetime:
             return action_complete_time
 
-        with patch.object(session_module, "datetime") as mock_datetime, patch.object(
+        with patch.object(session_mod, "datetime") as mock_datetime, patch.object(
             session, "_sync_asset_outputs", side_effect=sync_outputs_exception
         ) as mock_sync_asset_outputs:
             mock_datetime.now.side_effect = mock_now
