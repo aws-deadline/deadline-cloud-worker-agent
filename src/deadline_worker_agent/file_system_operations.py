@@ -31,9 +31,9 @@ def set_permissions(
 
         _set_windows_permissions(
             path=file_path,
-            user=permitted_user.user,
+            user=permitted_user.user if permitted_user else None,
             user_permission=user_permission,
-            group=permitted_user.group,
+            group=permitted_user.group if permitted_user else None,
             group_permission=group_permission,
             agent_user_permission=agent_user_permission,
         )
@@ -54,9 +54,9 @@ def touch_file(
 
         _set_windows_permissions(
             path=file_path,
-            user=permitted_user.user,
+            user=permitted_user.user if permitted_user else None,
             user_permission=user_permission,
-            group=permitted_user.group,
+            group=permitted_user.group if permitted_user else None,
             group_permission=group_permission,
             agent_user_permission=agent_user_permission,
         )
@@ -78,9 +78,9 @@ def make_directory(
 
         _set_windows_permissions(
             path=dir_path,
-            user=permitted_user.user,
+            user=permitted_user.user if permitted_user else None,
             user_permission=user_permission,
-            group=permitted_user.group,
+            group=permitted_user.group if permitted_user else None,
             group_permission=group_permission,
             agent_user_permission=agent_user_permission,
         )
@@ -103,8 +103,8 @@ def _set_windows_permissions(
     if user_permission is not None and user is None:
         raise ValueError("A user must be specified to set user permissions")
 
-    if group_permission is not None and user is None:
-        raise ValueError("A user must be specified to set group permissions")
+    if group_permission is not None and group is None:
+        raise ValueError("A group must be specified to set group permissions")
 
     # We don't want to propagate existing permissions, so create a new DACL
     dacl = win32security.ACL()
