@@ -67,7 +67,11 @@ from deadline.job_attachments.os_file_permission import (
 )
 from deadline.job_attachments.progress_tracker import ProgressReportMetadata, SummaryStatistics
 
-from ..aws.deadline import record_sync_inputs_telemetry_event, record_sync_outputs_telemetry_event
+from ..aws.deadline import (
+    record_sync_inputs_fail_telemetry_event,
+    record_sync_inputs_telemetry_event,
+    record_sync_outputs_telemetry_event,
+)
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
 
@@ -86,6 +90,14 @@ OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
 }
 TIME_DELTA_ZERO = timedelta()
 
+# During a SYNC_INPUT_JOB_ATTACHMENTS session action, the transfer rate is periodically reported through
+# a callback function. If a transfer rate lower than LOW_TRANSFER_RATE_THRESHOLD is observed in a series
+# for LOW_TRANSFER_COUNT_THRESHOLD times, it is considered concerning or potentially stalled, and the
+# session action is canceled.
+LOW_TRANSFER_RATE_THRESHOLD = 10 * 10**3  # 10 KB/s
+LOW_TRANSFER_COUNT_THRESHOLD = (
+    60  # Each progress report takes 1 sec at the longest, so 60 reports amount to 1 min in total.
+)
 
 logger = getLogger(__name__)
 
@@ -779,12 +791,45 @@ class Session:
         if self._asset_sync is None:
             return
 
-        def progress_handler(job_upload_status: ProgressReportMetadata) -> bool:
+        low_transfer_count = 0
+
+        def progress_handler(job_attachments_download_status: ProgressReportMetadata) -> bool:
+            """
+            Callback for Job Attachments' sync_inputs() to track the download progress.
+            Returns True if the operation should continue as normal or False to cancel.
+            """
+            # Check the transfer rate from the progress report. It monitors for a series of
+            # alarmingly low transfer rates, and if the count exceeds the specified threshold,
+            # cancels the download and fails the current (SYNC_INPUT_JOB_ATTACHMENTS) action.
+            nonlocal low_transfer_count
+            transfer_rate = job_attachments_download_status.transferRate
+
+            if transfer_rate < LOW_TRANSFER_RATE_THRESHOLD:
+                low_transfer_count += 1
+            else:
+                low_transfer_count = 0
+            if low_transfer_count >= LOW_TRANSFER_COUNT_THRESHOLD:
+                cancel.set()
+                action_status = ActionStatus(
+                    state=ActionState.FAILED,
+                    fail_message=(
+                        f"Input syncing failed due to successive low transfer rates (< {LOW_TRANSFER_RATE_THRESHOLD / 1000} KB/s). "
+                        f"The transfer rate was below the threshold for the last {self._seconds_to_minutes_str(LOW_TRANSFER_COUNT_THRESHOLD)}."
+                    ),
+                )
+                self.update_action(action_status)
+                # Send the telemetry data of input syncing failure due to insufficient download speed.
+                record_sync_inputs_fail_telemetry_event(
+                    queue_id=self._queue_id,
+                    failure_reason=(f"Insufficient download speed: {action_status.fail_message}"),
+                )
+                return False
+
             self.update_action(
                 action_status=ActionStatus(
                     state=ActionState.RUNNING,
-                    status_message=job_upload_status.progressMessage,
-                    progress=job_upload_status.progress,
+                    status_message=job_attachments_download_status.progressMessage,
+                    progress=job_attachments_download_status.progress,
                 ),
             )
             return not cancel.is_set()
@@ -894,6 +939,18 @@ class Session:
         # rules that are subsets of each other behave in a predictable manner. We must
         # sort here since we're modifying that internal list appending to the list.
         self._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
+
+    def _seconds_to_minutes_str(self, seconds: int) -> str:
+        minutes = seconds // 60
+        remaining_seconds = seconds % 60
+        if minutes > 0 and remaining_seconds > 0:
+            return f"{minutes} minute{'s' if minutes != 1 else ''} {remaining_seconds} second{'s' if remaining_seconds != 1 else ''}"
+        elif minutes > 0:
+            return f"{minutes} minute{'s' if minutes != 1 else ''}"
+        elif remaining_seconds == 0:
+            return "0 seconds"
+        else:
+            return f"{remaining_seconds} second{'s' if remaining_seconds != 1 else ''}"
 
     def update_action(self, action_status: ActionStatus) -> None:
         """Callback called on every Open Job Description status/progress update and the completion/exit of the
