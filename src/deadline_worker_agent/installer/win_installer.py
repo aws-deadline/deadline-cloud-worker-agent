@@ -11,15 +11,16 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
-from deadline_worker_agent.file_system_operations import set_permissions
+from deadline_worker_agent.file_system_operations import (
+    _set_windows_permissions,
+    FileSystemPermissionEnum,
+)
 
-import ntsecuritycon as con
 import pywintypes
 import win32net
 import win32netcon
 import win32security
 import winerror
-from openjd.sessions import WindowsSessionUser
 
 
 # Defaults
@@ -267,10 +268,10 @@ def provision_directories(agent_username: str) -> WorkerAgentDirectories:
     """
     Creates all required directories for Deadline Worker Agent.
     This function creates the following directories:
-    - %PROGRAMDATA%\Amazon\Deadline
-    - %PROGRAMDATA%\Amazon\Deadline\Logs
-    - %PROGRAMDATA%\Amazon\Deadline\Cache
-    - %PROGRAMDATA%\Amazon\Deadline\Config
+    - %PROGRAMDATA%/Amazon/Deadline
+    - %PROGRAMDATA%/Amazon/Deadline/Logs
+    - %PROGRAMDATA%/Amazon/Deadline/Cache
+    - %PROGRAMDATA%/Amazon/Deadline/Config
 
     Parameters
         agent_username(str): Worker Agent's username used for setting the permission for the directories
@@ -283,10 +284,14 @@ def provision_directories(agent_username: str) -> WorkerAgentDirectories:
     deadline_dir = os.path.join(program_data_path, r"Amazon\Deadline")
     logging.info(f"Provisioning root directory ({deadline_dir})")
     os.makedirs(deadline_dir, exist_ok=True)
-    # TODO: Need to do a code refactoring in OpenJD to allow create a WindowsSessionUser
-    #  for another user without password.
-    agent_user = WindowsSessionUser(user=agent_username, group="Administrators", password="")
-    set_permissions(Path(deadline_dir), con.FILE_ALL_ACCESS, agent_user, con.FILE_ALL_ACCESS, None)
+    _set_windows_permissions(
+        path=Path(deadline_dir),
+        user=agent_username,
+        user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+        group="Administrators",
+        group_permission=FileSystemPermissionEnum.FULL_CONTROL,
+        agent_user_permission=None,
+    )
     logging.info(f"Done provisioning root directory ({deadline_dir})")
 
     deadline_log_subdir = os.path.join(deadline_dir, "Logs")

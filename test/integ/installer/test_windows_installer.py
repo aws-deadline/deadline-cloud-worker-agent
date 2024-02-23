@@ -3,12 +3,14 @@
 import pathlib
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
 
 import win32api
 import win32net
 
+import deadline_worker_agent.installer.win_installer as installer_mod
 from deadline_worker_agent.installer.win_installer import (
     add_user_to_group,
     check_user_existence,
@@ -172,22 +174,36 @@ def test_configure_farm_and_fleet_creates_backup(setup_example_config):
     assert os.path.isfile(worker_config_file), "Worker config file was not created"
     assert os.path.isfile(backup_worker_config), "Backup of worker config file was not created"
 
-def test_provision_directories(user_setup_and_teardown: str):
+
+def test_provision_directories(
+    user_setup_and_teardown: str,
+    tmp_path: pathlib.Path,
+):
     # GIVEN
-    program_data_path = pathlib.Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData"))
+    root_dir = tmp_path / "ProgramDataTest"
+    root_dir.mkdir()
     expected_dirs = WorkerAgentDirectories(
-        deadline_dir=program_data_path / "Amazon" / "Deadline",
-        deadline_log_subdir=program_data_path / "Amazon" / "Deadline" / "Logs",
-        deadline_persistence_subdir=program_data_path / "Amazon" / "Deadline" / "Cache",
-        deadline_config_subdir=program_data_path / "Amazon" / "Deadline" / "Config",
+        deadline_dir=root_dir / "Amazon" / "Deadline",
+        deadline_log_subdir=root_dir / "Amazon" / "Deadline" / "Logs",
+        deadline_persistence_subdir=root_dir / "Amazon" / "Deadline" / "Cache",
+        deadline_config_subdir=root_dir / "Amazon" / "Deadline" / "Config",
     )
-    assert not expected_dirs.deadline_dir.exists()
-    assert not expected_dirs.deadline_log_subdir.exists()
-    assert not expected_dirs.deadline_persistence_subdir.exists()
-    assert not expected_dirs.deadline_config_subdir.exists()
+    assert (
+        not expected_dirs.deadline_dir.exists()
+    ), f"Cannot test provision_directories because {expected_dirs.deadline_dir} already exists"
+    assert (
+        not expected_dirs.deadline_log_subdir.exists()
+    ), f"Cannot test provision_directories because {expected_dirs.deadline_log_subdir} already exists"
+    assert (
+        not expected_dirs.deadline_persistence_subdir.exists()
+    ), f"Cannot test provision_directories because {expected_dirs.deadline_persistence_subdir} already exists"
+    assert (
+        not expected_dirs.deadline_config_subdir.exists()
+    ), f"Cannot test provision_directories because {expected_dirs.deadline_config_subdir} already exists"
 
     # WHEN
-    actual_dirs = provision_directories(user_setup_and_teardown)
+    with patch.dict(installer_mod.os.environ, {"PROGRAMDATA": str(root_dir)}):
+        actual_dirs = provision_directories(user_setup_and_teardown)
 
     # THEN
     assert actual_dirs == expected_dirs
