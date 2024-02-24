@@ -127,7 +127,8 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     parser.add_argument(
         "--user",
         help='The username of the Amazon Deadline Cloud Worker Agent user. Defaults to "deadline-worker-agent".',
-        default="deadline-worker-agent",
+        # Windows local usernames are restricted to 20 characters in length.
+        default="deadline-worker-agent" if sys.platform != "win32" else "deadline-worker",
     )
     parser.add_argument(
         "--group",
@@ -167,5 +168,13 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
         "--vfs-install-path",
         help="Absolute path for the install location of the deadline vfs.",
     )
+
+    if sys.platform == "win32":
+        parser.add_argument(
+            "--password",
+            help="The password for the Amazon Deadline Cloud Worker Agent user. Defaults to generating a password.",
+            required=False,
+            default=None,
+        )
 
     return parser

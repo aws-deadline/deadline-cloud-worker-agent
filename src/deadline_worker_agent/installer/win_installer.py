@@ -8,6 +8,7 @@ import secrets
 import shutil
 import string
 import sys
+import typing
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -52,7 +53,7 @@ def generate_password(length: int = DEFAULT_PASSWORD_LENGTH) -> str:
 
 
 def print_banner():
-    logging.info(
+    print(
         "===========================================================\n"
         "|      Amazon Deadline Cloud Worker Agent Installer       |\n"
         "===========================================================\n"
@@ -232,7 +233,7 @@ def configure_farm_and_fleet(
     if not os.path.isfile(worker_config_file):
         # Directory where the script and example configuration files are located.
         script_dir = os.path.dirname(os.path.realpath(__file__))
-        example_config_path = os.path.join(script_dir, "worker.toml.windows.example")
+        example_config_path = os.path.join(script_dir, "worker.toml.example")
         shutil.copy(example_config_path, worker_config_file)
 
     # Make a backup of the worker configuration file
@@ -322,15 +323,15 @@ def start_windows_installer(
     fleet_id: str,
     region: str,
     worker_agent_program: str,
-    password: str,
     parser: ArgumentParser,
+    password: typing.Optional[str] = None,
     user_name: str = DEFAULT_WA_USER,
     group_name: str = DEFAULT_JOB_GROUP,
     no_install_service: bool = False,
     start: bool = False,
     confirm: bool = False,
 ):
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     # Validate command line arguments
     def print_helping_info_and_exit():
@@ -354,7 +355,7 @@ def start_windows_installer(
 
     # Print configuration
     print_banner()
-    logging.info(
+    print(
         f"Farm ID: {farm_id}\n"
         f"Fleet ID: {fleet_id}\n"
         f"Region: {region}\n"

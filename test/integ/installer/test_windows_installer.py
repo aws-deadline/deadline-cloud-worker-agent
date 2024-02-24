@@ -133,7 +133,7 @@ def test_add_user_to_group(setup_and_teardown_group, user_setup_and_teardown):
 
 @pytest.fixture
 def setup_example_config(tmp_path):
-    # Create an example config file similar to 'worker.toml.windows.example' in the tmp_path
+    # Create an example config file similar to 'worker.toml.example' in the tmp_path
     example_config_path = os.path.join(tmp_path, "worker.toml")
     with open(example_config_path, "w") as f:
         f.write('# farm_id = "REPLACE-WITH-WORKER-FARM-ID"\n')

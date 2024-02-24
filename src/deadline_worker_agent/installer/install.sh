@@ -366,7 +366,7 @@ echo "Done provisioning configuration directory"
 echo "Configuring farm and fleet"
 sed -E                                                          \
     --in-place=.bak                                             \
-    -e "s,^# farm_id\s*=\s*\"REPLACE-WTIH-WORKER-FARM-ID\"$,farm_id = \"${farm_id}\",g"    \
+    -e "s,^# farm_id\s*=\s*\"REPLACE-WITH-WORKER-FARM-ID\"$,farm_id = \"${farm_id}\",g"    \
     -e "s,^# fleet_id\s*=\s*\"REPLACE-WITH-WORKER-FLEET-ID\"$,fleet_id = \"${fleet_id}\",g" \
     /etc/amazon/deadline/worker.toml
 echo "Done configuring farm and fleet"
