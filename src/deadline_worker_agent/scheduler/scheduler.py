@@ -23,7 +23,6 @@ from openjd.sessions import LOG as OPENJD_SESSION_LOG
 from openjd.sessions import ActionState, ActionStatus
 from deadline.job_attachments.asset_sync import AssetSync
 
-
 from ..aws.deadline import update_worker
 from ..aws_credentials import QueueBoto3Session, AwsCredentialsRefresher
 from ..boto import DeadlineClient, Session as BotoSession
@@ -738,13 +737,17 @@ class WorkerScheduler:
                         new_session_id,
                         os_user,
                     )
-                except (DeadlineRequestWorkerOfflineError, DeadlineRequestUnrecoverableError) as e:
+                except (
+                    DeadlineRequestWorkerOfflineError,
+                    DeadlineRequestUnrecoverableError,
+                    RuntimeError,
+                ) as e:
                     # Terminal error. We need to fail the Session.
-                    message = (
-                        "Unrecoverable error trying to obtain AWS Credentials for the Queue Role."
-                    )
+                    message = f"Unrecoverable error trying to obtain AWS Credentials for the Queue Role: {e}"
+                    if str(e).startswith("Can't determine home directory"):
+                        message += ". Possible non-valid username."
                     self._fail_all_actions(session_spec, message)
-                    logger.warning("[%s] %s: %s", new_session_id, message, str(e))
+                    logger.warning("[%s] %s", new_session_id, message)
                     # Force an immediate UpdateWorkerSchedule request
                     self._wakeup.set()
                     continue
