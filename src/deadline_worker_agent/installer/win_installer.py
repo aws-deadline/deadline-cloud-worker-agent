@@ -251,12 +251,18 @@ def configure_farm_and_fleet(
         content,
         flags=re.MULTILINE,
     )
+    assert (
+        f'farm_id = "{farm_id}"' in content
+    ), f"Failed to configure farm ID in {worker_config_file}"
     content = re.sub(
         r'^# fleet_id\s*=\s*("REPLACE-WITH-WORKER-FLEET-ID")$',
         f'fleet_id = "{fleet_id}"',
         content,
         flags=re.MULTILINE,
     )
+    assert (
+        f'fleet_id = "{fleet_id}"' in content
+    ), f"Failed to configure fleet ID in {worker_config_file}"
 
     # Write the updated content back to the worker configuration file
     with open(worker_config_file, "w") as file:
