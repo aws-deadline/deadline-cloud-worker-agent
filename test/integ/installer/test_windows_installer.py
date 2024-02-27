@@ -1,22 +1,29 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+import pathlib
 import os
 import sys
+from unittest.mock import patch
+
 import pytest
+
+import win32api
+import win32net
+
+import deadline_worker_agent.installer.win_installer as installer_mod
+from deadline_worker_agent.installer.win_installer import (
+    add_user_to_group,
+    check_user_existence,
+    configure_farm_and_fleet,
+    ensure_local_agent_user,
+    ensure_local_queue_user_group_exists,
+    generate_password,
+    provision_directories,
+    WorkerAgentDirectories,
+)
 
 if sys.platform != "win32":
     pytest.skip("Windows-specific tests", allow_module_level=True)
-
-
-from deadline_worker_agent.installer.win_installer import (
-    check_user_existence,
-    ensure_local_agent_user,
-    ensure_local_queue_user_group_exists,
-    add_user_to_group,
-    generate_password,
-)
-
-import win32net
-import win32api
 
 
 def test_user_existence():
@@ -122,3 +129,85 @@ def test_add_user_to_group(setup_and_teardown_group, user_setup_and_teardown):
     user_name = user_setup_and_teardown
     add_user_to_group(group_name, user_name)
     assert is_user_in_group(group_name, user_name), "User was not added to group as expected."
+
+
+@pytest.fixture
+def setup_example_config(tmp_path):
+    # Create an example config file similar to 'worker.toml.example' in the tmp_path
+    example_config_path = os.path.join(tmp_path, "worker.toml")
+    with open(example_config_path, "w") as f:
+        f.write('# farm_id = "REPLACE-WITH-WORKER-FARM-ID"\n')
+        f.write('# fleet_id = "REPLACE-WITH-WORKER-FLEET-ID"')
+    return str(tmp_path)
+
+
+def test_configure_farm_and_fleet_replaces_placeholders(setup_example_config):
+    deadline_config_sub_directory = setup_example_config
+
+    farm_id = "123"
+    fleet_id = "456"
+    configure_farm_and_fleet(deadline_config_sub_directory, farm_id, fleet_id)
+
+    # Verify that the configuration file was created and placeholders were replaced
+    worker_config_file = os.path.join(deadline_config_sub_directory, "worker.toml")
+    assert os.path.isfile(worker_config_file), "Worker config file was not created"
+
+    with open(worker_config_file, "r") as file:
+        content = file.read()
+
+    # Check if the farm_id and fleet_id have been correctly replaced
+    assert f'farm_id = "{farm_id}"' in content, "farm_id placeholder was not replaced"
+    assert f'fleet_id = "{fleet_id}"' in content, "fleet_id placeholder was not replaced"
+    assert "#" not in content, "Comment placeholders were not removed"
+
+
+def test_configure_farm_and_fleet_creates_backup(setup_example_config):
+    deadline_config_sub_directory = setup_example_config
+
+    # Call the function under test with some IDs
+    configure_farm_and_fleet(deadline_config_sub_directory, "test_farm", "test_fleet")
+
+    # Check that both the original and backup files exist
+    worker_config_file = os.path.join(deadline_config_sub_directory, "worker.toml")
+    backup_worker_config = worker_config_file + ".bak"
+
+    assert os.path.isfile(worker_config_file), "Worker config file was not created"
+    assert os.path.isfile(backup_worker_config), "Backup of worker config file was not created"
+
+
+def test_provision_directories(
+    user_setup_and_teardown: str,
+    tmp_path: pathlib.Path,
+):
+    # GIVEN
+    root_dir = tmp_path / "ProgramDataTest"
+    root_dir.mkdir()
+    expected_dirs = WorkerAgentDirectories(
+        deadline_dir=root_dir / "Amazon" / "Deadline",
+        deadline_log_subdir=root_dir / "Amazon" / "Deadline" / "Logs",
+        deadline_persistence_subdir=root_dir / "Amazon" / "Deadline" / "Cache",
+        deadline_config_subdir=root_dir / "Amazon" / "Deadline" / "Config",
+    )
+    assert (
+        not expected_dirs.deadline_dir.exists()
+    ), f"Cannot test provision_directories because {expected_dirs.deadline_dir} already exists"
+    assert (
+        not expected_dirs.deadline_log_subdir.exists()
+    ), f"Cannot test provision_directories because {expected_dirs.deadline_log_subdir} already exists"
+    assert (
+        not expected_dirs.deadline_persistence_subdir.exists()
+    ), f"Cannot test provision_directories because {expected_dirs.deadline_persistence_subdir} already exists"
+    assert (
+        not expected_dirs.deadline_config_subdir.exists()
+    ), f"Cannot test provision_directories because {expected_dirs.deadline_config_subdir} already exists"
+
+    # WHEN
+    with patch.dict(installer_mod.os.environ, {"PROGRAMDATA": str(root_dir)}):
+        actual_dirs = provision_directories(user_setup_and_teardown)
+
+    # THEN
+    assert actual_dirs == expected_dirs
+    assert actual_dirs.deadline_dir.exists()
+    assert actual_dirs.deadline_log_subdir.exists()
+    assert actual_dirs.deadline_persistence_subdir.exists()
+    assert actual_dirs.deadline_config_subdir.exists()
