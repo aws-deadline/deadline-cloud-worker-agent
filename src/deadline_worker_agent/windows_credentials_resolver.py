@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from logging import getLogger
 from typing import Dict, Optional
 
@@ -92,7 +92,7 @@ class WindowsCredentialsResolver:
             raise ValueError(f"Contents of secret {secretArn} is not valid JSON.")
 
     def prune_cache(self):
-        now = datetime.utcnow()
+        now = datetime.now(tz=timezone.utc)
         # Filter out entries that haven't been accessed in the last CACHE_EXPIRATION hours
         self._user_cache = {
             key: value
@@ -121,13 +121,13 @@ class WindowsCredentialsResolver:
             if cached_data.windows_session_user:
                 # We have valid credentials for this user
                 # Update last accessed time
-                self._user_cache[user_key].last_accessed = datetime.utcnow()
+                self._user_cache[user_key].last_accessed = datetime.now(tz=timezone.utc)
 
                 logger.info("Using cached WindowsSessionUser for %s", user)
                 return cached_data.windows_session_user
             else:
                 # Only refetch if the last fetch was more than RETRY_AFTER minutes ago
-                now = datetime.utcnow()
+                now = datetime.now(tz=timezone.utc)
                 if now - self._user_cache[user_key].last_fetched_at < self.RETRY_AFTER:
                     should_fetch = False
 
@@ -162,8 +162,8 @@ class WindowsCredentialsResolver:
         # If the credentials were not valid cache that too to prevent repeated calls to SecretsManager
         self._user_cache[user_key] = _WindowsCredentialsCacheEntry(
             windows_session_user=windows_session_user,
-            last_fetched_at=datetime.utcnow(),
-            last_accessed=datetime.utcnow(),
+            last_fetched_at=datetime.now(tz=timezone.utc),
+            last_accessed=datetime.now(tz=timezone.utc),
         )
 
         if not windows_session_user:

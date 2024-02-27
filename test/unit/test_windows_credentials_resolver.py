@@ -24,7 +24,7 @@ class TestWindowsCredentialsResolver:
             mock.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(
                 *args, **kwargs
             )
-            mock.utcnow.return_value = now
+            mock.now.return_value = now
             yield mock
 
     @mark.skipif(os.name != "nt", reason="Windows-only test.")
@@ -32,7 +32,7 @@ class TestWindowsCredentialsResolver:
         # GIVEN
         mock_boto_session = MagicMock()
         now = datetime(2023, 1, 1, 12, 0, 0)
-        datetime_mock.utcnow.return_value = now
+        datetime_mock.now.return_value = now
         resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
 
         # Add a user to the cache that should be pruned
@@ -73,7 +73,7 @@ class TestWindowsCredentialsResolver:
         # GIVEN
         mock_boto_session = MagicMock()
         now = datetime(2023, 1, 1, 12, 0, 0)
-        datetime_mock.utcnow.return_value = now
+        datetime_mock.now.return_value = now
         resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
         secret_data = {"password": "fake_password"}
         fetch_secret_mock.return_value = secret_data
@@ -99,7 +99,7 @@ class TestWindowsCredentialsResolver:
         # GIVEN
         mock_boto_session = MagicMock()
         now = datetime(2023, 1, 1, 12, 0, 0)
-        datetime_mock.utcnow.return_value = now
+        datetime_mock.now.return_value = now
         resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
         secret_data = {"something-other-than-password": "fake_password"}
         fetch_secret_mock.return_value = secret_data
@@ -122,7 +122,7 @@ class TestWindowsCredentialsResolver:
         # GIVEN
         mock_boto_session = MagicMock()
         now = datetime(2023, 1, 1, 12, 0, 0)
-        datetime_mock.utcnow.return_value = now
+        datetime_mock.now.return_value = now
         resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
         password_arn = "password_arn"
         user = "user"
@@ -155,7 +155,7 @@ class TestWindowsCredentialsResolver:
         # GIVEN
         mock_boto_session = MagicMock()
         now = datetime(2023, 1, 1, 12, 0, 0)
-        datetime_mock.utcnow.return_value = now
+        datetime_mock.now.return_value = now
         resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
         secret_data = {"password": "fake_password"}
         fetch_secret_mock.return_value = secret_data
