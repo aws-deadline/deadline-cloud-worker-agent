@@ -1,25 +1,47 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+import dataclasses
 import logging
+import os
 import re
 import secrets
+import shutil
 import string
-
 import sys
+import typing
 from argparse import ArgumentParser
+from pathlib import Path
 
-import win32netcon
-import winerror
+from deadline_worker_agent.file_system_operations import (
+    _set_windows_permissions,
+    FileSystemPermissionEnum,
+)
 
 import pywintypes
 import win32net
-
+import win32netcon
 import win32security
+import winerror
+
 
 # Defaults
 DEFAULT_WA_USER = "deadline-worker"
 DEFAULT_JOB_GROUP = "deadline-job-users"
 DEFAULT_PASSWORD_LENGTH = 12
+
+
+class InstallerFailedException(Exception):
+    """Exception raised when the installer fails"""
+
+    pass
+
+
+@dataclasses.dataclass
+class WorkerAgentDirectories:
+    deadline_dir: Path
+    deadline_log_subdir: Path
+    deadline_persistence_subdir: Path
+    deadline_config_subdir: Path
 
 
 def generate_password(length: int = DEFAULT_PASSWORD_LENGTH) -> str:
@@ -37,7 +59,7 @@ def generate_password(length: int = DEFAULT_PASSWORD_LENGTH) -> str:
 
 
 def print_banner():
-    logging.info(
+    print(
         "===========================================================\n"
         "|      Amazon Deadline Cloud Worker Agent Installer       |\n"
         "===========================================================\n"
@@ -195,20 +217,131 @@ def add_user_to_group(group_name: str, user_name: str) -> None:
         raise
 
 
+def configure_farm_and_fleet(
+    deadline_config_sub_directory: str, farm_id: str, fleet_id: str
+) -> None:
+    """
+    Correctly configures farm and fleet settings in a worker configuration file.
+    This function ensures the worker.toml configuration file exists, backs it up, and then
+    replaces specific placeholders with the provided farm and fleet IDs.
+
+    Parameters:
+    - deadline_config_sub_directory (str): Subdirectory for Deadline configuration files.
+    - farm_id (str): The farm ID to set in the configuration.
+    - fleet_id (str): The fleet ID to set in the configuration.
+
+    """
+    logging.info("Configuring farm and fleet")
+
+    worker_config_file = os.path.join(deadline_config_sub_directory, "worker.toml")
+
+    # Check if the worker.toml file exists, if not, create it from the example
+    if not os.path.isfile(worker_config_file):
+        # Directory where the script and example configuration files are located.
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        example_config_path = os.path.join(script_dir, "worker.toml.example")
+        shutil.copy(example_config_path, worker_config_file)
+
+    # Make a backup of the worker configuration file
+    backup_worker_config = worker_config_file + ".bak"
+    shutil.copy(worker_config_file, backup_worker_config)
+
+    # Read the content of the worker configuration file
+    with open(worker_config_file, "r") as file:
+        content = file.read()
+
+    # Replace the placeholders with actual farm_id and fleet_id
+    content = re.sub(
+        r'^# farm_id\s*=\s*("REPLACE-WITH-WORKER-FARM-ID")$',
+        f'farm_id = "{farm_id}"',
+        content,
+        flags=re.MULTILINE,
+    )
+    if f'farm_id = "{farm_id}"' not in content:
+        raise InstallerFailedException(f"Failed to configure farm ID in {worker_config_file}")
+    content = re.sub(
+        r'^# fleet_id\s*=\s*("REPLACE-WITH-WORKER-FLEET-ID")$',
+        f'fleet_id = "{fleet_id}"',
+        content,
+        flags=re.MULTILINE,
+    )
+    if f'fleet_id = "{fleet_id}"' not in content:
+        raise InstallerFailedException(f"Failed to configure fleet ID in {worker_config_file}")
+
+    # Write the updated content back to the worker configuration file
+    with open(worker_config_file, "w") as file:
+        file.write(content)
+
+    logging.info("Done farm and fleet Configuration")
+
+
+def provision_directories(agent_username: str) -> WorkerAgentDirectories:
+    """
+    Creates all required directories for Deadline Worker Agent.
+    This function creates the following directories:
+    - %PROGRAMDATA%/Amazon/Deadline
+    - %PROGRAMDATA%/Amazon/Deadline/Logs
+    - %PROGRAMDATA%/Amazon/Deadline/Cache
+    - %PROGRAMDATA%/Amazon/Deadline/Config
+
+    Parameters
+        agent_username(str): Worker Agent's username used for setting the permission for the directories
+
+    Returns
+        WorkerAgentDirectories: all directories created in the function
+    """
+
+    program_data_path = os.environ.get("PROGRAMDATA", r"C:\ProgramData")
+    deadline_dir = os.path.join(program_data_path, r"Amazon\Deadline")
+    logging.info(f"Provisioning root directory ({deadline_dir})")
+    os.makedirs(deadline_dir, exist_ok=True)
+    _set_windows_permissions(
+        path=Path(deadline_dir),
+        user=agent_username,
+        user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+        group="Administrators",
+        group_permission=FileSystemPermissionEnum.FULL_CONTROL,
+        agent_user_permission=None,
+    )
+    logging.info(f"Done provisioning root directory ({deadline_dir})")
+
+    deadline_log_subdir = os.path.join(deadline_dir, "Logs")
+    logging.info(f"Provisioning log directory ({deadline_log_subdir})")
+    os.makedirs(deadline_log_subdir, exist_ok=True)
+    logging.info(f"Done provisioning log directory ({deadline_log_subdir})")
+
+    deadline_persistence_subdir = os.path.join(deadline_dir, "Cache")
+    logging.info(f"Provisioning persistence directory ({deadline_persistence_subdir})")
+    os.makedirs(deadline_persistence_subdir, exist_ok=True)
+    logging.info(f"Done provisioning persistence directory ({deadline_persistence_subdir})")
+
+    deadline_config_subdir = os.path.join(deadline_dir, "Config")
+    logging.info(f"Provisioning config directory ({deadline_config_subdir})")
+    os.makedirs(deadline_config_subdir, exist_ok=True)
+    logging.info(f"Done provisioning config directory ({deadline_config_subdir})")
+
+    return WorkerAgentDirectories(
+        deadline_dir=Path(deadline_dir),
+        deadline_log_subdir=Path(deadline_log_subdir),
+        deadline_persistence_subdir=Path(deadline_persistence_subdir),
+        deadline_config_subdir=Path(deadline_config_subdir),
+    )
+
+
 def start_windows_installer(
     farm_id: str,
     fleet_id: str,
     region: str,
     worker_agent_program: str,
-    password: str,
     parser: ArgumentParser,
+    password: typing.Optional[str] = None,
     user_name: str = DEFAULT_WA_USER,
     group_name: str = DEFAULT_JOB_GROUP,
     no_install_service: bool = False,
     start: bool = False,
     confirm: bool = False,
 ):
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     # Validate command line arguments
     def print_helping_info_and_exit():
@@ -232,7 +365,7 @@ def start_windows_installer(
 
     # Print configuration
     print_banner()
-    logging.info(
+    print(
         f"Farm ID: {farm_id}\n"
         f"Fleet ID: {fleet_id}\n"
         f"Region: {region}\n"
@@ -261,3 +394,6 @@ def start_windows_installer(
     ensure_local_queue_user_group_exists(group_name)
     # Add the worker agent user to the job group
     add_user_to_group(group_name, user_name)
+
+    agent_dirs = provision_directories(user_name)
+    configure_farm_and_fleet(str(agent_dirs.deadline_config_subdir), farm_id, fleet_id)

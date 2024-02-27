@@ -366,9 +366,17 @@ echo "Done provisioning configuration directory"
 echo "Configuring farm and fleet"
 sed -E                                                          \
     --in-place=.bak                                             \
-    -e "s,^# farm_id\s*=\s*\"REPLACE-WTIH-WORKER-FARM-ID\"$,farm_id = \"${farm_id}\",g"    \
+    -e "s,^# farm_id\s*=\s*\"REPLACE-WITH-WORKER-FARM-ID\"$,farm_id = \"${farm_id}\",g"    \
     -e "s,^# fleet_id\s*=\s*\"REPLACE-WITH-WORKER-FLEET-ID\"$,fleet_id = \"${fleet_id}\",g" \
     /etc/amazon/deadline/worker.toml
+if ! grep "farm_id = \"${farm_id}\"" /etc/amazon/deadline/worker.toml; then
+    echo "ERROR: Failed to configure farm ID in /etc/amazon/deadline/worker.toml."
+    exit 1
+fi
+if ! grep "fleet_id = \"${fleet_id}\"" /etc/amazon/deadline/worker.toml; then
+    echo "ERROR: Failed to configure fleet ID in /etc/amazon/deadline/worker.toml."
+    exit 1
+fi
 echo "Done configuring farm and fleet"
 
 if ! [[ "${no_install_service}" == "yes" ]]; then
