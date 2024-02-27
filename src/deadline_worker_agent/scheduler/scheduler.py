@@ -266,6 +266,9 @@ class WorkerScheduler:
                         # top of the loop and drain naturally.
                         continue
 
+                    if self._windows_credentials_resolver:
+                        self._windows_credentials_resolver.prune_cache()
+
                     logger.debug("interval = %s", interval)
                     timeout = timedelta(seconds=interval)
 
