@@ -1,3 +1,12 @@
+## 0.21.1 (2024-02-28)
+
+
+### Features
+* Cancel Job Attachments session action when transfer rates drop below threshold (#143) ([`c49bbb4`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/c49bbb498949e3ed2b469714717018669134d5c2))
+
+### Bug Fixes
+* handle non-existent queue jobRunAsUser on worker host (#176) ([`1049a48`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/1049a48f0ff045160f5524eb25c3f97a42114fcb))
+
 ## 0.21.0 (2024-02-23)
 
 ### BREAKING CHANGES
