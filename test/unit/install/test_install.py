@@ -7,13 +7,11 @@ from subprocess import CalledProcessError
 from typing import Generator
 from unittest.mock import MagicMock, patch
 import sysconfig
+import requests
 
 import pytest
 
-from deadline_worker_agent.installer import (
-    ParsedCommandLineArguments,
-    install,
-)
+from deadline_worker_agent.installer import ParsedCommandLineArguments, install, get_ec2_region
 from deadline_worker_agent import installer as installer_mod
 
 
@@ -110,6 +108,26 @@ def test_install_handles_nonzero_exit_code(
 
     # THEN
     mock_sys_exit.assert_called_once_with(return_code)
+
+
+def test_install_exits_without_region(
+    parsed_args: ParsedCommandLineArguments,
+) -> None:
+    # GIVEN
+    parsed_args.region = None
+
+    with (
+        patch.object(installer_mod, "get_argument_parser") as mock_get_arg_parser,
+        patch.object(installer_mod.sys, "exit") as mock_sys_exit,
+    ):
+        arg_parser: MagicMock = mock_get_arg_parser.return_value
+        arg_parser.parse_args.return_value = parsed_args
+
+        # WHEN
+        install()
+
+    # THEN
+    mock_sys_exit.assert_called_once_with(1)
 
 
 class TestInstallRunsCommand:
@@ -212,3 +230,29 @@ def test_unsupported_platform_raises(platform: str, capsys: pytest.CaptureFixtur
     capture = capsys.readouterr()
 
     assert capture.out == f"ERROR: Unsupported platform {platform}\n"
+
+
+@patch("requests.get")
+def test_get_ec2_region_no_IMDS_returns_none(mock_get):
+    # Given
+    mock_get.side_effect = requests.exceptions.HTTPError("HTTP Error")
+
+    # When
+    region = get_ec2_region()
+
+    # Then
+    assert region is None
+
+
+@patch("deadline_worker_agent.installer.requests.get")
+def test_get_ec2_region_IMDS_returns_region(mock_get):
+    # with patch("deadline_worker_agent.installer.get_ec2_region", return_value="us-east-1"):
+    # Given
+    mock_get.return_value.raise_for_status.side_effect = None
+    mock_get.return_value.json.return_value = {"region": "us-east-1"}
+
+    # When
+    region = get_ec2_region()
+
+    # Then
+    assert region == "us-east-1"

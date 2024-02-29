@@ -7,6 +7,7 @@ from pathlib import Path
 from subprocess import CalledProcessError, run
 import sys
 import sysconfig
+import requests
 
 
 if sys.platform == "win32":
@@ -27,12 +28,18 @@ def install() -> None:
 
     arg_parser = get_argument_parser()
     args = arg_parser.parse_args(namespace=ParsedCommandLineArguments)
+
+    region = args.region if args.region else get_ec2_region()
+    if not region:
+        print("ERROR: region argunment must be passed.")
+        sys.exit(1)
+
     scripts_path = Path(sysconfig.get_path("scripts"))
     if sys.platform == "win32":
         installer_args: dict[str, Any] = dict(
             farm_id=args.farm_id,
             fleet_id=args.fleet_id,
-            region=args.region,
+            region=region,
             worker_agent_program=str(scripts_path),
             no_install_service=not args.install_service,
             start=args.service_start,
@@ -56,7 +63,7 @@ def install() -> None:
             "--fleet-id",
             args.fleet_id,
             "--region",
-            args.region,
+            region,
             "--user",
             args.user,
             "--scripts-path",
@@ -122,7 +129,6 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     parser.add_argument(
         "--region",
         help='The AWS region of the Amazon Deadline Cloud farm. Defaults to "us-west-2".',
-        default="us-west-2",
     )
     parser.add_argument(
         "--user",
@@ -169,3 +175,15 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     )
 
     return parser
+
+
+def get_ec2_region():
+    try:
+        response = requests.get(
+            "http://169.254.169.254/latest/dynamic/instance-identity/document", timeout=2
+        )
+        response_json = response.json()
+        response.raise_for_status()
+        return response_json.get("region")
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError):
+        return None
