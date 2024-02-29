@@ -18,6 +18,7 @@ from deadline_worker_agent.file_system_operations import (
 )
 
 import pywintypes
+import win32api
 import win32net
 import win32netcon
 import win32security
@@ -186,6 +187,32 @@ def ensure_local_agent_user(username: str, password: str) -> None:
             raise
 
 
+def grant_account_rights(username: str, rights: list[str]):
+    """
+    Grants rights to a user account
+
+    Args:
+        username (str): Name of user to grant rights to
+        rights (list[str]): The rights to grant. See https://learn.microsoft.com/en-us/windows/win32/secauthz/privilege-constants.
+            These constants are exposed by the win32security module of pywin32.
+    """
+    try:
+        user_sid, _, _ = win32security.LookupAccountName(None, username)
+        policy_handle = win32security.LsaOpenPolicy(None, win32security.POLICY_ALL_ACCESS)
+        win32security.LsaAddAccountRights(
+            policy_handle,
+            user_sid,
+            rights,
+        )
+        win32api.CloseHandle(policy_handle)
+
+        logging.info(f"Successfully granted the following rights to {username}: {rights}")
+
+    except Exception as e:
+        logging.error(f"Failed to grant user {username} rights ({rights}): {e}")
+        raise
+
+
 def add_user_to_group(group_name: str, user_name: str) -> None:
     """
     Adds a specified user to a specified local group if they are not already a member.
@@ -333,6 +360,7 @@ def start_windows_installer(
     fleet_id: str,
     region: str,
     worker_agent_program: str,
+    allow_shutdown: bool,
     parser: ArgumentParser,
     password: typing.Optional[str] = None,
     user_name: str = DEFAULT_WA_USER,
@@ -372,6 +400,7 @@ def start_windows_installer(
         f"Worker agent user: {user_name}\n"
         f"Worker job group: {group_name}\n"
         f"Worker agent program path: {worker_agent_program}\n"
+        f"Allow worker agent shutdown: {allow_shutdown}\n"
         f"Start service: {start}"
     )
 
@@ -387,6 +416,12 @@ def start_windows_installer(
             else:
                 logging.warning("Not a valid choice, try again")
 
+    # List of required user rights for the worker agent
+    worker_user_rights: list[str] = []
+
+    if allow_shutdown:
+        worker_user_rights.append(win32security.SE_SHUTDOWN_NAME)
+
     # Check if the worker agent user exists, and create it if not
     ensure_local_agent_user(user_name, password)
 
@@ -397,3 +432,7 @@ def start_windows_installer(
 
     agent_dirs = provision_directories(user_name)
     configure_farm_and_fleet(str(agent_dirs.deadline_config_subdir), farm_id, fleet_id)
+
+    if worker_user_rights:
+        # Grant the worker user the necessary rights
+        grant_account_rights(user_name, worker_user_rights)
