@@ -75,6 +75,7 @@ class RunStepTaskAction(OpenjdAction):
         session.run_task(
             step_script=self._details.step_template.script,
             task_parameter_values=self._task_parameter_values,
+            os_env_vars={"DEADLINE_SESSIONACTION_ID": self._id, "DEADLINE_TASK_ID": self.task_id},
         )
 
     def human_readable(self) -> str:
