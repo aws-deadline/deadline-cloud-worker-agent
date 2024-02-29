@@ -110,6 +110,7 @@ class WindowsCredentialsResolver:
         # Create a composite key using user and arn
         should_fetch = True
         user_key = f"{user}_{passwordArn}"
+        windows_session_user: Optional[WindowsSessionUser] = None
 
         # Prune the cache before fetching or returning the user
         self.prune_cache()
@@ -142,7 +143,6 @@ class WindowsCredentialsResolver:
             else:
                 password = secret.get("password")
                 if not password:
-                    windows_session_user = None
                     logger.error(
                         f'Contents of secret {passwordArn} did not match the expected format: {"password":"value"}'
                     )
@@ -153,7 +153,6 @@ class WindowsCredentialsResolver:
                             user=user, group=group, password=password
                         )
                     except BadCredentialsException:
-                        windows_session_user = None
                         logger.error(
                             f"Username and/or password within {passwordArn} were not correct"
                         )
