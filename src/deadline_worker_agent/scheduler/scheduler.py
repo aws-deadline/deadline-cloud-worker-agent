@@ -17,6 +17,7 @@ from typing import Callable, Tuple, Union, cast, Optional, Any
 import logging
 import os
 import stat
+import sys
 
 from openjd.sessions import ActionState, ActionStatus, SessionUser
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
@@ -53,7 +54,12 @@ from .session_queue import SessionActionQueue, SessionActionStatus
 from ..startup.config import JobsRunAsUserOverride
 from ..utils import MappingWithCallbacks
 from ..file_system_operations import FileSystemPermissionEnum, make_directory, touch_file
-from ..windows_credentials_resolver import WindowsCredentialsResolver
+
+if sys.platform == "win32":
+    from ..windows_credentials_resolver import WindowsCredentialsResolver
+else:
+    WindowsCredentialsResolver = Any
+
 
 logger = LOGGER
 

@@ -121,10 +121,13 @@ def mock_worker_run() -> Generator[MagicMock, None, None]:
 
 @pytest.fixture(autouse=True)
 def mock_windows_credentials_resolver() -> Generator[MagicMock, None, None]:
-    with patch.object(
-        scheduler_mod.WindowsCredentialsResolver, "get_windows_session_user"
-    ) as mock_windows_credentials_resolver:
-        yield mock_windows_credentials_resolver
+    if sys.platform == "win32":
+        with patch.object(
+            scheduler_mod.WindowsCredentialsResolver, "get_windows_session_user"
+        ) as mock_windows_credentials_resolver:
+            yield mock_windows_credentials_resolver
+    else:
+        yield MagicMock()
 
 
 @pytest.fixture

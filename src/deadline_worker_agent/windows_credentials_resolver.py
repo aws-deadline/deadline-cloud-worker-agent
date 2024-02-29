@@ -1,5 +1,12 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+# This assertion short-circuits mypy from type checking this module on platforms other than Windows
+# https://mypy.readthedocs.io/en/stable/common_issues.html#python-version-and-system-platform-checks
+import sys
+
+assert sys.platform == "win32"
+
+
 import json
 import os
 from datetime import datetime, timedelta, timezone

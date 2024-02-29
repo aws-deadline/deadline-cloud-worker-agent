@@ -1,5 +1,11 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+# This assertion short-circuits mypy from type checking this module on platforms other than Windows
+# https://mypy.readthedocs.io/en/stable/common_issues.html#python-version-and-system-platform-checks
+import sys
+
+assert sys.platform == "win32"
+
 from contextlib import contextmanager
 from ctypes import (
     byref,
@@ -9,7 +15,6 @@ from ctypes import (
 from ctypes.wintypes import HANDLE
 from enum import Enum
 from typing import Generator
-
 
 from .win_api import (
     AdjustTokenPrivileges,
