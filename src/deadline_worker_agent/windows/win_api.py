@@ -1,6 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 import ctypes
+import sys
 from ctypes.wintypes import (
     BOOL,
     DWORD,
@@ -14,6 +15,11 @@ from ctypes.wintypes import (
 )
 from ctypes import POINTER
 from typing import Sequence
+
+
+# This assertion short-circuits mypy from type checking this module on platforms other than Windows
+# https://mypy.readthedocs.io/en/stable/common_issues.html#python-version-and-system-platform-checks
+assert sys.platform == "win32"
 
 
 # =======================
