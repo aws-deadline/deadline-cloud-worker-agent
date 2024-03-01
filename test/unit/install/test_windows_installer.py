@@ -49,6 +49,7 @@ def test_start_windows_installer(
                 user_name=parsed_args.user,
                 group_name=parsed_args.group,
                 password=parsed_args.password,
+                allow_shutdown=parsed_args.allow_shutdown,
             )
 
 
