@@ -726,9 +726,10 @@ class Session:
         *,
         job_env_id: str,
         environment: EnvironmentModel,
+        os_env_vars: Optional[dict[str, str]] = None,
     ) -> None:
         session_env_id = self._session.enter_environment(
-            environment=environment, identifier=job_env_id
+            environment=environment, identifier=job_env_id, os_env_vars=os_env_vars
         )
         self._active_envs.append(
             ActiveEnvironment(
@@ -741,6 +742,7 @@ class Session:
         self,
         *,
         job_env_id: str,
+        os_env_vars: Optional[dict[str, str]] = None,
     ) -> None:
         if not self._active_envs or self._active_envs[-1].job_env_id != job_env_id:
             env_stack_str = ", ".join(env.job_env_id for env in self._active_envs)
@@ -749,7 +751,9 @@ class Session:
                 f"Active environments from outer-most to inner-most are: {env_stack_str}"
             )
         active_env = self._active_envs[-1]
-        self._session.exit_environment(identifier=active_env.session_env_id)
+        self._session.exit_environment(
+            identifier=active_env.session_env_id, os_env_vars=os_env_vars
+        )
         self._active_envs.pop()
 
     def _notifier_callback(
@@ -1229,10 +1233,12 @@ class Session:
         *,
         step_script: StepScriptModel,
         task_parameter_values: TaskParameterSet,
+        os_env_vars: Optional[dict[str, str]] = None,
     ) -> None:
         self._session.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,
+            os_env_vars=os_env_vars,
         )
 
     def stop(
