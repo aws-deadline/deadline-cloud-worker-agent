@@ -14,7 +14,7 @@ import deadline_worker_agent.installer.win_installer as installer_mod
 from deadline_worker_agent.installer.win_installer import (
     add_user_to_group,
     check_user_existence,
-    configure_farm_and_fleet,
+    update_config_file,
     ensure_local_agent_user,
     ensure_local_queue_user_group_exists,
     generate_password,
@@ -146,7 +146,7 @@ def test_configure_farm_and_fleet_replaces_placeholders(setup_example_config):
 
     farm_id = "123"
     fleet_id = "456"
-    configure_farm_and_fleet(deadline_config_sub_directory, farm_id, fleet_id)
+    update_config_file(deadline_config_sub_directory, farm_id, fleet_id)
 
     # Verify that the configuration file was created and placeholders were replaced
     worker_config_file = os.path.join(deadline_config_sub_directory, "worker.toml")
@@ -165,7 +165,7 @@ def test_configure_farm_and_fleet_creates_backup(setup_example_config):
     deadline_config_sub_directory = setup_example_config
 
     # Call the function under test with some IDs
-    configure_farm_and_fleet(deadline_config_sub_directory, "test_farm", "test_fleet")
+    update_config_file(deadline_config_sub_directory, "test_farm", "test_fleet")
 
     # Check that both the original and backup files exist
     worker_config_file = os.path.join(deadline_config_sub_directory, "worker.toml")
