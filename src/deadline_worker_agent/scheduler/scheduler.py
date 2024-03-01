@@ -766,6 +766,12 @@ class WorkerScheduler:
                 queue_id=queue_id,
                 env={
                     "AWS_PROFILE": queue_credentials.session.credential_process_profile_name,
+                    "DEADLINE_SESSION_ID": new_session_id,
+                    "DEADLINE_FARM_ID": self._farm_id,
+                    "DEADLINE_QUEUE_ID": queue_id,
+                    "DEADLINE_JOB_ID": job_id,
+                    "DEADLINE_FLEET_ID": self._fleet_id,
+                    "DEADLINE_WORKER_ID": self._worker_id,
                 }
                 if queue_credentials
                 else None,

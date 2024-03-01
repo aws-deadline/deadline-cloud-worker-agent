@@ -142,6 +142,11 @@ def action_id() -> str:
     return "action-111"
 
 
+@pytest.fixture
+def job_env_id() -> str:
+    return "job_env-111"
+
+
 @pytest.fixture(
     params=(
         Attachments(
