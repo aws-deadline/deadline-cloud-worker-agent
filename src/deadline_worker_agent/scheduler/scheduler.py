@@ -595,7 +595,7 @@ class WorkerScheduler:
             {
                 action["sessionActionId"]: SessionActionStatus(
                     id=action["sessionActionId"],
-                    completed_status="FAILED",
+                    completed_status="FAILED" if action is actions[0] else "NEVER_ATTEMPTED",
                     start_time=now,
                     end_time=now,
                     status=ActionStatus(
