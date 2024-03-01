@@ -138,8 +138,8 @@ def setup_example_config(tmp_path):
     example_config_path = os.path.join(tmp_path, "worker.toml")
     with open(example_config_path, "w") as f:
         f.write('# farm_id = "REPLACE-WITH-WORKER-FARM-ID"\n')
-        f.write('# fleet_id = "REPLACE-WITH-WORKER-FLEET-ID"')
-        f.write('# shutdown_on_stop = false')
+        f.write('# fleet_id = "REPLACE-WITH-WORKER-FLEET-ID"\n')
+        f.write("# shutdown_on_stop = false")
     return str(tmp_path)
 
 
@@ -165,9 +165,15 @@ def test_update_config_file_updates_values(setup_example_config):
         content = file.read()
 
     # Check if all values have been correctly replaced
-    assert re.search(rf'^farm_id = "{farm_id}"$', content, flags=re.MULTILINE), "farm_id placeholder was not replaced"
-    assert re.search(rf'^fleet_id = "{fleet_id}"$', content, flags=re.MULTILINE), "fleet_id placeholder was not replaced"
-    assert re.search(rf'^shutdown_on_stop = {str(shutdown_on_stop).lower()}$', content, flags=re.MULTILINE), "shutdown_on_stop was not replaced"    
+    assert re.search(
+        rf'^farm_id = "{farm_id}"$', content, flags=re.MULTILINE
+    ), "farm_id placeholder was not replaced"
+    assert re.search(
+        rf'^fleet_id = "{fleet_id}"$', content, flags=re.MULTILINE
+    ), "fleet_id placeholder was not replaced"
+    assert re.search(
+        rf"^shutdown_on_stop = {str(shutdown_on_stop).lower()}$", content, flags=re.MULTILINE
+    ), "shutdown_on_stop was not replaced"
 
 
 def test_update_config_file_creates_backup(setup_example_config):
