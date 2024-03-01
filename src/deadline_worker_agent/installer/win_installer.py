@@ -196,6 +196,7 @@ def grant_account_rights(username: str, rights: list[str]):
         rights (list[str]): The rights to grant. See https://learn.microsoft.com/en-us/windows/win32/secauthz/privilege-constants.
             These constants are exposed by the win32security module of pywin32.
     """
+    policy_handle = None
     try:
         user_sid, _, _ = win32security.LookupAccountName(None, username)
         policy_handle = win32security.LsaOpenPolicy(None, win32security.POLICY_ALL_ACCESS)
@@ -209,7 +210,8 @@ def grant_account_rights(username: str, rights: list[str]):
         logging.error(f"Failed to grant user {username} rights ({rights}): {e}")
         raise
     finally:
-        win32api.CloseHandle(policy_handle)
+        if policy_handle is not None:
+            win32api.CloseHandle(policy_handle)
 
 
 def add_user_to_group(group_name: str, user_name: str) -> None:
@@ -288,7 +290,11 @@ def update_config_file(
         content,
         flags=re.MULTILINE,
     )
-    if f'farm_id = "{farm_id}"' not in content:
+    if not re.search(
+        rf'^farm_id = "{re.escape(farm_id)}"$',
+        content,
+        flags=re.MULTILINE,
+    ):
         raise InstallerFailedException(f"Failed to configure farm ID in {worker_config_file}")
     else:
         updated_keys.append("farm_id")
@@ -298,7 +304,11 @@ def update_config_file(
         content,
         flags=re.MULTILINE,
     )
-    if f'fleet_id = "{fleet_id}"' not in content:
+    if not re.search(
+        rf'^fleet_id = "{re.escape(fleet_id)}"$',
+        content,
+        flags=re.MULTILINE,
+    ):
         raise InstallerFailedException(f"Failed to configure fleet ID in {worker_config_file}")
     else:
         updated_keys.append("fleet_id")
@@ -310,7 +320,11 @@ def update_config_file(
             content,
             flags=re.MULTILINE,
         )
-        if f"shutdown_on_stop = {shutdown_on_stop_toml}" not in content:
+        if not re.search(
+            rf"^shutdown_on_stop = {re.escape(shutdown_on_stop_toml)}$",
+            content,
+            flags=re.MULTILINE,
+        ):
             raise InstallerFailedException(
                 f"Failed to configure shutdown_on_stop in {worker_config_file}"
             )

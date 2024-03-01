@@ -2,6 +2,7 @@
 
 import pathlib
 import os
+import re
 import sys
 from unittest.mock import patch
 
@@ -138,15 +139,23 @@ def setup_example_config(tmp_path):
     with open(example_config_path, "w") as f:
         f.write('# farm_id = "REPLACE-WITH-WORKER-FARM-ID"\n')
         f.write('# fleet_id = "REPLACE-WITH-WORKER-FLEET-ID"')
+        f.write('# shutdown_on_stop = false')
     return str(tmp_path)
 
 
-def test_configure_farm_and_fleet_replaces_placeholders(setup_example_config):
+def test_update_config_file_updates_values(setup_example_config):
     deadline_config_sub_directory = setup_example_config
 
     farm_id = "123"
     fleet_id = "456"
-    update_config_file(deadline_config_sub_directory, farm_id, fleet_id)
+    shutdown_on_stop = True
+
+    update_config_file(
+        deadline_config_sub_directory,
+        farm_id,
+        fleet_id,
+        shutdown_on_stop=shutdown_on_stop,
+    )
 
     # Verify that the configuration file was created and placeholders were replaced
     worker_config_file = os.path.join(deadline_config_sub_directory, "worker.toml")
@@ -155,13 +164,13 @@ def test_configure_farm_and_fleet_replaces_placeholders(setup_example_config):
     with open(worker_config_file, "r") as file:
         content = file.read()
 
-    # Check if the farm_id and fleet_id have been correctly replaced
-    assert f'farm_id = "{farm_id}"' in content, "farm_id placeholder was not replaced"
-    assert f'fleet_id = "{fleet_id}"' in content, "fleet_id placeholder was not replaced"
-    assert "#" not in content, "Comment placeholders were not removed"
+    # Check if all values have been correctly replaced
+    assert re.search(rf'^farm_id = "{farm_id}"$', content, flags=re.MULTILINE), "farm_id placeholder was not replaced"
+    assert re.search(rf'^fleet_id = "{fleet_id}"$', content, flags=re.MULTILINE), "fleet_id placeholder was not replaced"
+    assert re.search(rf'^shutdown_on_stop = {str(shutdown_on_stop).lower()}$', content, flags=re.MULTILINE), "shutdown_on_stop was not replaced"    
 
 
-def test_configure_farm_and_fleet_creates_backup(setup_example_config):
+def test_update_config_file_creates_backup(setup_example_config):
     deadline_config_sub_directory = setup_example_config
 
     # Call the function under test with some IDs
