@@ -18,6 +18,7 @@ from deadline_worker_agent.file_system_operations import (
 )
 
 import pywintypes
+import win32api
 import win32net
 import win32netcon
 import win32security
@@ -186,6 +187,33 @@ def ensure_local_agent_user(username: str, password: str) -> None:
             raise
 
 
+def grant_account_rights(username: str, rights: list[str]):
+    """
+    Grants rights to a user account
+
+    Args:
+        username (str): Name of user to grant rights to
+        rights (list[str]): The rights to grant. See https://learn.microsoft.com/en-us/windows/win32/secauthz/privilege-constants.
+            These constants are exposed by the win32security module of pywin32.
+    """
+    policy_handle = None
+    try:
+        user_sid, _, _ = win32security.LookupAccountName(None, username)
+        policy_handle = win32security.LsaOpenPolicy(None, win32security.POLICY_ALL_ACCESS)
+        win32security.LsaAddAccountRights(
+            policy_handle,
+            user_sid,
+            rights,
+        )
+        logging.info(f"Successfully granted the following rights to {username}: {rights}")
+    except Exception as e:
+        logging.error(f"Failed to grant user {username} rights ({rights}): {e}")
+        raise
+    finally:
+        if policy_handle is not None:
+            win32api.CloseHandle(policy_handle)
+
+
 def add_user_to_group(group_name: str, user_name: str) -> None:
     """
     Adds a specified user to a specified local group if they are not already a member.
@@ -217,21 +245,24 @@ def add_user_to_group(group_name: str, user_name: str) -> None:
         raise
 
 
-def configure_farm_and_fleet(
-    deadline_config_sub_directory: str, farm_id: str, fleet_id: str
+def update_config_file(
+    deadline_config_sub_directory: str,
+    farm_id: str,
+    fleet_id: str,
+    shutdown_on_stop: typing.Optional[bool] = None,
 ) -> None:
     """
-    Correctly configures farm and fleet settings in a worker configuration file.
+    Updates the worker configuration file, creating it from the example if it does not exist.
     This function ensures the worker.toml configuration file exists, backs it up, and then
-    replaces specific placeholders with the provided farm and fleet IDs.
+    replaces specific placeholders with the provided values.
 
     Parameters:
     - deadline_config_sub_directory (str): Subdirectory for Deadline configuration files.
     - farm_id (str): The farm ID to set in the configuration.
     - fleet_id (str): The fleet ID to set in the configuration.
-
+    - shutdown_on_stop (Optional[bool]): The shutdown_on_stop value to set. Does nothing if set to None.
     """
-    logging.info("Configuring farm and fleet")
+    logging.info("Updating configuration file")
 
     worker_config_file = os.path.join(deadline_config_sub_directory, "worker.toml")
 
@@ -250,6 +281,8 @@ def configure_farm_and_fleet(
     with open(worker_config_file, "r") as file:
         content = file.read()
 
+    updated_keys = []
+
     # Replace the placeholders with actual farm_id and fleet_id
     content = re.sub(
         r'^# farm_id\s*=\s*("REPLACE-WITH-WORKER-FARM-ID")$',
@@ -257,22 +290,52 @@ def configure_farm_and_fleet(
         content,
         flags=re.MULTILINE,
     )
-    if f'farm_id = "{farm_id}"' not in content:
+    if not re.search(
+        rf'^farm_id = "{re.escape(farm_id)}"$',
+        content,
+        flags=re.MULTILINE,
+    ):
         raise InstallerFailedException(f"Failed to configure farm ID in {worker_config_file}")
+    else:
+        updated_keys.append("farm_id")
     content = re.sub(
         r'^# fleet_id\s*=\s*("REPLACE-WITH-WORKER-FLEET-ID")$',
         f'fleet_id = "{fleet_id}"',
         content,
         flags=re.MULTILINE,
     )
-    if f'fleet_id = "{fleet_id}"' not in content:
+    if not re.search(
+        rf'^fleet_id = "{re.escape(fleet_id)}"$',
+        content,
+        flags=re.MULTILINE,
+    ):
         raise InstallerFailedException(f"Failed to configure fleet ID in {worker_config_file}")
+    else:
+        updated_keys.append("fleet_id")
+    if shutdown_on_stop is not None:
+        shutdown_on_stop_toml = str(shutdown_on_stop).lower()
+        content = re.sub(
+            r"^#*\s*shutdown_on_stop\s*=\s*\w+$",
+            f"shutdown_on_stop = {shutdown_on_stop_toml}",
+            content,
+            flags=re.MULTILINE,
+        )
+        if not re.search(
+            rf"^shutdown_on_stop = {re.escape(shutdown_on_stop_toml)}$",
+            content,
+            flags=re.MULTILINE,
+        ):
+            raise InstallerFailedException(
+                f"Failed to configure shutdown_on_stop in {worker_config_file}"
+            )
+        else:
+            updated_keys.append("shutdown_on_stop")
 
     # Write the updated content back to the worker configuration file
     with open(worker_config_file, "w") as file:
         file.write(content)
 
-    logging.info("Done farm and fleet Configuration")
+    logging.info(f"Done configuring {updated_keys} in {worker_config_file}")
 
 
 def provision_directories(agent_username: str) -> WorkerAgentDirectories:
@@ -333,6 +396,7 @@ def start_windows_installer(
     fleet_id: str,
     region: str,
     worker_agent_program: str,
+    allow_shutdown: bool,
     parser: ArgumentParser,
     password: typing.Optional[str] = None,
     user_name: str = DEFAULT_WA_USER,
@@ -372,6 +436,7 @@ def start_windows_installer(
         f"Worker agent user: {user_name}\n"
         f"Worker job group: {group_name}\n"
         f"Worker agent program path: {worker_agent_program}\n"
+        f"Allow worker agent shutdown: {allow_shutdown}\n"
         f"Start service: {start}"
     )
 
@@ -387,6 +452,13 @@ def start_windows_installer(
             else:
                 logging.warning("Not a valid choice, try again")
 
+    # List of required user rights for the worker agent
+    worker_user_rights: list[str] = []
+
+    if allow_shutdown:
+        # Grant the user privilege to shutdown the machine
+        worker_user_rights.append(win32security.SE_SHUTDOWN_NAME)
+
     # Check if the worker agent user exists, and create it if not
     ensure_local_agent_user(user_name, password)
 
@@ -396,4 +468,15 @@ def start_windows_installer(
     add_user_to_group(group_name, user_name)
 
     agent_dirs = provision_directories(user_name)
-    configure_farm_and_fleet(str(agent_dirs.deadline_config_subdir), farm_id, fleet_id)
+    update_config_file(
+        str(agent_dirs.deadline_config_subdir),
+        farm_id,
+        fleet_id,
+        # This always sets shutdown_on_stop even if the user did not provide
+        # any "shutdown" option to be consistent with POSIX installer
+        shutdown_on_stop=allow_shutdown,
+    )
+
+    if worker_user_rights:
+        # Grant the worker user the necessary rights
+        grant_account_rights(user_name, worker_user_rights)

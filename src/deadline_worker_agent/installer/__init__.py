@@ -37,6 +37,7 @@ def install() -> None:
             no_install_service=not args.install_service,
             start=args.service_start,
             confirm=args.confirmed,
+            allow_shutdown=args.allow_shutdown,
             parser=arg_parser,
         )
         if args.user:
