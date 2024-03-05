@@ -379,6 +379,7 @@ From the Worker Agent's perspective, it does not know that it is being drained. 
 UpdateWorkerSchedule API responses in an order that ultimately accomplishes the goal of draining the Worker.
 
 The service implements two styles of worker draining:
+
 1. Immediate Drain -- All active Session Actions are canceled, and Sessions are allowed to run their
 `envExit` Session Actions as normal to cleanup Sessions.
 2. Eventual Drain -- The Worker completes all Session Actions that it has been assigned as normal, but
@@ -400,11 +401,11 @@ Worker initiated drains differ in their urgency based on what event initiates th
 * EC2 Spot Termination - The host is being permanently terminated in 2 minutes.
 * SIGTERM - When sent by `shutdown` on the local POSIX host, this will be followed by a SIGKILL in 5 seconds.
     * The Worker Agent needs to cancel everything, and likely cannot even run environment-end actions.
-    * The Worker Agent's goal is to get to invoking `UpdateWorker` with `status=STOPPED` as fast as possible.
+    * The Worker Agent's goal is to get as much work wrapped up, and/or updated, as it can as fast as possible.
 * CTRL-C - User wants the application to end.
 
 In all cases, the service does not need to be informed that the sequence of actions that the worker is doing
-is a drain; it’ll figure it out when the Worker does not heartbeat (`NOT_RESPONDING`) or marks itself as `STOPPED`
+is a drain; it’ll figure it out when the Worker does not heartbeat (`NOT_RESPONDING`).
 
 #### Expedited Drain
 
@@ -504,15 +505,6 @@ to give the Worker Agent time to complete the remainder of the drain workflow.
     * Response: ResourceNotFoundException(404) -> The Worker has been deleted. Just exit the application.
     * Response: ValidationException(400), ConflictException(409), AccessDeniedException(403),
     InternalServerException(500) -> Ignore; just continue.
-6. If the Worker Agent supports and has been configured to Delete the Worker on shutdown, and the conditions have
-been met for that deletion then call the `DeleteWorker` API with (farmId, fleetId, workerId).
-    * Response: Success(200) -> Continue
-    * Response: ThrottlingException(429), InternalServerException(500) -> Perform exponential backoff, and then retry.
-    * Response: ConflictException(409):
-        * `reason` is `STATUS_CONFLICT` and `resourceId` is of the Worker -> This only happens if the Worker does not
-        have `CREATED` or `STOPPED` status. Update the Worker to `STOPPED` status, and try to delete again.
-        * Otherwise -> Abort. Exit the application.
-    * Response: ResourceNotFoundException(404), ValidationException(400), AccessDeniedException(403) -> Ignore; just continue.
 7. Exit the application as desired.
 
 Note: If the available time remaining for a regular drain is ever less than 10 seconds, then switch
@@ -523,10 +515,39 @@ to an expedited drain workflow.
 
 The Worker Agent application may be shut down for a multitude of reasons. Some of those may be temporary, and the
 Worker Agent will be restarted on the same host again in the future, but others may be more permanent with the underlying
-host being permanently terminated. In the latter case, the Worker Agent should delete the Worker from the service as
-part of the application shutdown process.
+host being permanently terminated.
 
-The steps to perform a shutdown are:
+The steps to perform a shutdown differ based on the event that led to the shutdown. In the case of a service-initiated
+shutdown (i.e. when the Worker Agent receives an `UpdateWorkerSchedule` response that has `desiredWorkerStatus=STOPPED`)
+then the Worker Agent must:
+
+1. Invoke the `UpdateWorker` API with (farmId, fleetId, workerId, status=STOPPING).
+    * This informs the service that the Worker is no longer available to perform work and
+      is actively trying to shutdown the host.
+    * Response: Success(200) -> Continue.
+    * Response: ThrottlingException(429), InternalServerException(500) -> Perform exponential backoff,
+    and then retry indefinitely.
+    * Response: ConflictException(409)
+        * `reason` is `CONCURRENT_MODIFICATION` -> Perform exponential backoff, and then retry.
+        * Otherwise -> Ignore and continue.
+    * Response: ResourceNotFoundException(404) -> The worker has been deleted. Continue to repeatedly
+      trying to shutdown the host until successful.
+    * Response: AccessDeniedException(403), ValidationException(400) -> Some other problem. Continue to repeatedly
+      trying to shutdown the host until successful.
+2. If successfully transitioned to STOPPING, then repeat in a loop:
+    1. Call to the operating system to shutdown the host.
+    2. Invoke the `UpdateWorkerSchedule` API with (farmId, fleetId, workerId, updatedSessionActions=None)
+        * Response: Success (200) -> Continue
+        * Response: ThrottlingException(429), InternalServerException(500) -> Perform exponential backoff, and
+          then retry.
+        * Response: ConflictException(409)
+            * `reason` is `CONCURRENT_MODIFICATION` -> Perform exponential backoff, and then retry.
+            * Any other -> Ignore & continue.
+        * Response: AccessDeniedException(403), ResourceNotFoundException(404) -> Ignore & continue.
+    3. Sleep for 30 seconds.
+
+In the case of a Worker-initiated shutdown (e.g. SIGTERM, EC2 Spot Interruption, etc) then follow the
+[Regular Drain](#regular-drain) process and then:
 
 1. Invoke the `UpdateWorker` API with (farmId, fleetId, workerId, status=STOPPED).
     * This informs the service that the Worker is no longer available to perform work.
@@ -538,15 +559,4 @@ The steps to perform a shutdown are:
         * Otherwise -> Ignore and continue.
     * Response: ResourceNotFoundException(404) -> Abort. Exit the application, the worker has been deleted.
     * Response: AccessDeniedException(403), ValidationException(400) -> Abort. Exit the application.
-2. Optionally, call the `DeleteWorker` API with (farmId, fleetId, workerId).
-    * This should only be done if the Worker Agent knows that the underlying host is also being permanently terminated, and
-    will never return.
-    * Response: Success(200) -> Continue.
-    * Response: ThrottlingException(429), InternalServerException(500) -> Perform exponential backoff,
-    and then retry indefinitely.
-    * Response: ConflictException(409):
-        * `reason` is `STATUS_CONFLICT` and `resourceId` is of the Worker -> This only happens if the Worker does not
-        have `CREATED` or `STOPPED` status. Update the Worker to `STOPPED` status, and try to delete again.
-        * Otherwise -> Abort. Exit the application.
-    * Response: ResourceNotFoundException(404) -> Abort. Exit the application, the Worker has already been deleted.
-    * Response: AccessDeniedException(403), ValidationException(400) -> Abort. Exit the application.
+

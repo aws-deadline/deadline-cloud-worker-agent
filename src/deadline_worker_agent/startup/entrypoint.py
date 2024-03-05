@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from getpass import getuser
+from time import sleep
 from logging.handlers import TimedRotatingFileHandler
 from threading import Event
 from typing import Optional
@@ -21,7 +22,7 @@ from deadline.job_attachments import version as deadline_job_attach_version
 
 from .._version import __version__
 from ..api_models import WorkerStatus
-from ..boto import DEADLINE_BOTOCORE_CONFIG, OTHER_BOTOCORE_CONFIG
+from ..boto import DEADLINE_BOTOCORE_CONFIG, OTHER_BOTOCORE_CONFIG, DeadlineClient
 from ..errors import ServiceShutdown
 from ..log_sync.cloudwatch import stream_cloudwatch_logs
 from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger
@@ -30,14 +31,18 @@ from .bootstrap import bootstrap_worker
 from .capabilities import detect_system_capabilities
 from .config import Configuration, ConfigurationError
 from ..aws.deadline import (
-    DeadlineRequestError,
-    delete_worker,
     update_worker,
+    update_worker_schedule,
     record_worker_start_telemetry_event,
 )
 
 __all__ = ["entrypoint"]
 _logger = logging.getLogger(__name__)
+
+
+def _repeatedly_attempt_host_shutdown() -> bool:
+    # This is here solely for the purpose of being mocked in tests so that we don't infinite loop.
+    return True
 
 
 def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = None) -> None:
@@ -93,8 +98,7 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
         logs_client = session.client("logs", config=OTHER_BOTOCORE_CONFIG)
 
         # Shutdown behavior flags set by Worker below
-        should_delete_worker = False
-        shutdown_requested = False
+        shutdown_requested_by_service = False
 
         # Let's treat this log line as a contract. It's the last thing that we'll
         # emit to the bootstrapping log, and external systems can use it as a
@@ -142,39 +146,13 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
             try:
                 worker_sessions.run()
             except ServiceShutdown:
-                shutdown_requested = True
-                should_delete_worker = True
+                shutdown_requested_by_service = True
             except Exception as e:
                 _logger.exception("Failed running worker: %s", e)
                 raise
 
-            try:
-                update_worker(
-                    deadline_client=deadline_client,
-                    farm_id=config.farm_id,
-                    fleet_id=config.fleet_id,
-                    worker_id=worker_id,
-                    status=WorkerStatus.STOPPED,
-                )
-            except Exception as e:
-                _logger.error("Failed to stop Worker: %s", e)
-            else:
-                _logger.info("Worker %s successfully stopped", worker_id)
-                if should_delete_worker:
-                    _logger.info('Deleting worker with id "%s"', worker_id)
-                    try:
-                        delete_worker(
-                            deadline_client=deadline_client, config=config, worker_id=worker_id
-                        )
-                    except DeadlineRequestError as e:
-                        _logger.error("Failed to delete Worker: %s", e.inner_exc)
-                    else:
-                        _logger.info('Worker "%s" successfully deleted', worker_id)
+            _agent_shutdown(deadline_client, config, worker_id, shutdown_requested_by_service)
 
-            # conditional shutdown
-            if shutdown_requested:
-                _logger.info("The service has requested that the host be shutdown")
-                _system_shutdown(config=config)
     except ConfigurationError as e:
         sys.stderr.write(f"ERROR: {e}{os.linesep}")
         sys.exit(1)
@@ -188,7 +166,67 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
         _logger.info("Worker Agent exiting")
 
 
-def _system_shutdown(config: Configuration) -> None:
+def _agent_shutdown(
+    deadline_client: DeadlineClient,
+    config: Configuration,
+    worker_id: str,
+    shutdown_requested_by_service: bool,
+) -> None:
+    if shutdown_requested_by_service:
+        # The service will only request a shutdown if this Worker's Fleet is subject to autoscaling.
+        # So, we transition to STOPPING and then repeatedly try to shutdown the host while heartbeating.
+        # When we eventually succeed and the host is shutdown the service will notice the lack of heartbeats
+        # and Delete the Worker.
+        # If we fail to shutdown, then the service has signals that it can use to know that something
+        # has gone sideways (we're in STOPPED and still heartbeating).
+        _logger.info(
+            "The service has requested that the host be shutdown. Setting Worker state to STOPPING."
+        )
+        try:
+            update_worker(
+                deadline_client=deadline_client,
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                worker_id=worker_id,
+                status=WorkerStatus.STOPPING,
+            )
+        except Exception as e:
+            _logger.error(
+                "Failed set Worker to STOPPING. Continuing to shutdown loop. Error: %s", e
+            )
+        else:
+            _logger.info("Worker %s successfully set to STOPPING", worker_id)
+        while _repeatedly_attempt_host_shutdown():
+            _host_shutdown(config=config)
+            try:
+                update_worker_schedule(
+                    deadline_client=deadline_client,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                )
+            except Exception as e:
+                # Just swallow the error and keep looping until the host shutsdown
+                _logger.error("Failed to heartbeat Worker: %s", e)
+            # Sleep for 30s and then try again; hopefully we never wake up
+            sleep(30)
+    else:
+        # Worker-initiated shutdown. We tell the service that we've STOPPED and then exit
+        try:
+            update_worker(
+                deadline_client=deadline_client,
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                worker_id=worker_id,
+                status=WorkerStatus.STOPPED,
+            )
+        except Exception as e:
+            _logger.error("Failed to stop Worker: %s", e)
+        else:
+            _logger.info("Worker %s successfully stopped", worker_id)
+
+
+def _host_shutdown(config: Configuration) -> None:
     """Shuts the system down"""
 
     if config.no_shutdown:
