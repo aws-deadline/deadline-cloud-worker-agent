@@ -106,6 +106,7 @@ class ParsedCommandLineArguments(Namespace):
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     """Returns a command-line argument parser for the Amazon Deadline Cloud Worker Agent"""
+
     parser = ArgumentParser(
         prog="install-deadline-worker",
         description="Installer for the Amazon Deadline Cloud Worker Agent",
@@ -125,31 +126,39 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
         help='The AWS region of the Amazon Deadline Cloud farm. Defaults to "us-west-2".',
         default="us-west-2",
     )
+
+    # Windows local usernames are restricted to 20 characters in length.
+    default_username = "deadline-worker-agent" if sys.platform != "win32" else "deadline-worker"
     parser.add_argument(
         "--user",
-        help='The username of the Amazon Deadline Cloud Worker Agent user. Defaults to "deadline-worker-agent".',
-        # Windows local usernames are restricted to 20 characters in length.
-        default="deadline-worker-agent" if sys.platform != "win32" else "deadline-worker",
+        help=f'The username of the Amazon Deadline Cloud Worker Agent user. Defaults to "{default_username}".',
+        default=default_username,
     )
+
     parser.add_argument(
         "--group",
-        help='The POSIX group that is shared between the Agent user and the user(s) that jobs run as. Defaults to "deadline-job-users".',
+        help='The group that is shared between the Agent user and the user(s) that jobs run as. Defaults to "deadline-job-users".',
     )
     parser.add_argument(
         "--start",
-        help="Starts the systemd service immediately. Defaults to start on system boot. This option is ignored if --no-install-service is used.",
+        help="Starts the service immediately. Defaults to start on system boot. This option is ignored if --no-install-service is used.",
         action="store_true",
         dest="service_start",
     )
+
+    if sys.platform == "win32":
+        help = "Controls whether to grant the worker agent OS user the privilege to shutdown the system"
+    else:
+        help = "Controls whether to create/delete a sudoers rule allowing the worker agent OS user to shutdown the system"
     parser.add_argument(
         "--allow-shutdown",
-        help="Controls whether to create/delete a sudoers rule allowing the worker agent OS user to"
-        "shutdown the system",
+        help=help,
         action="store_true",
     )
+
     parser.add_argument(
         "--no-install-service",
-        help="Skips the worker agent systemd service installation",
+        help="Skips the worker agent service installation",
         action="store_false",
         dest="install_service",
     )
