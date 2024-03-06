@@ -357,7 +357,7 @@ class TestCancelAll:
     )
     @pytest.mark.parametrize(
         argnames="cancel_outcome",
-        argvalues=("msg1", "msg2", None),
+        argvalues=("NEVER_ATTEMPTED", "FAILED", None),
         ids=("msg1", "msg2", "no-msg"),
     )
     @pytest.mark.parametrize(
@@ -416,11 +416,12 @@ class TestCancelAll:
             )
         else:
             assert cancel_mock.call_count == 2
+            # cancel_outcome for actions after the first should be marked NEVER_ATTEMPTED
             cancel_mock.assert_any_call(
                 id="task-run", message=message, cancel_outcome=cancel_outcome
             )
             cancel_mock.assert_any_call(
-                id="env-exit", message=message, cancel_outcome=cancel_outcome
+                id="env-exit", message=message, cancel_outcome="NEVER_ATTEMPTED"
             )
 
 

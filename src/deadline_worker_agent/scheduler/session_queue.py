@@ -247,7 +247,11 @@ class SessionActionQueue:
         ]
 
         for action_id in action_ids:
-            self.cancel(id=action_id, message=message, cancel_outcome=cancel_outcome)
+            self.cancel(
+                id=action_id,
+                message=message,
+                cancel_outcome=cancel_outcome if action_id is action_ids[0] else "NEVER_ATTEMPTED",
+            )
 
     def replace(
         self,
