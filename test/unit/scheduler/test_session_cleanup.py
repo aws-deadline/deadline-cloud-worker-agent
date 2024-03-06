@@ -20,7 +20,7 @@ class FakeSessionUser(SessionUser):
         self.user = user
 
     @staticmethod
-    def get_process_user() -> str:
+    def _get_process_user() -> str:
         return ""
 
 
