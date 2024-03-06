@@ -24,7 +24,6 @@ from openjd.model.v2023_09 import (
 import pytest
 
 from deadline_worker_agent.scheduler.session_queue import (
-    CancelOutcome,
     EnvironmentQueueEntry,
     TaskRunQueueEntry,
     SessionActionQueue,
@@ -356,11 +355,6 @@ class TestCancelAll:
         ids=("msg1", "msg2", "no-msg"),
     )
     @pytest.mark.parametrize(
-        argnames="cancel_outcome",
-        argvalues=("NEVER_ATTEMPTED", "FAILED", None),
-        ids=("msg1", "msg2", "no-msg"),
-    )
-    @pytest.mark.parametrize(
         argnames="ignore_env_exits",
         argvalues=(False, True),
         ids=("dont-ignore", "ignore"),
@@ -368,7 +362,6 @@ class TestCancelAll:
     def test_ignore_env_exits(
         self,
         message: str | None,
-        cancel_outcome: CancelOutcome,
         ignore_env_exits: bool,
         session_queue: SessionActionQueue,
     ) -> None:
@@ -404,11 +397,11 @@ class TestCancelAll:
             # WHEN
             session_queue.cancel_all(
                 message=message,
-                cancel_outcome=cancel_outcome,
                 ignore_env_exits=ignore_env_exits,
             )
 
         # THEN
+        cancel_outcome = "NEVER_ATTEMPTED"
         if ignore_env_exits:
             cancel_mock.assert_called_once()
             cancel_mock.assert_any_call(
@@ -416,12 +409,11 @@ class TestCancelAll:
             )
         else:
             assert cancel_mock.call_count == 2
-            # cancel_outcome for actions after the first should be marked NEVER_ATTEMPTED
             cancel_mock.assert_any_call(
                 id="task-run", message=message, cancel_outcome=cancel_outcome
             )
             cancel_mock.assert_any_call(
-                id="env-exit", message=message, cancel_outcome="NEVER_ATTEMPTED"
+                id="env-exit", message=message, cancel_outcome=cancel_outcome
             )
 
 

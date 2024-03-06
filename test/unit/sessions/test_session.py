@@ -1197,9 +1197,7 @@ class TestSessionUpdateAction:
             session.update_action(status)
 
         # THEN
-        mock_cancel_all.assert_called_once_with(
-            cancel_outcome="NEVER_ATTEMPTED", message=ANY, ignore_env_exits=True
-        )
+        mock_cancel_all.assert_called_once_with(message=ANY, ignore_env_exits=True)
         assert "TIMEOUT" in mock_cancel_all.call_args.kwargs["message"]
         mock_report_action_update.assert_called_once()
         session_status = mock_report_action_update.call_args.args[0]
@@ -1277,7 +1275,6 @@ class TestSessionActionUpdatedImpl:
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
         queue_cancel_all.assert_called_once_with(
-            cancel_outcome="NEVER_ATTEMPTED",
             message=expected_next_action_message,
             ignore_env_exits=True,
         )
@@ -1345,7 +1342,6 @@ class TestSessionActionUpdatedImpl:
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
         queue_cancel_all.assert_called_once_with(
-            cancel_outcome="NEVER_ATTEMPTED",
             message=expected_next_action_message,
             ignore_env_exits=True,
         )
@@ -1497,7 +1493,6 @@ class TestSessionActionUpdatedImpl:
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
         queue_cancel_all.assert_called_once_with(
-            cancel_outcome="NEVER_ATTEMPTED",
             message=expected_fail_action_status.fail_message,
             ignore_env_exits=True,
         )
@@ -1825,7 +1820,6 @@ class TestSessionCleanup:
 
         # THEN
         mock_queue_cancel_all.assert_called_once_with(
-            cancel_outcome="NEVER_ATTEMPTED",
             message=session._stop_fail_message,
         )
 
@@ -1929,7 +1923,6 @@ class TestSessionStartAction:
         )
         mock_queue_cancel_all.assert_called_once_with(
             message=f"Error starting prior action {run_step_task_action.id}",
-            cancel_outcome="FAILED",
             ignore_env_exits=True,
         )
         assert session._current_action is None
@@ -2001,7 +1994,6 @@ class TestSessionStartAction:
         )
         mock_queue_cancel_all.assert_called_once_with(
             message=f"Error starting prior action {run_step_task_action.id}",
-            cancel_outcome="FAILED",
             ignore_env_exits=True,
         )
         assert session._current_action is None
