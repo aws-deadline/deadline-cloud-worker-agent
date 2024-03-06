@@ -13,6 +13,7 @@ from deadline_worker_agent.installer.win_installer import (
     ensure_local_queue_user_group_exists,
     ensure_local_agent_user,
     generate_password,
+    start_windows_installer,
     validate_deadline_id,
 )
 import sysconfig
@@ -22,6 +23,7 @@ from deadline_worker_agent.installer import ParsedCommandLineArguments, install
 import pytest
 from unittest.mock import patch, MagicMock
 import win32netcon
+from win32comext.shell import shell
 
 
 def test_start_windows_installer(
@@ -51,6 +53,35 @@ def test_start_windows_installer(
                 password=parsed_args.password,
                 allow_shutdown=parsed_args.allow_shutdown,
             )
+
+
+@patch.object(shell, "IsUserAnAdmin")
+def test_start_windows_installer_fails_when_run_as_non_admin_user(
+    is_user_an_admin, parsed_args: ParsedCommandLineArguments
+) -> None:
+    # GIVEN
+    is_user_an_admin.return_value = False
+
+    with (patch.object(installer_mod, "get_argument_parser") as mock_get_arg_parser,):
+        with pytest.raises(SystemExit):
+            # WHEN
+            start_windows_installer(
+                farm_id=parsed_args.farm_id,
+                fleet_id=parsed_args.fleet_id,
+                region=parsed_args.region,
+                worker_agent_program=str(Path(sysconfig.get_path("scripts"))),
+                no_install_service=not parsed_args.install_service,
+                start=parsed_args.service_start,
+                confirm=parsed_args.confirmed,
+                parser=mock_get_arg_parser(),
+                user_name=parsed_args.user,
+                group_name=str(parsed_args.group),
+                password=parsed_args.password,
+                allow_shutdown=parsed_args.allow_shutdown,
+            )
+
+            # THEN
+            is_user_an_admin.assert_called_once()
 
 
 class MockPyWinTypesError(PyWinTypesError):

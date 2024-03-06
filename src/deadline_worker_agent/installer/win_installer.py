@@ -23,6 +23,7 @@ import win32net
 import win32netcon
 import win32security
 import winerror
+from win32comext.shell import shell
 
 
 # Defaults
@@ -426,6 +427,11 @@ def start_windows_installer(
         print_helping_info_and_exit()
     if not password:
         password = generate_password()
+
+    # Check that user has Administrator privileges
+    if not shell.IsUserAnAdmin():
+        logging.error(f"User does not have Administrator privileges: {os.environ['USERNAME']}")
+        print_helping_info_and_exit()
 
     # Print configuration
     print_banner()
