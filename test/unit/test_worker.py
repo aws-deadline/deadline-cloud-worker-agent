@@ -154,6 +154,7 @@ class TestInit:
             cleanup_session_user_processes=ANY,
             worker_persistence_dir=ANY,
             worker_logs_dir=worker_logs_dir,
+            retain_session_dir=ANY,
         )
 
 

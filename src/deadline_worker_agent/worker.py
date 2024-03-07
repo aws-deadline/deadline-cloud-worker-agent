@@ -71,6 +71,7 @@ class Worker:
     _boto_session: WorkerBoto3Session
     _worker_persistence_dir: Path
     _host_metrics_logger: HostMetricsLogger | None = None
+    _retain_session_dir: bool
 
     def __init__(
         self,
@@ -88,6 +89,7 @@ class Worker:
         worker_logs_dir: Path | None,
         host_metrics_logging: bool,
         host_metrics_logging_interval_seconds: float | None = None,
+        retain_session_dir: bool = False,
     ) -> None:
         self._deadline_client = deadline_client
         self._s3_client = s3_client
@@ -106,10 +108,12 @@ class Worker:
             cleanup_session_user_processes=cleanup_session_user_processes,
             worker_persistence_dir=worker_persistence_dir,
             worker_logs_dir=worker_logs_dir,
+            retain_session_dir=retain_session_dir,
         )
         self._stop = Event()
         self._boto_session = boto_session
         self._worker_persistence_dir = worker_persistence_dir
+        self._retain_session_dir = retain_session_dir
 
         if host_metrics_logging:
             assert (
