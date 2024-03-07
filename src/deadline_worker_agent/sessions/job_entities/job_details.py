@@ -115,12 +115,11 @@ def job_run_as_user_api_model_to_worker_agent(
     else:
         job_run_as_user_windows = job_run_as_user_data.get("windows", {})
         user = job_run_as_user_windows.get("user", "")
-        group = job_run_as_user_windows.get("group", "")
         passwordArn = job_run_as_user_windows.get("passwordArn", "")
         if not (user and passwordArn):
             return None
         job_run_as_user = JobRunAsUser(
-            windows_settings=JobRunAsWindowsUser(user=user, group=group, passwordArn=passwordArn),
+            windows_settings=JobRunAsWindowsUser(user=user, passwordArn=passwordArn),
         )
 
     return job_run_as_user
@@ -148,7 +147,6 @@ class JobAttachmentSettings:
 class JobRunAsWindowsUser:
     passwordArn: str
     user: str
-    group: str | None = None
 
 
 @dataclass
@@ -169,7 +167,6 @@ class JobRunAsUser:
         if self.windows and other.windows:
             windows_eq = (
                 self.windows.user == other.windows.user
-                and self.windows.group == other.windows.group
                 and self.windows.password == other.windows.password
             )
         else:
@@ -178,7 +175,6 @@ class JobRunAsUser:
         if self.windows_settings and other.windows_settings:
             windows_settings_eq = (
                 self.windows_settings.user == other.windows_settings.user
-                and self.windows_settings.group == other.windows_settings.group
                 and self.windows_settings.passwordArn == other.windows_settings.passwordArn
             )
         else:
@@ -333,7 +329,8 @@ class JobDetails:
                             required=False,
                             fields=(
                                 Field(key="user", expected_type=str, required=True),
-                                Field(key="group", expected_type=str, required=True),
+                                # TODO: Remove this once the API field is removed
+                                Field(key="group", expected_type=str, required=False),
                                 Field(key="passwordArn", expected_type=str, required=True),
                             ),
                         ),
@@ -406,10 +403,6 @@ class JobDetails:
                     if run_as_windows["user"] == "":
                         raise ValueError(
                             'Got empty "jobRunAs" -> "windows" -> "user" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
-                        )
-                    if run_as_windows["group"] == "":
-                        raise ValueError(
-                            'Got empty "jobRunAs" -> "windows" -> "group" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
                         )
                     if run_as_windows["passwordArn"] == "":
                         raise ValueError(

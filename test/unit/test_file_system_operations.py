@@ -21,23 +21,6 @@ class TestFileSystemOperations:
                 permitted_user=None,
             )
 
-    @patch("getpass.getuser", return_value="testuser")
-    def test_set_permissions_invalid_session_user_with_group_permissions(self, mock_getuser):
-        with pytest.raises(ValueError):
-            # WHEN
-            file_system_operations.set_permissions(
-                file_path=Path(),
-                group_permission=file_system_operations.FileSystemPermissionEnum.WRITE,
-                permitted_user=None,
-            )
-
-    @pytest.mark.parametrize(
-        "group_permission_param, agent_user_permission_param",
-        [
-            (None, file_system_operations.FileSystemPermissionEnum.WRITE),
-            (file_system_operations.FileSystemPermissionEnum.WRITE, None),
-        ],
-    )
     @patch("win32security.SetFileSecurity", return_value=mock.Mock)
     @patch("win32security.GetFileSecurity")
     @patch("win32security.ACL")
@@ -50,13 +33,10 @@ class TestFileSystemOperations:
         mock_dacl,
         mock_get_securitydescriptor,
         mock_set_securitydescriptor,
-        group_permission_param,
-        agent_user_permission_param,
     ):
         # GIVEN
-        valid_user = WindowsSessionUser(
-            user="valid_user", group="fake_group", password="fake_password"
-        )
+        valid_user = WindowsSessionUser(user="valid_user", password="fake_password")
+        agent_user_permission_param = file_system_operations.FileSystemPermissionEnum.WRITE
 
         dacl_mocked_obj = mock_dacl.return_value
         sd_mocked_obj = mock_get_securitydescriptor.return_value
@@ -64,7 +44,6 @@ class TestFileSystemOperations:
         # WHEN
         file_system_operations.set_permissions(
             file_path=Path(),
-            group_permission=group_permission_param,
             permitted_user=valid_user,
             agent_user_permission=agent_user_permission_param,
         )
@@ -87,9 +66,7 @@ class TestFileSystemOperations:
         mock_set_securitydescriptor,
     ):
         # GIVEN
-        valid_user = WindowsSessionUser(
-            user="valid_user", group="fake_group", password="fake_password"
-        )
+        valid_user = WindowsSessionUser(user="valid_user", password="fake_password")
 
         dacl_mocked_obj = mock_dacl.return_value
         sd_mocked_obj = mock_get_securitydescriptor.return_value
@@ -97,18 +74,12 @@ class TestFileSystemOperations:
         # WHEN
         file_system_operations.set_permissions(
             file_path=Path(),
-            group_permission=file_system_operations.FileSystemPermissionEnum.WRITE,
             permitted_user=valid_user,
             agent_user_permission=file_system_operations.FileSystemPermissionEnum.WRITE,
         )
 
         # THEN
-        dacl_mocked_obj.AddAccessAllowedAceEx.assert_has_calls(
-            [
-                mock.call(2, 3, 1179926, mock.Mock),
-                mock.call(2, 3, 1179926, mock.Mock),
-            ]
-        )
+        dacl_mocked_obj.AddAccessAllowedAceEx.assert_called_once_with(2, 3, 1179926, mock.Mock)
         sd_mocked_obj.SetSecurityDescriptorDacl.assert_called_once_with(1, dacl_mocked_obj, 0)
 
     @patch("win32security.SetFileSecurity", return_value=mock.Mock)
@@ -127,9 +98,7 @@ class TestFileSystemOperations:
         mock_set_securitydescriptor,
     ):
         # GIVEN
-        valid_user = WindowsSessionUser(
-            user="valid_user", group="fake_group", password="fake_password"
-        )
+        valid_user = WindowsSessionUser(user="valid_user", password="fake_password")
 
         file_path_mock = mock_pathlib.return_value
         file_path_mock.exists.return_value = False
@@ -160,9 +129,7 @@ class TestFileSystemOperations:
         mock_set_securitydescriptor,
     ):
         # GIVEN
-        valid_user = WindowsSessionUser(
-            user="valid_user", group="fake_group", password="fake_password"
-        )
+        valid_user = WindowsSessionUser(user="valid_user", password="fake_password")
 
         file_path_mock = mock_pathlib.return_value
 
