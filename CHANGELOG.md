@@ -1,3 +1,12 @@
+## 0.21.2 (2024-03-07)
+
+
+### Features
+* Add job and session metadata to the environment of a job (#189) ([`92b6d17`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/92b6d17e91cfd19981f0e19d66c47e614150eb44))
+
+### Bug Fixes
+* complete all actions following unsuccessful actions as NEVER_ATTEMPTED (#190) ([`d266c0f`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/d266c0f9740bd82d4ca85b7de2031e68edfd8b77))
+
 ## 0.21.1 (2024-02-28)
 
 
