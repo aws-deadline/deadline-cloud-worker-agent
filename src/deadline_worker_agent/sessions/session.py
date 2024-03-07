@@ -340,7 +340,6 @@ class Session:
                 )
 
         self._queue.cancel_all(
-            cancel_outcome="NEVER_ATTEMPTED",
             message=self._stop_fail_message,
         )
 
@@ -533,7 +532,6 @@ class Session:
             )
             self._queue.cancel_all(
                 message=f"Error starting prior action {e.action_id}",
-                cancel_outcome="FAILED",
                 ignore_env_exits=True,
             )
             self._current_action = None
@@ -561,7 +559,6 @@ class Session:
             )
             self._queue.cancel_all(
                 message=f"Error starting prior action {action_definition.id}",
-                cancel_outcome="FAILED",
                 ignore_env_exits=True,
             )
             self._current_action = None
@@ -605,9 +602,6 @@ class Session:
             )
             self._queue.cancel_all(
                 message=f"Error starting prior action {action_definition.id}",
-                # TODO: Change this after session actions failures before a task run count as
-                # overall failures and do not cause retry sessions to be scheduled indefinitely
-                cancel_outcome="FAILED",
                 ignore_env_exits=True,
             )
             self._current_action = None
@@ -1103,7 +1097,6 @@ class Session:
             # If the current action failed, we mark future actions assigned to the session as
             # NEVER_ATTEMPTED except for envExit actions.
             self._queue.cancel_all(
-                cancel_outcome="NEVER_ATTEMPTED",
                 message=fail_message,
                 ignore_env_exits=True,
             )

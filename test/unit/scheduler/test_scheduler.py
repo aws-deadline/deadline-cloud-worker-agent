@@ -623,8 +623,9 @@ class TestCreateNewSessions:
         self,
         scheduler: WorkerScheduler,
     ) -> None:
-        """Tests that when a session is assigned with a log provisioning error, that its assigned
-        actions are marked as FAILED and the scheduler's wakeup event is set so that it makes an
+        """Tests that when a session is assigned with a log provisioning error, that the assigned
+        action is marked as FAILED, the rest are marked as NEVER_ATTEMPTED,
+        and the scheduler's wakeup event is set so that it makes an
         immediate follow-up UpdateWorkerSchedule request to signal the failure.
         """
 
@@ -672,7 +673,9 @@ class TestCreateNewSessions:
                 action_update := scheduler._action_updates_map.get(action_id, None)
             ), f"no action update for {action_id}"
             assert action_update.id == action_id
-            assert action_update.completed_status == "FAILED"
+            assert action_update.completed_status == (
+                "FAILED" if action_num == 1 else "NEVER_ATTEMPTED"
+            )
             assert action_update.status is not None
             assert action_update.status.state == ActionState.FAILED
             assert (
@@ -695,8 +698,9 @@ class TestCreateNewSessions:
         scheduler: WorkerScheduler,
         job_details_error: Exception,
     ) -> None:
-        """Tests that when a session encounters a job details error, that its assigned
-        actions are marked as FAILED and the scheduler's wakeup event is set so that it makes an
+        """Tests that when a session encounters a job details error, that the first assigned
+        action is marked as FAILED, the rest are marked as NEVER_ATTEPTED,
+        and the scheduler's wakeup event is set so that it makes an
         immediate follow-up UpdateWorkerSchedule request to signal the failure.
         """
         # GIVEN
@@ -748,7 +752,9 @@ class TestCreateNewSessions:
                 action_update := scheduler._action_updates_map.get(action_id, None)
             ), f"no action update for {action_id}"
             assert action_update.id == action_id
-            assert action_update.completed_status == "FAILED"
+            assert action_update.completed_status == (
+                "FAILED" if action_num == 1 else "NEVER_ATTEMPTED"
+            )
             assert action_update.status is not None
             assert action_update.status.state == ActionState.FAILED
             assert action_update.status.fail_message == str(job_details_error)
