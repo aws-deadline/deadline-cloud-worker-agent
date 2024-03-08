@@ -16,27 +16,30 @@ from ctypes.wintypes import HANDLE
 from enum import Enum
 from typing import Generator
 
+from win32profile import PI_NOUI
+from win32security import (
+    LOGON32_LOGON_BATCH,
+    LOGON32_LOGON_INTERACTIVE,
+    LOGON32_LOGON_NETWORK,
+    LOGON32_LOGON_NETWORK_CLEARTEXT,
+    LOGON32_LOGON_SERVICE,
+    LOGON32_PROVIDER_DEFAULT,
+    SE_BACKUP_NAME,
+    SE_RESTORE_NAME,
+    SE_PRIVILEGE_ENABLED,
+    SE_PRIVILEGE_REMOVED,
+    TOKEN_ADJUST_PRIVILEGES,
+)
+
 from .win_api import (
     AdjustTokenPrivileges,
     CloseHandle,
     GetCurrentProcess,
     LoadUserProfileW,
     LogonUserW,
-    LOGON32_PROVIDER_DEFAULT,
-    LOGON32_LOGON_INTERACTIVE,
-    LOGON32_LOGON_NETWORK,
-    LOGON32_LOGON_BATCH,
-    LOGON32_LOGON_SERVICE,
-    LOGON32_LOGON_NETWORK_CLEARTEXT,
     LookupPrivilegeValueW,
     OpenProcessToken,
-    PI_NOUI,
     PROFILEINFO,
-    SE_BACKUP_NAME,
-    SE_RESTORE_NAME,
-    SE_PRIVILEGE_ENABLED,
-    SE_PRIVILEGE_REMOVED,
-    TOKEN_ADJUST_PRIVILEGES,
     TOKEN_PRIVILEGES,
 )
 
