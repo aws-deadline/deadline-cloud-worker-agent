@@ -311,7 +311,13 @@ def _log_agent_info() -> None:
     _logger.info(f"Platform: {sys.platform}")
     _logger.info("Agent Version: %s", __version__)
     _logger.info("Installed at: %s", str(Path(__file__).resolve().parent.parent))
-    _logger.info("Running as: %s", getuser())
+    try:
+        user = getuser()
+    except Exception:
+        # This is best-effort. If we cannot determine the user we will not log
+        pass
+    else:
+        _logger.info("Running as: %s", user)
     _logger.info("Dependency versions installed:")
     _logger.info("\topenjd.model: %s", openjd_model_version)
     _logger.info("\topenjd.sessions: %s", openjd_sessions_version)
