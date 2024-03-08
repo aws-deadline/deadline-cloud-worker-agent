@@ -12,6 +12,8 @@ from botocore.exceptions import ClientError
 
 from deadline.client.api import get_telemetry_client, TelemetryClient
 from deadline.job_attachments.progress_tracker import SummaryStatistics
+from openjd.model import version as openjd_model_version
+from openjd.sessions import version as openjd_sessions_version
 
 from ..._version import __version__ as version  # noqa
 from ...startup.config import Configuration
@@ -34,6 +36,8 @@ from ...log_sync.cloudwatch import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,
     LOG_CONFIG_OPTION_STREAM_NAME_KEY,
 )
+
+__cached_telemetry_client: Optional[TelemetryClient] = None
 
 _logger = logging.getLogger(__name__)
 
@@ -792,13 +796,31 @@ def update_worker_schedule(
 
 def _get_deadline_telemetry_client() -> TelemetryClient:
     """Wrapper around the Deadline Client Library telemetry client, in order to set package-specific information"""
-    return get_telemetry_client("deadline-cloud-worker-agent", version)
+    global __cached_telemetry_client
+    if not __cached_telemetry_client:
+        __cached_telemetry_client = get_telemetry_client(
+            "deadline-cloud-worker-agent", ".".join(version.split(".")[:3])
+        )
+        __cached_telemetry_client.update_common_details(
+            {"openjd-sessions-version": ".".join(openjd_sessions_version.split(".")[:3])}
+        )
+        __cached_telemetry_client.update_common_details(
+            {"openjd-model-version": ".".join(openjd_model_version.split(".")[:3])}
+        )
+    return __cached_telemetry_client
 
 
 def record_worker_start_telemetry_event(capabilities: Capabilities) -> None:
     """Calls the telemetry client to record an event capturing generic machine information."""
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.start", event_details=capabilities.dict()
+    )
+
+
+def record_uncaught_exception_telemetry_event(exception_type: str) -> None:
+    """Calls the telemetry client to record an event signaling an uncaught exception occurred."""
+    _get_deadline_telemetry_client().record_error(
+        event_details={"exception_scope": "uncaught"}, exception_type=exception_type
     )
 
 
