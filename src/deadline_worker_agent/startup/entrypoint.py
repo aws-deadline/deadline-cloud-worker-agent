@@ -8,7 +8,9 @@ import logging
 import os
 import subprocess
 import sys
+from getpass import getuser
 from logging.handlers import TimedRotatingFileHandler
+from threading import Event
 from typing import Optional
 from pathlib import Path
 
@@ -38,7 +40,7 @@ __all__ = ["entrypoint"]
 _logger = logging.getLogger(__name__)
 
 
-def entrypoint(cli_args: Optional[list[str]] = None) -> None:
+def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = None) -> None:
     """Entrypoint for the Worker Agent. The worker gets registered and then polls for tasks to
     complete.
 
@@ -134,6 +136,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
                 worker_logs_dir=config.worker_logs_dir if config.local_session_logs else None,
                 host_metrics_logging=config.host_metrics_logging,
                 host_metrics_logging_interval_seconds=config.host_metrics_logging_interval_seconds,
+                stop=stop,
             )
             try:
                 worker_sessions.run()
@@ -307,6 +310,7 @@ def _log_agent_info() -> None:
     _logger.info(f"Platform: {sys.platform}")
     _logger.info("Agent Version: %s", __version__)
     _logger.info("Installed at: %s", str(Path(__file__).resolve().parent.parent))
+    _logger.info("Running as: %s", getuser())
     _logger.info("Dependency versions installed:")
     _logger.info("\topenjd.model: %s", openjd_model_version)
     _logger.info("\topenjd.sessions: %s", openjd_sessions_version)

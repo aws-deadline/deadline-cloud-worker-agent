@@ -58,7 +58,7 @@ def logs_client() -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def patch_windows_session_user_validate():
-    with patch.object(WindowsSessionUser, "validate_username_password"):
+    with patch.object(WindowsSessionUser, "_validate_username_password"):
         yield
 
 
