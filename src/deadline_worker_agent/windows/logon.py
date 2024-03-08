@@ -102,6 +102,12 @@ def load_user_profile(
     """
     Loads the profile for the given user.
 
+    This requires that the security token of the current process have the SeBackupPrivilege and
+    SeRestorePrivilege access rights.
+
+    The function will temporarily elevate the current process' token privileges to include
+    backup and restore while loading the target user profile.
+
     Args:
         user: The username of the user whose profile we're loading
         logon_token: "Token for the user, which is returned by the LogonUser,
