@@ -8,14 +8,10 @@ import secrets
 import shutil
 import string
 import sys
-import typing
 from argparse import ArgumentParser
+from getpass import getpass
 from pathlib import Path
-
-from deadline_worker_agent.file_system_operations import (
-    _set_windows_permissions,
-    FileSystemPermissionEnum,
-)
+from typing import Optional
 
 import deadline.client.config.config_file
 import pywintypes
@@ -23,8 +19,17 @@ import win32api
 import win32net
 import win32netcon
 import win32security
+import win32service
+import win32serviceutil
 import winerror
+from openjd.sessions import BadCredentialsException, WindowsSessionUser
 from win32comext.shell import shell
+
+from ..file_system_operations import (
+    _set_windows_permissions,
+    FileSystemPermissionEnum,
+)
+from ..windows.win_service import WorkerAgentWindowsService
 
 
 # Defaults
@@ -172,6 +177,9 @@ def ensure_local_agent_user(username: str, password: str) -> None:
     """
     if check_user_existence(username):
         logging.info(f"Agent User {username} already exists")
+        # This is only to verify the credentials. It will raise a BadCredentialsError if the
+        # credentials cannot be used to logon the user
+        WindowsSessionUser(user=username, password=password)
     else:
         logging.info(f"Creating Agent user {username}")
         user_info = {
@@ -254,7 +262,7 @@ def update_config_file(
     deadline_config_sub_directory: str,
     farm_id: str,
     fleet_id: str,
-    shutdown_on_stop: typing.Optional[bool] = None,
+    shutdown_on_stop: Optional[bool] = None,
 ) -> None:
     """
     Updates the worker configuration file, creating it from the example if it does not exist.
@@ -435,6 +443,93 @@ def update_deadline_client_config(
         os.environ.update(old_environ)
 
 
+def _install_service(
+    *,
+    agent_user_name: str,
+    password: str,
+) -> None:
+    """Installs the Windows Service that hosts the Worker Agent
+
+    Parameters
+        agent_user_name(str): Worker Agent's account username
+        password(str): The Worker Agent's user account password
+    """
+
+    # If the username does not contain the domain, then assume the local domain
+    if "\\" not in agent_user_name:
+        agent_user_name = f".\\{agent_user_name}"
+
+    # Determine the Windows Service configuration. This uses the same logic as
+    # win32serviceutil.HandleCommandLine() so that the service can be debugged
+    # using:
+    #
+    #   python -m deadline_worker_agent.windows.win_service debug
+    service_class_str = win32serviceutil.GetServiceClassString(WorkerAgentWindowsService)
+    service_name = WorkerAgentWindowsService._svc_name_
+    service_display_name = WorkerAgentWindowsService._svc_display_name_
+    service_description = getattr(WorkerAgentWindowsService, "_svc_description_", None)
+    exe_name = getattr(WorkerAgentWindowsService, "_exe_name_", None)
+    exe_args = getattr(WorkerAgentWindowsService, "_exe_args_", None)
+
+    # Configure the service to start on boot
+    startup = win32service.SERVICE_AUTO_START
+
+    logging.info(f'Configuring Windows Service "{service_display_name}"...')
+    try:
+        win32serviceutil.InstallService(
+            service_class_str,
+            service_name,
+            service_display_name,
+            serviceDeps=None,
+            startType=startup,
+            bRunInteractive=None,
+            userName=agent_user_name,
+            password=password,
+            exeName=exe_name,
+            perfMonIni=None,
+            perfMonDll=None,
+            exeArgs=exe_args,
+            description=service_description,
+            delayedstart=False,
+        )
+    except win32service.error as exc:
+        if exc.winerror != winerror.ERROR_SERVICE_EXISTS:
+            raise
+        logging.info(f'Service "{service_display_name}" already exists, updating instead...')
+        win32serviceutil.ChangeServiceConfig(
+            service_class_str,
+            service_name,
+            serviceDeps=None,
+            startType=startup,
+            bRunInteractive=None,
+            userName=agent_user_name,
+            password=password,
+            exeName=exe_name,
+            displayName=service_display_name,
+            perfMonIni=None,
+            perfMonDll=None,
+            exeArgs=exe_args,
+            description=service_description,
+            delayedstart=False,
+        )
+        logging.info(f'Successfully updated Windows Service "{service_display_name}"')
+    else:
+        logging.info(f'Successfully created Windows Service "{service_display_name}"')
+
+
+def _start_service() -> None:
+    """Starts the Windows Service hosting the Worker Agent"""
+    service_name = WorkerAgentWindowsService._svc_name_
+
+    logging.info(f'Starting service "{service_name}"...')
+    try:
+        win32serviceutil.StartService(serviceName=service_name)
+    except Exception as e:
+        logging.warning(f'Failed to start service "{service_name}": {e}')
+    else:
+        logging.info(f'Successfully started service "{service_name}"')
+
+
 def start_windows_installer(
     farm_id: str,
     fleet_id: str,
@@ -442,11 +537,11 @@ def start_windows_installer(
     worker_agent_program: Path,
     allow_shutdown: bool,
     parser: ArgumentParser,
-    password: typing.Optional[str] = None,
     user_name: str = DEFAULT_WA_USER,
+    password: Optional[str] = None,
     group_name: str = DEFAULT_JOB_GROUP,
-    no_install_service: bool = False,
-    start: bool = False,
+    install_service: bool = False,
+    start_service: bool = False,
     confirm: bool = False,
     telemetry_opt_out: bool = False,
 ):
@@ -469,8 +564,6 @@ def start_windows_installer(
     elif not validate_deadline_id("fleet", fleet_id):
         logging.error(f"Not a valid value for Fleet id: {fleet_id}")
         print_helping_info_and_exit()
-    if not password:
-        password = generate_password()
 
     # Check that user has Administrator privileges
     if not shell.IsUserAnAdmin():
@@ -479,6 +572,18 @@ def start_windows_installer(
 
     # Print configuration
     print_banner()
+
+    if not password:
+        if check_user_existence(user_name):
+            password = getpass("Agent user password: ")
+            try:
+                WindowsSessionUser(user_name, password=password)
+            except BadCredentialsException:
+                print("ERROR: Password incorrect")
+                sys.exit(1)
+        else:
+            password = generate_password()
+
     print(
         f"Farm ID: {farm_id}\n"
         f"Fleet ID: {fleet_id}\n"
@@ -487,9 +592,11 @@ def start_windows_installer(
         f"Worker job group: {group_name}\n"
         f"Worker agent program path: {str(worker_agent_program)}\n"
         f"Allow worker agent shutdown: {allow_shutdown}\n"
-        f"Start service: {start}\n"
+        f"Install Windows service: {install_service}\n"
+        f"Start service: {start_service}"
         f"Telemetry opt-out: {telemetry_opt_out}"
     )
+    print()
 
     # Confirm installation
     if not confirm:
@@ -515,9 +622,11 @@ def start_windows_installer(
 
     # Check if the job group exists, and create it if not
     ensure_local_queue_user_group_exists(group_name)
+
     # Add the worker agent user to the job group
     add_user_to_group(group_name, user_name)
 
+    # Create directories and configure their permissions
     agent_dirs = provision_directories(user_name)
     update_config_file(
         str(agent_dirs.deadline_config_subdir),
@@ -539,3 +648,14 @@ def start_windows_installer(
             settings={"telemetry.opt_out": "true"},
         )
         logging.info("Opted out of client telemetry")
+
+    # Install the Windows service if specified
+    if install_service:
+        _install_service(
+            agent_user_name=user_name,
+            password=password,
+        )
+
+        # Start the Windows service if specified
+        if start_service:
+            _start_service()

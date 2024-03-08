@@ -20,7 +20,6 @@ import stat
 
 from openjd.sessions import ActionState, ActionStatus, SessionUser
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
-from openjd.sessions import ActionState, ActionStatus
 from deadline.job_attachments.asset_sync import AssetSync
 
 from ..aws.deadline import update_worker
@@ -179,6 +178,7 @@ class WorkerScheduler:
         worker_persistence_dir: Path,
         worker_logs_dir: Path | None,
         retain_session_dir: bool = False,
+        stop: Event | None = None,
     ) -> None:
         """Queue of Worker Sessions and their actions
 
@@ -198,7 +198,7 @@ class WorkerScheduler:
         self._executor = ThreadPoolExecutor(max_workers=100)
         self._sessions = SessionMap(cleanup_session_user_processes=cleanup_session_user_processes)
         self._wakeup = Event()
-        self._shutdown = Event()
+        self._shutdown = stop or Event()
         self._farm_id = farm_id
         self._fleet_id = fleet_id
         self._worker_id = worker_id
@@ -283,6 +283,9 @@ class WorkerScheduler:
                 raise
             finally:
                 self._drain_scheduler()
+                if os.name == "nt":
+                    assert self._windows_credentials_resolver is not None
+                    self._windows_credentials_resolver.clear()
 
     def _drain_scheduler(self) -> None:
         # Note:

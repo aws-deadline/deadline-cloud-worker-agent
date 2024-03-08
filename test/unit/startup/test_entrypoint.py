@@ -605,6 +605,7 @@ def test_passes_worker_logs_dir(
         host_metrics_logging=ANY,
         host_metrics_logging_interval_seconds=ANY,
         retain_session_dir=ANY,
+        stop=ANY,
     )
 
 

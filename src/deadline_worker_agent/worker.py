@@ -91,6 +91,7 @@ class Worker:
         host_metrics_logging: bool,
         host_metrics_logging_interval_seconds: float | None = None,
         retain_session_dir: bool = False,
+        stop: Event | None = None,
     ) -> None:
         self._deadline_client = deadline_client
         self._s3_client = s3_client
@@ -110,8 +111,9 @@ class Worker:
             worker_persistence_dir=worker_persistence_dir,
             worker_logs_dir=worker_logs_dir,
             retain_session_dir=retain_session_dir,
+            stop=stop,
         )
-        self._stop = Event()
+        self._stop = stop or Event()
         self._boto_session = boto_session
         self._worker_persistence_dir = worker_persistence_dir
         self._retain_session_dir = retain_session_dir
@@ -124,10 +126,9 @@ class Worker:
                 logger=logger, interval_s=host_metrics_logging_interval_seconds
             )
 
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        signal.signal(signal.SIGINT, self._signal_handler)
-
         if os.name == "posix":
+            signal.signal(signal.SIGTERM, self._signal_handler)
+            signal.signal(signal.SIGINT, self._signal_handler)
             # TODO: Remove this once WA is stable or put behind a debug flag
             signal.signal(signal.SIGUSR1, self._output_thread_stacks)  # type: ignore
 

@@ -34,8 +34,8 @@ def install() -> None:
             fleet_id=args.fleet_id,
             region=args.region,
             worker_agent_program=scripts_path,
-            no_install_service=not args.install_service,
-            start=args.service_start,
+            install_service=args.install_service,
+            start_service=args.service_start,
             confirm=args.confirmed,
             allow_shutdown=args.allow_shutdown,
             parser=arg_parser,
@@ -96,8 +96,8 @@ class ParsedCommandLineArguments(Namespace):
     fleet_id: str
     region: str
     user: str
-    password: Optional[str]
-    group: Optional[str]
+    password: Optional[str] = None
+    group: Optional[str] = None
     confirmed: bool
     service_start: bool
     allow_shutdown: bool
@@ -184,7 +184,10 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     if sys.platform == "win32":
         parser.add_argument(
             "--password",
-            help="The password for the AWS Deadline Cloud Worker Agent user. Defaults to generating a password.",
+            help=(
+                "The password for the AWS Deadline Cloud Worker Agent user. Defaults to generating a password "
+                "if the user does not exist or prompting for the password if the user pre-exists."
+            ),
             required=False,
             default=None,
         )
