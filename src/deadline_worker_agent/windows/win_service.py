@@ -23,7 +23,7 @@ class WorkerAgentWindowsService(win32serviceutil.ServiceFramework):
     _svc_display_name_ = "AWS Deadline Cloud Worker"
     _svc_description_ = (
         "Service hosting the AWS Deadline Cloud Worker Agent. Connects to AWS "
-        "Deadline Cloud and runs jobs as worker in a fleet."
+        "Deadline Cloud and runs jobs as a worker in a fleet."
     )
 
     _stop_event: Event

@@ -211,7 +211,7 @@ class WindowsCredentialsResolver:
                                 user=user, logon_token=logon_token
                             )
                         except OSError as e:
-                            logger.error(f'Error loggong on as "{user}": {e}')
+                            logger.error(f'Error logging on as "{user}": {e}')
                     else:
                         try:
                             # OpenJD will test the ultimate validity of the credentials when creating a WindowsSessionUser
