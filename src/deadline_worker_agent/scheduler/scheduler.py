@@ -643,7 +643,7 @@ class WorkerScheduler:
                         make_directory(
                             dir_path=queue_log_dir,
                             exist_ok=True,
-                            agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                            agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
                         )
                 except OSError:
                     error_msg = (

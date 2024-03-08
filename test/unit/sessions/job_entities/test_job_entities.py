@@ -289,7 +289,6 @@ class TestJobEntity:
         else:
             assert isinstance(entity_obj.job_run_as_user.windows_settings, JobRunAsWindowsUser)
             assert entity_obj.job_run_as_user.windows_settings.user == expected_user
-            assert entity_obj.job_run_as_user.windows_settings.group == expected_group
             assert entity_obj.job_run_as_user.windows_settings.passwordArn == expected_password_arn
 
 

@@ -100,9 +100,7 @@ class WindowsCredentialsResolver:
             if now - value.last_accessed < self.CACHE_EXPIRATION
         }
 
-    def get_windows_session_user(
-        self, user: str, group: Optional[str], passwordArn: str
-    ) -> WindowsSessionUser:
+    def get_windows_session_user(self, user: str, passwordArn: str) -> WindowsSessionUser:
         # Raises ValueError on problems so that the scheduler can cleanly fail the associated jobs
         # Any failure here should be cached so that we wait self.RETRY_AFTER minutes before fetching
         # again
@@ -149,9 +147,7 @@ class WindowsCredentialsResolver:
                 else:
                     try:
                         # OpenJD will test the ultimate validity of the credentials when creating a WindowsSessionUser
-                        windows_session_user = WindowsSessionUser(
-                            user=user, group=group, password=password
-                        )
+                        windows_session_user = WindowsSessionUser(user=user, password=password)
                     except BadCredentialsException:
                         logger.error(
                             f"Username and/or password within {passwordArn} were not correct"

@@ -244,7 +244,7 @@ class WindowsUser(TypedDict):
     user: str
     """The windows user name to run session actions as, as well as session file ownership"""
 
-    group: str
+    group: NotRequired[str]
     """The windows group name associated with session file ownership"""
 
     passwordArn: str
