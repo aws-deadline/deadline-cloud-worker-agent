@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     )
 
     if sys.platform == "win32":
-        from ...windows_credentials_resolver import WindowsCredentialsResolver
+        from ...windows.win_credentials_resolver import WindowsCredentialsResolver
     else:
         WindowsCredentialsResolver = Any
 else:

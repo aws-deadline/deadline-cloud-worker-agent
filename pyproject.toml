@@ -174,7 +174,6 @@ fail_under = 78
 # https://github.com/wemake-services/coverage-conditional-plugin
 [tool.coverage.coverage_conditional_plugin.omit]
 "sys_platform != 'win32'" = [
-  "src/deadline_worker_agent/windows_credentials_resolver.py",
   "src/deadline_worker_agent/windows/*.py",
   "src/deadline_worker_agent/installer/win_installer.py"
 ]

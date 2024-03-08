@@ -56,7 +56,7 @@ from ..utils import MappingWithCallbacks
 from ..file_system_operations import FileSystemPermissionEnum, make_directory, touch_file
 
 if sys.platform == "win32":
-    from ..windows_credentials_resolver import WindowsCredentialsResolver
+    from ..windows.win_credentials_resolver import WindowsCredentialsResolver
 else:
     WindowsCredentialsResolver = Any
 
