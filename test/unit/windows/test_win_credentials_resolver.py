@@ -16,7 +16,7 @@ import pytest
 #     https://mypy.readthedocs.io/en/stable/common_issues.html#python-version-and-system-platform-checks
 # 2.  It causes the tests to not be discovered/ran on non-Windows platforms
 if sys.platform == "win32":
-    import deadline_worker_agent.windows_credentials_resolver as credentials_mod
+    import deadline_worker_agent.windows.win_credentials_resolver as credentials_mod
 
     class TestWindowsCredentialsResolver:
         @fixture(autouse=True)
@@ -67,7 +67,7 @@ if sys.platform == "win32":
             assert "expired_user_arn" not in resolver._user_cache
 
         @patch(
-            "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
+            "deadline_worker_agent.windows.win_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
         )
         def test_get_windows_session_user_non_cached(self, fetch_secret_mock, datetime_mock):
             # GIVEN
@@ -90,7 +90,7 @@ if sys.platform == "win32":
             assert result.password == secret_data["password"]
 
         @patch(
-            "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
+            "deadline_worker_agent.windows.win_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
         )
         def test_get_windows_session_user_no_password_in_secret(
             self, fetch_secret_mock, datetime_mock
@@ -113,7 +113,7 @@ if sys.platform == "win32":
             fetch_secret_mock.assert_called_once_with(password_arn)
 
         @patch(
-            "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
+            "deadline_worker_agent.windows.win_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
         )
         def test_get_windows_session_user_cached(self, fetch_secret_mock, datetime_mock):
             # GIVEN
@@ -143,7 +143,7 @@ if sys.platform == "win32":
             assert result.password == "fake_cached_password"
 
         @patch(
-            "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
+            "deadline_worker_agent.windows.win_credentials_resolver.WindowsCredentialsResolver._fetch_secret_from_secrets_manager"
         )
         def test_get_windows_session_user_invalid_credentials(
             self, fetch_secret_mock, datetime_mock
@@ -159,7 +159,7 @@ if sys.platform == "win32":
             password_arn = "new_password_arn"
 
             with patch(
-                "deadline_worker_agent.windows_credentials_resolver.WindowsSessionUser",
+                "deadline_worker_agent.windows.win_credentials_resolver.WindowsSessionUser",
                 side_effect=BadCredentialsException("Invalid credentials"),
             ):
                 # WHEN
@@ -178,7 +178,7 @@ if sys.platform == "win32":
             ],
         )
         @patch(
-            "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
+            "deadline_worker_agent.windows.win_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
         )
         def test_fetch_secrets_manager_non_retriable_exception(
             self, secrets_manager_client_mock: MagicMock, exception_code: str
@@ -204,7 +204,7 @@ if sys.platform == "win32":
             ],
         )
         @patch(
-            "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
+            "deadline_worker_agent.windows.win_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
         )
         def test_fetch_secrets_manager_retriable_exception(
             self, secrets_manager_client_mock: MagicMock, exception_code: str
@@ -225,7 +225,7 @@ if sys.platform == "win32":
                 assert secrets_manager_client_mock.call_count == 10
 
         @patch(
-            "deadline_worker_agent.windows_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
+            "deadline_worker_agent.windows.win_credentials_resolver.WindowsCredentialsResolver._get_secrets_manager_client"
         )
         def test_fetch_secrets_manager_non_json_secret_exception(
             self,

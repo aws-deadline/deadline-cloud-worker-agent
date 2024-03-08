@@ -18,20 +18,21 @@ from botocore.exceptions import ClientError
 from botocore.retries.standard import RetryContext
 from openjd.sessions import WindowsSessionUser, BadCredentialsException
 
-from .boto import (
+from ..boto import (
     OTHER_BOTOCORE_CONFIG,
     NoOverflowExponentialBackoff as Backoff,
     Session as BotoSession,
 )
-
-from .windows import (
-    CloseHandle,
+from .logon import (
     logon_user,
     load_user_profile,
+)
+from .win_api import (
+    CloseHandle,
     PROFILEINFO,
     UnloadUserProfile,
-    win_service,
 )
+from . import win_service
 
 logger = getLogger(__name__)
 
