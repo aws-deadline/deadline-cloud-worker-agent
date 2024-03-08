@@ -23,30 +23,8 @@ assert sys.platform == "win32"
 
 
 # =======================
-# Constants
+# Structures
 # =======================
-
-# Constant values (ref: https://learn.microsoft.com/en-us/windows/win32/secauthn/logonuserexexw)
-LOGON32_PROVIDER_DEFAULT = 0
-LOGON32_LOGON_INTERACTIVE = 2
-LOGON32_LOGON_NETWORK = 3
-LOGON32_LOGON_BATCH = 4
-LOGON32_LOGON_SERVICE = 5
-LOGON32_LOGON_NETWORK_CLEARTEXT = 8
-
-# Prevents displaying of messages
-PI_NOUI = 0x00000001
-
-# Ref: https://learn.microsoft.com/en-us/windows/win32/secauthz/privilege-constants
-SE_BACKUP_NAME = "SeBackupPrivilege"
-SE_RESTORE_NAME = "SeRestorePrivilege"
-
-# TOKEN_PRIVILEGE attributes (ref: https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_privileges)
-SE_PRIVILEGE_ENABLED = 0x00000002
-SE_PRIVILEGE_REMOVED = 0x00000004
-
-# Token access privileges (ref: https://learn.microsoft.com/en-us/windows/win32/secauthz/access-rights-for-access-token-objects)
-TOKEN_ADJUST_PRIVILEGES = 0x0020
 
 
 # https://learn.microsoft.com/en-us/windows/win32/api/ntdef/ns-ntdef-luid
