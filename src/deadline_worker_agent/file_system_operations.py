@@ -23,7 +23,6 @@ def set_permissions(
     file_path: Path,
     user_permission: Optional[FileSystemPermissionEnum] = None,
     permitted_user: Optional[SessionUser] = None,
-    group_permission: Optional[FileSystemPermissionEnum] = None,
     agent_user_permission: Optional[FileSystemPermissionEnum] = None,
 ):
     if os.name == "nt":
@@ -33,8 +32,6 @@ def set_permissions(
             path=file_path,
             user=permitted_user.user if permitted_user else None,
             user_permission=user_permission,
-            group=permitted_user.group if permitted_user else None,
-            group_permission=group_permission,
             agent_user_permission=agent_user_permission,
         )
 
@@ -43,7 +40,6 @@ def touch_file(
     file_path: Path,
     user_permission: Optional[FileSystemPermissionEnum] = None,
     permitted_user: Optional[SessionUser] = None,
-    group_permission: Optional[FileSystemPermissionEnum] = None,
     agent_user_permission: Optional[FileSystemPermissionEnum] = None,
 ):
     if os.name == "nt":
@@ -56,8 +52,6 @@ def touch_file(
             path=file_path,
             user=permitted_user.user if permitted_user else None,
             user_permission=user_permission,
-            group=permitted_user.group if permitted_user else None,
-            group_permission=group_permission,
             agent_user_permission=agent_user_permission,
         )
 
@@ -66,7 +60,6 @@ def make_directory(
     dir_path: Path,
     user_permission: Optional[FileSystemPermissionEnum] = None,
     permitted_user: Optional[SessionUser] = None,
-    group_permission: Optional[FileSystemPermissionEnum] = None,
     agent_user_permission: Optional[FileSystemPermissionEnum] = None,
     exist_ok: bool = True,
     parents: bool = False,
@@ -80,8 +73,6 @@ def make_directory(
             path=dir_path,
             user=permitted_user.user if permitted_user else None,
             user_permission=user_permission,
-            group=permitted_user.group if permitted_user else None,
-            group_permission=group_permission,
             agent_user_permission=agent_user_permission,
         )
 

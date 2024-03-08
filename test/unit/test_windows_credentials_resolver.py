@@ -36,9 +36,7 @@ class TestWindowsCredentialsResolver:
         resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
 
         # Add a user to the cache that should be pruned
-        expired_user = WindowsSessionUser(
-            user="expired_user", group="fake_group", password="fake_password"
-        )
+        expired_user = WindowsSessionUser(user="expired_user", password="fake_password")
         expired_entry = credentials_mod._WindowsCredentialsCacheEntry(
             windows_session_user=expired_user,
             last_fetched_at=now - timedelta(hours=13),
@@ -47,9 +45,7 @@ class TestWindowsCredentialsResolver:
         resolver._user_cache["expired_user_arn"] = expired_entry
 
         # Add a user to the cache that should be kept
-        valid_user = WindowsSessionUser(
-            user="valid_user", group="fake_group", password="fake_password"
-        )
+        valid_user = WindowsSessionUser(user="valid_user", password="fake_password")
         valid_entry = credentials_mod._WindowsCredentialsCacheEntry(
             windows_session_user=valid_user,
             last_fetched_at=now - timedelta(hours=11),
@@ -78,17 +74,15 @@ class TestWindowsCredentialsResolver:
         secret_data = {"password": "fake_password"}
         fetch_secret_mock.return_value = secret_data
         user = "new_user"
-        group = "new_group"
         password_arn = "new_password_arn"
 
         # WHEN
-        result = resolver.get_windows_session_user(user, group, password_arn)
+        result = resolver.get_windows_session_user(user, password_arn)
 
         # THEN
         fetch_secret_mock.assert_called_once_with(password_arn)
         assert isinstance(result, WindowsSessionUser)
         assert result.user == user
-        assert result.group == group
         assert result.password == secret_data["password"]
 
     @mark.skipif(os.name != "nt", reason="Windows-only test.")
@@ -104,12 +98,11 @@ class TestWindowsCredentialsResolver:
         secret_data = {"something-other-than-password": "fake_password"}
         fetch_secret_mock.return_value = secret_data
         user = "new_user"
-        group = "new_group"
         password_arn = "new_password_arn"
 
         # WHEN
         with pytest.raises(ValueError):
-            resolver.get_windows_session_user(user, group, password_arn)
+            resolver.get_windows_session_user(user, password_arn)
 
         # THEN
         fetch_secret_mock.assert_called_once_with(password_arn)
@@ -126,8 +119,7 @@ class TestWindowsCredentialsResolver:
         resolver = credentials_mod.WindowsCredentialsResolver(mock_boto_session)
         password_arn = "password_arn"
         user = "user"
-        group = "group"
-        user_obj = WindowsSessionUser(user=user, group=group, password="fake_cached_password")
+        user_obj = WindowsSessionUser(user=user, password="fake_cached_password")
         cached_entry = credentials_mod._WindowsCredentialsCacheEntry(
             windows_session_user=user_obj,
             last_fetched_at=now - timedelta(hours=11),
@@ -138,13 +130,12 @@ class TestWindowsCredentialsResolver:
         fetch_secret_mock.return_value = secret_data
 
         # WHEN
-        result = resolver.get_windows_session_user(user, group, password_arn)
+        result = resolver.get_windows_session_user(user, password_arn)
 
         # THEN
         fetch_secret_mock.assert_not_called()
         assert isinstance(result, WindowsSessionUser)
         assert result.user == user
-        assert result.group == group
         assert result.password == "fake_cached_password"
 
     @mark.skipif(os.name != "nt", reason="Windows-only test.")
@@ -160,7 +151,6 @@ class TestWindowsCredentialsResolver:
         secret_data = {"password": "fake_password"}
         fetch_secret_mock.return_value = secret_data
         user = "new_user"
-        group = "new_group"
         password_arn = "new_password_arn"
 
         with patch(
@@ -169,7 +159,7 @@ class TestWindowsCredentialsResolver:
         ):
             # WHEN
             with pytest.raises(ValueError):
-                resolver.get_windows_session_user(user, group, password_arn)
+                resolver.get_windows_session_user(user, password_arn)
                 assert resolver._user_cache[f"{user}_{password_arn}"].windows_session_user is None
 
     @pytest.mark.parametrize(

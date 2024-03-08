@@ -19,7 +19,7 @@ def os_user() -> SessionUser:
     if os.name == "posix":
         return PosixSessionUser(user="user1", group="group1")
     else:
-        return WindowsSessionUser(user="user1", group="group1", password="fakepassword")
+        return WindowsSessionUser(user="user1", password="fakepassword")
 
 
 @pytest.fixture
@@ -36,9 +36,7 @@ def job_details_with_user(os_user) -> JobDetails:
             log_group_name="/aws/deadline/queue-0000",
             schema_version=SpecificationRevision.v2023_09,
             job_run_as_user=JobRunAsUser(
-                windows_settings=JobRunAsWindowsUser(
-                    user="user1", group="group1", passwordArn="anarn"
-                )
+                windows_settings=JobRunAsWindowsUser(user="user1", passwordArn="anarn")
             ),
         )
 
@@ -76,7 +74,6 @@ def job_details_no_user() -> JobDetails:
                 "jobRunAsUser": {
                     "windows": {
                         "user": "user1",
-                        "group": "group1",
                         "passwordArn": "anarn",
                     },
                 },
@@ -191,7 +188,6 @@ def job_details_no_user() -> JobDetails:
                     },
                     "windows": {
                         "user": "user1",
-                        "group": "group1",
                         "passwordArn": "anarn",
                     },
                     "runAs": "QUEUE_CONFIGURED_USER",
@@ -274,7 +270,6 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                     },
                     "windows": {
                         "user": "user1",
-                        "group": "group1",
                         "passwordArn": "anarn",
                     },
                 },
@@ -294,7 +289,6 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                     },
                     "windows": {
                         "user": "user1",
-                        "group": "group1",
                         "passwordArn": "anarn",
                     },
                     "runAs": "QUEUE_CONFIGURED_USER",
@@ -361,13 +355,12 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                 "jobRunAsUser": {
                     "windows": {
                         "user": "",
-                        "group": "",
                         "passwordArn": "",
                     },
                 },
             },
             "job_details_no_user",
-            id="required with empty windows user/group",
+            id="required with empty windows user",
         ),
         pytest.param(
             {
@@ -517,7 +510,7 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
                 "jobRunAsUser": {
-                    "windows": {"group": "group1", "passwordArn": "anarn"},
+                    "windows": {"passwordArn": "anarn"},
                     "runAs": "QUEUE_CONFIGURED_USER",
                 },
             },
@@ -536,19 +529,6 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
                 },
             },
             id="nonvalid jobRunAsUser - missing posix group",
-        ),
-        pytest.param(
-            {
-                "jobId": "job-0000",
-                "logGroupName": "/aws/deadline/queue-0000",
-                "schemaVersion": "jobtemplate-0000-00",
-                "jobRunAsUser": {
-                    "windows": {"user": "user1", "passwordArn": "anarn"},
-                    "runAs": "QUEUE_CONFIGURED_USER",
-                },
-            },
-            marks=pytest.mark.skipif(os.name != "nt", reason="Windows-only test."),
-            id="nonvalid jobRunAsUser - missing windows group",
         ),
         pytest.param(
             {
@@ -587,7 +567,6 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
                     "windows": {
                         # Empty value
                         "user": "",
-                        "group": "abc",
                         "passwordArn": "anarn",
                     },
                     "runAs": "QUEUE_CONFIGURED_USER",
@@ -619,24 +598,6 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
                 "jobRunAsUser": {
                     "windows": {
                         "user": "abc",
-                        # Empty value
-                        "group": "",
-                        "passwordArn": "anarn",
-                    },
-                    "runAs": "QUEUE_CONFIGURED_USER",
-                },
-            },
-            id="nonvalid new-style jobRunAsUser - empty windows group",
-        ),
-        pytest.param(
-            {
-                "jobId": "job-0000",
-                "logGroupName": "/aws/deadline/queue-0000",
-                "schemaVersion": "jobtemplate-0000-00",
-                "jobRunAsUser": {
-                    "windows": {
-                        "user": "abc",
-                        "group": "abc",
                         # Empty value
                         "passwordArn": "",
                     },
@@ -762,7 +723,7 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
                 "jobRunAsUser": {
-                    "windows": {"user": "user1", "group": "group1", "passwordArn": "anarn"},
+                    "windows": {"user": "user1", "passwordArn": "anarn"},
                     "runAs": "QUEUE_CONFIGURED_USER",
                 },
             },

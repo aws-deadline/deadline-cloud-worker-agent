@@ -487,7 +487,7 @@ class TestCreateCredentialsDirectory:
                 parents=True,
                 permitted_user=os_user,
                 agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
-                group_permission=FileSystemPermissionEnum.READ,
+                user_permission=FileSystemPermissionEnum.READ,
             )
 
     def test_reraises_oserror(
@@ -668,7 +668,7 @@ class TestInstallCredentialProcess:
                     file_path=credentials_process_script_path,
                     permitted_user=os_user,
                     agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
-                    group_permission=FileSystemPermissionEnum.EXECUTE,
+                    user_permission=FileSystemPermissionEnum.EXECUTE,
                 )
 
         aws_config_mock.install_credential_process.assert_called_once_with(

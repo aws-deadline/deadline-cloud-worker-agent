@@ -329,7 +329,7 @@ class JobEntities:
             if windows_settings is not None and self._windows_credentials_resolver is not None:
                 job_details.job_run_as_user.windows = (
                     self._windows_credentials_resolver.get_windows_session_user(
-                        windows_settings.user, windows_settings.group, windows_settings.passwordArn
+                        windows_settings.user, windows_settings.passwordArn
                     )
                 )
 
