@@ -49,6 +49,7 @@ class OsConfigSection(BaseModel):
         regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
     )
     shutdown_on_stop: Optional[bool] = None
+    retain_session_dir: Optional[bool] = None
 
     @root_validator(pre=True)
     def _disallow_impersonation(cls, values: dict[str, Any]) -> dict[str, Any]:
@@ -136,6 +137,8 @@ class ConfigFile(BaseModel):
             output_settings["run_jobs_as_agent_user"] = self.os.run_jobs_as_agent_user
         if self.os.posix_job_user is not None:
             output_settings["posix_job_user"] = self.os.posix_job_user
+        if self.os.retain_session_dir is not None:
+            output_settings["retain_session_dir"] = self.os.retain_session_dir
         if self.capabilities is not None:
             output_settings["capabilities"] = self.capabilities
 

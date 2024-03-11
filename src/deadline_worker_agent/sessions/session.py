@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from logging import getLogger, LoggerAdapter
+from pathlib import Path
 from threading import Event, RLock
 from time import monotonic, sleep
 from types import TracebackType
@@ -85,6 +86,7 @@ OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
     ActionState.SUCCESS: "SUCCEEDED",
     ActionState.TIMEOUT: "FAILED",
 }
+DEFAULT_POSIX_OPENJD_SESSION_DIR = Path("/var/tmp/openjd")
 TIME_DELTA_ZERO = timedelta()
 
 # During a SYNC_INPUT_JOB_ATTACHMENTS session action, the transfer rate is periodically reported through
@@ -151,6 +153,7 @@ class Session:
 
     _os_user: SessionUser | None = None
     _queue_id: str
+    _retain_session_dir: bool = False
     _job_details: JobDetails
     _job_attachment_details: JobAttachmentDetails | None = None
     _initial_action_exception: Exception | None = None
@@ -170,6 +173,7 @@ class Session:
         queue_id: str,
         asset_sync: Optional[AssetSync],
         os_user: SessionUser | None,
+        retain_session_dir: bool = False,
         job_details: JobDetails,
         action_update_callback: Callable[[SessionActionStatus], None],
         action_update_lock: RLock,
@@ -181,6 +185,7 @@ class Session:
         self._current_action_lock = RLock()
         self._queue_id = queue_id
         self._os_user = os_user
+        self._retain_session_dir = retain_session_dir
         self._job_details = job_details
         self._report_action_update = action_update_callback
         self._env = env
@@ -189,13 +194,19 @@ class Session:
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
 
+        session_root_directory: Optional[Path] = None
+        if os.name == "posix":
+            session_root_directory = DEFAULT_POSIX_OPENJD_SESSION_DIR
+
         self._session = OPENJDSession(
             session_id=self._id,
             job_parameter_values=self._job_details.parameters,
             path_mapping_rules=self._job_details.path_mapping_rules,
+            retain_working_dir=self._retain_session_dir,
             user=self._os_user,
             callback=openjd_session_action_callback,
             os_env_vars=self._env,
+            session_root_directory=session_root_directory,
         )
 
         self._queue = queue

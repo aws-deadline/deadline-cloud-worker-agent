@@ -68,6 +68,8 @@ class WorkerSettings(BaseSettings):
         Whether to log host metrics
     host_metrics_logging_interval_seconds : float
         The interval between host metrics log messages
+    retain_session_dir : bool
+        If true, then the OpenJD's session directory will not be removed after the job is finished.
     """
 
     farm_id: str = Field(regex=r"^farm-[a-z0-9]{32}$")
@@ -89,6 +91,7 @@ class WorkerSettings(BaseSettings):
     local_session_logs: bool = True
     host_metrics_logging: bool = True
     host_metrics_logging_interval_seconds: float = 60
+    retain_session_dir: bool = False
 
     class Config:
         fields = {
@@ -111,6 +114,7 @@ class WorkerSettings(BaseSettings):
             "host_metrics_logging_interval_seconds": {
                 "env": "DEADLINE_WORKER_HOST_METRICS_LOGGING_INTERVAL_SECONDS"
             },
+            "retain_session_dir": {"env": "DEADLINE_WORKER_RETAIN_SESSION_DIR"},
         }
 
         @classmethod
@@ -134,7 +138,7 @@ class WorkerSettings(BaseSettings):
             init_settings : pydantic.env_settings.SettingsSourceCallable
                 The pydantic built-in init arguments settings source
             env_settings : pydantic.env_settings.SettingsSourceCallable
-                The pydantic built-in environment variable setting ssource
+                The pydantic built-in environment variable settings source
             file_secret_settings : pydantic.env_settings.SettingsSourceCallable
                 The pydantic built-in (Docker) secret file settings source
 

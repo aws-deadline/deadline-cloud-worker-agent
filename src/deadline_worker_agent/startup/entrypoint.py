@@ -96,7 +96,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
 
         # Let's treat this log line as a contract. It's the last thing that we'll
         # emit to the bootstrapping log, and external systems can use it as a
-        # sentinel to know that the worker has progressed sucessfully to processing
+        # sentinel to know that the worker has progressed successfully to processing
         # jobs.
         _logger.info("Worker successfully bootstrapped and is now running.")
 
@@ -134,6 +134,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
                 worker_logs_dir=config.worker_logs_dir if config.local_session_logs else None,
                 host_metrics_logging=config.host_metrics_logging,
                 host_metrics_logging_interval_seconds=config.host_metrics_logging_interval_seconds,
+                retain_session_dir=config.retain_session_dir,
             )
             try:
                 worker_sessions.run()

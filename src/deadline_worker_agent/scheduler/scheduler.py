@@ -157,6 +157,7 @@ class WorkerScheduler:
     _boto_session: BotoSession
     _worker_persistence_dir: Path
     _worker_logs_dir: Path | None
+    _retain_session_dir: bool
 
     # Map from queueId -> QueueAwsCredentials.
     _queue_aws_credentials: dict[str, QueueAwsCredentials]
@@ -176,6 +177,7 @@ class WorkerScheduler:
         cleanup_session_user_processes: bool,
         worker_persistence_dir: Path,
         worker_logs_dir: Path | None,
+        retain_session_dir: bool = False,
     ) -> None:
         """Queue of Worker Sessions and their actions
 
@@ -209,6 +211,7 @@ class WorkerScheduler:
         self._queue_aws_credentials_lock = Lock()
         self._worker_persistence_dir = worker_persistence_dir
         self._worker_logs_dir = worker_logs_dir
+        self._retain_session_dir = retain_session_dir
 
     def _assign_sessions(self) -> None:
         """Handles an AssignSessions API cycle"""
@@ -778,6 +781,7 @@ class WorkerScheduler:
                 asset_sync=asset_sync,
                 job_details=job_details,
                 os_user=os_user,
+                retain_session_dir=self._retain_session_dir,
                 action_update_callback=self._handle_session_action_update,
                 action_update_lock=self._action_update_lock,
             )
