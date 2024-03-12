@@ -79,6 +79,11 @@ def vfs_install_path() -> str:
 
 
 @pytest.fixture
+def grant_existing_user_rights() -> bool:
+    return True
+
+
+@pytest.fixture
 def parsed_args(
     farm_id: str,
     fleet_id: str,
@@ -92,6 +97,7 @@ def parsed_args(
     install_service: bool,
     telemetry_opt_out: bool,
     vfs_install_path: str,
+    grant_existing_user_rights: bool,
 ) -> ParsedCommandLineArguments:
     parsed_args = ParsedCommandLineArguments()
     parsed_args.farm_id = farm_id
@@ -106,6 +112,7 @@ def parsed_args(
     parsed_args.install_service = install_service
     parsed_args.telemetry_opt_out = telemetry_opt_out
     parsed_args.vfs_install_path = vfs_install_path
+    parsed_args.grant_existing_user_rights = grant_existing_user_rights
     return parsed_args
 
 

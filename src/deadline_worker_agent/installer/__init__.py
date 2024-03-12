@@ -48,6 +48,8 @@ def install() -> None:
             installer_args.update(password=args.password)
         if args.telemetry_opt_out:
             installer_args.update(telemetry_opt_out=args.telemetry_opt_out)
+        if args.grant_existing_user_rights:
+            installer_args.update(grant_existing_user_rights=args.grant_existing_user_rights)
 
         start_windows_installer(**installer_args)
     else:
@@ -104,6 +106,7 @@ class ParsedCommandLineArguments(Namespace):
     install_service: bool
     telemetry_opt_out: bool
     vfs_install_path: str
+    grant_existing_user_rights: bool
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
@@ -190,6 +193,13 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
             ),
             required=False,
             default=None,
+        )
+        parser.add_argument(
+            "--grant-existing-user-rights",
+            help="Allows the installer to grant an existing user any missing user rights required to run the worker agent",
+            action="store_true",
+            required=False,
+            default=False,
         )
 
     return parser

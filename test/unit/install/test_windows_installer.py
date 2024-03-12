@@ -12,9 +12,10 @@ import pytest
 if sys.platform != "win32":
     pytest.skip("Windows-specific tests", allow_module_level=True)
 
+from pywintypes import error as PyWinTypesError
 from deadline_worker_agent.installer.win_installer import (
-    ensure_local_queue_user_group_exists,
-    ensure_local_agent_user,
+    create_local_queue_user_group,
+    create_local_agent_user,
     generate_password,
     start_windows_installer,
     validate_deadline_id,
@@ -61,6 +62,7 @@ def test_start_windows_installer(
                 password=parsed_args.password,
                 allow_shutdown=parsed_args.allow_shutdown,
                 telemetry_opt_out=parsed_args.telemetry_opt_out,
+                grant_existing_user_rights=parsed_args.grant_existing_user_rights,
             )
 
 
@@ -108,59 +110,38 @@ def test_group_creation_failure(group_name):
         "win32net.NetLocalGroupAdd", side_effect=Exception("Test Failure")
     ), patch("logging.error") as mock_log_error:
         with pytest.raises(Exception):
-            ensure_local_queue_user_group_exists(group_name)
+            create_local_queue_user_group(group_name)
         mock_log_error.assert_called_with(
             f"Failed to create group {group_name}. Error: Test Failure"
         )
 
 
-def test_unexpected_error_code_handling(group_name):
-    with patch("win32net.NetLocalGroupGetInfo", side_effect=MockPyWinTypesError(9999)), patch(
-        "win32net.NetLocalGroupAdd"
-    ) as mock_group_add, patch("logging.error"):
-        with pytest.raises(PyWinTypesError):
-            ensure_local_queue_user_group_exists(group_name)
-        mock_group_add.assert_not_called()
-
-
-def test_ensure_local_agent_user_raises_exception_on_creation_failure():
+def test_create_local_agent_user_raises_exception_on_creation_failure():
     username = "testuser"
     password = "password123"
     error_message = "System error"
     with patch(
-        "deadline_worker_agent.installer.win_installer.check_user_existence", return_value=False
+        "deadline_worker_agent.installer.win_installer.check_account_existence", return_value=False
     ), patch("win32net.NetUserAdd") as mocked_net_user_add, patch(
         "deadline_worker_agent.installer.win_installer.logging.error"
     ) as mocked_logging_error:
         mocked_net_user_add.side_effect = Exception(error_message)
 
         with pytest.raises(Exception):
-            ensure_local_agent_user(username, password)
+            create_local_agent_user(username, password)
 
         mocked_logging_error.assert_called_once_with(
             f"Failed to create user '{username}'. Error: {error_message}"
         )
 
 
-@patch("win32net.NetUserAdd")
-def test_ensure_local_agent_user_logs_info_if_user_exists(mock_net_user_add: MagicMock):
-    username = "existinguser"
-    password = "password123"
-    with patch(
-        "deadline_worker_agent.installer.win_installer.check_user_existence", return_value=True
-    ), patch("deadline_worker_agent.installer.win_installer.logging.info") as mocked_logging_info:
-        ensure_local_agent_user(username, password)
-        mock_net_user_add.assert_not_called()
-        mocked_logging_info.assert_called_once_with(f"Agent User {username} already exists")
-
-
-def test_ensure_local_agent_user_correct_parameters_passed_to_netuseradd():
+def test_create_local_agent_user_correct_parameters_passed_to_netuseradd():
     username = "newuser"
     password = "password123"
     with patch(
-        "deadline_worker_agent.installer.win_installer.check_user_existence", return_value=False
+        "deadline_worker_agent.installer.win_installer.check_account_existence", return_value=False
     ), patch("win32net.NetUserAdd") as mocked_net_user_add:
-        ensure_local_agent_user(username, password)
+        create_local_agent_user(username, password)
 
         expected_user_info = {
             "name": username,
