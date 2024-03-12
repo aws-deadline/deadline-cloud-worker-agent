@@ -113,6 +113,20 @@ def job_details_no_user() -> JobDetails:
                 "jobId": "job-0000",
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "",
+                        "group": "",
+                    },
+                },
+            },
+            id="only required fields, empty user",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
                 "parameters": {
                     "param1": {
                         "string": "param1value",

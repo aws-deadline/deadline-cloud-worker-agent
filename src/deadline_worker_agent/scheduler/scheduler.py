@@ -212,6 +212,7 @@ class WorkerScheduler:
         self._queue_aws_credentials_lock = Lock()
         self._worker_persistence_dir = worker_persistence_dir
         self._worker_logs_dir = worker_logs_dir
+        self._retain_session_dir = retain_session_dir
         self._windows_credentials_resolver: Optional[WindowsCredentialsResolver]
 
         if os.name == "nt":
