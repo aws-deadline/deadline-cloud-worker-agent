@@ -26,4 +26,5 @@ jobs:
         uses: aws-actions/aws-codebuild-run-build@v1
         with:
           project-name: deadline-cloud-worker-agent-Canary
+          source-version-override: release
           hide-cloudwatch-logs: true
