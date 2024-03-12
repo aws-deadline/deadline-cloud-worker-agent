@@ -38,6 +38,7 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "local_session_logs": None,
         "host_metrics_logging": True,
         "host_metrics_logging_interval_seconds": 10,
+        "retain_session_dir": False,
     }
 
     class FakeWorkerSettings:
@@ -360,6 +361,29 @@ class TestLoad:
 
         # THEN
         assert config.local_session_logs == local_session_logs
+
+    @pytest.mark.parametrize(
+        argnames="retain_session_dir",
+        argvalues=(
+            True,
+            False,
+        ),
+    )
+    def test_uses_retain_session_dir(
+        self,
+        parsed_args: config_mod.ParsedCommandLineArguments,
+        retain_session_dir: bool,
+    ) -> None:
+        # GIVEN
+        parsed_args.retain_session_dir = retain_session_dir
+        parsed_args.farm_id = "farm_id"
+        parsed_args.fleet_id = "fleet_id"
+
+        # WHEN
+        config = config_mod.Configuration.load()
+
+        # THEN
+        assert config.retain_session_dir == retain_session_dir
 
     def test_impersonation_mutual_exclusion(
         self, parsed_args: config_mod.ParsedCommandLineArguments
@@ -811,6 +835,35 @@ class TestInit:
             assert call.kwargs.get("local_session_logs") == local_session_logs
         else:
             assert "local_session_logs" not in call.kwargs
+
+    @pytest.mark.parametrize(
+        argnames="retain_session_dir",
+        argvalues=(
+            True,
+            False,
+            None,
+        ),
+    )
+    def test_retain_session_dir_passed_to_settings_initializer(
+        self,
+        retain_session_dir: bool | None,
+        parsed_args: ParsedCommandLineArguments,
+        mock_worker_settings_cls: MagicMock,
+    ) -> None:
+        # GIVEN
+        parsed_args.retain_session_dir = retain_session_dir
+
+        # WHEN
+        config_mod.Configuration(parsed_cli_args=parsed_args)
+
+        # THEN
+        mock_worker_settings_cls.assert_called_once()
+        call = mock_worker_settings_cls.call_args_list[0]
+
+        if retain_session_dir is not None:
+            assert call.kwargs.get("retain_session_dir") == retain_session_dir
+        else:
+            assert "retain_session_dir" not in call.kwargs
 
     @pytest.mark.parametrize(
         argnames=("posix_job_user_setting", "expected_config_posix_job_user"),

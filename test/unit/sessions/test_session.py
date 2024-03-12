@@ -33,13 +33,16 @@ from openjd.sessions import (
 
 from deadline_worker_agent.api_models import EnvironmentAction, TaskRunAction
 from deadline_worker_agent.sessions import Session
-from deadline_worker_agent.sessions import session as session_module
+import deadline_worker_agent.sessions.session as session_mod
 from deadline_worker_agent.sessions.session import (
+    LOW_TRANSFER_RATE_THRESHOLD,
+    LOW_TRANSFER_COUNT_THRESHOLD,
     CurrentAction,
     SessionActionStatus,
 )
 from deadline_worker_agent.sessions.actions import (
     EnterEnvironmentAction,
+    ExitEnvironmentAction,
     RunStepTaskAction,
 )
 from deadline_worker_agent.sessions.job_entities import (
@@ -59,9 +62,12 @@ from deadline.job_attachments.os_file_permission import (
     WindowsFileSystemPermissionSettings,
     WindowsPermissionEnum,
 )
-from deadline.job_attachments.progress_tracker import SummaryStatistics
 
-import deadline_worker_agent.sessions.session as session_mod
+from deadline.job_attachments.progress_tracker import (
+    ProgressReportMetadata,
+    ProgressStatus,
+    SummaryStatistics,
+)
 
 
 @pytest.fixture
@@ -134,15 +140,13 @@ def action_update_lock() -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def mock_telemetry_event_for_sync_inputs() -> Generator[MagicMock, None, None]:
-    with patch.object(session_module, "record_sync_inputs_telemetry_event") as mock_telemetry_event:
+    with patch.object(session_mod, "record_sync_inputs_telemetry_event") as mock_telemetry_event:
         yield mock_telemetry_event
 
 
 @pytest.fixture(autouse=True)
 def mock_telemetry_event_for_sync_outputs() -> Generator[MagicMock, None, None]:
-    with patch.object(
-        session_module, "record_sync_outputs_telemetry_event"
-    ) as mock_telemetry_event:
+    with patch.object(session_mod, "record_sync_outputs_telemetry_event") as mock_telemetry_event:
         yield mock_telemetry_event
 
 
@@ -201,6 +205,42 @@ def run_step_task_action(
         step_id=step_id,
         task_id=task_id,
         task_parameter_values=dict[str, ParameterValue](),
+    )
+
+
+@pytest.fixture
+def enter_env_action(
+    action_id: str,
+    job_env_id: str,
+) -> EnterEnvironmentAction:
+    """A fixture that provides a EnterEnvironmentAction"""
+    return EnterEnvironmentAction(
+        details=EnvironmentDetails(
+            environment=Environment(
+                name="EnvName",
+                script=EnvironmentScript(
+                    actions=EnvironmentActions(
+                        onEnter=Action(
+                            command="test",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        id=action_id,
+        job_env_id=job_env_id,
+    )
+
+
+@pytest.fixture
+def exit_env_action(
+    action_id: str,
+    job_env_id: str,
+) -> ExitEnvironmentAction:
+    """A fixture that provides a ExitEnvironmentAction"""
+    return ExitEnvironmentAction(
+        id=action_id,
+        environment_id=job_env_id,
     )
 
 
@@ -393,6 +433,44 @@ class TestSessionInit:
             )
         else:
             assert not mock_openjd_session_cls.call_args.kwargs.get("path_mapping_rules", False)
+
+    @pytest.mark.parametrize(
+        "env",
+        [
+            pytest.param([], id="0 env variables"),
+            pytest.param(
+                [{"DEADLINE_SESSION_ID": "mock_session_id"}],
+                id="1 env variable",
+            ),
+            pytest.param(
+                [
+                    {
+                        "DEADLINE_SESSION_ID": "mock_session_id",
+                        "DEADLINE_FARM_ID": "mock_farm_id",
+                        "DEADLINE_QUEUE_ID": "mock_queue_id",
+                        "DEADLINE_JOB_ID": "mock_job_id",
+                        "DEADLINE_FLEET_ID": "mock_fleet_id",
+                        "DEADLINE_WORKER_ID": "mock_worker_id",
+                    }
+                ],
+                id="multiple env variables",
+            ),
+        ],
+    )
+    def test_has_env_variables(
+        self,
+        session: Session,
+        mock_openjd_session_cls: MagicMock,
+        env: dict[str, str],
+    ):
+        """Ensure that when we have env variables that we're passing them to the Open Job Description session"""
+        # GIVEN / WHEN / THEN
+        assert session is not None
+        mock_openjd_session_cls.assert_called_once()
+        if env:
+            assert env == mock_openjd_session_cls.call_args.kwargs["os_env_vars"]
+        else:
+            assert not mock_openjd_session_cls.call_args.kwargs.get("os_env_vars", False)
 
 
 class TestSessionOuterRun:
@@ -593,6 +671,11 @@ class TestSessionSyncAssetInputs:
             os_env_vars=None,
         )
 
+        mock_telemetry_event_for_sync_inputs.assert_called_once_with(
+            "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            SummaryStatistics(),
+        )
+
     def test_sync_asset_inputs_with_fs_permission_settings(
         self,
         session: Session,
@@ -724,6 +807,77 @@ class TestSessionSyncAssetInputs:
             assert mock_telemetry_event_for_sync_inputs.call_count == len(
                 sync_asset_inputs_args_sequence
             )
+
+    def test_sync_asset_inputs_cancellation_by_low_transfer_rate(
+        self,
+        session: Session,
+        mock_asset_sync: MagicMock,
+    ):
+        """
+        Tests that the session is canceled if it observes a series of alarmingly low transfer rates.
+        """
+
+        # Mock out the Job Attachment's sync_inputs function to report multiple consecutive low transfer rates
+        # (lower than the threshold) via callback function.
+        def mock_sync_inputs(on_downloading_files, *args, **kwargs):
+            low_transfer_rate_report = ProgressReportMetadata(
+                status=ProgressStatus.DOWNLOAD_IN_PROGRESS,
+                progress=0.0,
+                transferRate=LOW_TRANSFER_RATE_THRESHOLD / 2,
+                progressMessage="",
+            )
+            for _ in range(LOW_TRANSFER_COUNT_THRESHOLD):
+                on_downloading_files(low_transfer_rate_report)
+            return ({}, {})
+
+        mock_asset_sync.sync_inputs = mock_sync_inputs
+        mock_cancel = MagicMock(spec=Event)
+
+        with patch.object(session, "update_action") as mock_update_action, patch.object(
+            session_mod, "record_sync_inputs_fail_telemetry_event"
+        ) as mock_record_sync_inputs_fail_telemetry_event:
+            session.sync_asset_inputs(
+                cancel=mock_cancel,
+                job_attachment_details=JobAttachmentDetails(
+                    manifests=[],
+                    job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
+                ),
+            )
+        mock_cancel.set.assert_called_once()
+        mock_update_action.assert_called_with(
+            ActionStatus(
+                state=ActionState.FAILED,
+                fail_message=(
+                    f"Input syncing failed due to successive low transfer rates (< {LOW_TRANSFER_RATE_THRESHOLD / 1000} KB/s). "
+                    f"The transfer rate was below the threshold for the last {session._seconds_to_minutes_str(LOW_TRANSFER_COUNT_THRESHOLD)}."
+                ),
+            ),
+        )
+        mock_record_sync_inputs_fail_telemetry_event.assert_called_once_with(
+            queue_id="queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            failure_reason=(
+                "Insufficient download speed: "
+                f"Input syncing failed due to successive low transfer rates (< {LOW_TRANSFER_RATE_THRESHOLD / 1000} KB/s). "
+                f"The transfer rate was below the threshold for the last {session._seconds_to_minutes_str(LOW_TRANSFER_COUNT_THRESHOLD)}."
+            ),
+        )
+
+    @pytest.mark.parametrize(
+        "seconds, expected_str",
+        [
+            (0, "0 seconds"),
+            (1, "1 second"),
+            (30, "30 seconds"),
+            (60, "1 minute"),
+            (61, "1 minute 1 second"),
+            (90, "1 minute 30 seconds"),
+            (120, "2 minutes"),
+            (121, "2 minutes 1 second"),
+            (150, "2 minutes 30 seconds"),
+        ],
+    )
+    def test_seconds_to_minutes_str(self, session: Session, seconds: int, expected_str: str):
+        assert session._seconds_to_minutes_str(seconds) == expected_str
 
 
 class TestSessionSyncAssetOutputs:
@@ -1091,6 +1245,38 @@ class TestSessionUpdateAction:
         current_action_lock_exit.assert_called_once()
         mock_report_action_update.assert_not_called()
 
+    def test_timeout_messaging(
+        self,
+        session: Session,
+        # We don't use the value of this fixture, but requiring it has the side-effect of assigning
+        # it as the current action of the session
+        current_action: CurrentAction,
+    ) -> None:
+        """Test that when an action is reported as TIMEOUT then we:
+        1) Cancel all subsequent tasks as NEVER_ATTEMPTED; and
+        2) Have an appropriate failure message on the action.
+        """
+        # GIVEN
+        status = ActionStatus(state=ActionState.TIMEOUT, exit_code=-1, progress=24.4)
+        with (
+            patch.object(session._queue, "cancel_all") as mock_cancel_all,
+            patch.object(session, "_report_action_update") as mock_report_action_update,
+        ):
+            # WHEN
+            session.update_action(status)
+
+        # THEN
+        mock_cancel_all.assert_called_once_with(message=ANY, ignore_env_exits=True)
+        assert "TIMEOUT" in mock_cancel_all.call_args.kwargs["message"]
+        mock_report_action_update.assert_called_once()
+        session_status = mock_report_action_update.call_args.args[0]
+        assert session_status.completed_status == "FAILED"
+        called_with_status = session_status.status
+        assert called_with_status.state == ActionState.TIMEOUT
+        assert "TIMEOUT" in called_with_status.fail_message
+        assert called_with_status.exit_code == status.exit_code
+        assert called_with_status.progress == status.progress
+
 
 class TestSessionActionUpdatedImpl:
     """Test cases for Session._action_updated_impl()"""
@@ -1138,7 +1324,7 @@ class TestSessionActionUpdatedImpl:
         session._current_action = current_action
         queue_cancel_all: MagicMock = session_action_queue.cancel_all
         expected_next_action_message = failed_action_status.fail_message or (
-            f"Action {current_action.definition.human_readable()} failed"
+            f"Previous action failed: {current_action.definition.human_readable()}"
         )
         expected_action_update = SessionActionStatus(
             id=action_id,
@@ -1158,7 +1344,6 @@ class TestSessionActionUpdatedImpl:
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
         queue_cancel_all.assert_called_once_with(
-            cancel_outcome="NEVER_ATTEMPTED",
             message=expected_next_action_message,
             ignore_env_exits=True,
         )
@@ -1206,7 +1391,7 @@ class TestSessionActionUpdatedImpl:
         session._current_action = current_action
         queue_cancel_all: MagicMock = session_action_queue.cancel_all
         expected_next_action_message = failed_action_status.fail_message or (
-            f"Action {current_action.definition.human_readable()} failed"
+            f"Previous action failed: {current_action.definition.human_readable()}"
         )
         expected_action_update = SessionActionStatus(
             id=action_id,
@@ -1226,7 +1411,6 @@ class TestSessionActionUpdatedImpl:
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
         queue_cancel_all.assert_called_once_with(
-            cancel_outcome="NEVER_ATTEMPTED",
             message=expected_next_action_message,
             ignore_env_exits=True,
         )
@@ -1283,7 +1467,7 @@ class TestSessionActionUpdatedImpl:
         def mock_now(*arg, **kwarg) -> datetime:
             return action_complete_time
 
-        with patch.object(session_module, "datetime") as mock_datetime, patch.object(
+        with patch.object(session_mod, "datetime") as mock_datetime, patch.object(
             session, "_sync_asset_outputs"
         ) as mock_sync_asset_outputs:
             mock_datetime.now.side_effect = mock_now
@@ -1364,7 +1548,7 @@ class TestSessionActionUpdatedImpl:
         def mock_now(*arg, **kwarg) -> datetime:
             return action_complete_time
 
-        with patch.object(session_module, "datetime") as mock_datetime, patch.object(
+        with patch.object(session_mod, "datetime") as mock_datetime, patch.object(
             session, "_sync_asset_outputs", side_effect=sync_outputs_exception
         ) as mock_sync_asset_outputs:
             mock_datetime.now.side_effect = mock_now
@@ -1378,7 +1562,6 @@ class TestSessionActionUpdatedImpl:
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
         queue_cancel_all.assert_called_once_with(
-            cancel_outcome="NEVER_ATTEMPTED",
             message=expected_fail_action_status.fail_message,
             ignore_env_exits=True,
         )
@@ -1706,7 +1889,6 @@ class TestSessionCleanup:
 
         # THEN
         mock_queue_cancel_all.assert_called_once_with(
-            cancel_outcome="NEVER_ATTEMPTED",
             message=session._stop_fail_message,
         )
 
@@ -1725,6 +1907,31 @@ class TestSessionCleanup:
 
         # THEN
         openjd_session_cleanup.assert_called_once_with()
+
+    @pytest.fixture()
+    def mock_asset_sync(self, session: Session) -> Generator[MagicMock, None, None]:
+        with patch.object(session, "_asset_sync") as mock_asset_sync:
+            yield mock_asset_sync
+
+    def test_calls_asset_sync_cleanup(
+        self,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+        mock_asset_sync: MagicMock,
+        mock_openjd_session: MagicMock,
+    ) -> None:
+        # GIVEN
+        mock_asset_sync_cleanup: MagicMock = mock_asset_sync.cleanup_session
+        session._job_attachment_details = job_attachment_details
+
+        # WHEN
+        session._cleanup()
+
+        # THEN
+        mock_asset_sync_cleanup.assert_called_once_with(
+            session_dir=mock_openjd_session.working_directory,
+            file_system=job_attachment_details.job_attachments_file_system,
+        )
 
 
 class TestSessionStartAction:
@@ -1785,7 +1992,6 @@ class TestSessionStartAction:
         )
         mock_queue_cancel_all.assert_called_once_with(
             message=f"Error starting prior action {run_step_task_action.id}",
-            cancel_outcome="FAILED",
             ignore_env_exits=True,
         )
         assert session._current_action is None
@@ -1857,7 +2063,6 @@ class TestSessionStartAction:
         )
         mock_queue_cancel_all.assert_called_once_with(
             message=f"Error starting prior action {run_step_task_action.id}",
-            cancel_outcome="FAILED",
             ignore_env_exits=True,
         )
         assert session._current_action is None
@@ -1868,3 +2073,97 @@ class TestSessionStartAction:
             run_step_task_action.human_readable(),
             exception,
         )
+
+    def test_run_action_with_env_variables(
+        self,
+        session: Session,
+        run_step_task_action: RunStepTaskAction,
+        mock_mod_logger: MagicMock,
+    ) -> None:
+        """
+        Tests that env variables are passed from Run step task action when _start_action is successfully called
+        """
+
+        # GIVEN
+        logger_info: MagicMock = mock_mod_logger.info
+
+        with (
+            patch.object(session._queue, "dequeue", return_value=run_step_task_action),
+            patch.object(session, "run_task") as session_run_task,
+        ):
+            # WHEN
+            session._start_action()
+
+        # THEN
+        logger_info.assert_called_once_with(
+            "[%s] [%s] (%s): Starting action",
+            session.id,
+            run_step_task_action.id,
+            run_step_task_action.human_readable(),
+        )
+
+        session_run_task.assert_called_once()
+        session_run_task.call_args.kwargs["os_env_vars"] == {
+            "DEADLINE_SESSIONACTION_ID": run_step_task_action.id,
+            "DEADLINE_TASK_ID": run_step_task_action.task_id,
+        }
+
+    def test_enter_env_action_called_with_env_variables(
+        self,
+        session: Session,
+        enter_env_action: EnterEnvironmentAction,
+        mock_mod_logger: MagicMock,
+    ) -> None:
+        """Tests that env variables are passed when enter environment action is called"""
+        # GIVEN
+        logger_info: MagicMock = mock_mod_logger.info
+
+        with (
+            patch.object(session._queue, "dequeue", return_value=enter_env_action),
+            patch.object(session, "enter_environment") as session_enter_env,
+        ):
+            # WHEN
+            session._start_action()
+
+        # THEN
+        logger_info.assert_called_once_with(
+            "[%s] [%s] (%s): Starting action",
+            session.id,
+            enter_env_action.id,
+            enter_env_action.human_readable(),
+        )
+
+        session_enter_env.assert_called_once()
+        session_enter_env.call_args.kwargs["os_env_vars"] == {
+            "DEADLINE_SESSIONACTION_ID": enter_env_action.id,
+        }
+
+    def test_exit_env_action_called_with_env_variables(
+        self,
+        session: Session,
+        exit_env_action: ExitEnvironmentAction,
+        mock_mod_logger: MagicMock,
+    ) -> None:
+        """Tests that env variables are passed when exit environment action is called"""
+        # GIVEN
+        logger_info: MagicMock = mock_mod_logger.info
+
+        with (
+            patch.object(session._queue, "dequeue", return_value=exit_env_action),
+            patch.object(session, "exit_environment") as session_exit_env,
+        ):
+            # WHEN
+            session._start_action()
+
+        # THEN
+        logger_info.assert_called_once_with(
+            "[%s] [%s] (%s): Starting action",
+            session.id,
+            exit_env_action.id,
+            exit_env_action.human_readable(),
+        )
+
+        session_exit_env.assert_called_once()
+        session_exit_env.call_args.kwargs["os_env_vars"] == {
+            "DEADLINE_SESSIONACTION_ID": exit_env_action.id,
+        }

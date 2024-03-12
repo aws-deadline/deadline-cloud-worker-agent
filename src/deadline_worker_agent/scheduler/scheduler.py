@@ -23,7 +23,6 @@ from openjd.sessions import LOG as OPENJD_SESSION_LOG
 from openjd.sessions import ActionState, ActionStatus
 from deadline.job_attachments.asset_sync import AssetSync
 
-
 from ..aws.deadline import update_worker
 from ..aws_credentials import QueueBoto3Session, AwsCredentialsRefresher
 from ..boto import DeadlineClient, Session as BotoSession
@@ -159,6 +158,7 @@ class WorkerScheduler:
     _boto_session: BotoSession
     _worker_persistence_dir: Path
     _worker_logs_dir: Path | None
+    _retain_session_dir: bool
 
     # Map from queueId -> QueueAwsCredentials.
     _queue_aws_credentials: dict[str, QueueAwsCredentials]
@@ -178,6 +178,7 @@ class WorkerScheduler:
         cleanup_session_user_processes: bool,
         worker_persistence_dir: Path,
         worker_logs_dir: Path | None,
+        retain_session_dir: bool = False,
     ) -> None:
         """Queue of Worker Sessions and their actions
 
@@ -606,7 +607,7 @@ class WorkerScheduler:
             {
                 action["sessionActionId"]: SessionActionStatus(
                     id=action["sessionActionId"],
-                    completed_status="FAILED",
+                    completed_status="FAILED" if action is actions[0] else "NEVER_ATTEMPTED",
                     start_time=now,
                     end_time=now,
                     status=ActionStatus(
@@ -738,13 +739,17 @@ class WorkerScheduler:
                         new_session_id,
                         os_user,
                     )
-                except (DeadlineRequestWorkerOfflineError, DeadlineRequestUnrecoverableError) as e:
+                except (
+                    DeadlineRequestWorkerOfflineError,
+                    DeadlineRequestUnrecoverableError,
+                    RuntimeError,
+                ) as e:
                     # Terminal error. We need to fail the Session.
-                    message = (
-                        "Unrecoverable error trying to obtain AWS Credentials for the Queue Role."
-                    )
+                    message = f"Unrecoverable error trying to obtain AWS Credentials for the Queue Role: {e}"
+                    if str(e).startswith("Can't determine home directory"):
+                        message += ". Possible non-valid username."
                     self._fail_all_actions(session_spec, message)
-                    logger.warning("[%s] %s: %s", new_session_id, message, str(e))
+                    logger.warning("[%s] %s", new_session_id, message)
                     # Force an immediate UpdateWorkerSchedule request
                     self._wakeup.set()
                     continue
@@ -787,12 +792,19 @@ class WorkerScheduler:
                 queue_id=queue_id,
                 env={
                     "AWS_PROFILE": queue_credentials.session.credential_process_profile_name,
+                    "DEADLINE_SESSION_ID": new_session_id,
+                    "DEADLINE_FARM_ID": self._farm_id,
+                    "DEADLINE_QUEUE_ID": queue_id,
+                    "DEADLINE_JOB_ID": job_id,
+                    "DEADLINE_FLEET_ID": self._fleet_id,
+                    "DEADLINE_WORKER_ID": self._worker_id,
                 }
                 if queue_credentials
                 else None,
                 asset_sync=asset_sync,
                 job_details=job_details,
                 os_user=os_user,
+                retain_session_dir=self._retain_session_dir,
                 action_update_callback=self._handle_session_action_update,
                 action_update_lock=self._action_update_lock,
             )

@@ -327,6 +327,7 @@ fi
 # Provision log directory
 echo "Provisioning log directory (/var/log/amazon/deadline)"
 mkdir -p /var/log/amazon/deadline
+chmod 755 /var/log/amazon
 chown -R "${wa_user}:${wa_user}" /var/log/amazon/deadline
 chmod -R 750 /var/log/amazon/deadline
 echo "Done provisioning log directory (/var/log/amazon/deadline)"
@@ -350,6 +351,11 @@ if [ -f /var/lib/deadline/worker.json ]; then
 fi
 echo "Done provisioning persistence directory (/var/lib/deadline)"
 
+echo "Provisioning session directory (/var/tmp/openjd)"
+mkdir -p /var/tmp/openjd
+chown "${wa_user}" /var/tmp/openjd
+chmod 400 /var/tmp/openjd
+
 echo "Provisioning configuration directory (/etc/amazon/deadline)"
 mkdir -p /etc/amazon/deadline
 chmod 750 /etc/amazon/deadline
@@ -363,11 +369,19 @@ chown -R "root:${wa_user}" /etc/amazon/deadline
 chmod 640 /etc/amazon/deadline/worker.toml
 echo "Done provisioning configuration directory"
 
+if [[ "${allow_shutdown}" == "yes" ]]; then
+   shutdown_on_stop="true"
+else
+   shutdown_on_stop="false"
+fi
+
 echo "Configuring farm and fleet"
+echo "Configuring shutdown on stop"
 sed -E                                                          \
     --in-place=.bak                                             \
     -e "s,^# farm_id\s*=\s*\"REPLACE-WITH-WORKER-FARM-ID\"$,farm_id = \"${farm_id}\",g"    \
     -e "s,^# fleet_id\s*=\s*\"REPLACE-WITH-WORKER-FLEET-ID\"$,fleet_id = \"${fleet_id}\",g" \
+    -e "s,^[#]*\s*shutdown_on_stop\s*=\s*\w+$,shutdown_on_stop = ${shutdown_on_stop},g"    \
     /etc/amazon/deadline/worker.toml
 if ! grep "farm_id = \"${farm_id}\"" /etc/amazon/deadline/worker.toml; then
     echo "ERROR: Failed to configure farm ID in /etc/amazon/deadline/worker.toml."

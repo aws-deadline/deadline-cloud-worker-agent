@@ -224,7 +224,6 @@ class SessionActionQueue:
         self,
         *,
         message: str | None = None,
-        cancel_outcome: CancelOutcome = "NEVER_ATTEMPTED",
         ignore_env_exits: bool = True,
     ) -> None:
         """Cancels all queued actions
@@ -233,8 +232,6 @@ class SessionActionQueue:
         ----------
         message : str | None
             An optional message to include explaining why this action was canceled
-        cancel_outcome : Literal["NEVER_ATTEMPTED", "FAILED"]
-            Whether to mark the actions as NEVER_ATTEMPTED or FAILED. Default is NEVER_ATTEMPTED
         ignore_env_exits : bool
             If True, ENV_EXIT actions will not be canceled. Defaults to canceling ENV_EXIT actions.
         """
@@ -247,7 +244,11 @@ class SessionActionQueue:
         ]
 
         for action_id in action_ids:
-            self.cancel(id=action_id, message=message, cancel_outcome=cancel_outcome)
+            self.cancel(
+                id=action_id,
+                message=message,
+                cancel_outcome="NEVER_ATTEMPTED",
+            )
 
     def replace(
         self,

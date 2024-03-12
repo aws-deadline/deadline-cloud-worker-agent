@@ -155,6 +155,13 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         expected_default=60,
         expected_default_factory_return_value=None,
     ),
+    FieldTestCaseParams(
+        field_name="retain_session_dir",
+        expected_type=bool,
+        expected_required=False,
+        expected_default=False,
+        expected_default_factory_return_value=None,
+    ),
 ]
 
 

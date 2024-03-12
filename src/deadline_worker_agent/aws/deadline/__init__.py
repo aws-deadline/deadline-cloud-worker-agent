@@ -820,3 +820,18 @@ def record_sync_outputs_telemetry_event(queue_id: str, summary: SummaryStatistic
         event_type="com.amazon.rum.deadline.worker_agent.sync_outputs_summary",
         event_details=details,
     )
+
+
+def record_sync_inputs_fail_telemetry_event(
+    queue_id: str,
+    failure_reason: str,
+) -> None:
+    """Calls the telemetry client to record an event capturing the sync-inputs failure."""
+    details = {
+        "queue_id": queue_id,
+        "failure_reason": failure_reason,
+    }
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.sync_inputs_failure",
+        event_details=details,
+    )

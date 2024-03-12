@@ -133,16 +133,25 @@ def shutdown_on_stop(request: pytest.FixtureRequest) -> bool:
     return request.param
 
 
+@pytest.fixture(
+    params=(True, False),
+)
+def retain_session_dir(request: pytest.FixtureRequest) -> bool:
+    return request.param
+
+
 @pytest.fixture
 def os_config_section_data(
     run_jobs_as_agent_user: bool,
     posix_job_user: str,
     shutdown_on_stop: bool | None,
+    retain_session_dir: bool | None,
 ) -> dict[str, Any]:
     return {
         "run_jobs_as_agent_user": run_jobs_as_agent_user,
         "posix_job_user": posix_job_user,
         "shutdown_on_stop": shutdown_on_stop,
+        "retain_session_dir": retain_session_dir,
     }
 
 
@@ -392,6 +401,7 @@ class TestOsConfigSection:
         assert os_config.run_jobs_as_agent_user == os_config_section_data["run_jobs_as_agent_user"]
         assert os_config.posix_job_user == os_config_section_data["posix_job_user"]
         assert os_config.shutdown_on_stop == os_config_section_data["shutdown_on_stop"]
+        assert os_config.retain_session_dir == os_config_section_data["retain_session_dir"]
 
     @pytest.mark.parametrize(
         argnames="run_jobs_as_agent_user",
@@ -465,6 +475,39 @@ class TestOsConfigSection:
         # THEN
         assert os_config.posix_job_user is None
 
+    @pytest.mark.parametrize(
+        argnames="retain_session_dir",
+        argvalues=(
+            pytest.param("str", id="bad-type-str"),
+            pytest.param([1], id="bad-type-list"),
+        ),
+    )
+    def test_nonvalid_retain_session_dir(self, os_config_section_data: dict[str, Any]) -> None:
+        """Asserts that AwsConfigSections raises ValidationErrors for not valid retain_session_dir values"""
+
+        # WHEN
+        def when() -> OsConfigSection:
+            return OsConfigSection.parse_obj(os_config_section_data)
+
+        # THEN
+        with pytest.raises(ValidationError):
+            when()
+
+    def test_absent_retain_session_dir(
+        self,
+        os_config_section_data: dict[str, Any],
+    ) -> None:
+        """Asserts that absent a "retain_session_dir" value in the input to OsConfigSection, it should
+        have a corresponding attribute value of None"""
+        # GIVEN
+        del os_config_section_data["retain_session_dir"]
+
+        # WHEN
+        os_config = OsConfigSection.parse_obj(os_config_section_data)
+
+        # THEN
+        assert os_config.retain_session_dir is None
+
 
 FULL_CONFIG_FILE_DATA = {
     "worker": {
@@ -486,6 +529,7 @@ FULL_CONFIG_FILE_DATA = {
         "run_jobs_as_agent_user": False,
         "posix_job_user": "user:group",
         "shutdown_on_stop": False,
+        "retain_session_dir": False,
     },
     "capabilities": {
         "amounts": {
@@ -615,6 +659,7 @@ host_metrics_logging_interval_seconds = 1
 run_jobs_as_agent_user = false
 posix_job_user = "user:group"
 shutdown_on_stop = false
+retain_session_dir = false
 
 [capabilities.amounts]
 "amount.slots" = 20
@@ -687,6 +732,7 @@ class TestConfigFileLoad:
         assert config.os.run_jobs_as_agent_user is False
         assert config.os.posix_job_user == "user:group"
         assert config.os.shutdown_on_stop is False
+        assert config.os.retain_session_dir is False
 
         assert config.capabilities.amounts == {"amount.slots": 20, "deadline:amount.pets": 99}
         assert config.capabilities.attributes == {
@@ -760,6 +806,7 @@ class TestConfigFileLoad:
             "run_jobs_as_agent_user": False,
             "posix_job_user": "user:group",
             "no_shutdown": True,  # opposite of 'shutdown_on_stop'
+            "retain_session_dir": False,
             # capabilities
             "capabilities": Capabilities(
                 amounts={"amount.slots": 20, "deadline:amount.pets": 99},

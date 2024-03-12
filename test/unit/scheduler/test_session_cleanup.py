@@ -21,7 +21,7 @@ class FakeSessionUser(SessionUser):
         self.user = user
 
     @staticmethod
-    def get_process_user() -> str:
+    def _get_process_user() -> str:
         return ""
 
 
@@ -186,7 +186,7 @@ class TestSessionUserCleanupManager:
             with patch.object(
                 session_cleanup_mod.subprocess,
                 "check_output",
-                return_value=agent_user.user,  # type: ignore
+                return_value=f"{agent_user.user}\n",
             ) as mock:
                 yield mock
 
