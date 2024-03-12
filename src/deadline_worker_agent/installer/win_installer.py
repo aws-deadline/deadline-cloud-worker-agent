@@ -25,7 +25,6 @@ import win32security
 import winerror
 from win32comext.shell import shell
 
-
 # Defaults
 DEFAULT_WA_USER = "deadline-worker"
 DEFAULT_JOB_GROUP = "deadline-job-users"
@@ -68,26 +67,26 @@ def print_banner():
     )
 
 
-def check_user_existence(user_name: str) -> bool:
+def check_account_existence(account_name: str) -> bool:
     """
-    Checks if a user exists on the system by attempting to resolve the user's SID.
+    Checks if an account exists on the system by attempting to resolve the account's SID.
     This method could be used in both Ad and Non-Ad environments.
 
     Args:
-    user_name (str): The username to check for existence.
+    account_name (str): The account to check for existence.
 
     Returns:
-    bool: True if the user exists, otherwise False.
+    bool: True if the account exists, otherwise False.
     """
     MAX_RETRIES = 5
 
     retry_count = 0
     while retry_count < MAX_RETRIES:
         try:
-            # Resolve the username to an SID
-            sid, _, _ = win32security.LookupAccountName(None, user_name)
+            # Resolve the account name to an SID
+            sid, _, _ = win32security.LookupAccountName(None, account_name)
 
-            # Resolve the SID back to a username as an additional check
+            # Resolve the SID back to a account name as an additional check
             win32security.LookupAccountSid(None, sid)
         except pywintypes.error as e:
             if e.winerror == winerror.ERROR_NONE_MAPPED:
@@ -103,41 +102,31 @@ def check_user_existence(user_name: str) -> bool:
     return False
 
 
-def ensure_local_queue_user_group_exists(group_name: str) -> None:
+def create_local_queue_user_group(group_name: str) -> None:
     """
-    Check if a queue user group exists on the system. If it doesn't exit then create it.
+    Creates the local queue user group.
 
     Parameters:
-    group (str): The name of the group to check for existence and creation.
-
+    group (str): The name of the group to create.
     """
+    logging.info(f"Creating group {group_name}")
     try:
-        win32net.NetLocalGroupGetInfo(None, group_name, 1)
-    except pywintypes.error as e:
-        group_not_found = 2220
-        if e.winerror == group_not_found:
-            logging.info(f"Creating group {group_name}")
-            try:
-                win32net.NetLocalGroupAdd(
-                    None,
-                    1,
-                    {
-                        "name": group_name,
-                        "comment": (
-                            "This is a local group created by the Deadline Cloud Worker Agent Installer. "
-                            "This group should contain the jobRunAs OS user for all queues associated with "
-                            "the worker's fleet"
-                        ),
-                    },
-                )
-            except Exception as e:
-                logging.error(f"Failed to create group {group_name}. Error: {e}")
-                raise
-            logging.info("Done creating group")
-            return
-        else:
-            raise
-    logging.info(f"Group {group_name} already exists")
+        win32net.NetLocalGroupAdd(
+            None,
+            1,
+            {
+                "name": group_name,
+                "comment": (
+                    "This is a local group created by the Deadline Cloud Worker Agent Installer. "
+                    "This group should contain the jobRunAs OS user for all queues associated with "
+                    "the worker's fleet"
+                ),
+            },
+        )
+    except Exception as e:
+        logging.error(f"Failed to create group {group_name}. Error: {e}")
+        raise
+    logging.info("Done creating group")
 
 
 def validate_deadline_id(prefix: str, text: str) -> bool:
@@ -156,7 +145,7 @@ def validate_deadline_id(prefix: str, text: str) -> bool:
     return re.match(pattern, text) is not None
 
 
-def ensure_local_agent_user(username: str, password: str) -> None:
+def create_local_agent_user(username: str, password: str) -> None:
     """
     Creates a local agent user account on Windows with a specified password and sets the account to never expire.
     The function sets the UF_DONT_EXPIRE_PASSWD flag to ensure the account's password never expires.
@@ -164,51 +153,48 @@ def ensure_local_agent_user(username: str, password: str) -> None:
     Args:
     username (str): The username of the new agent account.
     password (str): The password for the new agent account. Ensure it meets Windows' password policy requirements.
-
     """
-    if check_user_existence(username):
-        logging.info(f"Agent User {username} already exists")
+    logging.info(f"Creating Agent user {username}")
+    user_info = {
+        "name": username,
+        "password": password,
+        "priv": win32netcon.USER_PRIV_USER,  # User privilege level, Standard User
+        "home_dir": None,
+        "comment": "Amazon Deadline Cloud Worker Agent User",
+        "flags": win32netcon.UF_DONT_EXPIRE_PASSWD,
+        "script_path": None,
+    }
+
+    try:
+        win32net.NetUserAdd(None, 1, user_info)
+    except Exception as e:
+        logging.error(f"Failed to create user '{username}'. Error: {e}")
+        raise
     else:
-        logging.info(f"Creating Agent user {username}")
-        user_info = {
-            "name": username,
-            "password": password,
-            "priv": win32netcon.USER_PRIV_USER,  # User privilege level, Standard User
-            "home_dir": None,
-            "comment": "Amazon Deadline Cloud Worker Agent User",
-            "flags": win32netcon.UF_DONT_EXPIRE_PASSWD,
-            "script_path": None,
-        }
-
-        try:
-            win32net.NetUserAdd(None, 1, user_info)
-            logging.info(f"User '{username}' created successfully.")
-        except Exception as e:
-            logging.error(f"Failed to create user '{username}'. Error: {e}")
-            raise
+        logging.info(f"User '{username}' created successfully.")
 
 
-def grant_account_rights(username: str, rights: list[str]):
+def grant_account_rights(account_name: str, rights: list[str]):
     """
-    Grants rights to a user account
+    Grants rights to an account
 
     Args:
-        username (str): Name of user to grant rights to
+        account_name (str): Name of account to grant rights to. Can be a user or a group.
         rights (list[str]): The rights to grant. See https://learn.microsoft.com/en-us/windows/win32/secauthz/privilege-constants.
             These constants are exposed by the win32security module of pywin32.
     """
     policy_handle = None
     try:
-        user_sid, _, _ = win32security.LookupAccountName(None, username)
+        acc_sid, _, _ = win32security.LookupAccountName(None, account_name)
         policy_handle = win32security.LsaOpenPolicy(None, win32security.POLICY_ALL_ACCESS)
         win32security.LsaAddAccountRights(
             policy_handle,
-            user_sid,
+            acc_sid,
             rights,
         )
-        logging.info(f"Successfully granted the following rights to {username}: {rights}")
+        logging.info(f"Successfully granted the following rights to {account_name}: {rights}")
     except Exception as e:
-        logging.error(f"Failed to grant user {username} rights ({rights}): {e}")
+        logging.error(f"Failed to grant account {account_name} rights ({rights}): {e}")
         raise
     finally:
         if policy_handle is not None:
@@ -392,6 +378,49 @@ def provision_directories(agent_username: str) -> WorkerAgentDirectories:
     )
 
 
+def get_user_effective_rights(user: str) -> set[str]:
+    """
+    Gets a list of a user's effective rights. This includes rights granted both directly
+    and indirectly via group membership.
+
+    Args:
+        user (str): The user to get effective rights for
+
+    Returns:
+        set[str]: Set of rights the user effectively has.
+    """
+    user_sid, _, _ = win32security.LookupAccountName(None, user)
+    sids_to_check = [user_sid]
+
+    # Get SIDs of all groups the user is in
+    # win32net.NetUserGetLocalGroups includes the LG_INCLUDE_INDIRECT flag by default
+    group_names = win32net.NetUserGetLocalGroups(None, user)
+    for group in group_names:
+        group_sid, _, _ = win32security.LookupAccountName(None, group)
+        sids_to_check.append(group_sid)
+
+    policy_handle = win32security.LsaOpenPolicy(None, win32security.POLICY_ALL_ACCESS)
+    try:
+        effective_rights = set()
+
+        for sid in sids_to_check:
+            try:
+                account_rights = win32security.LsaEnumerateAccountRights(policy_handle, sid)
+            except pywintypes.error as e:
+                if e.strerror == "The system cannot find the file specified.":
+                    # Account is not directly assigned any rights
+                    continue
+                else:
+                    raise
+            else:
+                effective_rights.update(account_rights)
+
+        return effective_rights
+    finally:
+        if policy_handle is not None:
+            win32api.CloseHandle(policy_handle)
+
+
 def start_windows_installer(
     farm_id: str,
     fleet_id: str,
@@ -405,6 +434,7 @@ def start_windows_installer(
     no_install_service: bool = False,
     start: bool = False,
     confirm: bool = False,
+    grant_existing_user_rights: bool = False,
 ):
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -458,18 +488,44 @@ def start_windows_installer(
             else:
                 logging.warning("Not a valid choice, try again")
 
-    # List of required user rights for the worker agent
-    worker_user_rights: list[str] = []
-
+    # Set of user rights to add to the worker agent user
+    user_rights_to_grant: set[str] = set()
     if allow_shutdown:
-        # Grant the user privilege to shutdown the machine
-        worker_user_rights.append(win32security.SE_SHUTDOWN_NAME)
+        # User privilege to shutdown the machine
+        user_rights_to_grant.add(win32security.SE_SHUTDOWN_NAME)
+    if not no_install_service:
+        # User privilege to logon as a service
+        user_rights_to_grant.add(win32security.SE_SERVICE_LOGON_NAME)
+        # User privileges to backup and restore user profiles
+        user_rights_to_grant.add(win32security.SE_BACKUP_NAME)
+        user_rights_to_grant.add(win32security.SE_RESTORE_NAME)
+        # User privilege to increase memory quota for a process
+        user_rights_to_grant.add(win32security.SE_INCREASE_QUOTA_NAME)
 
     # Check if the worker agent user exists, and create it if not
-    ensure_local_agent_user(user_name, password)
+    if check_account_existence(user_name):
+        logging.info(f"Using existing user ({user_name}) as worker agent user")
+
+        # Determine which rights we need to add to the existing user
+        existing_agent_user_rights = get_user_effective_rights(user_name)
+        user_rights_to_grant -= existing_agent_user_rights
+        if user_rights_to_grant and not grant_existing_user_rights:
+            logging.error(
+                f"Existing Worker agent user was provided ({user_name}) but is missing the following rights: {user_rights_to_grant}\n"
+                "Provide the --grant-existing-user-rights option to allow the installer to grant the missing rights to the user."
+            )
+            sys.exit(1)
+    else:
+        create_local_agent_user(user_name, password)
+
+    if user_rights_to_grant:
+        grant_account_rights(user_name, list(user_rights_to_grant))
 
     # Check if the job group exists, and create it if not
-    ensure_local_queue_user_group_exists(group_name)
+    if check_account_existence(group_name):
+        logging.info(f"Using existing group ({group_name}) as the queue user group.")
+    else:
+        create_local_queue_user_group(group_name)
     # Add the worker agent user to the job group
     add_user_to_group(group_name, user_name)
 
@@ -482,7 +538,3 @@ def start_windows_installer(
         # any "shutdown" option to be consistent with POSIX installer
         shutdown_on_stop=allow_shutdown,
     )
-
-    if worker_user_rights:
-        # Grant the worker user the necessary rights
-        grant_account_rights(user_name, worker_user_rights)
