@@ -6,6 +6,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, Mock, patch
 from typing import Any, Generator, NamedTuple, Type
 import pytest
+import os
 from pathlib import Path
 
 from pydantic import ConstrainedStr
@@ -88,6 +89,20 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(
+        field_name="windows_job_user",
+        expected_type=ConstrainedStr,
+        expected_required=False,
+        expected_default=None,
+        expected_default_factory_return_value=None,
+    ),
+    FieldTestCaseParams(
+        field_name="windows_job_user_password_arn",
+        expected_type=ConstrainedStr,
+        expected_required=False,
+        expected_default=None,
+        expected_default_factory_return_value=None,
+    ),
+    FieldTestCaseParams(
         field_name="allow_instance_profile",
         expected_type=bool,
         expected_required=False,
@@ -105,14 +120,18 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         field_name="worker_logs_dir",
         expected_type=Path,
         expected_required=False,
-        expected_default=Path("/var/log/amazon/deadline"),
+        expected_default=Path("/var/log/amazon/deadline")
+        if os.name == "posix"
+        else Path(os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Logs")),
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(
         field_name="worker_persistence_dir",
         expected_type=Path,
         expected_required=False,
-        expected_default=Path("/var/lib/deadline"),
+        expected_default=Path("/var/lib/deadline")
+        if os.name == "posix"
+        else Path(os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Cache")),
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(

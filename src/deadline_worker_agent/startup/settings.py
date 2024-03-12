@@ -11,14 +11,20 @@ from pydantic.env_settings import SettingsSourceCallable
 from .capabilities import Capabilities
 from .config_file import ConfigFile
 
+import os
+
 
 # Default path for the worker's logs.
 DEFAULT_POSIX_WORKER_LOGS_DIR = Path("/var/log/amazon/deadline")
+DEFAULT_WINDOWS_WORKER_LOGS_DIR = Path(os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Logs"))
 # Default path for the worker persistence directory.
 # The persistence directory is expected to be located on a file-system that is local to the Worker
 # Node. The Worker's ID and credentials are persisted and these should not be accessible by other
 # Worker Nodes.
 DEFAULT_POSIX_WORKER_PERSISTENCE_DIR = Path("/var/lib/deadline")
+DEFAULT_WINDOWS_WORKER_PERSISTENCE_DIR = Path(
+    os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Cache")
+)
 
 
 class WorkerSettings(BaseSettings):
@@ -48,6 +54,8 @@ class WorkerSettings(BaseSettings):
         If true, then all jobs run as the same user as the agent.
     posix_job_user : str
         Which 'user:group' to use instead of the Queue user when turned on.
+    windows_job_user_password_arn : str
+        The ARN of an AWS Secrets Manager secret containing the password of the job user for Windows.
     allow_instance_profile : bool
         If false (the default) and the worker is running on an EC2 instance with IMDS, then the
         worker will wait until the instance profile is disassociated before running worker sessions.
@@ -82,12 +90,24 @@ class WorkerSettings(BaseSettings):
     posix_job_user: Optional[str] = Field(
         regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
     )
+    windows_job_user: Optional[str] = Field(
+        regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
+    )
+    windows_job_user_password_arn: Optional[str] = Field(
+        regex=r"^arn:aws:secretsmanager:[a-z0-9\-]+:\d{12}:secret\/[a-zA-Z0-9/_+=.@-]+$"
+    )
     allow_instance_profile: bool = False
     capabilities: Capabilities = Field(
         default_factory=lambda: Capabilities(amounts={}, attributes={})
     )
-    worker_logs_dir: Path = DEFAULT_POSIX_WORKER_LOGS_DIR
-    worker_persistence_dir: Path = DEFAULT_POSIX_WORKER_PERSISTENCE_DIR
+    worker_logs_dir: Path = (
+        DEFAULT_WINDOWS_WORKER_LOGS_DIR if os.name == "nt" else DEFAULT_POSIX_WORKER_LOGS_DIR
+    )
+    worker_persistence_dir: Path = (
+        DEFAULT_WINDOWS_WORKER_PERSISTENCE_DIR
+        if os.name == "nt"
+        else DEFAULT_POSIX_WORKER_PERSISTENCE_DIR
+    )
     local_session_logs: bool = True
     host_metrics_logging: bool = True
     host_metrics_logging_interval_seconds: float = 60
@@ -105,6 +125,10 @@ class WorkerSettings(BaseSettings):
             "no_shutdown": {"env": "DEADLINE_WORKER_NO_SHUTDOWN"},
             "run_jobs_as_agent_user": {"env": "DEADLINE_WORKER_RUN_JOBS_AS_AGENT_USER"},
             "posix_job_user": {"env": "DEADLINE_WORKER_POSIX_JOB_USER"},
+            "windows_job_user": {"env": "DEADLINE_WORKER_WINDOWS_JOB_USER"},
+            "windows_job_user_password_arn": {
+                "env": "DEADLINE_WORKER_WINDOWS_JOB_USER_PASSWORD_ARN"
+            },
             "allow_instance_profile": {"env": "DEADLINE_WORKER_ALLOW_INSTANCE_PROFILE"},
             "capabilities": {"env": "DEADLINE_WORKER_CAPABILITIES"},
             "worker_logs_dir": {"env": "DEADLINE_WORKER_LOGS_DIR"},

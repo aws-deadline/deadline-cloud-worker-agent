@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import logging as _logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,7 +25,7 @@ class JobsRunAsUserOverride:
     run_as_agent: bool
     """True -> All jobs run as the agent process' user."""
 
-    posix_job_user: Optional[SessionUser] = None
+    job_user: Optional[SessionUser] = None
     """If provided and run_as_agent is False, then all Jobs run by this agent will run as this user."""
 
 
@@ -32,8 +33,8 @@ class JobsRunAsUserOverride:
 # The persistence directory is expected to be located on a file-system that is local to the Worker
 # Node. The Worker's ID and credentials are persisted and these should not be accessible by other
 # Worker Nodes.
-DEFAULT_POSIX_WORKER_CREDENTIALS_RELDIR = "credentials"
-DEFAULT_POSIX_WORKER_STATE_FILE = "worker.json"
+DEFAULT_WORKER_CREDENTIALS_RELDIR = "credentials"
+DEFAULT_WORKER_STATE_FILE = "worker.json"
 
 
 class Configuration:
@@ -142,11 +143,11 @@ class Configuration:
 
         settings = WorkerSettings(**settings_kwargs)
 
-        if settings.posix_job_user is not None:
-            user, group = self._get_user_and_group_from_posix_job_user(settings.posix_job_user)
+        if os.name == "posix" and settings.posix_job_user is not None:
+            user, group = self._get_user_and_group_from_job_user(settings.posix_job_user)
             self.job_run_as_user_overrides = JobsRunAsUserOverride(
                 run_as_agent=settings.run_jobs_as_agent_user,
-                posix_job_user=PosixSessionUser(user=user, group=group),
+                job_user=PosixSessionUser(user=user, group=group),
             )
         else:
             self.job_run_as_user_overrides = JobsRunAsUserOverride(
@@ -162,9 +163,9 @@ class Configuration:
         self.allow_instance_profile = settings.allow_instance_profile
         self.worker_persistence_dir = settings.worker_persistence_dir
         self.worker_credentials_dir = (
-            self.worker_persistence_dir / DEFAULT_POSIX_WORKER_CREDENTIALS_RELDIR
+            self.worker_persistence_dir / DEFAULT_WORKER_CREDENTIALS_RELDIR
         )
-        self.worker_state_file = self.worker_persistence_dir / DEFAULT_POSIX_WORKER_STATE_FILE
+        self.worker_state_file = self.worker_persistence_dir / DEFAULT_WORKER_STATE_FILE
         self.capabilities = settings.capabilities
         self.worker_logs_dir = settings.worker_logs_dir
         self.local_session_logs = settings.local_session_logs
@@ -174,12 +175,12 @@ class Configuration:
 
         self._validate()
 
-    def _get_user_and_group_from_posix_job_user(self, posix_job_user: str) -> Tuple[str, str]:
+    def _get_user_and_group_from_job_user(self, job_user: str) -> Tuple[str, str]:
         try:
-            user, group = posix_job_user.split(":")
+            user, group = job_user.split(":")
         except ValueError:
             raise ConfigurationError(
-                f"The posix job user must be of the form: <user>:<group>. Got: {repr(posix_job_user)}"
+                f"The job user must be of the form: <user>:<group>. Got: {repr(job_user)}"
             )
         return user, group
 
@@ -191,7 +192,7 @@ class Configuration:
 
         if (
             self.job_run_as_user_overrides.run_as_agent
-            and self.job_run_as_user_overrides.posix_job_user is not None
+            and self.job_run_as_user_overrides.job_user is not None
         ):
             raise ConfigurationError(
                 "Cannot specify a POSIX job user when the option to running Jobs as the agent user is enabled."
@@ -226,7 +227,10 @@ class Configuration:
             logger.log(level, sep)
 
     @classmethod
-    def load(cls, cli_args: Optional[Sequence[str]] = None) -> Configuration:
+    def load(
+        cls,
+        cli_args: Optional[Sequence[str]] = None,
+    ) -> Configuration:
         """Loads the Amazon Deadline Cloud Worker Agent configuration.
 
         Arguments:
@@ -244,7 +248,9 @@ class Configuration:
         )
 
         try:
-            return Configuration(parsed_cli_args=parsed_cli_args)
+            return Configuration(
+                parsed_cli_args=parsed_cli_args,
+            )
         except ValidationError as validation_error:
             from itertools import groupby
 

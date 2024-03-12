@@ -11,9 +11,14 @@ import stat
 from threading import Event
 
 from botocore.utils import JSONFileCache
-from openjd.sessions import PosixSessionUser, SessionUser
+from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
 
 from ..boto import DeadlineClient
+from ..file_system_operations import (
+    make_directory,
+    set_permissions,
+    FileSystemPermissionEnum,
+)
 
 from .temporary_credentials import TemporaryCredentials
 from ..aws.deadline import (
@@ -91,8 +96,6 @@ class QueueBoto3Session(BaseBoto3Session):
         interrupt_event: Event,
         worker_persistence_dir: Path,
     ) -> None:
-        if os.name != "posix":
-            raise NotImplementedError("Windows not supported.")
         super().__init__()
 
         self._deadline_client = deadline_client
@@ -110,7 +113,11 @@ class QueueBoto3Session(BaseBoto3Session):
         self._credentials_filename = (
             "aws_credentials"  # note: .json extension added by JSONFileCache
         )
-        self._credentials_process_script_path = self._credential_dir / "get_aws_credentials.sh"
+
+        if os.name == "posix":
+            self._credentials_process_script_path = self._credential_dir / "get_aws_credentials.sh"
+        else:
+            self._credentials_process_script_path = self._credential_dir / "get_aws_credentials.cmd"
 
         self._aws_config = AWSConfig(self._os_user)
         self._aws_credentials = AWSCredentials(self._os_user)
@@ -229,7 +236,8 @@ class QueueBoto3Session(BaseBoto3Session):
         if temporary_creds:
             temporary_creds.cache(cache=self._file_cache, cache_key=self._credentials_filename)
             if self._os_user is not None:
-                if isinstance(self._os_user, PosixSessionUser):
+                if os.name == "posix":
+                    assert isinstance(self._os_user, PosixSessionUser)
                     (self._credential_dir / self._credentials_filename).with_suffix(".json").chmod(
                         stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP
                     )
@@ -238,7 +246,15 @@ class QueueBoto3Session(BaseBoto3Session):
                         group=self._os_user.group,
                     )
                 else:
-                    raise NotImplementedError("Only POSIX supported at the moment.")
+                    assert isinstance(self._os_user, WindowsSessionUser)
+                    set_permissions(
+                        file_path=(self._credential_dir / self._credentials_filename).with_suffix(
+                            ".json"
+                        ),
+                        permitted_user=self._os_user,
+                        agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                        user_permission=FileSystemPermissionEnum.READ,
+                    )
             credentials_object = cast(SettableCredentials, self.get_credentials())
             credentials_object.set_credentials(temporary_creds.to_deadline())
 
@@ -254,21 +270,37 @@ class QueueBoto3Session(BaseBoto3Session):
         """Creates the directory that we're going to write the credentials file to"""
 
         # make the <worker_persistence_dir>/queues/<queue-id> dir and set permissions
-        try:
-            self._credential_dir.mkdir(
-                exist_ok=True, parents=True, mode=(stat.S_IRWXU | stat.S_IXGRP | stat.S_IRGRP)
-            )
-        except OSError:
-            _logger.error(
-                "Please check user permissions. Could not create directory: %s",
-                str(self._credential_dir),
-            )
-            raise
-        if self._os_user is not None:
-            if isinstance(self._os_user, PosixSessionUser):
-                shutil.chown(self._credential_dir, group=self._os_user.group)
+        if os.name == "posix":
+            try:
+                self._credential_dir.mkdir(
+                    exist_ok=True, parents=True, mode=(stat.S_IRWXU | stat.S_IXGRP | stat.S_IRGRP)
+                )
+            except OSError:
+                _logger.error(
+                    "Please check user permissions. Could not create directory: %s",
+                    str(self._credential_dir),
+                )
+                raise
+            if self._os_user is not None:
+                if isinstance(self._os_user, PosixSessionUser):
+                    shutil.chown(self._credential_dir, group=self._os_user.group)
+        else:
+            if self._os_user is None:
+                make_directory(
+                    dir_path=self._credential_dir,
+                    exist_ok=True,
+                    parents=True,
+                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                )
             else:
-                raise NotImplementedError("Only POSIX supported at the moment.")
+                make_directory(
+                    dir_path=self._credential_dir,
+                    exist_ok=True,
+                    parents=True,
+                    permitted_user=self._os_user,
+                    agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+                    user_permission=FileSystemPermissionEnum.READ,
+                )
 
     def _delete_credentials_directory(self) -> None:
         # delete the <worker_persistence_dir>/queues/<queue-id> dir
@@ -306,11 +338,20 @@ class QueueBoto3Session(BaseBoto3Session):
         with open(descriptor, mode="w", encoding="utf-8") as f:
             f.write(self._generate_credential_process_script())
             if self._os_user is not None:
-                assert isinstance(self._os_user, PosixSessionUser)
-                shutil.chown(self._credentials_process_script_path, group=self._os_user.group)
+                if os.name == "posix":
+                    assert isinstance(self._os_user, PosixSessionUser)
+                    shutil.chown(self._credentials_process_script_path, group=self._os_user.group)
+                else:
+                    assert isinstance(self._os_user, WindowsSessionUser)
+                    set_permissions(
+                        file_path=self._credentials_process_script_path,
+                        permitted_user=self._os_user,
+                        agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                        user_permission=FileSystemPermissionEnum.EXECUTE,
+                    )
 
-        # install credential process to /home/<job-user>/.aws/config and
-        # /home/<job-user>/.aws/credentials
+        # install credential process to ~<job-user>/.aws/config and
+        # ~<job-user>/.aws/credentials
         for aws_cred_file in (self._aws_config, self._aws_credentials):
             aws_cred_file.install_credential_process(
                 self._profile_name, self._credentials_process_script_path
@@ -321,9 +362,14 @@ class QueueBoto3Session(BaseBoto3Session):
         Generates the bash script which generates the credentials as JSON output on STDOUT.
         This script will be used by the installed credential process.
         """
-        return ("#!/bin/bash\nset -eu\ncat {0}\n").format(
-            (self._credential_dir / self._credentials_filename).with_suffix(".json")
-        )
+        if os.name == "posix":
+            return ("#!/bin/bash\nset -eu\ncat {0}\n").format(
+                (self._credential_dir / self._credentials_filename).with_suffix(".json")
+            )
+        else:
+            return ('@echo off\ntype "{0}"\n').format(
+                (self._credential_dir / self._credentials_filename).with_suffix(".json")
+            )
 
     def _uninstall_credential_process(self) -> None:
         """

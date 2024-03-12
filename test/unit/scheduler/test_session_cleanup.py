@@ -6,8 +6,9 @@ from typing import Generator
 from unittest.mock import MagicMock, patch
 import subprocess
 
-from openjd.sessions import SessionUser, PosixSessionUser
+from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
 import pytest
+import os
 
 from deadline_worker_agent.scheduler.session_cleanup import (
     SessionUserCleanupManager,
@@ -38,8 +39,11 @@ class TestSessionUserCleanupManager:
             yield mock
 
     @pytest.fixture
-    def os_user(self) -> PosixSessionUser:
-        return PosixSessionUser(user="user", group="group")
+    def os_user(self) -> SessionUser:
+        if os.name == "posix":
+            return PosixSessionUser(user="user", group="group")
+        else:
+            return WindowsSessionUser(user="user", group="group", password="fakepassword")
 
     @pytest.fixture
     def session(self, os_user: PosixSessionUser) -> MagicMock:
@@ -49,6 +53,7 @@ class TestSessionUserCleanupManager:
         return session_stub
 
     class TestRegister:
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_registers_session(
             self,
             manager: SessionUserCleanupManager,
@@ -83,26 +88,8 @@ class TestSessionUserCleanupManager:
             user_session_map_lock_mock.__enter__.assert_not_called()
             user_session_map_lock_mock.__exit__.assert_not_called()
 
-        def test_register_raises_windows_not_supported(
-            self,
-            manager: SessionUserCleanupManager,
-            session: MagicMock,
-            user_session_map_lock_mock: MagicMock,
-        ):
-            # GIVEN
-            session.os_user = FakeSessionUser("user-123")
-
-            # WHEN
-            with pytest.raises(NotImplementedError) as raised_err:
-                manager.register(session)
-
-            # THEN
-            assert str(raised_err.value) == "Windows not supported"
-            assert len(manager.registered_sessions) == 0
-            user_session_map_lock_mock.__enter__.assert_not_called()
-            user_session_map_lock_mock.__exit__.assert_not_called()
-
     class TestDeregister:
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_deregisters_session(
             self,
             manager: SessionUserCleanupManager,
@@ -123,6 +110,7 @@ class TestSessionUserCleanupManager:
             user_session_map_lock_mock.__enter__.assert_called_once()
             user_session_map_lock_mock.__exit__.assert_called_once()
 
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_deregister_skipped_no_user(
             self,
             manager: SessionUserCleanupManager,
@@ -145,34 +133,16 @@ class TestSessionUserCleanupManager:
             user_session_map_lock_mock.__enter__.assert_not_called()
             user_session_map_lock_mock.__exit__.assert_not_called()
 
-        def test_deregister_raises_windows_not_supported(
-            self,
-            manager: SessionUserCleanupManager,
-            session: MagicMock,
-            user_session_map_lock_mock: MagicMock,
-        ):
-            # GIVEN
-            session.os_user = FakeSessionUser("user-123")
-
-            # WHEN
-            with pytest.raises(NotImplementedError) as raised_err:
-                manager.deregister(session)
-
-            # THEN
-            assert str(raised_err.value) == "Windows not supported"
-            assert len(manager.registered_sessions) == 0
-            user_session_map_lock_mock.__enter__.assert_not_called()
-            user_session_map_lock_mock.__exit__.assert_not_called()
-
     class TestCleanupSessionUser:
         @pytest.fixture
         def cleanup_session_user_processes_mock(self) -> Generator[MagicMock, None, None]:
             with patch.object(SessionUserCleanupManager, "cleanup_session_user_processes") as mock:
                 yield mock
 
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_calls_cleanup_session_user_processes(
             self,
-            os_user: PosixSessionUser,
+            os_user: SessionUser,
             manager: SessionUserCleanupManager,
             cleanup_session_user_processes_mock: MagicMock,
         ):
@@ -182,9 +152,10 @@ class TestSessionUserCleanupManager:
             # THEN
             cleanup_session_user_processes_mock.assert_called_once_with(os_user)
 
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_skips_cleanup_when_configured_to(
             self,
-            os_user: PosixSessionUser,
+            os_user: SessionUser,
             cleanup_session_user_processes_mock: MagicMock,
         ):
             # GIVEN
@@ -200,14 +171,17 @@ class TestSessionUserCleanupManager:
         @pytest.fixture
         def agent_user(
             self,
-            os_user: PosixSessionUser,
-        ) -> PosixSessionUser:
-            return PosixSessionUser(user=f"agent_{os_user.user}", group=f"agent_{os_user.group}")
+        ) -> SessionUser:
+            if os.name == "posix":
+                return PosixSessionUser(user="agent_user", group="agent_group")
+            else:
+                return WindowsSessionUser(user="user", group="group", password="fakepassword")
 
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         @pytest.fixture(autouse=True)
         def subprocess_check_output_mock(
             self,
-            agent_user: PosixSessionUser,
+            agent_user: SessionUser,
         ) -> Generator[MagicMock, None, None]:
             with patch.object(
                 session_cleanup_mod.subprocess,
@@ -216,11 +190,13 @@ class TestSessionUserCleanupManager:
             ) as mock:
                 yield mock
 
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         @pytest.fixture(autouse=True)
         def subprocess_run_mock(self) -> Generator[MagicMock, None, None]:
             with patch.object(session_cleanup_mod.subprocess, "run") as mock:
                 yield mock
 
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_cleans_up_processes(
             self,
             os_user: PosixSessionUser,
@@ -247,21 +223,7 @@ class TestSessionUserCleanupManager:
             )
             assert "Stopped processes:\n" in caplog.text
 
-        def test_not_posix_user(
-            self,
-            subprocess_run_mock: MagicMock,
-        ):
-            # GIVEN
-            fake_user = FakeSessionUser("user-123")
-
-            # WHEN
-            with pytest.raises(NotImplementedError) as raised_err:
-                SessionUserCleanupManager.cleanup_session_user_processes(fake_user)
-
-            # THEN
-            assert str(raised_err.value) == "Windows not supported"
-            subprocess_run_mock.assert_not_called()
-
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_no_processes_to_clean_up(
             self,
             os_user: PosixSessionUser,
@@ -282,6 +244,7 @@ class TestSessionUserCleanupManager:
                 in caplog.text
             )
 
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_fails_to_clean_up_processes(
             self,
             os_user: PosixSessionUser,
@@ -302,6 +265,7 @@ class TestSessionUserCleanupManager:
             assert f"Failed to stop processes running as '{os_user.user}': {err}" in caplog.text
             assert raised_err.value is err
 
+        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_skips_if_session_user_is_agent_user(
             self,
             subprocess_run_mock: MagicMock,
