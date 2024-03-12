@@ -23,6 +23,7 @@ class ParsedCommandLineArguments(Namespace):
     logs_dir: Path | None = None
     local_session_logs: bool | None = None
     persistence_dir: Path | None = None
+    retain_session_dir: bool | None = None
     # TODO: Remove when deprecating --no-allow-instance-profile
     no_allow_instance_profile: bool | None = None
     host_metrics_logging: bool | None = None
@@ -143,6 +144,14 @@ def get_argument_parser() -> ArgumentParser:
         "--verbose",
         "-v",
         help="Use verbose console logging",
+        action="store_const",
+        const=True,
+        default=None,
+    )
+    parser.add_argument(
+        "--retain-session-dir",
+        help="Retain the session directory on completion",
+        dest="retain_session_dir",
         action="store_const",
         const=True,
         default=None,

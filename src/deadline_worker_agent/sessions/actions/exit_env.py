@@ -59,4 +59,6 @@ class ExitEnvironmentAction(OpenjdAction):
         executor : Executor
             An executor for running futures
         """
-        session.exit_environment(job_env_id=self._environment_id)
+        session.exit_environment(
+            job_env_id=self._environment_id, os_env_vars={"DEADLINE_SESSIONACTION_ID": self._id}
+        )

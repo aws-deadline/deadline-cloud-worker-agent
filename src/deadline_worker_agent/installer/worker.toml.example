@@ -200,6 +200,18 @@
 #
 # shutdown_on_stop = false
 
+# Whether the worker agent should retain the OpenJD Session's working directory on the Session completion.
+# This value is overridden when the DEADLINE_WORKER_RETAIN_SESSION_DIR environment variable is set using
+# one of the following case-insensitive values:
+#
+#     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+#
+# or if the --retain-session-dir command-line flag is specified.
+#
+# By default retaining the Session directory is turned off, meaning the directory will be deleted.
+# To retain this Session directory after the Session ends, uncomment the line below:
+#
+# retain_session_dir = true
 
 [capabilities]
 

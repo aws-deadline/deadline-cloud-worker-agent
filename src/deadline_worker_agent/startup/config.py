@@ -70,6 +70,8 @@ class Configuration:
     """Whether host metrics logging is enabled"""
     host_metrics_logging_interval_seconds: float
     """The interval in seconds between host metrics logs"""
+    retain_session_dir: bool
+    """Whether to retain the OpenJD's session directory on completion"""
 
     # Used to optimize the memory allocation and attribute lookup speed. Tells python to not create a dict
     # for the attributes.
@@ -90,6 +92,7 @@ class Configuration:
         "local_session_logs",
         "host_metrics_logging",
         "host_metrics_logging_interval_seconds",
+        "retain_session_dir",
     )
 
     def __init__(
@@ -135,6 +138,8 @@ class Configuration:
             settings_kwargs[
                 "host_metrics_logging_interval_seconds"
             ] = parsed_cli_args.host_metrics_logging_interval_seconds
+        if parsed_cli_args.retain_session_dir is not None:
+            settings_kwargs["retain_session_dir"] = parsed_cli_args.retain_session_dir
 
         settings = WorkerSettings(**settings_kwargs)
 
@@ -166,6 +171,7 @@ class Configuration:
         self.local_session_logs = settings.local_session_logs
         self.host_metrics_logging = settings.host_metrics_logging
         self.host_metrics_logging_interval_seconds = settings.host_metrics_logging_interval_seconds
+        self.retain_session_dir = settings.retain_session_dir
 
         self._validate()
 

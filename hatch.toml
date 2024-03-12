@@ -46,9 +46,11 @@ build = "hatch build {args:}"
 version = "hatch version"
 metadata = "hatch project metadata {args:}"
 integ-test = "pytest --no-cov test/integ {args:}"
+
 [envs.release]
-pre-install-commands = [
-  "pip install -r requirements-release.txt"
+detached = true
+dependencies = [
+  "python-semantic-release == 8.7.*"
 ]
 
 [envs.release.scripts]

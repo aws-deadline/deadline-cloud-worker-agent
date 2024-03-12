@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from logging import getLogger, LoggerAdapter
+from pathlib import Path
 from threading import Event, RLock
 from time import monotonic, sleep
 from types import TracebackType
@@ -67,7 +68,11 @@ from deadline.job_attachments.os_file_permission import (
 )
 from deadline.job_attachments.progress_tracker import ProgressReportMetadata, SummaryStatistics
 
-from ..aws.deadline import record_sync_inputs_telemetry_event, record_sync_outputs_telemetry_event
+from ..aws.deadline import (
+    record_sync_inputs_fail_telemetry_event,
+    record_sync_inputs_telemetry_event,
+    record_sync_outputs_telemetry_event,
+)
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
 
@@ -84,8 +89,17 @@ OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
     ActionState.SUCCESS: "SUCCEEDED",
     ActionState.TIMEOUT: "FAILED",
 }
+DEFAULT_POSIX_OPENJD_SESSION_DIR = Path("/var/tmp/openjd")
 TIME_DELTA_ZERO = timedelta()
 
+# During a SYNC_INPUT_JOB_ATTACHMENTS session action, the transfer rate is periodically reported through
+# a callback function. If a transfer rate lower than LOW_TRANSFER_RATE_THRESHOLD is observed in a series
+# for LOW_TRANSFER_COUNT_THRESHOLD times, it is considered concerning or potentially stalled, and the
+# session action is canceled.
+LOW_TRANSFER_RATE_THRESHOLD = 10 * 10**3  # 10 KB/s
+LOW_TRANSFER_COUNT_THRESHOLD = (
+    60  # Each progress report takes 1 sec at the longest, so 60 reports amount to 1 min in total.
+)
 
 logger = getLogger(__name__)
 
@@ -142,6 +156,7 @@ class Session:
 
     _os_user: SessionUser | None = None
     _queue_id: str
+    _retain_session_dir: bool = False
     _job_details: JobDetails
     _job_attachment_details: JobAttachmentDetails | None = None
     _initial_action_exception: Exception | None = None
@@ -161,6 +176,7 @@ class Session:
         queue_id: str,
         asset_sync: Optional[AssetSync],
         os_user: SessionUser | None,
+        retain_session_dir: bool = False,
         job_details: JobDetails,
         action_update_callback: Callable[[SessionActionStatus], None],
         action_update_lock: RLock,
@@ -172,6 +188,7 @@ class Session:
         self._current_action_lock = RLock()
         self._queue_id = queue_id
         self._os_user = os_user
+        self._retain_session_dir = retain_session_dir
         self._job_details = job_details
         self._report_action_update = action_update_callback
         self._env = env
@@ -180,13 +197,19 @@ class Session:
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
 
+        session_root_directory: Optional[Path] = None
+        if os.name == "posix":
+            session_root_directory = DEFAULT_POSIX_OPENJD_SESSION_DIR
+
         self._session = OPENJDSession(
             session_id=self._id,
             job_parameter_values=self._job_details.parameters,
             path_mapping_rules=self._job_details.path_mapping_rules,
+            retain_working_dir=self._retain_session_dir,
             user=self._os_user,
             callback=openjd_session_action_callback,
             os_env_vars=self._env,
+            session_root_directory=session_root_directory,
         )
 
         self._queue = queue
@@ -331,7 +354,6 @@ class Session:
                 )
 
         self._queue.cancel_all(
-            cancel_outcome="NEVER_ATTEMPTED",
             message=self._stop_fail_message,
         )
 
@@ -377,6 +399,12 @@ class Session:
                     logger.info("%s successful", desc)
                 cur_time = monotonic()
         finally:
+            if self._asset_sync is not None and self._job_attachment_details is not None:
+                # terminate any running virtual file systems
+                self._asset_sync.cleanup_session(
+                    session_dir=self._session.working_directory,
+                    file_system=self._job_attachment_details.job_attachments_file_system,
+                )
             # Clean-up the Open Job Description session
             self._session.cleanup()
 
@@ -518,7 +546,6 @@ class Session:
             )
             self._queue.cancel_all(
                 message=f"Error starting prior action {e.action_id}",
-                cancel_outcome="FAILED",
                 ignore_env_exits=True,
             )
             self._current_action = None
@@ -546,7 +573,6 @@ class Session:
             )
             self._queue.cancel_all(
                 message=f"Error starting prior action {action_definition.id}",
-                cancel_outcome="FAILED",
                 ignore_env_exits=True,
             )
             self._current_action = None
@@ -590,9 +616,6 @@ class Session:
             )
             self._queue.cancel_all(
                 message=f"Error starting prior action {action_definition.id}",
-                # TODO: Change this after session actions failures before a task run count as
-                # overall failures and do not cause retry sessions to be scheduled indefinitely
-                cancel_outcome="FAILED",
                 ignore_env_exits=True,
             )
             self._current_action = None
@@ -708,9 +731,10 @@ class Session:
         *,
         job_env_id: str,
         environment: EnvironmentModel,
+        os_env_vars: Optional[dict[str, str]] = None,
     ) -> None:
         session_env_id = self._session.enter_environment(
-            environment=environment, identifier=job_env_id
+            environment=environment, identifier=job_env_id, os_env_vars=os_env_vars
         )
         self._active_envs.append(
             ActiveEnvironment(
@@ -723,6 +747,7 @@ class Session:
         self,
         *,
         job_env_id: str,
+        os_env_vars: Optional[dict[str, str]] = None,
     ) -> None:
         if not self._active_envs or self._active_envs[-1].job_env_id != job_env_id:
             env_stack_str = ", ".join(env.job_env_id for env in self._active_envs)
@@ -731,7 +756,9 @@ class Session:
                 f"Active environments from outer-most to inner-most are: {env_stack_str}"
             )
         active_env = self._active_envs[-1]
-        self._session.exit_environment(identifier=active_env.session_env_id)
+        self._session.exit_environment(
+            identifier=active_env.session_env_id, os_env_vars=os_env_vars
+        )
         self._active_envs.pop()
 
     def _notifier_callback(
@@ -773,12 +800,45 @@ class Session:
         if self._asset_sync is None:
             return
 
-        def progress_handler(job_upload_status: ProgressReportMetadata) -> bool:
+        low_transfer_count = 0
+
+        def progress_handler(job_attachments_download_status: ProgressReportMetadata) -> bool:
+            """
+            Callback for Job Attachments' sync_inputs() to track the download progress.
+            Returns True if the operation should continue as normal or False to cancel.
+            """
+            # Check the transfer rate from the progress report. It monitors for a series of
+            # alarmingly low transfer rates, and if the count exceeds the specified threshold,
+            # cancels the download and fails the current (SYNC_INPUT_JOB_ATTACHMENTS) action.
+            nonlocal low_transfer_count
+            transfer_rate = job_attachments_download_status.transferRate
+
+            if transfer_rate < LOW_TRANSFER_RATE_THRESHOLD:
+                low_transfer_count += 1
+            else:
+                low_transfer_count = 0
+            if low_transfer_count >= LOW_TRANSFER_COUNT_THRESHOLD:
+                cancel.set()
+                action_status = ActionStatus(
+                    state=ActionState.FAILED,
+                    fail_message=(
+                        f"Input syncing failed due to successive low transfer rates (< {LOW_TRANSFER_RATE_THRESHOLD / 1000} KB/s). "
+                        f"The transfer rate was below the threshold for the last {self._seconds_to_minutes_str(LOW_TRANSFER_COUNT_THRESHOLD)}."
+                    ),
+                )
+                self.update_action(action_status)
+                # Send the telemetry data of input syncing failure due to insufficient download speed.
+                record_sync_inputs_fail_telemetry_event(
+                    queue_id=self._queue_id,
+                    failure_reason=(f"Insufficient download speed: {action_status.fail_message}"),
+                )
+                return False
+
             self.update_action(
                 action_status=ActionStatus(
                     state=ActionState.RUNNING,
-                    status_message=job_upload_status.progressMessage,
-                    progress=job_upload_status.progress,
+                    status_message=job_attachments_download_status.progressMessage,
+                    progress=job_attachments_download_status.progress,
                 ),
             )
             return not cancel.is_set()
@@ -889,6 +949,18 @@ class Session:
         # rules that are subsets of each other behave in a predictable manner. We must
         # sort here since we're modifying that internal list appending to the list.
         self._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
+
+    def _seconds_to_minutes_str(self, seconds: int) -> str:
+        minutes = seconds // 60
+        remaining_seconds = seconds % 60
+        if minutes > 0 and remaining_seconds > 0:
+            return f"{minutes} minute{'s' if minutes != 1 else ''} {remaining_seconds} second{'s' if remaining_seconds != 1 else ''}"
+        elif minutes > 0:
+            return f"{minutes} minute{'s' if minutes != 1 else ''}"
+        elif remaining_seconds == 0:
+            return "0 seconds"
+        else:
+            return f"{remaining_seconds} second{'s' if remaining_seconds != 1 else ''}"
 
     def update_action(self, action_status: ActionStatus) -> None:
         """Callback called on every Open Job Description status/progress update and the completion/exit of the
@@ -1035,15 +1107,15 @@ class Session:
         now: datetime,
     ):
         if is_unsuccessful:
-            fail_message = (
-                action_status.fail_message
-                or f"Action {current_action.definition.human_readable()} failed"
+            fail_message = action_status.fail_message or (
+                f"TIMEOUT - Previous action exceeded runtime limit: {current_action.definition.human_readable()}"
+                if action_status.state == ActionState.TIMEOUT
+                else f"Previous action failed: {current_action.definition.human_readable()}"
             )
 
             # If the current action failed, we mark future actions assigned to the session as
             # NEVER_ATTEMPTED except for envExit actions.
             self._queue.cancel_all(
-                cancel_outcome="NEVER_ATTEMPTED",
                 message=fail_message,
                 ignore_env_exits=True,
             )
@@ -1053,6 +1125,19 @@ class Session:
             # needs to be able to determine if the Session is idle and make an immediate
             # UpdateWorkerSchedule request if so.
             self._current_action = None
+
+        if action_status.state == ActionState.TIMEOUT:
+            # If the action ended via timeout, then we're reporting this as a failed action
+            # but also surface the timeout was the reason for the fail so that they don't have
+            # to go log diving.
+            action_status = ActionStatus(
+                # Preserve properties
+                state=action_status.state,
+                progress=action_status.progress,
+                exit_code=action_status.exit_code,
+                # Replace the message to let the customer know that the action reached its runtime limit.
+                fail_message="TIMEOUT - Exceeded the allotted runtime limit.",
+            )
 
         completed_status = OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
             action_status.state, None
@@ -1153,10 +1238,12 @@ class Session:
         *,
         step_script: StepScriptModel,
         task_parameter_values: TaskParameterSet,
+        os_env_vars: Optional[dict[str, str]] = None,
     ) -> None:
         self._session.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,
+            os_env_vars=os_env_vars,
         )
 
     def stop(

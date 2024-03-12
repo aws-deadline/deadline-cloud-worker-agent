@@ -134,6 +134,7 @@ def entrypoint(cli_args: Optional[list[str]] = None) -> None:
                 worker_logs_dir=config.worker_logs_dir if config.local_session_logs else None,
                 host_metrics_logging=config.host_metrics_logging,
                 host_metrics_logging_interval_seconds=config.host_metrics_logging_interval_seconds,
+                retain_session_dir=config.retain_session_dir,
             )
             try:
                 worker_sessions.run()

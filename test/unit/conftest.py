@@ -58,7 +58,7 @@ def logs_client() -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def patch_windows_session_user_validate():
-    with patch.object(WindowsSessionUser, "validate_username_password"):
+    with patch.object(WindowsSessionUser, "_validate_username_password"):
         yield
 
 
@@ -155,6 +155,11 @@ def task_id() -> str:
 @pytest.fixture
 def action_id() -> str:
     return "action-111"
+
+
+@pytest.fixture
+def job_env_id() -> str:
+    return "job_env-111"
 
 
 @pytest.fixture(

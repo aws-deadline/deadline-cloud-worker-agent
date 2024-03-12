@@ -15,7 +15,6 @@ on:
 
 jobs:
   UnitTests:
-    needs: Setup
     name: Unit Tests
     uses: ./.github/workflows/reuse_python_build.yml
     with:
@@ -55,6 +54,7 @@ jobs:
   Bump:
     needs: IntegrationTests
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
       pull-requests: write
@@ -62,7 +62,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: release
+          ref: mainline
           fetch-depth: 0
           token: ${{ secrets.CI_TOKEN }}
 
@@ -73,13 +73,8 @@ jobs:
 
       - name: ConfigureGit
         run: |
-          git config --local user.email "client-software-ci@amazon.com"
+          git config --local user.email "129794699+client-software-ci@users.noreply.github.com"
           git config --local user.name "client-software-ci"
-
-      - name: MergePushRelease
-        run: |
-          git merge --ff-only origin/mainline -v
-          git push origin release
 
       - name: Bump
         run: |
@@ -89,6 +84,7 @@ jobs:
           fi
 
           # Backup actual changelog to preserve its contents
+          touch CHANGELOG.md
           cp CHANGELOG.md CHANGELOG.bak.md
 
           # Run semantic-release to generate new changelog
@@ -119,4 +115,4 @@ jobs:
           git push -u origin bump/$NEXT_SEMVER
 
           # Needs "Allow GitHub Actions to create and approve pull requests" under Settings > Actions
-          gh pr create --base release --title "chore(release): $NEXT_SEMVER" --body "$RELEASE_NOTES"
+          gh pr create --base mainline --title "chore(release): $NEXT_SEMVER" --body "$RELEASE_NOTES"
