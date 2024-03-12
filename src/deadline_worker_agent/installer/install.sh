@@ -351,10 +351,10 @@ if [ -f /var/lib/deadline/worker.json ]; then
 fi
 echo "Done provisioning persistence directory (/var/lib/deadline)"
 
-echo "Provisioning session directory (/var/tmp/openjd)"
+echo "Provisioning root directory for OpenJD Sessions (/var/tmp/openjd)"
 mkdir -p /var/tmp/openjd
-chown "${wa_user}" /var/tmp/openjd
-chmod 400 /var/tmp/openjd
+chown "${wa_user}:${job_group}" /var/tmp/openjd
+chmod 755 /var/tmp/openjd
 
 echo "Provisioning configuration directory (/etc/amazon/deadline)"
 mkdir -p /etc/amazon/deadline
