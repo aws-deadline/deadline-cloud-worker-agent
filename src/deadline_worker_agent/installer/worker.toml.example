@@ -10,7 +10,7 @@
 #
 # Uncomment the line below and replace the value with your Amazon Deadline Cloud farm ID:
 #
-# farm_id = "REPLACE-WTIH-WORKER-FARM-ID"
+# farm_id = "REPLACE-WITH-WORKER-FARM-ID"
 
 
 # The unique identifier of the Amazon Deadline Cloud fleet that the Worker belongs to. This value is overridden

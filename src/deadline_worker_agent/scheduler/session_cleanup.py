@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import subprocess
+import os
 from threading import Lock
 
-from openjd.sessions import SessionUser, PosixSessionUser
-
+from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
+from typing import cast
 from .log import LOGGER
 from ..sessions import Session
 
@@ -37,35 +38,34 @@ class SessionUserCleanupManager:
         self._user_session_map = {}
         self._cleanup_session_user_processes = cleanup_session_user_processes
 
+    def _get_user(self, session: Session):
+        if os.name == "posix":
+            posix_user: PosixSessionUser = cast(PosixSessionUser, session.os_user)
+            return posix_user.user
+        else:
+            windows_user: WindowsSessionUser = cast(WindowsSessionUser, session._os_user)
+            return windows_user.user
+
     def register(self, session: Session):
         if session.os_user is None:
             return
-        if not isinstance(session.os_user, PosixSessionUser):
-            # TODO: Windows support, or modify the SessionUser class to either:
-            # 1. Require subclasses to provide a default str representation
-            # 2. Require subclasses to implement __eq__
-            raise NotImplementedError("Windows not supported")
 
         with self._user_session_map_lock:
-            session_dict = self._user_session_map.get(session.os_user.user, None)
+            user_name = self._get_user(session)
+            session_dict = self._user_session_map.get(user_name, None)
             if session_dict is None:
                 session_dict = {}
-                self._user_session_map[session.os_user.user] = session_dict
+                self._user_session_map[user_name] = session_dict
 
             session_dict[session.id] = session
 
     def deregister(self, session: Session):
         if session.os_user is None:
             return
-        if not isinstance(session.os_user, PosixSessionUser):
-            # TODO: Windows support, or modify the SessionUser class to either:
-            # 1. Require subclasses to implement __repr__ so its output can be used as a dict key
-            # 2. Require subclasses to implement __eq__ and __hash__ so the class can be used as
-            #    a dict key
-            raise NotImplementedError("Windows not supported")
 
         with self._user_session_map_lock:
-            session_dict = self._user_session_map.get(session.os_user.user, None)
+            user_name = self._get_user(session)
+            session_dict = self._user_session_map.get(user_name, None)
             if session_dict is None:
                 return
 
@@ -75,7 +75,7 @@ class SessionUserCleanupManager:
 
             if len(session_dict) == 0:
                 self._cleanup_session_user(session.os_user)
-                self._user_session_map.pop(session.os_user.user, None)
+                self._user_session_map.pop(user_name, None)
 
     @property
     def registered_sessions(self):

@@ -17,6 +17,7 @@ import pytest
 from deadline_worker_agent.errors import ServiceShutdown
 from deadline_worker_agent.log_sync.loggers import ROOT_LOGGER
 from deadline_worker_agent.startup import entrypoint as entrypoint_mod
+import deadline_worker_agent.scheduler.scheduler as scheduler_mod
 from deadline_worker_agent.startup.bootstrap import (
     WorkerBootstrap,
     WorkerPersistenceInfo,
@@ -116,6 +117,14 @@ def mock_worker_run() -> Generator[MagicMock, None, None]:
     """Mock the Worker.run() method which is an infinite loop"""
     with patch.object(entrypoint_mod.Worker, "run") as mock_worker_run:
         yield mock_worker_run
+
+
+@pytest.fixture(autouse=True)
+def mock_windows_credentials_resolver() -> Generator[MagicMock, None, None]:
+    with patch.object(
+        scheduler_mod.WindowsCredentialsResolver, "get_windows_session_user"
+    ) as mock_windows_credentials_resolver:
+        yield mock_windows_credentials_resolver
 
 
 @pytest.fixture

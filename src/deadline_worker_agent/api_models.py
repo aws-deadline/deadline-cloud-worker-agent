@@ -240,9 +240,20 @@ class PosixUser(TypedDict):
     """The posix group name associated with session file ownership"""
 
 
+class WindowsUser(TypedDict):
+    user: str
+    """The windows user name to run session actions as, as well as session file ownership"""
+
+    group: NotRequired[str]
+    """The windows group name associated with session file ownership"""
+
+    passwordArn: str
+    """The ARN of a AWS Secrets Manager secret that the password of the user name to run actions as"""
+
+
 class JobRunAsUser(TypedDict):
     posix: NotRequired[PosixUser]
-    # TODO: windows support
+    windows: NotRequired[WindowsUser]
     runAs: NotRequired[Literal["QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"]]
 
 
@@ -251,7 +262,7 @@ class JobDetailsData(JobDetailsIdentifierFields):
     """The queue's job attachment settings"""
 
     jobRunAsUser: JobRunAsUser
-    """The queue's info on how to run the job processes (ie. posix user/group)"""
+    """The queue's info on how to run the job processes (ie. posix or windows user/group)"""
 
     logGroupName: str
     """The name of the CloudWatch Log Group containing the Worker session's Log Stream"""

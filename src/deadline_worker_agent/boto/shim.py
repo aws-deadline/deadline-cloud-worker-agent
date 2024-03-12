@@ -258,7 +258,12 @@ class DeadlineClient:
                                 "posix": {
                                     "user": "job-user",
                                     "group": "job-group",
-                                }
+                                },
+                                "windows": {
+                                    "user": "job-user",
+                                    "group": "job-group",
+                                    "passwordArn": "job-password-arn",
+                                },
                             },
                             "pathMappingRules": [
                                 {

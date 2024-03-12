@@ -13,7 +13,9 @@ from deadline_worker_agent.aws_credentials.aws_configs import (
     _setup_file,
     _setup_parent_dir,
 )
-from openjd.sessions import PosixSessionUser, SessionUser
+from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
+from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
+import os
 
 
 @pytest.fixture
@@ -27,9 +29,24 @@ def mock_run_cmd_as() -> Generator[MagicMock, None, None]:
         yield mock_run_cmd_as
 
 
-@pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"), None))
-def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
-    return request.param
+@pytest.fixture(autouse=True)
+def mock_make_directory() -> Generator[MagicMock, None, None]:
+    with patch.object(aws_configs_mod, "make_directory") as mock_make_directory:
+        yield mock_make_directory
+
+
+@pytest.fixture(autouse=True)
+def mock_touch_file() -> Generator[MagicMock, None, None]:
+    with patch.object(aws_configs_mod, "touch_file") as mock_touch_file:
+        yield mock_touch_file
+
+
+@pytest.fixture
+def os_user() -> Optional[SessionUser]:
+    if os.name == "posix":
+        return PosixSessionUser(user="user", group="group")
+    else:
+        return WindowsSessionUser(user="user", group="group", password="fakepassword")
 
 
 class TestSetupParentDir:
@@ -42,53 +59,80 @@ class TestSetupParentDir:
     def test_creates_dir(
         self,
         dir_path: MagicMock,
-        os_user: Optional[str],
+        os_user: SessionUser,
         mock_run_cmd_as: MagicMock,
+        mock_make_directory: MagicMock,
     ) -> None:
         """Tests that the directory is created if necessary with the expected permissions"""
         # GIVEN
         mkdir: MagicMock = dir_path.mkdir
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
 
         # WHEN
         _setup_parent_dir(dir_path=dir_path, owner=os_user)
 
         # THEN
         if os_user:
-            mock_run_cmd_as.assert_any_call(user=os_user, cmd=["mkdir", "-p", str(dir_path)])
-            mock_run_cmd_as.assert_any_call(
-                user=os_user,
-                cmd=["chown", f"{os_user.user}:{os_user.group}", str(dir_path)],
-            )
-            mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "770", str(dir_path)])
-        else:
-            mkdir.assert_called_once_with(
-                mode=0o700,
-                exist_ok=True,
-            )
+            if os.name == "posix":
+                assert isinstance(os_user, PosixSessionUser)
+                mock_run_cmd_as.assert_any_call(user=os_user, cmd=["mkdir", "-p", str(dir_path)])
+                mock_run_cmd_as.assert_any_call(
+                    user=os_user,
+                    cmd=["chown", f"{os_user.user}:{os_user.group}", str(dir_path)],
+                )
+                mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "770", str(dir_path)])
+            else:
+                assert isinstance(os_user, WindowsSessionUser)
+                mock_make_directory.assert_called_once_with(
+                    dir_path=dir_path,
+                    permitted_user=os_user,
+                    user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+                    parents=True,
+                    exist_ok=True,
+                )
+        else:  # This branch isn't called?
+            if os.name == "posix":
+                mkdir.assert_called_once_with(
+                    mode=0o700,
+                    exist_ok=True,
+                )
+            else:
+                mock_make_directory.assert_called_once()
 
     def test_sets_group_ownership(
         self,
         dir_path: MagicMock,
-        os_user: str,
+        os_user: SessionUser,
         mock_run_cmd_as: MagicMock,
+        mock_make_directory: MagicMock,
     ) -> None:
-        """Tests that the directory group ownership is set as specified"""
+        """Tests that the directory group ownership is set as specified"""  # Not clear how this test is different from the one above?
         # GIVEN
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
 
         # WHEN
         _setup_parent_dir(dir_path=dir_path, owner=os_user)
 
         # THEN
         if os_user:
-            mock_run_cmd_as.assert_any_call(user=os_user, cmd=["mkdir", "-p", str(dir_path)])
-            mock_run_cmd_as.assert_any_call(
-                user=os_user,
-                cmd=["chown", f"{os_user.user}:{os_user.group}", str(dir_path)],
-            )
-            mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "770", str(dir_path)])
-        else:
+            if os.name == "posix":
+                assert isinstance(os_user, PosixSessionUser)
+                mock_run_cmd_as.assert_any_call(user=os_user, cmd=["mkdir", "-p", str(dir_path)])
+                mock_run_cmd_as.assert_any_call(
+                    user=os_user,
+                    cmd=["chown", f"{os_user.user}:{os_user.group}", str(dir_path)],
+                )
+                mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "770", str(dir_path)])
+            else:
+                assert isinstance(os_user, WindowsSessionUser)
+                mock_make_directory.assert_called_once_with(
+                    dir_path=dir_path,
+                    permitted_user=os_user,
+                    user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+                    parents=True,
+                    exist_ok=True,
+                )
+        else:  # This branch isn't called ?
             mock_run_cmd_as.assert_not_called()
 
 
@@ -120,10 +164,10 @@ class TestSetupFile:
         os_user: Optional[SessionUser],
         exists: bool,
         mock_run_cmd_as: MagicMock,
+        mock_touch_file: MagicMock,
     ) -> None:
         """Tests the config/credentials file is created if necessary"""
         # GIVEN
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
 
         # WHEN
         _setup_file(
@@ -133,12 +177,22 @@ class TestSetupFile:
 
         # THEN
         if os_user:
-            mock_run_cmd_as.assert_any_call(user=os_user, cmd=["touch", str(file_path)])
-            mock_run_cmd_as.assert_any_call(
-                user=os_user,
-                cmd=["chown", f"{os_user.user}:{os_user.group}", str(file_path)],
-            )
-            mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "660", str(file_path)])
+            if os.name == "posix":
+                assert isinstance(os_user, PosixSessionUser)
+                mock_run_cmd_as.assert_any_call(user=os_user, cmd=["touch", str(file_path)])
+                mock_run_cmd_as.assert_any_call(
+                    user=os_user,
+                    cmd=["chown", f"{os_user.user}:{os_user.group}", str(file_path)],
+                )
+                mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "660", str(file_path)])
+            else:
+                assert isinstance(os_user, WindowsSessionUser)
+                mock_touch_file.assert_called_once_with(
+                    file_path=file_path,
+                    permitted_user=os_user,
+                    user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                )
         else:
             file_path.exists.assert_called_once_with()
             if exists:
@@ -151,23 +205,33 @@ class TestSetupFile:
         file_path: MagicMock,
         os_user: Optional[SessionUser],
         mock_run_cmd_as: MagicMock,
+        mock_touch_file: MagicMock,
     ) -> None:
         """Tests the config/credentials file is created if necessary"""
         # GIVEN
         chmod: MagicMock = file_path.chmod
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
 
         # WHEN
         _setup_file(file_path=file_path, owner=os_user)
 
         # THEN
         if os_user:
-            mock_run_cmd_as.assert_any_call(user=os_user, cmd=["touch", str(file_path)])
-            mock_run_cmd_as.assert_any_call(
-                user=os_user,
-                cmd=["chown", f"{os_user.user}:{os_user.group}", str(file_path)],
-            )
-            mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "660", str(file_path)])
+            if os.name == "posix":
+                assert isinstance(os_user, PosixSessionUser)
+                mock_run_cmd_as.assert_any_call(user=os_user, cmd=["touch", str(file_path)])
+                mock_run_cmd_as.assert_any_call(
+                    user=os_user,
+                    cmd=["chown", f"{os_user.user}:{os_user.group}", str(file_path)],
+                )
+                mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "660", str(file_path)])
+            else:
+                assert isinstance(os_user, WindowsSessionUser)
+                mock_touch_file.assert_called_once_with(
+                    file_path=file_path,
+                    permitted_user=os_user,
+                    user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                )
         else:
             chmod.assert_called_once_with(mode=0o640 if os_user is not None else 0o600)
 
@@ -176,10 +240,10 @@ class TestSetupFile:
         file_path: MagicMock,
         os_user: Optional[SessionUser],
         mock_run_cmd_as: MagicMock,
+        mock_touch_file: MagicMock,
     ) -> None:
         """Tests the config/credentials file is created if necessary"""
         # GIVEN
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
 
         # WHEN
         _setup_file(
@@ -189,12 +253,22 @@ class TestSetupFile:
 
         # THEN
         if os_user:
-            mock_run_cmd_as.assert_any_call(user=os_user, cmd=["touch", str(file_path)])
-            mock_run_cmd_as.assert_any_call(
-                user=os_user,
-                cmd=["chown", f"{os_user.user}:{os_user.group}", str(file_path)],
-            )
-            mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "660", str(file_path)])
+            if os.name == "posix":
+                assert isinstance(os_user, PosixSessionUser)
+                mock_run_cmd_as.assert_any_call(user=os_user, cmd=["touch", str(file_path)])
+                mock_run_cmd_as.assert_any_call(
+                    user=os_user,
+                    cmd=["chown", f"{os_user.user}:{os_user.group}", str(file_path)],
+                )
+                mock_run_cmd_as.assert_any_call(user=os_user, cmd=["chmod", "660", str(file_path)])
+            else:
+                assert isinstance(os_user, WindowsSessionUser)
+                mock_touch_file.assert_called_once_with(
+                    file_path=file_path,
+                    permitted_user=os_user,
+                    user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                )
         else:
             mock_run_cmd_as.assert_not_called()
 
@@ -251,7 +325,10 @@ class AWSConfigTestBase:
         mock_config_parser: MagicMock,
     ) -> None:
         # GIVEN
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
+        if os.name == "posix":
+            assert isinstance(os_user, PosixSessionUser) or os_user is None
+        else:
+            assert isinstance(os_user, WindowsSessionUser) or os_user is None
         config_parser_read: MagicMock = mock_config_parser.read
 
         with (
@@ -285,7 +362,10 @@ class AWSConfigTestBase:
         os_user: Optional[SessionUser],
     ) -> None:
         # WHEN
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
+        if os.name == "posix":
+            assert isinstance(os_user, PosixSessionUser) or os_user is None
+        else:
+            assert isinstance(os_user, WindowsSessionUser) or os_user is None
         result = config_class._get_path(os_user=os_user.user if os_user is not None else "")
 
         # THEN
@@ -303,7 +383,10 @@ class AWSConfigTestBase:
         mock_config_parser: MagicMock,
     ) -> None:
         # GIVEN
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
+        if os.name == "posix":
+            assert isinstance(os_user, PosixSessionUser) or os_user is None
+        else:
+            assert isinstance(os_user, WindowsSessionUser) or os_user is None
         config = config_class(os_user=os_user)
         script_path = Path("/path/to/installdir/echo_them_credentials.sh")
         with patch.object(config, "_write") as write_mock:
@@ -330,12 +413,14 @@ class AWSConfigTestBase:
         mock_config_parser: MagicMock,
     ) -> None:
         # GIVEN
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
+        if os.name == "posix":
+            assert isinstance(os_user, PosixSessionUser) or os_user is None
+        else:
+            assert isinstance(os_user, WindowsSessionUser) or os_user is None
         config = config_class(os_user=os_user)
         script_path = Path("/path/to/installdir/echo_them_credentials.sh")
         with patch.object(config, "_write") as write_mock:
             config.install_credential_process(profile_name=profile_name, script_path=script_path)
-
             mock_config_parser.__setitem__.assert_called_once_with(
                 expected_profile_name_section,
                 {
@@ -360,7 +445,10 @@ class AWSConfigTestBase:
         mock_config_parser: MagicMock,
     ) -> None:
         # GIVEN
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
+        if os.name == "posix":
+            assert isinstance(os_user, PosixSessionUser) or os_user is None
+        else:
+            assert isinstance(os_user, WindowsSessionUser) or os_user is None
         with (
             patch.object(aws_configs_mod, "_logger") as logger_mock,
             patch.object(config_class, "_get_path") as get_path_mock,
@@ -383,7 +471,7 @@ class AWSConfigTestBase:
 
 class TestAWSConfig(AWSConfigTestBase):
     """
-    Test class derrived from AWSConfigTestBase for AWSConfig.
+    Test class derived from AWSConfigTestBase for AWSConfig.
 
     All tests are defined in the base class. This class defines the fixtures that feed into those tests.
     """
@@ -398,13 +486,16 @@ class TestAWSConfig(AWSConfigTestBase):
 
     @pytest.fixture
     def expected_path(self, os_user: Optional[SessionUser]) -> str:
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
+        if os.name == "posix":
+            assert isinstance(os_user, PosixSessionUser) or os_user is None
+        else:
+            assert isinstance(os_user, WindowsSessionUser) or os_user is None
         return f"~{os_user.user if os_user is not None else ''}/.aws/config"
 
 
 class TestAWSCredentials(AWSConfigTestBase):
     """
-    Test class derrived from AWSConfigTestBase for AWSCredentials.
+    Test class derived from AWSConfigTestBase for AWSCredentials.
 
     All tests are defined in the base class. This class defines the fixtures that feed into those tests.
     """
@@ -419,5 +510,8 @@ class TestAWSCredentials(AWSConfigTestBase):
 
     @pytest.fixture
     def expected_path(self, os_user: Optional[SessionUser]) -> str:
-        assert isinstance(os_user, PosixSessionUser) or os_user is None
+        if os.name == "posix":
+            assert isinstance(os_user, PosixSessionUser) or os_user is None
+        else:
+            assert isinstance(os_user, WindowsSessionUser) or os_user is None
         return f"~{os_user.user if os_user is not None else ''}/.aws/credentials"

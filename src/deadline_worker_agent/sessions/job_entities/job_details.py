@@ -17,6 +17,7 @@ from openjd.model import (
 from openjd.sessions import (
     PathFormat,
     PosixSessionUser,
+    WindowsSessionUser,
 )
 from openjd.sessions import PathMappingRule as OPENJDPathMappingRule
 
@@ -100,10 +101,11 @@ def job_run_as_user_api_model_to_worker_agent(
         if job_run_as_user_posix := job_run_as_user_data.get("posix", None):
             user = job_run_as_user_posix["user"]
             group = job_run_as_user_posix["group"]
+        else:
+            return None
 
         if "runAs" not in job_run_as_user_data and not group and not user:
             return None
-
         job_run_as_user = JobRunAsUser(
             posix=PosixSessionUser(
                 user=user,
@@ -111,8 +113,14 @@ def job_run_as_user_api_model_to_worker_agent(
             ),
         )
     else:
-        # TODO: windows support
-        raise NotImplementedError(f"{os.name} is not supported")
+        job_run_as_user_windows = job_run_as_user_data.get("windows", {})
+        user = job_run_as_user_windows.get("user", "")
+        passwordArn = job_run_as_user_windows.get("passwordArn", "")
+        if not (user and passwordArn):
+            return None
+        job_run_as_user = JobRunAsUser(
+            windows_settings=JobRunAsWindowsUser(user=user, passwordArn=passwordArn),
+        )
 
     return job_run_as_user
 
@@ -136,12 +144,43 @@ class JobAttachmentSettings:
 
 
 @dataclass(frozen=True)
+class JobRunAsWindowsUser:
+    passwordArn: str
+    user: str
+
+
+@dataclass
 class JobRunAsUser:
-    posix: PosixSessionUser
-    # TODO: windows support
+    posix: PosixSessionUser | None = None
+    windows: WindowsSessionUser | None = None
+    windows_settings: JobRunAsWindowsUser | None = None
 
     def __eq__(self, other: Any) -> bool:
-        return self.posix.user == other.posix.user and self.posix.group == other.posix.group
+        if other is None:
+            return False
+
+        if self.posix and other.posix:
+            posix_eq = self.posix.user == other.posix.user and self.posix.group == other.posix.group
+        else:
+            posix_eq = self.posix is None and other.posix is None
+
+        if self.windows and other.windows:
+            windows_eq = (
+                self.windows.user == other.windows.user
+                and self.windows.password == other.windows.password
+            )
+        else:
+            windows_eq = self.windows is None and other.windows is None
+
+        if self.windows_settings and other.windows_settings:
+            windows_settings_eq = (
+                self.windows_settings.user == other.windows_settings.user
+                and self.windows_settings.passwordArn == other.windows_settings.passwordArn
+            )
+        else:
+            windows_settings_eq = self.windows_settings is None and other.windows_settings is None
+
+        return posix_eq and windows_eq and windows_settings_eq
 
 
 @dataclass(frozen=True)
@@ -229,7 +268,7 @@ class JobDetails:
 
     @classmethod
     def validate_entity_data(cls, entity_data: dict[str, Any]) -> JobDetailsData:
-        """Performs input validation on a response element recceived from boto3's call to
+        """Performs input validation on a response element received from boto3's call to
         the BatchGetJobEntity Amazon Deadline Cloud API.
 
         Parameters
@@ -284,6 +323,17 @@ class JobDetails:
                             expected_type=str,
                             required=False,
                         ),
+                        Field(
+                            key="windows",
+                            expected_type=dict,
+                            required=False,
+                            fields=(
+                                Field(key="user", expected_type=str, required=True),
+                                # TODO: Remove this once the API field is removed
+                                Field(key="group", expected_type=str, required=False),
+                                Field(key="passwordArn", expected_type=str, required=True),
+                            ),
+                        ),
                     ),
                 ),
                 Field(
@@ -301,7 +351,7 @@ class JobDetails:
             ),
         )
 
-        # Validating job parameters reqiures special validation since keys are dynamic
+        # Validating job parameters requires special validation since keys are dynamic
         if job_parameters := entity_data.get("parameters", None):
             assert isinstance(job_parameters, dict)
             cls._validate_job_parameters(job_parameters)
@@ -330,18 +380,34 @@ class JobDetails:
                     f'Expected "jobRunAs" -> "runAs" to be one of "QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER" but got "{run_as_value}"'
                 )
             elif run_as_value == "QUEUE_CONFIGURED_USER":
-                if not (run_as_posix := entity_data["jobRunAsUser"].get("posix", None)):
+                run_as_posix = entity_data["jobRunAsUser"].get("posix", None)
+                run_as_windows = entity_data["jobRunAsUser"].get("windows", None)
+                if os.name == "nt" and not run_as_windows:
+                    raise ValueError(
+                        'Expected ""jobRunAs" -> "windows" to exist when "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER" but it was not present'
+                    )
+                if os.name == "posix" and not run_as_posix:
                     raise ValueError(
                         'Expected "jobRunAs" -> "posix" to exist when "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER" but it was not present'
                     )
-                if run_as_posix["user"] == "":
-                    raise ValueError(
-                        'Got empty "jobRunAs" -> "posix" -> "user" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
-                    )
-                if run_as_posix["group"] == "":
-                    raise ValueError(
-                        'Got empty "jobRunAs" -> "posix" -> "group" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
-                    )
+                if run_as_posix:
+                    if run_as_posix["user"] == "":
+                        raise ValueError(
+                            'Got empty "jobRunAs" -> "posix" -> "user" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                        )
+                    if run_as_posix["group"] == "":
+                        raise ValueError(
+                            'Got empty "jobRunAs" -> "posix" -> "group" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                        )
+                if run_as_windows:
+                    if run_as_windows["user"] == "":
+                        raise ValueError(
+                            'Got empty "jobRunAs" -> "windows" -> "user" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                        )
+                    if run_as_windows["passwordArn"] == "":
+                        raise ValueError(
+                            'Got empty "jobRunAs" -> "windows" -> "passwordArn" but "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER"'
+                        )
             elif run_as_value == "WORKER_AGENT_USER" and "posix" in entity_data["jobRunAsUser"]:
                 raise ValueError(
                     f'Expected "jobRunAs" -> "posix" is not valid when "jobRunAs" -> "runAs" is "WORKER_AGENT_USER" but got {entity_data["jobRunAsUser"]["posix"]}'

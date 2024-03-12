@@ -10,6 +10,8 @@ from unittest.mock import patch, MagicMock, ANY
 
 import pytest
 from openjd.model import ParameterValue
+import os
+
 from openjd.model.v2023_09 import (
     Action,
     Environment,
@@ -26,6 +28,7 @@ from openjd.sessions import (
     PathMappingRule,
     SessionUser,
     PosixSessionUser,
+    WindowsSessionUser,
 )
 
 from deadline_worker_agent.api_models import EnvironmentAction, TaskRunAction
@@ -53,7 +56,13 @@ from deadline.job_attachments.models import (
     JobAttachmentsFileSystem,
     JobAttachmentS3Settings,
 )
-from deadline.job_attachments.os_file_permission import PosixFileSystemPermissionSettings
+from deadline.job_attachments.os_file_permission import (
+    FileSystemPermissionSettings,
+    PosixFileSystemPermissionSettings,
+    WindowsFileSystemPermissionSettings,
+    WindowsPermissionEnum,
+)
+
 from deadline.job_attachments.progress_tracker import (
     ProgressReportMetadata,
     ProgressStatus,
@@ -61,9 +70,14 @@ from deadline.job_attachments.progress_tracker import (
 )
 
 
-@pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"),))
-def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
-    return request.param
+@pytest.fixture
+def os_user() -> Optional[SessionUser]:
+    if os.name == "posix":
+        return PosixSessionUser(user="some-user", group="some-group")
+    elif os.name == "nt":
+        return WindowsSessionUser(user="SomeUser", group="SomeGroup", password="qwe123!@#")
+    else:
+        return None
 
 
 @pytest.fixture
@@ -614,6 +628,7 @@ class TestSessionSyncAssetInputs:
     @pytest.mark.parametrize(
         "job_attachments_file_system", [e.value for e in JobAttachmentsFileSystem]
     )
+    @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
     def test_asset_loading_method(
         self,
         session: Session,
@@ -653,12 +668,66 @@ class TestSessionSyncAssetInputs:
             storage_profiles_path_mapping_rules={},
             step_dependencies=None,
             on_downloading_files=ANY,
-            os_env_vars=ANY,
+            os_env_vars=None,
         )
 
         mock_telemetry_event_for_sync_inputs.assert_called_once_with(
             "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             SummaryStatistics(),
+        )
+
+    def test_sync_asset_inputs_with_fs_permission_settings(
+        self,
+        session: Session,
+        mock_asset_sync: MagicMock,
+        job_attachment_details: JobAttachmentDetails,
+    ):
+        """
+        Tests that sync_inputs function is called with the correct fs_permission_settings
+        argument based on the current OS.
+        """
+        # GIVEN
+        mock_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
+        mock_sync_inputs.return_value = ({}, {})
+        cancel = Event()
+
+        expected_fs_permission_settings: Optional[FileSystemPermissionSettings] = None
+        if os.name == "posix":
+            expected_fs_permission_settings = PosixFileSystemPermissionSettings(
+                os_user="some-user",
+                os_group="some-group",
+                dir_mode=0o20,
+                file_mode=0o20,
+            )
+        elif os.name == "nt":
+            expected_fs_permission_settings = WindowsFileSystemPermissionSettings(
+                os_user="SomeUser",
+                os_group="SomeGroup",
+                dir_mode=WindowsPermissionEnum.WRITE,
+                file_mode=WindowsPermissionEnum.WRITE,
+            )
+
+        # WHEN
+        session.sync_asset_inputs(
+            cancel=cancel,
+            job_attachment_details=job_attachment_details,
+        )
+
+        # THEN
+        mock_sync_inputs.assert_called_with(
+            s3_settings=ANY,
+            queue_id=ANY,
+            job_id=ANY,
+            session_dir=ANY,
+            attachments=Attachments(
+                manifests=ANY,
+                fileSystem=ANY,
+            ),
+            fs_permission_settings=expected_fs_permission_settings,
+            storage_profiles_path_mapping_rules={},
+            step_dependencies=None,
+            on_downloading_files=ANY,
+            os_env_vars=None,
         )
 
     @pytest.mark.parametrize(

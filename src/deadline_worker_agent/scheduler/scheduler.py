@@ -53,7 +53,8 @@ from .session_cleanup import SessionUserCleanupManager
 from .session_queue import SessionActionQueue, SessionActionStatus
 from ..startup.config import JobsRunAsUserOverride
 from ..utils import MappingWithCallbacks
-
+from ..file_system_operations import FileSystemPermissionEnum, make_directory, touch_file
+from ..windows_credentials_resolver import WindowsCredentialsResolver
 
 logger = LOGGER
 
@@ -212,6 +213,12 @@ class WorkerScheduler:
         self._worker_persistence_dir = worker_persistence_dir
         self._worker_logs_dir = worker_logs_dir
         self._retain_session_dir = retain_session_dir
+        self._windows_credentials_resolver: Optional[WindowsCredentialsResolver]
+
+        if os.name == "nt":
+            self._windows_credentials_resolver = WindowsCredentialsResolver(self._boto_session)
+        else:
+            self._windows_credentials_resolver = None
 
     def _assign_sessions(self) -> None:
         """Handles an AssignSessions API cycle"""
@@ -260,6 +267,9 @@ class WorkerScheduler:
                         # Occurs if self._shutdown has been set, so go back to the
                         # top of the loop and drain naturally.
                         continue
+
+                    if self._windows_credentials_resolver:
+                        self._windows_credentials_resolver.prune_cache()
 
                     logger.debug("interval = %s", interval)
                     timeout = timedelta(seconds=interval)
@@ -629,7 +639,14 @@ class WorkerScheduler:
             if self._worker_logs_dir:
                 queue_log_dir = self._queue_log_dir_path(queue_id=session_spec["queueId"])
                 try:
-                    queue_log_dir.mkdir(mode=stat.S_IRWXU, exist_ok=True)
+                    if os.name == "posix":
+                        queue_log_dir.mkdir(mode=stat.S_IRWXU, exist_ok=True)
+                    else:
+                        make_directory(
+                            dir_path=queue_log_dir,
+                            exist_ok=True,
+                            agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+                        )
                 except OSError:
                     error_msg = (
                         f"Failed to create local session log directory on worker: {queue_log_dir}"
@@ -641,7 +658,13 @@ class WorkerScheduler:
                     session_id=new_session_id, queue_log_dir=queue_log_dir
                 )
                 try:
-                    session_log_file.touch(mode=stat.S_IWUSR | stat.S_IRUSR, exist_ok=True)
+                    if os.name == "posix":
+                        session_log_file.touch(mode=stat.S_IWUSR | stat.S_IRUSR, exist_ok=True)
+                    else:
+                        touch_file(
+                            file_path=session_log_file,
+                            agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                        )
                 except OSError:
                     error_msg = (
                         f"Failed to create local session log file on worker: {session_log_file}"
@@ -669,6 +692,7 @@ class WorkerScheduler:
                 worker_id=self._worker_id,
                 job_id=job_id,
                 deadline_client=self._deadline,
+                windows_credentials_resolver=self._windows_credentials_resolver,
             )
             # TODO: Would be great to merge Session + SessionActionQueue
             # and move all job entities calls within the Session thread.
@@ -698,13 +722,13 @@ class WorkerScheduler:
 
             os_user: Optional[SessionUser] = None
             if not self._job_run_as_user_override.run_as_agent:
-                if self._job_run_as_user_override.posix_job_user is not None and os.name == "posix":
-                    os_user = self._job_run_as_user_override.posix_job_user
+                if self._job_run_as_user_override.job_user is not None:
+                    os_user = self._job_run_as_user_override.job_user
                 elif job_details.job_run_as_user:
-                    if os.name != "posix":
-                        # TODO: windows support
-                        raise NotImplementedError(f"{os.name} is not supported")
-                    os_user = job_details.job_run_as_user.posix
+                    if os.name == "posix":
+                        os_user = job_details.job_run_as_user.posix
+                    else:
+                        os_user = job_details.job_run_as_user.windows
 
             queue_credentials: QueueAwsCredentials | None = None
             asset_sync: AssetSync | None = None

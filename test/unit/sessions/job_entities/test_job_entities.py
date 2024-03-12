@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from typing import Generator
+from typing import Generator, Optional, cast
 from unittest.mock import MagicMock, patch
 
 from deadline.job_attachments.models import JobAttachmentsFileSystem
@@ -20,10 +20,11 @@ from openjd.model.v2023_09 import (
     StepScript,
     StepTemplate,
 )
-from openjd.sessions import PosixSessionUser
+from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
 
 
 import pytest
+import os
 
 from deadline_worker_agent.api_models import (
     Attachments,
@@ -50,7 +51,10 @@ from deadline_worker_agent.sessions.job_entities import (
     JobEntities,
     StepDetails,
 )
-from deadline_worker_agent.sessions.job_entities.job_details import JobRunAsUser
+from deadline_worker_agent.sessions.job_entities.job_details import (
+    JobRunAsUser,
+    JobRunAsWindowsUser,
+)
 import deadline_worker_agent.sessions.job_entities.job_entities as job_entities_mod
 
 
@@ -67,6 +71,56 @@ def deadline_client() -> MagicMock:
         "errors": [],
     }
     return client
+
+
+@pytest.fixture
+def os_user() -> SessionUser:
+    if os.name == "posix":
+        return PosixSessionUser(user="user", group="group")
+    else:
+        return WindowsSessionUser(user="user", group="group", password="fakepassword")
+
+
+@pytest.fixture
+def windows_credentials_resolver(os_user: MagicMock) -> Optional[MagicMock]:
+    if os.name == "nt":
+        resolver = MagicMock()
+        resolver.get_windows_session_user.return_value = os_user
+        return resolver
+    else:
+        return None
+
+
+@pytest.fixture
+def job_details_parameters() -> dict[str, ParameterValue]:
+    return {
+        "p_string": ParameterValue(type=ParameterValueType.STRING, value="string_value"),
+        "p_int": ParameterValue(type=ParameterValueType.INT, value="1"),
+        "p_float": ParameterValue(type=ParameterValueType.FLOAT, value="1.2"),
+        "p_path": ParameterValue(type=ParameterValueType.PATH, value="/tmp/share"),
+    }
+
+
+@pytest.fixture
+def job_details_with_user(
+    os_user: SessionUser, job_details_parameters: dict[str, ParameterValue]
+) -> JobDetails:
+    if os.name == "posix":
+        posix_user = cast(PosixSessionUser, os_user)
+        return JobDetails(
+            log_group_name="/aws/deadline/queue-0000",
+            schema_version=SpecificationRevision("2023-09"),
+            job_run_as_user=JobRunAsUser(posix=posix_user),
+            parameters=job_details_parameters,
+        )
+    else:
+        windows_user = cast(WindowsSessionUser, os_user)
+        return JobDetails(
+            log_group_name="/aws/deadline/queue-0000",
+            schema_version=SpecificationRevision("2023-09"),
+            job_run_as_user=JobRunAsUser(windows=windows_user),
+            parameters=job_details_parameters,
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -89,6 +143,7 @@ def mock_client_batch_get_job_entity_max_identifiers(
 @pytest.fixture
 def job_entities(
     deadline_client: MagicMock,
+    windows_credentials_resolver: MagicMock,
     job_id: str,
 ) -> Generator[JobEntities, None, None]:
     job_entities = JobEntities(
@@ -97,6 +152,7 @@ def job_entities(
         worker_id="worker-id",
         job_id=job_id,
         deadline_client=deadline_client,
+        windows_credentials_resolver=windows_credentials_resolver,
     )
 
     yield job_entities
@@ -143,6 +199,7 @@ class TestJobEntity:
     def test_has_path_mapping_rules(
         self,
         deadline_client: MagicMock,
+        windows_credentials_resolver: MagicMock,
         path_mapping_rules: list[PathMappingRule] | None,
     ) -> None:
         # GIVEN
@@ -156,6 +213,11 @@ class TestJobEntity:
                     "posix": {
                         "user": "job-user",
                         "group": "job-group",
+                    },
+                    "windows": {
+                        "user": "job-user",
+                        "group": "job-group",
+                        "passwordArn": "job-password-arn",
                     },
                 },
             },
@@ -173,6 +235,7 @@ class TestJobEntity:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN
@@ -186,19 +249,27 @@ class TestJobEntity:
             assert job_details.path_mapping_rules not in (None, [])
             assert len(job_details.path_mapping_rules) == len(path_mapping_rules)
 
-    def test_job_run_as_user(self) -> None:
+    def test_job_run_as_user(
+        self,
+    ) -> None:
         """Ensures that if we receive a job_run_as_user field in the response,
-        that the created entity has a (Posix) SessionUser created with the
+        that the created entity has a SessionUser created with the
         proper values"""
         # GIVEN
         expected_user = "job-user"
         expected_group = "job-group"
+        expected_password_arn = "job-password-arn"
         api_response: dict = {
             "jobId": "job-123",
             "jobRunAsUser": {
                 "posix": {
                     "user": expected_user,
                     "group": expected_group,
+                },
+                "windows": {
+                    "user": expected_user,
+                    "group": expected_group,
+                    "passwordArn": expected_password_arn,
                 },
             },
             "logGroupName": "TEST",
@@ -211,23 +282,40 @@ class TestJobEntity:
 
         # THEN
         assert entity_obj.job_run_as_user is not None
-        assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
-        assert entity_obj.job_run_as_user.posix.user == expected_user
-        assert entity_obj.job_run_as_user.posix.group == expected_group
+        if os.name == "posix":
+            assert isinstance(entity_obj.job_run_as_user.posix, PosixSessionUser)
+            assert entity_obj.job_run_as_user.posix.user == expected_user
+            assert entity_obj.job_run_as_user.posix.group == expected_group
+        else:
+            assert isinstance(entity_obj.job_run_as_user.windows_settings, JobRunAsWindowsUser)
+            assert entity_obj.job_run_as_user.windows_settings.user == expected_user
+            assert entity_obj.job_run_as_user.windows_settings.passwordArn == expected_password_arn
 
 
 class TestDetails:
-    def test_job_details(self, deadline_client: MagicMock, job_id: str):
+    def test_job_details(
+        self,
+        deadline_client: MagicMock,
+        windows_credentials_resolver: MagicMock,
+        job_details_with_user: MagicMock,
+        os_user: MagicMock,
+        job_id: str,
+    ):
         # GIVEN
         job_details_boto = JobDetailsBoto(
             jobDetails={
                 "jobId": job_id,
                 "schemaVersion": "jobtemplate-2023-09",
-                "logGroupName": "fake-name",
+                "logGroupName": "/aws/deadline/queue-0000",
                 "jobRunAsUser": {
                     "posix": {
+                        "user": "user",
+                        "group": "group",
+                    },
+                    "windows": {
                         "user": "job-user",
                         "group": "job-group",
+                        "passwordArn": "job-password-arn",
                     },
                 },
                 "parameters": {
@@ -242,20 +330,12 @@ class TestDetails:
             "entities": [job_details_boto],
             "errors": [],
         }
-        expected_details = JobDetails(
-            schema_version=SpecificationRevision("2023-09"),
-            log_group_name="fake-name",
-            job_run_as_user=JobRunAsUser(
-                posix=PosixSessionUser(user="job-user", group="job-group")
-            ),
-            parameters={
-                "p_string": ParameterValue(type=ParameterValueType.STRING, value="string_value"),
-                "p_int": ParameterValue(type=ParameterValueType.INT, value="1"),
-                "p_float": ParameterValue(type=ParameterValueType.FLOAT, value="1.2"),
-                "p_path": ParameterValue(type=ParameterValueType.PATH, value="/tmp/share"),
-            },
-        )
+        expected_details = job_details_with_user
         assert expected_details.job_run_as_user is not None  # For type checker
+        if os.name == "posix":
+            assert expected_details.job_run_as_user.posix is not None  # For type checker
+        else:
+            assert expected_details.job_run_as_user.windows is not None  # For type checker
         deadline_client.batch_get_job_entity.return_value = response
         job_entities = JobEntities(
             farm_id="farm-id",
@@ -263,6 +343,7 @@ class TestDetails:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN
@@ -272,14 +353,32 @@ class TestDetails:
         assert details.log_group_name == expected_details.log_group_name
         assert details.schema_version == expected_details.schema_version
         assert details.job_run_as_user is not None
-        assert details.job_run_as_user.posix.user == expected_details.job_run_as_user.posix.user
-        assert details.job_run_as_user.posix.group == expected_details.job_run_as_user.posix.group
+        if os.name == "posix":
+            assert details.job_run_as_user.windows is None
+            assert details.job_run_as_user.posix is not None
+            assert details.job_run_as_user.posix.user == expected_details.job_run_as_user.posix.user
+            assert (
+                details.job_run_as_user.posix.group == expected_details.job_run_as_user.posix.group
+            )
+        else:
+            assert details.job_run_as_user.windows is not None
+            assert details.job_run_as_user.posix is None
+            assert (
+                details.job_run_as_user.windows.user
+                == expected_details.job_run_as_user.windows.user
+            )
+            assert (
+                details.job_run_as_user.windows.group
+                == expected_details.job_run_as_user.windows.group
+            )
         assert details.job_attachment_settings == expected_details.job_attachment_settings
         assert details.parameters == expected_details.parameters
         assert details.path_mapping_rules == expected_details.path_mapping_rules
         assert details.queue_role_arn == expected_details.queue_role_arn
 
-    def test_environment_details(self, deadline_client: MagicMock, job_id: str):
+    def test_environment_details(
+        self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
+    ):
         # GIVEN
         environment_id = "env-id"
         env_name = "TestEnv"
@@ -319,6 +418,7 @@ class TestDetails:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN
@@ -327,7 +427,9 @@ class TestDetails:
         # THEN
         assert details == expected_details
 
-    def test_job_attachment_details(self, deadline_client: MagicMock, job_id: str):
+    def test_job_attachment_details(
+        self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
+    ):
         # GIVEN
         details_boto = JobAttachmentDetailsBoto(
             jobAttachmentDetails=JobAttachmentDetailsData(
@@ -349,6 +451,7 @@ class TestDetails:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN
@@ -357,7 +460,9 @@ class TestDetails:
         # THEN
         assert details == expected_details
 
-    def test_step_details_backwards_compat(self, deadline_client: MagicMock, job_id: str):
+    def test_step_details_backwards_compat(
+        self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
+    ):
         # TODO - Delete this test once the StepDetails from BatchGetJobEntities is returning
         #  a StepTemplate instead of a StepScript.
 
@@ -398,6 +503,7 @@ class TestDetails:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN
@@ -406,7 +512,9 @@ class TestDetails:
         # THEN
         assert details == expected_details
 
-    def test_step_details(self, deadline_client: MagicMock, job_id: str):
+    def test_step_details(
+        self, deadline_client: MagicMock, windows_credentials_resolver: MagicMock, job_id: str
+    ):
         # GIVEN
         step_id = "step-id"
         dependency = "stepId-1234"
@@ -447,6 +555,7 @@ class TestDetails:
             worker_id="worker-id",
             job_id=job_id,
             deadline_client=deadline_client,
+            windows_credentials_resolver=windows_credentials_resolver,
         )
 
         # WHEN
@@ -499,6 +608,17 @@ class TestCaching:
                     "user": "job-user",
                     "group": "job-group",
                 },
+                "windows": {
+                    "user": "job-user",
+                    "group": "job-group",
+                    "passwordArn": "job-password-arn",
+                },
+            },
+            "parameters": {
+                "p_string": {"string": "string_value"},
+                "p_int": {"int": "1"},
+                "p_float": {"float": "1.2"},
+                "p_path": {"path": "/tmp/share"},
             },
         }
         expected_environment_details: EnvironmentDetailsData = {

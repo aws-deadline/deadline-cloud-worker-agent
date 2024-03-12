@@ -19,7 +19,8 @@ from deadline_worker_agent.aws.deadline import (
 )
 import deadline_worker_agent.aws_credentials.queue_boto3_session as queue_boto3_session_mod
 from deadline_worker_agent.aws_credentials.queue_boto3_session import QueueBoto3Session
-from openjd.sessions import PosixSessionUser, SessionUser
+from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
+from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
 
 
 @pytest.fixture(autouse=True)
@@ -51,9 +52,12 @@ def deadline_client() -> MagicMock:
     return MagicMock()
 
 
-@pytest.fixture(params=(PosixSessionUser(user="some-user", group="some-group"), None))
-def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
-    return request.param
+@pytest.fixture
+def os_user() -> Optional[SessionUser]:
+    if os.name == "posix":
+        return PosixSessionUser(user="user", group="group")
+    else:
+        return WindowsSessionUser(user="user", group="group", password="fakepassword")
 
 
 class TestInit:
@@ -460,20 +464,31 @@ class TestCreateCredentialsDirectory:
                 worker_persistence_dir=mock_path,
             )
 
-        with patch.object(queue_boto3_session_mod.shutil, "chown") as mock_chown:
+        with (
+            patch.object(queue_boto3_session_mod, "make_directory") as mock_make_directory,
+            patch.object(queue_boto3_session_mod.shutil, "chown") as mock_chown,
+        ):
             # WHEN
             session._create_credentials_directory()
 
         # THEN
-        mock_path.mkdir.assert_called_once_with(
-            exist_ok=True,
-            parents=True,
-            mode=0o750,
-        )
+
         if isinstance(os_user, PosixSessionUser):
+            mock_path.mkdir.assert_called_once_with(
+                exist_ok=True,
+                parents=True,
+                mode=0o750,
+            )
             mock_chown.assert_called_once_with(mock_path, group=os_user.group)
         else:
-            mock_chown.assert_not_called()
+            mock_make_directory.assert_called_once_with(
+                dir_path=mock_path,
+                exist_ok=True,
+                parents=True,
+                permitted_user=os_user,
+                agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                user_permission=FileSystemPermissionEnum.READ,
+            )
 
     def test_reraises_oserror(
         self,
@@ -609,14 +624,20 @@ class TestInstallCredentialProcess:
             patch.object(
                 QueueBoto3Session, "_generate_credential_process_script"
             ) as mock_generate_script,
+            patch.object(queue_boto3_session_mod, "set_permissions") as mock_set_permissions,
         ):
             # WHEN
             session._install_credential_process()
 
         # THEN
-        credentials_process_script_path = (
-            Path(tmpdir) / "queues" / queue_id / "get_aws_credentials.sh"
-        )
+        if os.name == "posix":
+            credentials_process_script_path = (
+                Path(tmpdir) / "queues" / queue_id / "get_aws_credentials.sh"
+            )
+        else:
+            credentials_process_script_path = (
+                Path(tmpdir) / "queues" / queue_id / "get_aws_credentials.cmd"
+            )
         mock_os_open.assert_called_once_with(
             path=str(credentials_process_script_path),
             flags=os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
@@ -636,8 +657,20 @@ class TestInstallCredentialProcess:
             mock_chown.assert_not_called()
         else:
             # This assert for type checking. Expand the if-else chain when adding new user kinds.
-            assert isinstance(os_user, PosixSessionUser)
-            mock_chown.assert_called_once_with(credentials_process_script_path, group=os_user.group)
+            if os.name == "posix":
+                assert isinstance(os_user, PosixSessionUser)
+                mock_chown.assert_called_once_with(
+                    credentials_process_script_path, group=os_user.group
+                )
+            else:
+                assert isinstance(os_user, WindowsSessionUser)
+                mock_set_permissions.assert_called_once_with(
+                    file_path=credentials_process_script_path,
+                    permitted_user=os_user,
+                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    user_permission=FileSystemPermissionEnum.EXECUTE,
+                )
+
         aws_config_mock.install_credential_process.assert_called_once_with(
             session._profile_name, credentials_process_script_path
         )
