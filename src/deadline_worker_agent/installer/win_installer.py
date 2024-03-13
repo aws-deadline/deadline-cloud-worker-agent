@@ -578,7 +578,7 @@ def _start_service() -> None:
 
 def get_user_effective_rights(user: str) -> set[str]:
     """
-    Gets a list of a user's effective rights. This includes rights granted both directly
+    Gets a set of a user's effective rights. This includes rights granted both directly
     and indirectly via group membership.
 
     Args:
@@ -721,18 +721,21 @@ def start_windows_installer(
         # This is only to verify the credentials. It will raise a BadCredentialsError if the
         # credentials cannot be used to logon the user
         WindowsSessionUser(user=user_name, password=password)
-
-        # Determine which rights we need to add to the existing user
-        existing_agent_user_rights = get_user_effective_rights(user_name)
-        user_rights_to_grant -= existing_agent_user_rights
-        if user_rights_to_grant and not grant_existing_user_rights:
-            logging.error(
-                f"Existing Worker agent user was provided ({user_name}) but is missing the following rights: {user_rights_to_grant}\n"
-                "Provide the --grant-existing-user-rights option to allow the installer to grant the missing rights to the user."
-            )
-            sys.exit(1)
     else:
         create_local_agent_user(user_name, password)
+
+    logging.info(f"Adding {user_name} to the Administrators group")
+    add_user_to_group(group_name="Administrators", user_name=user_name)
+
+    # Determine which rights we need to add to the existing user
+    existing_agent_user_rights = get_user_effective_rights(user_name)
+    user_rights_to_grant -= existing_agent_user_rights
+    if user_rights_to_grant and not grant_existing_user_rights:
+        logging.error(
+            f"Existing Worker agent user was provided ({user_name}) but is missing the following rights: {user_rights_to_grant}\n"
+            "Provide the --grant-existing-user-rights option to allow the installer to grant the missing rights to the user."
+        )
+        sys.exit(1)
 
     if user_rights_to_grant:
         grant_account_rights(user_name, list(user_rights_to_grant))
