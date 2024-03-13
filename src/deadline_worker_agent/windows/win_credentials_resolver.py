@@ -17,6 +17,7 @@ from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 from botocore.retries.standard import RetryContext
 from openjd.sessions import WindowsSessionUser, BadCredentialsException
+from win32api import CloseHandle
 
 from ..boto import (
     OTHER_BOTOCORE_CONFIG,
@@ -28,7 +29,6 @@ from .logon import (
     load_user_profile,
 )
 from .win_api import (
-    CloseHandle,
     PROFILEINFO,
     UnloadUserProfile,
 )
@@ -62,7 +62,7 @@ class WindowsCredentialsResolver:
         self,
         boto_session: BotoSession,
     ) -> None:
-        if os.name != "nt":
+        if os.name != "nt":  # pragma: no cover
             raise RuntimeError("Windows credentials resolver can only be used on Windows")
         self._boto_session = boto_session
         self._user_cache: Dict[str, _WindowsCredentialsCacheEntry] = {}
@@ -131,11 +131,11 @@ class WindowsCredentialsResolver:
                     logger.info(
                         f"Removing user {user.windows_session_user.user} from the windows credentials resolver cache"
                     )
-                    assert user.user_profile is not None
+                    if user.user_profile:
+                        UnloadUserProfile(
+                            user.windows_session_user.logon_token, user.user_profile.hProfile
+                        )
                     assert user.windows_session_user.logon_token is not None
-                    UnloadUserProfile(
-                        user.windows_session_user.logon_token, user.user_profile.hProfile
-                    )
                     CloseHandle(user.windows_session_user.logon_token)
         self._user_cache.clear()
 

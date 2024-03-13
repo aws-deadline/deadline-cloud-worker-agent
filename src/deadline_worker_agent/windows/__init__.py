@@ -7,7 +7,6 @@ import sys
 assert sys.platform == "win32"
 
 from .win_api import (
-    CloseHandle,
     PROFILEINFO,
     UnloadUserProfile,
 )
@@ -17,7 +16,6 @@ from .logon import (
 )
 
 __all__ = [
-    "CloseHandle",
     "load_user_profile",
     "logon_user",
     "PROFILEINFO",

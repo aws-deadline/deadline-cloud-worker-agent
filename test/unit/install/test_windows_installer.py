@@ -2,13 +2,13 @@
 
 import string
 import sys
+import sysconfig
+
 import pytest
 
 if sys.platform != "win32":
     pytest.skip("Windows-specific tests", allow_module_level=True)
 
-import pywintypes
-from pywintypes import error as PyWinTypesError
 from deadline_worker_agent.installer.win_installer import (
     ensure_local_queue_user_group_exists,
     ensure_local_agent_user,
@@ -16,14 +16,18 @@ from deadline_worker_agent.installer.win_installer import (
     start_windows_installer,
     validate_deadline_id,
 )
-import sysconfig
 from pathlib import Path
+from pywintypes import error as PyWinTypesError
+from unittest.mock import call, patch, MagicMock
+from win32comext.shell import shell
+from win32service import SERVICE_AUTO_START
+from win32serviceutil import GetServiceClassString
+import win32netcon
+
 from deadline_worker_agent import installer as installer_mod
 from deadline_worker_agent.installer import ParsedCommandLineArguments, install
-import pytest
-from unittest.mock import patch, MagicMock
-import win32netcon
-from win32comext.shell import shell
+from deadline_worker_agent.installer import win_installer
+from deadline_worker_agent.windows.win_service import WorkerAgentWindowsService
 
 
 def test_start_windows_installer(
@@ -110,7 +114,7 @@ def test_unexpected_error_code_handling(group_name):
     with patch("win32net.NetLocalGroupGetInfo", side_effect=MockPyWinTypesError(9999)), patch(
         "win32net.NetLocalGroupAdd"
     ) as mock_group_add, patch("logging.error"):
-        with pytest.raises(pywintypes.error):
+        with pytest.raises(PyWinTypesError):
             ensure_local_queue_user_group_exists(group_name)
         mock_group_add.assert_not_called()
 
@@ -192,3 +196,46 @@ def test_non_valid_deadline_id1():
 
 def test_non_valid_deadline_id_with_wrong_prefix():
     assert not validate_deadline_id("deadline", "line-123e4567e89b12d3a456426655441234")
+
+
+def test_successful_install_service_fresh() -> None:
+    """Tests that the installer calls pywin32's InstallService function to install the
+    Windows Service with the correct arguments"""
+    # GIVEN
+    agent_user_name = "myagentuser"
+    password = "apassword"
+    expected_service_display_name = WorkerAgentWindowsService._svc_display_name_
+
+    with (
+        patch.object(win_installer.win32serviceutil, "InstallService") as mock_install_service,
+        patch.object(win_installer.logging, "info") as mock_logging_info,
+    ):
+        # WHEN
+        win_installer._install_service(
+            agent_user_name=agent_user_name,
+            password=password,
+        )
+
+    # THEN
+    mock_install_service.assert_called_once_with(
+        GetServiceClassString(WorkerAgentWindowsService),
+        WorkerAgentWindowsService._svc_name_,
+        expected_service_display_name,
+        serviceDeps=None,
+        startType=SERVICE_AUTO_START,
+        bRunInteractive=None,
+        userName=f".\\{agent_user_name}",
+        password=password,
+        exeName=getattr(WorkerAgentWindowsService, "_exe_name_", None),
+        perfMonIni=None,
+        perfMonDll=None,
+        exeArgs=getattr(WorkerAgentWindowsService, "_exe_args_", None),
+        description=getattr(WorkerAgentWindowsService, "_svc_description_", None),
+        delayedstart=False,
+    )
+    mock_logging_info.assert_has_calls(
+        calls=[
+            call(f'Configuring Windows Service "{expected_service_display_name}"...'),
+            call(f'Successfully created Windows Service "{expected_service_display_name}"'),
+        ],
+    )

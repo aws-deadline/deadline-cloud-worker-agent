@@ -6,7 +6,6 @@ import sys
 
 assert sys.platform == "win32"
 
-from contextlib import contextmanager
 from ctypes import (
     byref,
     sizeof,
@@ -14,7 +13,6 @@ from ctypes import (
 )
 from ctypes.wintypes import HANDLE
 from enum import Enum
-from typing import Generator
 
 from win32profile import PI_NOUI
 from win32security import (
@@ -24,74 +22,13 @@ from win32security import (
     LOGON32_LOGON_NETWORK_CLEARTEXT,
     LOGON32_LOGON_SERVICE,
     LOGON32_PROVIDER_DEFAULT,
-    SE_BACKUP_NAME,
-    SE_RESTORE_NAME,
-    SE_PRIVILEGE_ENABLED,
-    SE_PRIVILEGE_REMOVED,
-    TOKEN_ADJUST_PRIVILEGES,
 )
 
 from .win_api import (
-    AdjustTokenPrivileges,
-    CloseHandle,
-    GetCurrentProcess,
     LoadUserProfileW,
     LogonUserW,
-    LookupPrivilegeValueW,
-    OpenProcessToken,
     PROFILEINFO,
-    TOKEN_PRIVILEGES,
 )
-
-
-def adjust_privileges(
-    *,
-    privilege_constants: list[str],
-    enable: bool,
-) -> None:
-    """
-    Adjusts the privileges of THIS PROCESS.
-
-    Args:
-        privilege_constants: List of the privilege constants to enable/disable.
-            See: https://learn.microsoft.com/en-us/windows/win32/secauthz/privilege-constants
-        enable: True if we are to enable the privileges, False if we're to disable them
-
-    Raises:
-        OSError - If there is an error modifying the privileges.
-    """
-    proc_token = HANDLE(0)
-    if not OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, byref(proc_token)):
-        raise WinError()
-
-    token_privileges = TOKEN_PRIVILEGES.allocate(len(privilege_constants))
-    privs_array = token_privileges.privileges_array()
-    for i, name in enumerate(privilege_constants):
-        if not LookupPrivilegeValueW(None, name, byref(privs_array[i].Luid)):
-            CloseHandle(proc_token)
-            raise WinError()
-        privs_array[i].Attributes = SE_PRIVILEGE_ENABLED if enable else SE_PRIVILEGE_REMOVED
-
-    if not AdjustTokenPrivileges(
-        proc_token, False, byref(token_privileges), sizeof(token_privileges), None, None
-    ):
-        CloseHandle(proc_token)
-        raise WinError()
-
-    CloseHandle(proc_token)
-
-
-@contextmanager
-def grant_privilege_context(privilege_constants: list[str]) -> Generator[None, None, None]:
-    """
-    A context wrapper around adjust_privileges().
-    This will enable the given privileges when entered, and disable them when exited.
-    """
-    try:
-        adjust_privileges(privilege_constants=privilege_constants, enable=True)
-        yield
-    finally:
-        adjust_privileges(privilege_constants=privilege_constants, enable=False)
 
 
 def load_user_profile(
@@ -101,12 +38,6 @@ def load_user_profile(
 ) -> PROFILEINFO:
     """
     Loads the profile for the given user.
-
-    This requires that the security token of the current process have the SeBackupPrivilege and
-    SeRestorePrivilege access rights.
-
-    The function will temporarily elevate the current process' token privileges to include
-    backup and restore while loading the target user profile.
 
     Args:
         user: The username of the user whose profile we're loading
@@ -126,19 +57,17 @@ def load_user_profile(
     # As per https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-loaduserprofilew#remarks
     # "Services and applications that call LoadUserProfile should check to see if the user has a roaming profile. ..."
 
-    # "The calling process must have the SE_RESTORE_NAME and SE_BACKUP_NAME privileges"
-    with grant_privilege_context([SE_BACKUP_NAME, SE_RESTORE_NAME]):
-        # Note: As per https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-loaduserprofilew#remarks
-        # the caller must *be* an Administrator or the LocalSystem account.
-        pi = PROFILEINFO()
-        pi.dwSize = sizeof(PROFILEINFO)
-        pi.lpUserName = user
-        pi.dwFlags = PI_NOUI  # Prevents displaying of messages
+    # Note: As per https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-loaduserprofilew#remarks
+    # the caller must *be* an Administrator or the LocalSystem account.
+    pi = PROFILEINFO()
+    pi.dwSize = sizeof(PROFILEINFO)
+    pi.lpUserName = user
+    pi.dwFlags = PI_NOUI  # Prevents displaying of messages
 
-        if not LoadUserProfileW(logon_token, byref(pi)):
-            raise WinError()
+    if not LoadUserProfileW(logon_token, byref(pi)):
+        raise WinError()
 
-        return pi
+    return pi
 
 
 class LogonType(Enum):
