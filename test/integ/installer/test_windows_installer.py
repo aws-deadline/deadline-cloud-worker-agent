@@ -11,6 +11,7 @@ import pytest
 import win32api
 import win32net
 
+import deadline.client.config.config_file
 import deadline_worker_agent.installer.win_installer as installer_mod
 from deadline_worker_agent.installer.win_installer import (
     add_user_to_group,
@@ -20,6 +21,7 @@ from deadline_worker_agent.installer.win_installer import (
     ensure_local_queue_user_group_exists,
     generate_password,
     provision_directories,
+    update_deadline_client_config,
     WorkerAgentDirectories,
 )
 
@@ -226,3 +228,22 @@ def test_provision_directories(
     assert actual_dirs.deadline_log_subdir.exists()
     assert actual_dirs.deadline_persistence_subdir.exists()
     assert actual_dirs.deadline_config_subdir.exists()
+
+
+def test_update_deadline_client_config(tmp_path: pathlib.Path) -> None:
+    # GIVEN
+    deadline_client_config_path = tmp_path / "deadline_client_config"
+    deadline_client_config_path.touch(mode=0o644, exist_ok=False)
+
+    with patch(
+        "deadline.client.config.config_file.get_config_file_path",
+        return_value=deadline_client_config_path,
+    ):
+        # WHEN
+        update_deadline_client_config(
+            user="",  # Doesn't matter, config path is mocked out anyway
+            settings={"telemetry.opt_out": "true"},
+        )
+
+        # THEN
+        assert deadline.client.config.config_file.get_setting("telemetry.opt_out") == "true"

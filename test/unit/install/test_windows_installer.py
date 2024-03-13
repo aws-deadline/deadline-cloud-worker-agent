@@ -43,7 +43,7 @@ def test_start_windows_installer(
                 farm_id=parsed_args.farm_id,
                 fleet_id=parsed_args.fleet_id,
                 region=parsed_args.region,
-                worker_agent_program=str(Path(sysconfig.get_path("scripts"))),
+                worker_agent_program=Path(sysconfig.get_path("scripts")),
                 no_install_service=not parsed_args.install_service,
                 start=parsed_args.service_start,
                 confirm=parsed_args.confirmed,
@@ -52,6 +52,7 @@ def test_start_windows_installer(
                 group_name=parsed_args.group,
                 password=parsed_args.password,
                 allow_shutdown=parsed_args.allow_shutdown,
+                telemetry_opt_out=parsed_args.telemetry_opt_out,
             )
 
 
@@ -69,7 +70,7 @@ def test_start_windows_installer_fails_when_run_as_non_admin_user(
                 farm_id=parsed_args.farm_id,
                 fleet_id=parsed_args.fleet_id,
                 region=parsed_args.region,
-                worker_agent_program=str(Path(sysconfig.get_path("scripts"))),
+                worker_agent_program=Path(sysconfig.get_path("scripts")),
                 no_install_service=not parsed_args.install_service,
                 start=parsed_args.service_start,
                 confirm=parsed_args.confirmed,
