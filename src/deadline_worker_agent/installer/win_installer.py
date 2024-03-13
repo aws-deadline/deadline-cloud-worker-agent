@@ -211,30 +211,44 @@ def grant_account_rights(account_name: str, rights: list[str]):
             win32api.CloseHandle(policy_handle)
 
 
+def is_user_in_group(group_name: str, user_name: str) -> bool:
+    """
+    Checks if a user is in a group
+
+    Args:
+        group_name (str): The name of the group
+        user_name (str): The name of the user
+
+    Returns:
+        bool: True if the user is in the group, false otherwise
+    """
+    try:
+        group_members_info = win32net.NetLocalGroupGetMembers(None, group_name, 1)
+    except Exception as e:
+        logging.error(f"Failed to get group members of '{group_name}': {e}")
+        raise
+
+    return any(group_member["name"] == user_name for group_member in group_members_info[0])
+
+
 def add_user_to_group(group_name: str, user_name: str) -> None:
     """
-    Adds a specified user to a specified local group if they are not already a member.
+    Adds a specified user to a specified local group.
 
     Parameters:
     - group_name (str): The name of the local group to which the user will be added.
     - user_name (str): The name of the user to be added to the group.
     """
     try:
-        group_members_info = win32net.NetLocalGroupGetMembers(None, group_name, 1)
-        group_members = [member["name"] for member in group_members_info[0]]
-
-        if user_name not in group_members:
-            # The user information must be in a dictionary with 'domainandname' key
-            user_info = {"domainandname": user_name}
-            win32net.NetLocalGroupAddMembers(
-                None,  # the local computer is used.
-                group_name,
-                3,  # Specifies the domain and name of the new local group member.
-                [user_info],
-            )
-            logging.info(f"User {user_name} is added to group {group_name}.")
-        else:
-            logging.info(f"User {user_name} is already a member of group {group_name}.")
+        # The user information must be in a dictionary with 'domainandname' key
+        user_info = {"domainandname": user_name}
+        win32net.NetLocalGroupAddMembers(
+            None,  # the local computer is used.
+            group_name,
+            3,  # Specifies the domain and name of the new local group member.
+            [user_info],
+        )
+        logging.info(f"User {user_name} is added to group {group_name}.")
     except Exception as e:
         logging.error(
             f"An error occurred during adding user {user_name} to the user group {group_name}: {e}"
@@ -576,7 +590,7 @@ def _start_service() -> None:
         logging.info(f'Successfully started service "{service_name}"')
 
 
-def get_user_effective_rights(user: str) -> set[str]:
+def get_effective_user_rights(user: str) -> set[str]:
     """
     Gets a set of a user's effective rights. This includes rights granted both directly
     and indirectly via group membership.
@@ -634,6 +648,7 @@ def start_windows_installer(
     confirm: bool = False,
     telemetry_opt_out: bool = False,
     grant_existing_user_rights: bool = False,
+    allow_existing_user_admin: bool = False,
 ):
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -708,13 +723,11 @@ def start_windows_installer(
     if install_service:
         # User privilege to logon as a service
         user_rights_to_grant.add(win32security.SE_SERVICE_LOGON_NAME)
-        # User privileges to backup and restore user profiles
-        user_rights_to_grant.add(win32security.SE_BACKUP_NAME)
-        user_rights_to_grant.add(win32security.SE_RESTORE_NAME)
         # User privilege to increase memory quota for a process
         user_rights_to_grant.add(win32security.SE_INCREASE_QUOTA_NAME)
 
     # Check if the worker agent user exists, and create it if not
+    agent_user_created = False
     if check_account_existence(user_name):
         logging.info(f"Using existing user ({user_name}) as worker agent user")
 
@@ -723,30 +736,52 @@ def start_windows_installer(
         WindowsSessionUser(user=user_name, password=password)
     else:
         create_local_agent_user(user_name, password)
+        agent_user_created = True
 
-    logging.info(f"Adding {user_name} to the Administrators group")
-    add_user_to_group(group_name="Administrators", user_name=user_name)
-
-    # Determine which rights we need to add to the existing user
-    existing_agent_user_rights = get_user_effective_rights(user_name)
-    user_rights_to_grant -= existing_agent_user_rights
-    if user_rights_to_grant and not grant_existing_user_rights:
+    if is_user_in_group("Administrators", user_name):
+        logging.info(f"Agent user '{user_name}' is already an administrator")
+    elif not agent_user_created and not allow_existing_user_admin:
         logging.error(
-            f"Existing Worker agent user was provided ({user_name}) but is missing the following rights: {user_rights_to_grant}\n"
+            f"The Worker Agent user needs to run as an administrator, but the supplied user ({user_name}) exists "
+            "and was not found to be in the Administrators group. Please provide an administrator user, specify a "
+            "new username to have one created, or provide the --allow-existing-user-admin option to allow the installer "
+            "to make the existing user an administrator."
+        )
+        sys.exit(1)
+    else:
+        # Add the agent user to Administrators before evaluating missing user rights
+        # since it will inherit the user rights that Administrators have
+        logging.info(f"Adding '{user_name}' to the Administrators group")
+        add_user_to_group(group_name="Administrators", user_name=user_name)
+
+    # Determine which rights we need to grant
+    agent_user_rights = get_effective_user_rights(user_name)
+    user_rights_to_grant -= agent_user_rights
+
+    # Fail if an existing user was provided but there are rights to add and the user has not explicitly opted in
+    if user_rights_to_grant and not agent_user_created and not grant_existing_user_rights:
+        logging.error(
+            f"The existing worker agent user ({user_name}) is missing the following required user rights: {user_rights_to_grant}\n"
             "Provide the --grant-existing-user-rights option to allow the installer to grant the missing rights to the user."
         )
         sys.exit(1)
 
     if user_rights_to_grant:
         grant_account_rights(user_name, list(user_rights_to_grant))
+    else:
+        logging.info(f"Agent user '{user_name}' has all required user rights")
 
     # Check if the job group exists, and create it if not
     if check_account_existence(group_name):
         logging.info(f"Using existing group ({group_name}) as the queue user group.")
     else:
         create_local_queue_user_group(group_name)
-    # Add the worker agent user to the job group
-    add_user_to_group(group_name, user_name)
+
+    if is_user_in_group(group_name, user_name):
+        logging.info(f"Agent user '{user_name}' is already in group '{group_name}'")
+    else:
+        # Add the worker agent user to the job group
+        add_user_to_group(group_name, user_name)
 
     # Create directories and configure their permissions
     agent_dirs = provision_directories(user_name)

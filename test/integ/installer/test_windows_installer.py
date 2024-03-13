@@ -25,7 +25,7 @@ from deadline_worker_agent.installer.win_installer import (
     create_local_agent_user,
     create_local_queue_user_group,
     generate_password,
-    get_user_effective_rights,
+    get_effective_user_rights,
     grant_account_rights,
     provision_directories,
     update_deadline_client_config,
@@ -251,7 +251,7 @@ def test_update_deadline_client_config(tmp_path: pathlib.Path) -> None:
         assert deadline.client.config.config_file.get_setting("telemetry.opt_out") == "true"
 
 
-def test_get_user_effective_rights(
+def test_get_effective_user_rights(
     windows_user: str,
     windows_group: str,
 ) -> None:
@@ -271,7 +271,7 @@ def test_get_user_effective_rights(
         )
 
         # WHEN
-        effective_rights = get_user_effective_rights(windows_user)
+        effective_rights = get_effective_user_rights(windows_user)
 
         # THEN
         assert effective_rights == set(
