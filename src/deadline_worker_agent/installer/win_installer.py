@@ -414,9 +414,9 @@ def update_deadline_client_config(
     deadline_client_config_path = deadline.client.config.config_file.CONFIG_FILE_PATH
     if not deadline_client_config_path.startswith("~"):
         raise InstallerFailedException(
-            f"Cannot opt out of telemtry: Expected Deadline client config file path to start with a tilde (~), but got: {deadline_client_config_path}\n"
+            f"Cannot opt out of telemetry: Expected Deadline client config file path to start with a tilde (~), but got: {deadline_client_config_path}\n"
             f"This is because the Deadline client program (version {deadline.client.version}) is not compatible with this version of the Worker agent installer\n"
-            f"To opt out of telemtry, please use a compatible version of the Deadline client program or run the following command as the worker user:\n\n"
+            f"To opt out of telemetry, please use a compatible version of the Deadline client program or run the following command as the worker user:\n\n"
             "deadline config set telemetry.opt_out true\n"
         )
     user_deadline_client_config_path = f"~{user}" + deadline_client_config_path.removeprefix("~")
