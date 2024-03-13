@@ -33,7 +33,7 @@ def install() -> None:
             farm_id=args.farm_id,
             fleet_id=args.fleet_id,
             region=args.region,
-            worker_agent_program=str(scripts_path),
+            worker_agent_program=scripts_path,
             no_install_service=not args.install_service,
             start=args.service_start,
             confirm=args.confirmed,
@@ -46,6 +46,8 @@ def install() -> None:
             installer_args.update(group_name=args.group)
         if args.password:
             installer_args.update(password=args.password)
+        if args.telemetry_opt_out:
+            installer_args.update(telemetry_opt_out=args.telemetry_opt_out)
 
         start_windows_installer(**installer_args)
     else:

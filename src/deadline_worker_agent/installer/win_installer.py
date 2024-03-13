@@ -17,6 +17,7 @@ from deadline_worker_agent.file_system_operations import (
     FileSystemPermissionEnum,
 )
 
+import deadline.client.config.config_file
 import pywintypes
 import win32api
 import win32net
@@ -30,6 +31,9 @@ from win32comext.shell import shell
 DEFAULT_WA_USER = "deadline-worker"
 DEFAULT_JOB_GROUP = "deadline-job-users"
 DEFAULT_PASSWORD_LENGTH = 12
+
+# Environment variable that overrides the config path used by the Deadline client
+DEADLINE_CLIENT_CONFIG_PATH_OVERRIDE_ENV_VAR = "DEADLINE_CONFIG_FILE_PATH"
 
 
 class InstallerFailedException(Exception):
@@ -392,11 +396,50 @@ def provision_directories(agent_username: str) -> WorkerAgentDirectories:
     )
 
 
+def update_deadline_client_config(
+    user: str,
+    settings: dict[str, str],
+) -> None:
+    """
+    Updates the Deadline Client config for the specified user.
+
+    Args:
+        user (str): The user to update the Deadline Client config for.
+        settings (dict[str, str]]): The key-value pairs of settings to update.
+
+    Raises:
+        InstallerFailedException: _description_
+    """
+    # Build the Deadline client config path for the user
+    deadline_client_config_path = deadline.client.config.config_file.CONFIG_FILE_PATH
+    if not deadline_client_config_path.startswith("~"):
+        raise InstallerFailedException(
+            f"Cannot opt out of telemetry: Expected Deadline client config file path to start with a tilde (~), but got: {deadline_client_config_path}\n"
+            f"This is because the Deadline client program (version {deadline.client.version}) is not compatible with this version of the Worker agent installer\n"
+            f"To opt out of telemetry, please use a compatible version of the Deadline client program or run the following command as the worker user:\n\n"
+            "deadline config set telemetry.opt_out true\n"
+        )
+    user_deadline_client_config_path = f"~{user}" + deadline_client_config_path.removeprefix("~")
+
+    # Opt out of client telemetry for the agent user
+    old_environ = os.environ.copy()
+    try:
+        os.environ[DEADLINE_CLIENT_CONFIG_PATH_OVERRIDE_ENV_VAR] = user_deadline_client_config_path
+        for setting_key, setting_value in settings.items():
+            deadline.client.config.config_file.set_setting(setting_key, setting_value)
+    except Exception as e:
+        logging.error(f"Failed to update Deadline Client configuration for user '{user}': {e}")
+        raise
+    finally:
+        os.environ.clear()
+        os.environ.update(old_environ)
+
+
 def start_windows_installer(
     farm_id: str,
     fleet_id: str,
     region: str,
-    worker_agent_program: str,
+    worker_agent_program: Path,
     allow_shutdown: bool,
     parser: ArgumentParser,
     password: typing.Optional[str] = None,
@@ -405,6 +448,7 @@ def start_windows_installer(
     no_install_service: bool = False,
     start: bool = False,
     confirm: bool = False,
+    telemetry_opt_out: bool = False,
 ):
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -441,9 +485,10 @@ def start_windows_installer(
         f"Region: {region}\n"
         f"Worker agent user: {user_name}\n"
         f"Worker job group: {group_name}\n"
-        f"Worker agent program path: {worker_agent_program}\n"
+        f"Worker agent program path: {str(worker_agent_program)}\n"
         f"Allow worker agent shutdown: {allow_shutdown}\n"
-        f"Start service: {start}"
+        f"Start service: {start}\n"
+        f"Telemetry opt-out: {telemetry_opt_out}"
     )
 
     # Confirm installation
@@ -486,3 +531,11 @@ def start_windows_installer(
     if worker_user_rights:
         # Grant the worker user the necessary rights
         grant_account_rights(user_name, worker_user_rights)
+
+    if telemetry_opt_out:
+        logging.info("Opting out of client telemetry")
+        update_deadline_client_config(
+            user=user_name,
+            settings={"telemetry.opt_out": "true"},
+        )
+        logging.info("Opted out of client telemetry")
