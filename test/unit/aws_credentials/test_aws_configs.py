@@ -46,7 +46,7 @@ def os_user() -> Optional[SessionUser]:
     if os.name == "posix":
         return PosixSessionUser(user="user", group="group")
     else:
-        return WindowsSessionUser(user="user", group="group", password="fakepassword")
+        return WindowsSessionUser(user="user", password="fakepassword")
 
 
 class TestSetupParentDir:

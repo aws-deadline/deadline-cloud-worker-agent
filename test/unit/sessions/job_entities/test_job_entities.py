@@ -78,7 +78,7 @@ def os_user() -> SessionUser:
     if os.name == "posix":
         return PosixSessionUser(user="user", group="group")
     else:
-        return WindowsSessionUser(user="user", group="group", password="fakepassword")
+        return WindowsSessionUser(user="user", password="fakepassword")
 
 
 @pytest.fixture
@@ -366,10 +366,6 @@ class TestDetails:
             assert (
                 details.job_run_as_user.windows.user
                 == expected_details.job_run_as_user.windows.user
-            )
-            assert (
-                details.job_run_as_user.windows.group
-                == expected_details.job_run_as_user.windows.group
             )
         assert details.job_attachment_settings == expected_details.job_attachment_settings
         assert details.parameters == expected_details.parameters
