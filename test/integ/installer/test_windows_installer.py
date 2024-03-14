@@ -8,7 +8,11 @@ from unittest.mock import patch
 
 import pytest
 
-import win32api
+
+try:
+    import win32api
+except ImportError:
+    pytest.skip("win32api not available", allow_module_level=True)
 import win32net
 
 import deadline.client.config.config_file
