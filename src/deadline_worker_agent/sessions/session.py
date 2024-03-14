@@ -901,10 +901,9 @@ class Session:
             else:
                 if not isinstance(self._os_user, WindowsSessionUser):
                     raise ValueError(f"The user must be a windows-user. Got {type(self._os_user)}")
-                if self._os_user.group is not None:
+                if self._os_user.user is not None:
                     fs_permission_settings = WindowsFileSystemPermissionSettings(
                         os_user=self._os_user.user,
-                        os_group=self._os_user.group,
                         dir_mode=WindowsPermissionEnum.WRITE,
                         file_mode=WindowsPermissionEnum.WRITE,
                     )

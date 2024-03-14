@@ -702,7 +702,6 @@ class TestSessionSyncAssetInputs:
         elif os.name == "nt":
             expected_fs_permission_settings = WindowsFileSystemPermissionSettings(
                 os_user="SomeUser",
-                os_group="SomeGroup",
                 dir_mode=WindowsPermissionEnum.WRITE,
                 file_mode=WindowsPermissionEnum.WRITE,
             )
