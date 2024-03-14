@@ -75,7 +75,7 @@ def os_user() -> Optional[SessionUser]:
     if os.name == "posix":
         return PosixSessionUser(user="some-user", group="some-group")
     elif os.name == "nt":
-        return WindowsSessionUser(user="SomeUser", group="SomeGroup", password="qwe123!@#")
+        return WindowsSessionUser(user="SomeUser", password="qwe123!@#")
     else:
         return None
 
@@ -702,7 +702,6 @@ class TestSessionSyncAssetInputs:
         elif os.name == "nt":
             expected_fs_permission_settings = WindowsFileSystemPermissionSettings(
                 os_user="SomeUser",
-                os_group="SomeGroup",
                 dir_mode=WindowsPermissionEnum.WRITE,
                 file_mode=WindowsPermissionEnum.WRITE,
             )

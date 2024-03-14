@@ -43,7 +43,7 @@ class TestSessionUserCleanupManager:
         if os.name == "posix":
             return PosixSessionUser(user="user", group="group")
         else:
-            return WindowsSessionUser(user="user", group="group", password="fakepassword")
+            return WindowsSessionUser(user="user", password="fakepassword")
 
     @pytest.fixture
     def session(self, os_user: PosixSessionUser) -> MagicMock:
@@ -175,7 +175,7 @@ class TestSessionUserCleanupManager:
             if os.name == "posix":
                 return PosixSessionUser(user="agent_user", group="agent_group")
             else:
-                return WindowsSessionUser(user="user", group="group", password="fakepassword")
+                return WindowsSessionUser(user="user", password="fakepassword")
 
         @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         @pytest.fixture(autouse=True)
