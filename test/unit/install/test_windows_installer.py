@@ -20,9 +20,13 @@ from pathlib import Path
 from pywintypes import error as PyWinTypesError
 from unittest.mock import call, patch, MagicMock
 from win32comext.shell import shell
-from win32service import SERVICE_AUTO_START
+from win32service import (
+    error as win_service_error,
+    SERVICE_AUTO_START,
+)
 from win32serviceutil import GetServiceClassString
 import win32netcon
+import winerror
 
 from deadline_worker_agent import installer as installer_mod
 from deadline_worker_agent.installer import ParsedCommandLineArguments, install
@@ -198,9 +202,9 @@ def test_non_valid_deadline_id_with_wrong_prefix():
     assert not validate_deadline_id("deadline", "line-123e4567e89b12d3a456426655441234")
 
 
-def test_successful_install_service_fresh() -> None:
+def test_install_service_fresh_successful() -> None:
     """Tests that the installer calls pywin32's InstallService function to install the
-    Windows Service with the correct arguments"""
+    Windows Service with the correct arguments and that succeeds as a fresh install"""
     # GIVEN
     agent_user_name = "myagentuser"
     password = "apassword"
@@ -237,5 +241,149 @@ def test_successful_install_service_fresh() -> None:
         calls=[
             call(f'Configuring Windows Service "{expected_service_display_name}"...'),
             call(f'Successfully created Windows Service "{expected_service_display_name}"'),
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    argnames=("install_service_exception",),
+    argvalues=(
+        pytest.param(
+            win_service_error(
+                winerror.ERROR_SERVICE_LOGON_FAILED,
+                "InstallService",
+                "some error message",
+            ),
+            id="win-service-error-not-existing",
+        ),
+        pytest.param(
+            Exception("some other error"),
+            id="non-win-service-error",
+        ),
+    ),
+)
+def test_install_service_fresh_fail(
+    install_service_exception: Exception,
+) -> None:
+    """Tests how the _install_service() function deals with exceptions raised by
+    pywin32's InstallService function other than the one we expect to handle if the service
+    already exists.
+
+    The exception should not be handled and raised as-is.
+    """
+    # GIVEN
+    agent_user_name = "myagentuser"
+    password = "apassword"
+    expected_service_display_name = WorkerAgentWindowsService._svc_display_name_
+
+    with (
+        patch.object(
+            win_installer.win32serviceutil, "InstallService", side_effect=install_service_exception
+        ) as mock_install_service,
+        patch.object(win_installer.logging, "info") as mock_logging_info,
+    ):
+        # WHEN
+        def when():
+            win_installer._install_service(
+                agent_user_name=agent_user_name,
+                password=password,
+            )
+
+        # THEN
+        with pytest.raises(type(install_service_exception)) as raise_ctx:
+            when()
+
+    assert raise_ctx.value is install_service_exception
+    mock_install_service.assert_called_once_with(
+        GetServiceClassString(WorkerAgentWindowsService),
+        WorkerAgentWindowsService._svc_name_,
+        expected_service_display_name,
+        serviceDeps=None,
+        startType=SERVICE_AUTO_START,
+        bRunInteractive=None,
+        userName=f".\\{agent_user_name}",
+        password=password,
+        exeName=getattr(WorkerAgentWindowsService, "_exe_name_", None),
+        perfMonIni=None,
+        perfMonDll=None,
+        exeArgs=getattr(WorkerAgentWindowsService, "_exe_args_", None),
+        description=getattr(WorkerAgentWindowsService, "_svc_description_", None),
+        delayedstart=False,
+    )
+    mock_logging_info.assert_called_once_with(
+        f'Configuring Windows Service "{expected_service_display_name}"...'
+    )
+
+
+def test_install_service_existing_success() -> None:
+    """Tests the behaviour of the _install_service function if the call to pywin32's
+    InstallService function fails because the service already exists.
+
+    The function is expected to catch this exception and instead call pywin32's
+    ChangeServiceConfig function. This test asserts that ChangeServiceConfig is called
+    with the correct arguments."""
+    # GIVEN
+    agent_user_name = "myagentuser"
+    password = "apassword"
+    expected_service_display_name = WorkerAgentWindowsService._svc_display_name_
+    install_service_error = win_service_error(
+        winerror.ERROR_SERVICE_EXISTS,
+        "InstallService",
+        "service alreadyt exists",
+    )
+
+    with (
+        patch.object(
+            win_installer.win32serviceutil, "InstallService", side_effect=install_service_error
+        ) as mock_install_service,
+        patch.object(
+            win_installer.win32serviceutil, "ChangeServiceConfig"
+        ) as mock_change_service_config,
+        patch.object(win_installer.logging, "info") as mock_logging_info,
+    ):
+        # WHEN
+        win_installer._install_service(
+            agent_user_name=agent_user_name,
+            password=password,
+        )
+
+    # THEN
+    mock_install_service.assert_called_once_with(
+        GetServiceClassString(WorkerAgentWindowsService),
+        WorkerAgentWindowsService._svc_name_,
+        expected_service_display_name,
+        serviceDeps=None,
+        startType=SERVICE_AUTO_START,
+        bRunInteractive=None,
+        userName=f".\\{agent_user_name}",
+        password=password,
+        exeName=getattr(WorkerAgentWindowsService, "_exe_name_", None),
+        perfMonIni=None,
+        perfMonDll=None,
+        exeArgs=getattr(WorkerAgentWindowsService, "_exe_args_", None),
+        description=getattr(WorkerAgentWindowsService, "_svc_description_", None),
+        delayedstart=False,
+    )
+    mock_change_service_config.assert_called_once_with(
+        GetServiceClassString(WorkerAgentWindowsService),
+        WorkerAgentWindowsService._svc_name_,
+        serviceDeps=None,
+        startType=SERVICE_AUTO_START,
+        bRunInteractive=None,
+        userName=f".\\{agent_user_name}",
+        password=password,
+        exeName=getattr(WorkerAgentWindowsService, "_exe_name_", None),
+        displayName=expected_service_display_name,
+        perfMonIni=None,
+        perfMonDll=None,
+        exeArgs=getattr(WorkerAgentWindowsService, "_exe_args_", None),
+        description=getattr(WorkerAgentWindowsService, "_svc_description_", None),
+        delayedstart=False,
+    )
+    mock_logging_info.assert_has_calls(
+        calls=[
+            call(f'Configuring Windows Service "{expected_service_display_name}"...'),
+            call(f'Service "{expected_service_display_name}" already exists, updating instead...'),
+            call(f'Successfully updated Windows Service "{expected_service_display_name}"'),
         ],
     )

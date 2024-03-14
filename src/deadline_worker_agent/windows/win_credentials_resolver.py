@@ -24,14 +24,8 @@ from ..boto import (
     NoOverflowExponentialBackoff as Backoff,
     Session as BotoSession,
 )
-from .logon import (
-    logon_user,
-    load_user_profile,
-)
-from .win_api import (
-    PROFILEINFO,
-    UnloadUserProfile,
-)
+from .logon import logon_user, load_user_profile
+from .win_api import PROFILEINFO, UnloadUserProfile
 from . import win_service
 
 logger = getLogger(__name__)
@@ -112,7 +106,7 @@ class WindowsCredentialsResolver:
     def prune_cache(self):
         # If we are running as a Windows Service, we maintain a logon token for the user and
         # do not need to persist the password nor rotate it.
-        if win_service.is_service:
+        if win_service.is_service():
             return
 
         # Filter out entries that haven't been accessed in the last CACHE_EXPIRATION hours
@@ -125,7 +119,7 @@ class WindowsCredentialsResolver:
 
     def clear(self):
         """Clears all users from the cache and cleans up any open resources"""
-        if win_service.is_service:
+        if win_service.is_service():
             for user in self._user_cache.values():
                 if user.windows_session_user:
                     logger.info(
@@ -151,7 +145,7 @@ class WindowsCredentialsResolver:
         a username and password. For this reason, our cache key should use the password secret
         ARN since a change of secret may imply a change of password.
         """
-        if win_service.is_service:
+        if win_service.is_service():
             return user_name
         else:
             # Create a composite key using user and arn
@@ -203,7 +197,7 @@ class WindowsCredentialsResolver:
                         f'Contents of secret {passwordArn} did not match the expected format: {"password":"value"}'
                     )
                 else:
-                    if win_service.is_service:
+                    if win_service.is_service():
                         try:
                             logon_token = logon_user(username=user, password=password)
                             user_profile = load_user_profile(user=user, logon_token=logon_token)
