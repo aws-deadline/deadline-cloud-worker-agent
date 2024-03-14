@@ -173,7 +173,7 @@ class JobDetailsError(TypedDict):
 
 class JobAttachmentQueueSettings(TypedDict):
     """
-    Contains the configuration of job attachments for a Amazon Deadline Cloud queue. This includes the name of
+    Contains the configuration of job attachments for a AWS Deadline Cloud queue. This includes the name of
     the S3 bucket as well as the object key structure. The structure of the objects with respect to
     this structure's fields is illustrated below:
 
@@ -435,7 +435,7 @@ class CreateWorkerResponse(TypedDict):
 
 
 class WorkerStatus(str, Enum):
-    """Amazon Deadline Cloud Worker states"""
+    """AWS Deadline Cloud Worker states"""
 
     STARTED = "STARTED"
     """The Worker is online and ready to begin work"""

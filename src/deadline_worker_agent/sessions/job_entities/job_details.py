@@ -203,7 +203,7 @@ class JobDetails:
     """The job's parameters"""
 
     job_run_as_user: JobRunAsUser | None = None
-    """The user associated with the job's Amazon Deadline Cloud queue"""
+    """The user associated with the job's AWS Deadline Cloud queue"""
 
     path_mapping_rules: list[OPENJDPathMappingRule] = field(default_factory=list)
     """The path mapping rules for the job"""
@@ -269,7 +269,7 @@ class JobDetails:
     @classmethod
     def validate_entity_data(cls, entity_data: dict[str, Any]) -> JobDetailsData:
         """Performs input validation on a response element received from boto3's call to
-        the BatchGetJobEntity Amazon Deadline Cloud API.
+        the BatchGetJobEntity AWS Deadline Cloud API.
 
         Parameters
         ----------

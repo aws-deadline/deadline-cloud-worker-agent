@@ -1,6 +1,6 @@
 [worker]
 
-# The unique identifier of the Amazon Deadline Cloud farm that the Worker belongs to. This value is overridden
+# The unique identifier of the AWS Deadline Cloud farm that the Worker belongs to. This value is overridden
 # when the DEADLINE_WORKER_FARM_ID environment variable is set or the --farm-id command-line argument
 # is specified.
 #
@@ -8,12 +8,12 @@
 #
 # farm_id = "farm-aabbccddeeff11223344556677889900"
 #
-# Uncomment the line below and replace the value with your Amazon Deadline Cloud farm ID:
+# Uncomment the line below and replace the value with your AWS Deadline Cloud farm ID:
 #
 # farm_id = "REPLACE-WITH-WORKER-FARM-ID"
 
 
-# The unique identifier of the Amazon Deadline Cloud fleet that the Worker belongs to. This value is overridden
+# The unique identifier of the AWS Deadline Cloud fleet that the Worker belongs to. This value is overridden
 # when the DEADLINE_WORKER_FLEET_ID environment variable is set or the --fleet-id command-line
 # argument is specified.
 #
@@ -21,7 +21,7 @@
 #
 # fleet_id = "fleet-aabbccddeeff11223344556677889900"
 #
-# Uncomment the line below and replace the value with your Amazon Deadline Cloud fleet ID:
+# Uncomment the line below and replace the value with your AWS Deadline Cloud fleet ID:
 #
 # fleet_id = "REPLACE-WITH-WORKER-FLEET-ID"
 
@@ -122,7 +122,7 @@
 #
 #  ******************************************* NOTE ******************************************
 #  *                                                                                         *
-#  #   The Amazon Deadline Cloud Worker Agent does not have any feature to delete/clean up session logs.   #
+#  #   The AWS Deadline Cloud Worker Agent does not have any feature to delete/clean up session logs.   #
 #  #   It is up to the worker host admin to manage the deletion of session logs written to   #
 #  #    local file-system. Otherwise, the worker could eventually fill up all file-system    #
 #  #                                         capacity.                                       #
@@ -148,7 +148,7 @@
 
 [os]
 
-# Amazon Deadline Cloud may specify an OS user to run a Job's session actions as. By setting
+# AWS Deadline Cloud may specify an OS user to run a Job's session actions as. By setting
 # "run_jobs_as_agent_user" to true, the specified OS user is ignored and the session actions
 # are instead run as the same user that the worker agent process runs as.
 #
@@ -163,7 +163,7 @@
 #
 # run_jobs_as_agent_user = true
 
-# Amazon Deadline Cloud may specify an OS user to run a Job's session actions as. Setting
+# AWS Deadline Cloud may specify an OS user to run a Job's session actions as. Setting
 # "posix_job_user" will override the OS user and the session actions will be run as
 # the user given in the value of "posix_job_user" instead. This setting is ignored
 # if "run_jobs_as_agent_user" is set to true.
@@ -185,7 +185,7 @@
 #
 # posix_job_user = "user:group"
 
-# Amazon Deadline Cloud may tell the worker to stop. If the "shutdown_on_stop" setting below is true, then the
+# AWS Deadline Cloud may tell the worker to stop. If the "shutdown_on_stop" setting below is true, then the
 # Worker will attempt to shutdown the host system after the Worker has been stopped.
 #
 # This value is overridden when the DEADLINE_WORKER_NO_SHUTDOWN environment variable is set using

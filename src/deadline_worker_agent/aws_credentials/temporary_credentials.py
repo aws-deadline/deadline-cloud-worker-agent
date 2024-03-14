@@ -37,7 +37,7 @@ class TemporaryCredentials:
     """
     A model class representing temporary AWS credentials and accompanying logic for:
 
-    - converting to/from Amazon Deadline Cloud and botocore credential formats
+    - converting to/from AWS Deadline Cloud and botocore credential formats
     - checking whether the credentials are expired
     """
 
@@ -77,7 +77,7 @@ class TemporaryCredentials:
         return cls.from_file_format(credentials)
 
     def to_deadline(self) -> AwsCredentials:
-        """Converts the temporary credentials to a dictionary as returned from Amazon Deadline Cloud APIs"""
+        """Converts the temporary credentials to a dictionary as returned from AWS Deadline Cloud APIs"""
         return AwsCredentials(
             accessKeyId=self.access_key_id,
             secretAccessKey=self.secret_access_key,
@@ -160,7 +160,7 @@ class TemporaryCredentials:
         data: AwsCredentials,
     ) -> TemporaryCredentials:
         """
-        Creates a TemporaryCredentials instance from a credentials dictionary as returned by Amazon Deadline Cloud
+        Creates a TemporaryCredentials instance from a credentials dictionary as returned by AWS Deadline Cloud
         APIs
         """
         return cls(
@@ -176,7 +176,7 @@ class TemporaryCredentials:
         data: dict[str, Any],
     ) -> AwsCredentials:
         """
-        Validates that a dictionary conforms to the structure expected to be returned by Amazon Deadline Cloud
+        Validates that a dictionary conforms to the structure expected to be returned by AWS Deadline Cloud
         APIs via botocore
         """
 
@@ -208,7 +208,7 @@ class TemporaryCredentials:
         cls, *, response: dict[str, Any], credentials_required: bool, api_name: str
     ) -> Optional[TemporaryCredentials]:
         """
-        Converts the response as returned by a boto3 method for Amazon Deadline Cloud's Assume*RoleForWorker
+        Converts the response as returned by a boto3 method for AWS Deadline Cloud's Assume*RoleForWorker
         methods into a TemporaryCredentials instance.
 
         This performs basic key and type validation on the response before returning the result.

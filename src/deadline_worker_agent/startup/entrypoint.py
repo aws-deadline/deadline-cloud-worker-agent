@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-"""Amazon Deadline Cloud Worker Agent entrypoint"""
+"""AWS Deadline Cloud Worker Agent entrypoint"""
 
 from __future__ import annotations
 

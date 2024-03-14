@@ -1059,7 +1059,7 @@ class WorkerScheduler:
         fail_message: str | None = None,
         grace_time: timedelta | None = None,
     ) -> None:
-        """Stops all active Work and notifies the Amazon Deadline Cloud service that the Worker is shutting down.
+        """Stops all active Work and notifies the AWS Deadline Cloud service that the Worker is shutting down.
 
         Parameters
         ----------

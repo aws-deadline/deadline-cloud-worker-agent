@@ -50,7 +50,7 @@ fi
 
 if ! test -d ${HOME}/.aws/models/deadline
 then
-    echo "ERROR: Amazon Deadline Cloud service model must be installed to ~/.aws/models/deadline"
+    echo "ERROR: AWS Deadline Cloud service model must be installed to ~/.aws/models/deadline"
     exit 1
 fi
 
@@ -92,7 +92,7 @@ fi
 
 if test "${FARM_ID:-}" == "" || test "${FLEET_ID:-}" == ""
 then
-    echo "ERROR: Amazon Deadline Cloud Farm & Fleet Ids must be available in the environment as FARM_ID and FLEET_ID"
+    echo "ERROR: AWS Deadline Cloud Farm & Fleet Ids must be available in the environment as FARM_ID and FLEET_ID"
     exit 1
 fi
 

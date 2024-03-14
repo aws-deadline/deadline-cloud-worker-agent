@@ -32,7 +32,7 @@ then
     echo "Enter a name for your Farm: "
     read farm_name
         
-    echo "Creating Amazon Deadline Cloud Farm $farm_name"
+    echo "Creating AWS Deadline Cloud Farm $farm_name"
     FARM_ID=$(aws deadline create-farm --display-name $farm_name | jq -r ".farmId")
     echo "Created Farm: ${FARM_ID}"
 fi
@@ -82,7 +82,7 @@ EOF
 EOF
     fi
         
-    echo "Creating Amazon Deadline Cloud Queue $queue_name"
+    echo "Creating AWS Deadline Cloud Queue $queue_name"
     QUEUE_ID_1=$(aws deadline create-queue --cli-input-json file://create-queue-config.json | jq -r ".queueId")
     rm create-queue-config.json
 
@@ -145,7 +145,7 @@ EOF
 EOF
     fi
         
-    echo "Creating Amazon Deadline Cloud Queue $queue_name"
+    echo "Creating AWS Deadline Cloud Queue $queue_name"
     QUEUE_ID_2=$(aws deadline create-queue --cli-input-json file://create-queue-config.json | jq -r ".queueId")
     rm create-queue-config.json
 
@@ -192,7 +192,7 @@ then
 }
 EOF
 
-    echo "Creating Amazon Deadline Cloud Fleet $fleet_name"
+    echo "Creating AWS Deadline Cloud Fleet $fleet_name"
     FLEET_ID=$(aws deadline create-fleet --cli-input-json file://create-fleet-config.json | jq -r ".fleetId")
     rm create-fleet-config.json
         
@@ -219,4 +219,4 @@ echo "export QUEUE_ID=\$QUEUE_ID_1" >> .deployed_resources.sh
 echo "export FLEET_ID=$FLEET_ID" >> .deployed_resources.sh
 cat .deployed_resources.sh
 echo
-echo "Amazon Deadline Cloud setup complete!"
+echo "AWS Deadline Cloud setup complete!"

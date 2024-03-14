@@ -35,7 +35,7 @@ class SyncCanceled(Exception):
 
 
 class SyncInputJobAttachmentsAction(SessionActionDefinition):
-    """Action to synchronize input job attachments for a Amazon Deadline Cloud job
+    """Action to synchronize input job attachments for a AWS Deadline Cloud job
 
     Parameters
     ----------

@@ -67,7 +67,7 @@ def generate_password(length: int = DEFAULT_PASSWORD_LENGTH) -> str:
 def print_banner():
     print(
         "===========================================================\n"
-        "|      Amazon Deadline Cloud Worker Agent Installer       |\n"
+        "|      AWS Deadline Cloud Worker Agent Installer       |\n"
         "===========================================================\n"
     )
 
@@ -179,7 +179,7 @@ def ensure_local_agent_user(username: str, password: str) -> None:
             "password": password,
             "priv": win32netcon.USER_PRIV_USER,  # User privilege level, Standard User
             "home_dir": None,
-            "comment": "Amazon Deadline Cloud Worker Agent User",
+            "comment": "AWS Deadline Cloud Worker Agent User",
             "flags": win32netcon.UF_DONT_EXPIRE_PASSWD,
             "script_path": None,
         }
