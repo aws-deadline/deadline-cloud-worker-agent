@@ -2,8 +2,13 @@
 
 from unittest.mock import patch
 
-from win32serviceutil import ServiceFramework
 import pytest
+import sys
+
+if sys.platform != "win32":
+    pytest.skip("Windows-specific tests", allow_module_level=True)
+
+from win32serviceutil import ServiceFramework
 
 from deadline_worker_agent.windows.win_service import WorkerAgentWindowsService
 from deadline_worker_agent.windows import win_service
