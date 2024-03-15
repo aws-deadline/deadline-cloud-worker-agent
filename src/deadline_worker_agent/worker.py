@@ -131,6 +131,18 @@ class Worker:
             signal.signal(signal.SIGINT, self._signal_handler)
             # TODO: Remove this once WA is stable or put behind a debug flag
             signal.signal(signal.SIGUSR1, self._output_thread_stacks)  # type: ignore
+        else:
+            from .windows.win_service import is_windows_session_zero
+
+            # If we are in session 0, we are running as a Windows Service using pywin32
+            # pywin32's pythonservice.exe owns the main thread and the Python application
+            # appears to run on a secondary thread. Python only allows registering signal
+            # handlers on the main thread and we only need them in the interactive case
+            # anyways
+            if not is_windows_session_zero():
+                signal.signal(signal.SIGTERM, self._signal_handler)
+                signal.signal(signal.SIGINT, self._signal_handler)
+                signal.signal(signal.SIGBREAK, self._signal_handler)
 
     def _signal_handler(self, signum: int, frame: FrameType | None = None) -> None:
         """
@@ -138,7 +150,7 @@ class Worker:
         gracefully wind-down what it's currently doing.
         This will set the _interrupted flag to True when we get such a signal.
         """
-        if signum in (signal.SIGTERM, signal.SIGINT):
+        if signum in (signal.SIGTERM, signal.SIGINT, signal.SIGBREAK):
             logger.info(f"Received signal {signum}. Initiating application shutdown.")
             self._interrupted = True
             self._scheduler.shutdown(
