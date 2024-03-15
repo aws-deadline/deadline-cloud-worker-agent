@@ -17,7 +17,7 @@ import win32net
 import win32security
 
 import deadline.client.config.config_file
-import deadline_worker_agent.installer.win_installer as installer_mod
+from deadline_worker_agent.installer import win_installer
 from deadline_worker_agent.installer.win_installer import (
     add_user_to_group,
     check_account_existence,
@@ -29,6 +29,7 @@ from deadline_worker_agent.installer.win_installer import (
     grant_account_rights,
     provision_directories,
     update_deadline_client_config,
+    is_user_in_group,
     WorkerAgentDirectories,
 )
 
@@ -66,7 +67,6 @@ def check_admin_privilege_and_skip_test():
     if env_var_value.lower() != "true":
         pytest.skip(
             "Skipping all tests required Admin permission because RUN_AS_ADMIN is not set or false",
-            allow_module_level=True,
         )
 
 
@@ -88,6 +88,9 @@ def test_create_local_agent_user(windows_user):
     """
     assert check_account_existence(windows_user)
 
+    # Verify user profile was created by checking that the home directory exists
+    assert pathlib.Path(f"~{windows_user}").expanduser().exists()
+
 
 def delete_group(group_name: str) -> None:
     """
@@ -95,12 +98,6 @@ def delete_group(group_name: str) -> None:
     """
     if check_account_existence(group_name):
         win32net.NetLocalGroupDel(None, group_name)
-
-
-def is_user_in_group(group_name, username):
-    group_members_info = win32net.NetLocalGroupGetMembers(None, group_name, 1)
-    group_members = [member["name"] for member in group_members_info[0]]
-    return username in group_members
 
 
 @pytest.fixture
@@ -221,7 +218,7 @@ def test_provision_directories(
     ), f"Cannot test provision_directories because {expected_dirs.deadline_config_subdir} already exists"
 
     # WHEN
-    with patch.dict(installer_mod.os.environ, {"PROGRAMDATA": str(root_dir)}):
+    with patch.dict(win_installer.os.environ, {"PROGRAMDATA": str(root_dir)}):
         actual_dirs = provision_directories(windows_user)
 
     # THEN
@@ -249,6 +246,25 @@ def test_update_deadline_client_config(tmp_path: pathlib.Path) -> None:
 
         # THEN
         assert deadline.client.config.config_file.get_setting("telemetry.opt_out") == "true"
+
+
+def test_grant_account_rights(windows_user: str):
+    # GIVEN
+    rights = ["SeCreateSymbolicLinkPrivilege"]
+
+    # WHEN
+    grant_account_rights(windows_user, rights)
+
+    # THEN
+    user_sid = win32security.LookupAccountName(None, windows_user)
+    policy_handle = win32security.LsaOpenPolicy(None, win32security.POLICY_ALL_ACCESS)
+    try:
+        actual_rights = win32security.LsaEnumerateAccountRights(policy_handle, user_sid)
+    finally:
+        if policy_handle is not None:
+            win32api.CloseHandle(policy_handle)
+
+    assert set(rights).issubset(set(actual_rights))
 
 
 def test_get_effective_user_rights(

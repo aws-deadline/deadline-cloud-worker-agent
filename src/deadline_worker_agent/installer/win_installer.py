@@ -30,6 +30,8 @@ from ..file_system_operations import (
     FileSystemPermissionEnum,
 )
 from ..windows.win_service import WorkerAgentWindowsService
+from ..windows.logon import load_user_profile, logon_user
+from ..windows.win_api import UnloadUserProfile
 
 
 # Defaults
@@ -159,6 +161,7 @@ def create_local_agent_user(username: str, password: str) -> None:
     """
     Creates a local agent user account on Windows with a specified password and sets the account to never expire.
     The function sets the UF_DONT_EXPIRE_PASSWD flag to ensure the account's password never expires.
+    Also creates the user's profile by loading and unloading it.
 
     Args:
     username (str): The username of the new agent account.
@@ -182,6 +185,28 @@ def create_local_agent_user(username: str, password: str) -> None:
         raise
     else:
         logging.info(f"User '{username}' created successfully.")
+
+    # Create the user profile by loading it
+    logging.info("Loading Agent user profile")
+    logon_token = None
+    user_profile = None
+    try:
+        logon_token = logon_user(username=username, password=password)
+        user_profile = load_user_profile(user=username, logon_token=logon_token)
+    except Exception as e:
+        logging.error(f"Failed to load user profile for '{username}': {e}")
+        raise
+    else:
+        logging.info("Successfully loaded Agent user profile")
+    finally:
+        if user_profile is not None:
+            assert logon_token is not None
+            assert user_profile.hProfile is not None
+            UnloadUserProfile(logon_token, user_profile.hProfile)
+        if logon_token is not None:
+            # Pass the handle directly as an int since logon_user returns a ctypes.HANDLE
+            # and not a pywin32 PyHANDLE
+            win32api.CloseHandle(logon_token.value)
 
 
 def grant_account_rights(account_name: str, rights: list[str]):
@@ -718,13 +743,15 @@ def start_windows_installer(
     # Set of user rights to add to the worker agent user
     user_rights_to_grant: set[str] = set()
     if allow_shutdown:
-        # User privilege to shutdown the machine
+        # User right to shutdown the machine
         user_rights_to_grant.add(win32security.SE_SHUTDOWN_NAME)
     if install_service:
-        # User privilege to logon as a service
+        # User right to logon as a service
         user_rights_to_grant.add(win32security.SE_SERVICE_LOGON_NAME)
-        # User privilege to increase memory quota for a process
+        # User right to increase memory quota for a process
         user_rights_to_grant.add(win32security.SE_INCREASE_QUOTA_NAME)
+        # User right to replace a process-level token
+        user_rights_to_grant.add(win32security.SE_ASSIGNPRIMARYTOKEN_NAME)
 
     # Check if the worker agent user exists, and create it if not
     agent_user_created = False

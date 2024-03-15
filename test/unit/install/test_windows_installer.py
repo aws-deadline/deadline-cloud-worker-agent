@@ -3,36 +3,25 @@
 import string
 import sys
 import sysconfig
+import typing
 from pathlib import Path
-from typing import Generator
-from unittest.mock import Mock, call, patch, MagicMock
+from unittest.mock import Mock, call, patch, MagicMock, ANY
 
 import pytest
 
 if sys.platform != "win32":
     pytest.skip("Windows-specific tests", allow_module_level=True)
 
-from pywintypes import error as PyWinTypesError
-from deadline_worker_agent.installer.win_installer import (
-    create_local_queue_user_group,
-    create_local_agent_user,
-    generate_password,
-    start_windows_installer,
-    validate_deadline_id,
-)
+from deadline_worker_agent import installer as installer_mod
+from deadline_worker_agent.installer import ParsedCommandLineArguments, win_installer, install
+from deadline_worker_agent.windows.win_service import WorkerAgentWindowsService
 
-from pywintypes import error as PyWinTypesError
-from win32comext.shell import shell
-from win32service import error as win_service_error
-from win32serviceutil import GetServiceClassString
 import win32netcon
 import win32service
 import winerror
-
-from deadline_worker_agent import installer as installer_mod
-from deadline_worker_agent.installer import ParsedCommandLineArguments, install
-from deadline_worker_agent.installer import win_installer
-from deadline_worker_agent.windows.win_service import WorkerAgentWindowsService
+from win32comext.shell import shell
+from win32service import error as win_service_error
+from win32serviceutil import GetServiceClassString
 
 
 def test_start_windows_installer(
@@ -77,7 +66,7 @@ def test_start_windows_installer_fails_when_run_as_non_admin_user(
     with (patch.object(installer_mod, "get_argument_parser") as mock_get_arg_parser,):
         with pytest.raises(SystemExit):
             # WHEN
-            start_windows_installer(
+            win_installer.start_windows_installer(
                 farm_id=parsed_args.farm_id,
                 fleet_id=parsed_args.fleet_id,
                 region=parsed_args.region,
@@ -96,54 +85,173 @@ def test_start_windows_installer_fails_when_run_as_non_admin_user(
             is_user_an_admin.assert_called_once()
 
 
-class MockPyWinTypesError(PyWinTypesError):
-    def __init__(self, winerror):
-        self.winerror = winerror
+class TestCreateLocalQueueUserGroup:
+    """Tests for the create_local_queue_user_group function"""
 
+    @pytest.fixture
+    def group_name(self) -> str:
+        return "test_group"
 
-@pytest.fixture
-def group_name():
-    return "test_group"
+    @pytest.fixture(autouse=True)
+    def mock_NetLocalGroupAdd(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32net, "NetLocalGroupAdd") as m:
+            yield m
 
+    def test_creates_group(self, group_name: str, mock_NetLocalGroupAdd: MagicMock):
+        # WHEN
+        win_installer.create_local_queue_user_group(group_name)
 
-def test_group_creation_failure(group_name):
-    with patch("win32net.NetLocalGroupGetInfo", side_effect=MockPyWinTypesError(2220)), patch(
-        "win32net.NetLocalGroupAdd", side_effect=Exception("Test Failure")
-    ), patch("logging.error") as mock_log_error:
-        with pytest.raises(Exception):
-            create_local_queue_user_group(group_name)
-        mock_log_error.assert_called_with(
-            f"Failed to create group {group_name}. Error: Test Failure"
+        # THEN
+        mock_NetLocalGroupAdd.assert_called_once_with(
+            None,
+            1,
+            {
+                "name": group_name,
+                "comment": ANY,
+            },
         )
 
+    def test_raises_on_group_creation_failure(
+        self,
+        group_name: str,
+        mock_NetLocalGroupAdd: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        # GIVEN
+        mock_NetLocalGroupAdd.side_effect = Exception("Test Failure")
 
-def test_create_local_agent_user_raises_exception_on_creation_failure():
-    username = "testuser"
-    password = "password123"
-    error_message = "System error"
-    with patch(
-        "deadline_worker_agent.installer.win_installer.check_account_existence", return_value=False
-    ), patch("win32net.NetUserAdd") as mocked_net_user_add, patch(
-        "deadline_worker_agent.installer.win_installer.logging.error"
-    ) as mocked_logging_error:
-        mocked_net_user_add.side_effect = Exception(error_message)
+        with pytest.raises(Exception) as raised_exc:
+            # WHEN
+            win_installer.create_local_queue_user_group(group_name)
 
-        with pytest.raises(Exception):
-            create_local_agent_user(username, password)
+        # THEN
+        assert raised_exc.value is mock_NetLocalGroupAdd.side_effect
+        assert f"Failed to create group {group_name}. Error: Test Failure" in caplog.text
 
+
+class TestCreateLocalAgentUser:
+    """Tests for the create_local_agent_user function"""
+
+    @pytest.fixture
+    def username(self) -> str:
+        return "testuser"
+
+    @pytest.fixture
+    def password(self) -> str:
+        return "password123"
+
+    @pytest.fixture(autouse=True)
+    def mock_NetUserAdd(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32net, "NetUserAdd") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_logon_user(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer, "logon_user") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_load_user_profile(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer, "load_user_profile") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_UnloadUserProfile(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer, "UnloadUserProfile") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_CloseHandle(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32api, "CloseHandle") as m:
+            yield m
+
+    def test_raises_on_creation_failure(
+        self,
+        username: str,
+        password: str,
+        mock_NetUserAdd: MagicMock,
+    ):
+        # GIVEN
+        error_message = "System error"
+        mock_NetUserAdd.side_effect = Exception(error_message)
+        with (
+            patch(
+                "deadline_worker_agent.installer.win_installer.check_account_existence",
+                return_value=False,
+            ),
+            patch(
+                "deadline_worker_agent.installer.win_installer.logging.error"
+            ) as mocked_logging_error,
+            pytest.raises(Exception) as raised_exc,
+        ):
+            # WHEN
+            win_installer.create_local_agent_user(username, password)
+
+        # THEN
+        assert raised_exc.value is mock_NetUserAdd.side_effect
         mocked_logging_error.assert_called_once_with(
             f"Failed to create user '{username}'. Error: {error_message}"
         )
 
+    def test_raises_on_logon_user_failure(
+        self,
+        username: str,
+        password: str,
+        mock_logon_user: MagicMock,
+        mock_UnloadUserProfile: MagicMock,
+        mock_CloseHandle: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        # GIVEN
+        mock_logon_user.side_effect = Exception("Failed")
 
-def test_create_local_agent_user_correct_parameters_passed_to_netuseradd():
-    username = "newuser"
-    password = "password123"
-    with patch(
-        "deadline_worker_agent.installer.win_installer.check_account_existence", return_value=False
-    ), patch("win32net.NetUserAdd") as mocked_net_user_add:
-        create_local_agent_user(username, password)
+        with pytest.raises(Exception) as raised_exc:
+            # WHEN
+            win_installer.create_local_agent_user(username, password)
 
+        # THEN
+        assert raised_exc.value is mock_logon_user.side_effect
+        assert f"Failed to load user profile for '{username}'" in caplog.text
+        mock_UnloadUserProfile.assert_not_called()
+        mock_CloseHandle.assert_not_called()
+
+    def test_raises_on_load_user_profile_failure(
+        self,
+        username: str,
+        password: str,
+        mock_logon_user: MagicMock,
+        mock_load_user_profile: MagicMock,
+        mock_UnloadUserProfile: MagicMock,
+        mock_CloseHandle: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        # GIVEN
+        mock_load_user_profile.side_effect = Exception("Failed")
+
+        with pytest.raises(Exception) as raised_exc:
+            # WHEN
+            win_installer.create_local_agent_user(username, password)
+
+        # THEN
+        assert raised_exc.value is mock_load_user_profile.side_effect
+        assert f"Failed to load user profile for '{username}'" in caplog.text
+        mock_UnloadUserProfile.assert_not_called()
+        mock_CloseHandle.assert_called_once_with(mock_logon_user.return_value.value)
+
+    def test_creates_user(
+        self,
+        username: str,
+        password: str,
+        mock_NetUserAdd: MagicMock,
+        mock_logon_user: MagicMock,
+        mock_load_user_profile: MagicMock,
+        mock_UnloadUserProfile: MagicMock,
+        mock_CloseHandle: MagicMock,
+    ):
+        # WHEN
+        win_installer.create_local_agent_user(username, password)
+
+        # THEN
         expected_user_info = {
             "name": username,
             "password": password,
@@ -153,8 +261,15 @@ def test_create_local_agent_user_correct_parameters_passed_to_netuseradd():
             "flags": win32netcon.UF_DONT_EXPIRE_PASSWD,
             "script_path": None,
         }
-
-        mocked_net_user_add.assert_called_once_with(None, 1, expected_user_info)
+        mock_NetUserAdd.assert_called_once_with(None, 1, expected_user_info)
+        mock_logon_user.assert_called_once_with(username=username, password=password)
+        mock_load_user_profile.assert_called_once_with(
+            user=username, logon_token=mock_logon_user.return_value
+        )
+        mock_UnloadUserProfile.assert_called_once_with(
+            mock_logon_user.return_value, mock_load_user_profile.return_value.hProfile
+        )
+        mock_CloseHandle.assert_called_once_with(mock_logon_user.return_value.value)
 
 
 @patch("deadline_worker_agent.installer.win_installer.secrets.choice")
@@ -165,7 +280,7 @@ def test_generate_password(mock_choice):
     mock_choice.side_effect = characters
 
     # When
-    password = generate_password(password_length)
+    password = win_installer.generate_password(password_length)
 
     # Then
     expected_password = "".join(characters)
@@ -173,22 +288,26 @@ def test_generate_password(mock_choice):
 
 
 def test_validate_deadline_id():
-    assert validate_deadline_id("deadline", "deadline-123e4567e89b12d3a456426655441234")
+    assert win_installer.validate_deadline_id(
+        "deadline", "deadline-123e4567e89b12d3a456426655441234"
+    )
 
 
 def test_non_valid_deadline_id1():
-    assert not validate_deadline_id("deadline", "deadline-123")
+    assert not win_installer.validate_deadline_id("deadline", "deadline-123")
 
 
 def test_non_valid_deadline_id_with_wrong_prefix():
-    assert not validate_deadline_id("deadline", "line-123e4567e89b12d3a456426655441234")
+    assert not win_installer.validate_deadline_id(
+        "deadline", "line-123e4567e89b12d3a456426655441234"
+    )
 
 
 class TestInstallService:
     """Test cases for the install_service() function"""
 
     @pytest.fixture(autouse=True)
-    def mock_configure_service_failure_actions(self) -> Generator[Mock, None, None]:
+    def mock_configure_service_failure_actions(self) -> typing.Generator[Mock, None, None]:
         with patch.object(
             win_installer, "configure_service_failure_actions", new_callable=Mock
         ) as mock_configure_service_failure_actions:
@@ -414,7 +533,7 @@ class TestConfigureServiceFailureActions:
     """Test cases for configure_service_failure_actions()"""
 
     @pytest.fixture(autouse=True)
-    def mock_win32_service(self) -> Generator[Mock, None, None]:
+    def mock_win32_service(self) -> typing.Generator[Mock, None, None]:
         with patch.object(win_installer, "win32service", new_callable=Mock) as mock_win32_service:
             yield mock_win32_service
 
@@ -435,7 +554,7 @@ class TestConfigureServiceFailureActions:
         return mock_win32_service.ChangeServiceConfig2
 
     @pytest.fixture
-    def mock_logging_debug(self) -> Generator[Mock, None, None]:
+    def mock_logging_debug(self) -> typing.Generator[Mock, None, None]:
         with patch.object(win_installer.logging, "debug") as mock_logging_debug:
             yield mock_logging_debug
 
