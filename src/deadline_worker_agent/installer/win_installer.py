@@ -456,7 +456,8 @@ def _install_service(
     """
 
     # If the username does not contain the domain, then assume the local domain
-    if "\\" not in agent_user_name:
+    # https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats
+    if "\\" not in agent_user_name and "@" not in agent_user_name:
         agent_user_name = f".\\{agent_user_name}"
 
     # Determine the Windows Service configuration. This uses the same logic as
