@@ -24,11 +24,11 @@ This contains logic for the startup phase in the Worker Agent's lifecycle.
 
 ### `src/deadline_worker_agent/log_sync`
 
-This Python sub-package contains code responsible for synchronizing logs emitted by Amazon Deadline Cloud tasks to their destination(s) in S3 and CloudWatch Logs, and synchronizing logs emitted by agent to CloudWatch Logs.
+This Python sub-package contains code responsible for synchronizing logs emitted by AWS Deadline Cloud tasks to their destination(s) in S3 and CloudWatch Logs, and synchronizing logs emitted by agent to CloudWatch Logs.
 
 ### `src/deadline_worker_agent/scheduler`
 
-This contains an impementation of the Worker Agent's scheduler. This works with the Amazon Deadline Cloud farm's scheduler via `UpdateWorkerSchedule` to synchronize the assignment, completion, and status reporting of work.
+This contains an impementation of the Worker Agent's scheduler. This works with the AWS Deadline Cloud farm's scheduler via `UpdateWorkerSchedule` to synchronize the assignment, completion, and status reporting of work.
 
 ### `src/deadline_worker_agent/sessions`
 

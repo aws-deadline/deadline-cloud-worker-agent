@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-"""Amazon Deadline Cloud Worker Agent"""
+"""AWS Deadline Cloud Worker Agent"""
 
 from ._version import __version__  # noqa
 from .installer import install

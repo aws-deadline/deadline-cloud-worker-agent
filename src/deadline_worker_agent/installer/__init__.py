@@ -19,7 +19,7 @@ INSTALLER_PATH = {
 
 
 def install() -> None:
-    """Installer entrypoint for the Amazon Deadline Cloud Worker Agent"""
+    """Installer entrypoint for the AWS Deadline Cloud Worker Agent"""
 
     if sys.platform not in ["linux", "win32"]:
         print(f"ERROR: Unsupported platform {sys.platform}")
@@ -107,25 +107,25 @@ class ParsedCommandLineArguments(Namespace):
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
-    """Returns a command-line argument parser for the Amazon Deadline Cloud Worker Agent"""
+    """Returns a command-line argument parser for the AWS Deadline Cloud Worker Agent"""
 
     parser = ArgumentParser(
         prog="install-deadline-worker",
-        description="Installer for the Amazon Deadline Cloud Worker Agent",
+        description="Installer for the AWS Deadline Cloud Worker Agent",
     )
     parser.add_argument(
         "--farm-id",
-        help="The Amazon Deadline Cloud Farm ID that the Worker belongs to.",
+        help="The AWS Deadline Cloud Farm ID that the Worker belongs to.",
         required=True,
     )
     parser.add_argument(
         "--fleet-id",
-        help="The Amazon Deadline Cloud Fleet ID that the Worker belongs to.",
+        help="The AWS Deadline Cloud Fleet ID that the Worker belongs to.",
         required=True,
     )
     parser.add_argument(
         "--region",
-        help='The AWS region of the Amazon Deadline Cloud farm. Defaults to "us-west-2".',
+        help='The AWS region of the AWS Deadline Cloud farm. Defaults to "us-west-2".',
         default="us-west-2",
     )
 
@@ -133,7 +133,7 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     default_username = "deadline-worker-agent" if sys.platform != "win32" else "deadline-worker"
     parser.add_argument(
         "--user",
-        help=f'The username of the Amazon Deadline Cloud Worker Agent user. Defaults to "{default_username}".',
+        help=f'The username of the AWS Deadline Cloud Worker Agent user. Defaults to "{default_username}".',
         default=default_username,
     )
 
@@ -184,7 +184,7 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     if sys.platform == "win32":
         parser.add_argument(
             "--password",
-            help="The password for the Amazon Deadline Cloud Worker Agent user. Defaults to generating a password.",
+            help="The password for the AWS Deadline Cloud Worker Agent user. Defaults to generating a password.",
             required=False,
             default=None,
         )

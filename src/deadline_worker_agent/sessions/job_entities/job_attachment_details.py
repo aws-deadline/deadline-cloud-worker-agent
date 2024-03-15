@@ -103,7 +103,7 @@ class JobAttachmentDetails:
     @classmethod
     def validate_entity_data(cls, entity_data: dict[str, Any]) -> JobAttachmentDetailsData:
         """Performs input validation on a response element received from boto3's call to
-        the BatchGetJobEntity Amazon Deadline Cloud API.
+        the BatchGetJobEntity AWS Deadline Cloud API.
 
         Parameters
         ----------

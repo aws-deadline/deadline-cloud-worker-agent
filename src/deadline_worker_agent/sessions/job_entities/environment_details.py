@@ -62,7 +62,7 @@ class EnvironmentDetails:
     def validate_entity_data(cls, entity_data: dict[str, Any]) -> EnvironmentDetailsData:
         """
         Performs input validation on an entity response JSON object received from boto3's call to
-        the BatchGetJobEntity Amazon Deadline Cloud API.
+        the BatchGetJobEntity AWS Deadline Cloud API.
 
         Parameters
         ----------

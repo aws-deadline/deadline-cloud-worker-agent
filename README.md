@@ -8,7 +8,7 @@ This package has two active branches:
 ## Overview
 
 The DeadlineWorkerAgent package contains the worker agent software that is installed on worker nodes
-to interact with Amazon Deadline Cloud and perform tasks.
+to interact with AWS Deadline Cloud and perform tasks.
 
 ## Security
 

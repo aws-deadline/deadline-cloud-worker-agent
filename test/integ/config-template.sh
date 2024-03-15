@@ -68,7 +68,7 @@ export DEADLINE_SERVICE_MODEL_S3_URI
 # Default is to use the locally installed service model on your machine
 export LOCAL_MODEL_PATH
 
-# The endpoint to use for requests to the Amazon Deadline Cloud service
+# The endpoint to use for requests to the AWS Deadline Cloud service
 # Default is the endpoint specified in your AWS model file for "deadline"
 export DEADLINE_ENDPOINT
 

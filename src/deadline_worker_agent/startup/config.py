@@ -38,7 +38,7 @@ DEFAULT_WORKER_STATE_FILE = "worker.json"
 
 
 class Configuration:
-    """Amazon Deadline Cloud Worker Agent configuration
+    """AWS Deadline Cloud Worker Agent configuration
 
     Parameters
     ----------
@@ -231,7 +231,7 @@ class Configuration:
         cls,
         cli_args: Optional[Sequence[str]] = None,
     ) -> Configuration:
-        """Loads the Amazon Deadline Cloud Worker Agent configuration.
+        """Loads the AWS Deadline Cloud Worker Agent configuration.
 
         Arguments:
             cli_args: Sequence[str]

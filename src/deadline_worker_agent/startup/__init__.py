@@ -1,3 +1,3 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-"""Module for the startup phase of the Amazon Deadline Cloud Worker Agent"""
+"""Module for the startup phase of the AWS Deadline Cloud Worker Agent"""

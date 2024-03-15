@@ -7,7 +7,7 @@ import os
 
 
 class ParsedCommandLineArguments(Namespace):
-    """Represents the parsed Amazon Deadline Cloud Worker Agent command-line arguments"""
+    """Represents the parsed AWS Deadline Cloud Worker Agent command-line arguments"""
 
     farm_id: str | None = None
     fleet_id: str | None = None
@@ -31,18 +31,18 @@ class ParsedCommandLineArguments(Namespace):
 
 
 def get_argument_parser() -> ArgumentParser:
-    """Returns a command-line argument parser for the Amazon Deadline Cloud Worker Agent"""
+    """Returns a command-line argument parser for the AWS Deadline Cloud Worker Agent"""
     parser = ArgumentParser(
-        prog="deadline-worker-agent", description="Amazon Deadline Cloud Worker Agent"
+        prog="deadline-worker-agent", description="AWS Deadline Cloud Worker Agent"
     )
     parser.add_argument(
         "--farm-id",
-        help="The Amazon Deadline Cloud Farm identifier that the Worker should register to",
+        help="The AWS Deadline Cloud Farm identifier that the Worker should register to",
         default=None,
     )
     parser.add_argument(
         "--fleet-id",
-        help="The Amazon Deadline Cloud Fleet identifier that the Worker should register to",
+        help="The AWS Deadline Cloud Fleet identifier that the Worker should register to",
         default=None,
     )
     parser.add_argument(

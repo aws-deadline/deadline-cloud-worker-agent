@@ -159,7 +159,7 @@ def test_ensure_local_agent_user_correct_parameters_passed_to_netuseradd():
             "password": password,
             "priv": win32netcon.USER_PRIV_USER,
             "home_dir": None,
-            "comment": "Amazon Deadline Cloud Worker Agent User",
+            "comment": "AWS Deadline Cloud Worker Agent User",
             "flags": win32netcon.UF_DONT_EXPIRE_PASSWD,
             "script_path": None,
         }

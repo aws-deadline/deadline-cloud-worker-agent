@@ -3,9 +3,9 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 #
-# Amazon Deadline Cloud Worker Agent Installer
+# AWS Deadline Cloud Worker Agent Installer
 #
-# This script installs the Amazon Deadline Cloud Worker Agent.  The installer provides command-line arguments that
+# This script installs the AWS Deadline Cloud Worker Agent.  The installer provides command-line arguments that
 # can be used to configure the installation. The installer supports upgrading over top of a prior
 # installation, but the installer will not backup or rollback the prior installation.
 #
@@ -58,13 +58,13 @@ usage()
     echo "Arguments"
     echo "---------"
     echo "    --farm-id FARM_ID"
-    echo "        The Amazon Deadline Cloud Farm ID that the Worker belongs to."
+    echo "        The AWS Deadline Cloud Farm ID that the Worker belongs to."
     echo "    --fleet-id FLEET_ID"
-    echo "        The Amazon Deadline Cloud Fleet ID that the Worker belongs to."
+    echo "        The AWS Deadline Cloud Fleet ID that the Worker belongs to."
     echo "    --region REGION"
-    echo "        The AWS region of the Amazon Deadline Cloud farm. Defaults to $region."
+    echo "        The AWS region of the AWS Deadline Cloud farm. Defaults to $region."
     echo "    --user USER"
-    echo "        A user name that the Amazon Deadline Cloud Worker Agent will run as. Defaults to $default_wa_user."
+    echo "        A user name that the AWS Deadline Cloud Worker Agent will run as. Defaults to $default_wa_user."
     echo "    --group GROUP"
     echo "        A group name that the Worker Agent shares with the user(s) that Jobs will be running as."
     echo "        Do not use the primary/effective group of the Worker Agent user specifeid in --user as"
@@ -96,7 +96,7 @@ usage()
 
 banner() {
     echo "==========================================================="
-    echo "|      Amazon Deadline Cloud Worker Agent Installer       |"
+    echo "|      AWS Deadline Cloud Worker Agent Installer       |"
     echo "==========================================================="
 }
 
@@ -399,7 +399,7 @@ if ! [[ "${no_install_service}" == "yes" ]]; then
     worker_agent_homedir=$(eval echo ~$wa_user)
     cat > /etc/systemd/system/deadline-worker.service <<EOF
 [Unit]
-Description=Amazon Deadline Cloud Worker Agent
+Description=AWS Deadline Cloud Worker Agent
 
 [Service]
 User=${wa_user}
