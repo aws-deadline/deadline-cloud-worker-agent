@@ -9,23 +9,33 @@ assert sys.platform == "win32"
 
 import json
 import os
+from ctypes.wintypes import HANDLE as cHANDLE
 from datetime import datetime, timedelta, timezone
 from logging import getLogger
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 from botocore.retries.standard import RetryContext
 from openjd.sessions import WindowsSessionUser, BadCredentialsException
-from win32api import CloseHandle
+from pywintypes import HANDLE as PyHANDLE
+from win32security import (
+    LogonUser,
+    LOGON32_LOGON_NETWORK_CLEARTEXT,
+    LOGON32_PROVIDER_DEFAULT,
+)
+from win32profile import LoadUserProfile, PI_NOUI, UnloadUserProfile
+
+if TYPE_CHECKING:
+    from _win32typing import PyHKEY
+else:
+    PyHKEY = Any
 
 from ..boto import (
     OTHER_BOTOCORE_CONFIG,
     NoOverflowExponentialBackoff as Backoff,
     Session as BotoSession,
 )
-from .logon import logon_user, load_user_profile
-from .win_api import PROFILEINFO, UnloadUserProfile
 from . import win_service
 
 logger = getLogger(__name__)
@@ -37,12 +47,14 @@ class _WindowsCredentialsCacheEntry:
         windows_session_user: Optional[WindowsSessionUser],
         last_fetched_at: datetime,
         last_accessed: datetime,
-        user_profile: Optional[PROFILEINFO] = None,
+        user_profile: Optional[PyHKEY] = None,
+        logon_token: Optional[PyHANDLE] = None,
     ):
         self.windows_session_user = windows_session_user
         self.last_fetched_at = last_fetched_at
         self.last_accessed = last_accessed
         self.user_profile = user_profile
+        self.logon_token = logon_token
 
 
 class WindowsCredentialsResolver:
@@ -106,7 +118,7 @@ class WindowsCredentialsResolver:
     def prune_cache(self):
         # If we are running as a Windows Service, we maintain a logon token for the user and
         # do not need to persist the password nor rotate it.
-        if win_service.is_service():
+        if win_service.is_windows_session_zero():
             return
 
         # Filter out entries that haven't been accessed in the last CACHE_EXPIRATION hours
@@ -119,18 +131,17 @@ class WindowsCredentialsResolver:
 
     def clear(self):
         """Clears all users from the cache and cleans up any open resources"""
-        if win_service.is_service():
+        if win_service.is_windows_session_zero():
             for user in self._user_cache.values():
                 if user.windows_session_user:
                     logger.info(
                         f"Removing user {user.windows_session_user.user} from the windows credentials resolver cache"
                     )
                     if user.user_profile:
-                        UnloadUserProfile(
-                            user.windows_session_user.logon_token, user.user_profile.hProfile
-                        )
-                    assert user.windows_session_user.logon_token is not None
-                    CloseHandle(user.windows_session_user.logon_token)
+                        # https://timgolden.me.uk/pywin32-docs/win32profile__UnloadUserProfile_meth.html
+                        UnloadUserProfile(user.windows_session_user.logon_token, user.user_profile)
+                    assert user.logon_token is not None
+                    user.logon_token.Close()
         self._user_cache.clear()
 
     @staticmethod
@@ -145,7 +156,7 @@ class WindowsCredentialsResolver:
         a username and password. For this reason, our cache key should use the password secret
         ARN since a change of secret may imply a change of password.
         """
-        if win_service.is_service():
+        if win_service.is_windows_session_zero():
             return user_name
         else:
             # Create a composite key using user and arn
@@ -160,7 +171,8 @@ class WindowsCredentialsResolver:
         should_fetch = True
         user_key = self._user_cache_key(user_name=user, password_arn=passwordArn)
         windows_session_user: Optional[WindowsSessionUser] = None
-        user_profile: Optional[PROFILEINFO] = None
+        logon_token: Optional[PyHANDLE] = None
+        user_profile: Optional[PyHKEY] = None
 
         # Prune the cache before fetching or returning the user
         self.prune_cache()
@@ -197,12 +209,28 @@ class WindowsCredentialsResolver:
                         f'Contents of secret {passwordArn} did not match the expected format: {"password":"value"}'
                     )
                 else:
-                    if win_service.is_service():
+                    if win_service.is_windows_session_zero():
                         try:
-                            logon_token = logon_user(username=user, password=password)
-                            user_profile = load_user_profile(user=user, logon_token=logon_token)
+                            # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
+                            logon_token = LogonUser(
+                                Username=user,
+                                LogonType=LOGON32_LOGON_NETWORK_CLEARTEXT,
+                                LogonProvider=LOGON32_PROVIDER_DEFAULT,
+                                Password=password,
+                                Domain=None,
+                            )
+                            # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
+                            user_profile = LoadUserProfile(
+                                logon_token,
+                                {
+                                    "UserName": user,
+                                    "Flags": PI_NOUI,
+                                    "ProfilePath": None,
+                                },
+                            )
                             windows_session_user = WindowsSessionUser(
-                                user=user, logon_token=logon_token
+                                user=user,
+                                logon_token=cHANDLE(int(logon_token)),
                             )
                         except OSError as e:
                             logger.error(f'Error logging on as "{user}": {e}')
@@ -221,6 +249,7 @@ class WindowsCredentialsResolver:
             windows_session_user=windows_session_user,
             last_fetched_at=datetime.now(tz=timezone.utc),
             last_accessed=datetime.now(tz=timezone.utc),
+            logon_token=logon_token,
             user_profile=user_profile,
         )
 

@@ -69,16 +69,13 @@ def _get_current_process_session() -> int:
 
 
 @cache
-def is_service() -> bool:
-    """Returns whether the current Python process is running in a Windows Service.
-
-    This check is done by getting the Windows Session ID of the current process.
-    All Windows Service processes run in session 0.
+def is_windows_session_zero() -> bool:
+    """Returns whether the current Python process is running in Windows session 0.
 
     Returns
     -------
     bool
-        True if the current process is running in a Windows Service
+        True if the current process is running in Windows session 0
     """
     return _get_current_process_session() == 0
 

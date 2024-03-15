@@ -40,35 +40,35 @@ def test_get_current_process_session() -> None:
         pytest.param(1, False, id="session-non-zero"),
     ),
 )
-def test_is_service(session_id: int, expected_result: bool) -> None:
-    """Tests that the _is_service() function returns true iff the return value of
+def test_is_windows_session_zero(session_id: int, expected_result: bool) -> None:
+    """Tests that the is_windows_session_zero() function returns true iff the return value of
     _get_current_process_session is 0"""
 
     # GIVEN
     # clear the cache decorator to ensure the function result is not cached between tests
-    win_service.is_service.cache_clear()
+    win_service.is_windows_session_zero.cache_clear()
     with patch.object(win_service, "_get_current_process_session", return_value=session_id):
         # WHEN
-        result = win_service.is_service()
+        result = win_service.is_windows_session_zero()
 
     # THEN
     assert result == expected_result
 
 
-def test_is_service_cached() -> None:
-    """Tests that the _is_service() function caches the result between calls"""
+def test_is_windows_session_zero_cached() -> None:
+    """Tests that the is_windows_session_zero() function caches the result between calls"""
 
     # GIVEN
     # clear the cache decorator to ensure the function result is not cached on first run
-    win_service.is_service.cache_clear()
+    win_service.is_windows_session_zero.cache_clear()
     with patch.object(
         win_service, "_get_current_process_session"
     ) as mock_get_current_process_session:
         # We make our mocked _get_current_process_session return different session IDs between calls
         mock_get_current_process_session.side_effect = [0, 1]
-        first_result = win_service.is_service()
+        first_result = win_service.is_windows_session_zero()
         # WHEN
-        second_result = win_service.is_service()
+        second_result = win_service.is_windows_session_zero()
 
     # THEN
     assert first_result is True
