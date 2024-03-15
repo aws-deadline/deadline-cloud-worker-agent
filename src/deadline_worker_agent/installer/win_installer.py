@@ -516,6 +516,67 @@ def _install_service(
     else:
         logging.info(f'Successfully created Windows Service "{service_display_name}"')
 
+    logging.info(f'Configuring the failure actions of Windows Service "{service_display_name}"...')
+    configure_service_failure_actions(service_name)
+    logging.info(
+        f'Successfully configured the failure actions for Window Service "{service_display_name}"'
+    )
+
+
+def configure_service_failure_actions(service_name):
+    """Configures the failure actions of the Windows Service.
+
+    We use exponential backoff with a base of 2 seconds and doubling each iteration. This grows until
+    it reaches ~4m 16s and then repeats indefinitely at this interval. The backoff resets if the service
+    heals and stays alive for 20 minutes.
+
+    This uses the ChangeServiceConfig2 win32 API:
+    https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-changeserviceconfig2w
+
+    Notably, the third parameter of ChangeServiceConfig2 expects a SERVICE_FAILURE_ACTIONSW structure.
+    whose API reference docs best explains how Windows Service failure actions work:
+    https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_failure_actionsw#remarks
+    """
+
+    # pywin32's ChangeServiceConfig2 wrapper accepts tuples ofs: (action type, delay in ms)
+    # Exponential backoff with base of 2 seconds (2000 ms), doubling each iteration.
+    # The backoff grows from 2 seconds to ~4m 16s over 8 attempts totalling 510s (or 8m 30s).
+    actions = [(win32service.SC_ACTION_RESTART, 2000 * 2**i) for i in range(8)]
+
+    logging.debug("Opening the Service Control Manager...")
+    scm = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_ALL_ACCESS)
+    logging.debug("Successfully opened the Service Control Manager")
+    try:
+        logging.debug(f'Opening the Windows Service "{service_name}"')
+        service = win32service.OpenService(scm, service_name, win32service.SERVICE_ALL_ACCESS)
+        logging.debug(f'Successfully opened the Windows Service "{service_name}"')
+
+        logging.debug(f'Modifying the failure actions of Windows Service "{service_name}...')
+        try:
+            win32service.ChangeServiceConfig2(
+                service,
+                win32service.SERVICE_CONFIG_FAILURE_ACTIONS,
+                {
+                    # Repeat the last action (restart with ~4m 16s delay) until the service recovers
+                    # for 20 minutes (in seconds)
+                    "ResetPeriod": 20 * 60,
+                    "RebootMsg": None,
+                    "Command": None,
+                    "Actions": actions,
+                },
+            )
+            logging.debug(
+                f'Successfully modified the failure actions of Windows Service "{service_name}...'
+            )
+        finally:
+            logging.debug(f'Closing the Windows Service "{service_name}"..')
+            win32service.CloseServiceHandle(service)
+            logging.debug(f'Successfully closed the Windows Service "{service_name}"')
+    finally:
+        logging.debug("Closing the Service Control Manager...")
+        win32service.CloseServiceHandle(scm)
+        logging.debug("Successfully closed the Service Control Manager")
+
 
 def _start_service() -> None:
     """Starts the Windows Service hosting the Worker Agent"""
