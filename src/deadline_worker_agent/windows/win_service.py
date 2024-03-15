@@ -47,10 +47,7 @@ class WorkerAgentWindowsService(win32serviceutil.ServiceFramework):
             servicemanager.PYS_SERVICE_STARTED,
             (self._svc_name_, ""),
         )
-        try:
-            entrypoint(cli_args=[], stop=self._stop_event)
-        except Exception as e:
-            logging.exception(e)
+        entrypoint(cli_args=[], stop=self._stop_event)
         servicemanager.LogMsg(
             servicemanager.EVENTLOG_INFORMATION_TYPE,
             servicemanager.PYS_SERVICE_STOPPED,
