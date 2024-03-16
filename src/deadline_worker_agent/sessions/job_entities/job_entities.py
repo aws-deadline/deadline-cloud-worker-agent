@@ -6,7 +6,7 @@ from itertools import islice
 from logging import getLogger
 from threading import Event, Thread
 from typing import Any, Iterator, Iterable, TYPE_CHECKING, TypeVar, Union, cast, Optional
-from ...windows_credentials_resolver import WindowsCredentialsResolver
+import sys
 
 from ...api_models import (
     EntityIdentifier,
@@ -41,8 +41,14 @@ if TYPE_CHECKING:
         BaseEntityErrorFields,
         EntityDetails,
     )
+
+    if sys.platform == "win32":
+        from ...windows.win_credentials_resolver import WindowsCredentialsResolver
+    else:
+        WindowsCredentialsResolver = Any
 else:
     BaseEntityErrorFields = Any
+    WindowsCredentialsResolver = Any
 
 
 S = TypeVar(

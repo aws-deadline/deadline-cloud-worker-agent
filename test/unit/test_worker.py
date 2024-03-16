@@ -155,6 +155,7 @@ class TestInit:
             worker_persistence_dir=ANY,
             worker_logs_dir=worker_logs_dir,
             retain_session_dir=ANY,
+            stop=ANY,
         )
 
 
