@@ -91,7 +91,9 @@ def session_queue(
     job_entities: MagicMock,
 ) -> SessionActionQueue:
     return SessionActionQueue(
+        queue_id="queue-1234",
         job_id=job_id,
+        session_id="session-abcd",
         job_entities=job_entities,
         action_update_callback=Mock(),
     )
@@ -173,6 +175,7 @@ class TestSessionActionQueueDequeue:
                 ),
                 SyncInputJobAttachmentsAction(
                     id="id",
+                    session_id="session-1234",
                     job_attachment_details=JobAttachmentDetails(
                         job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
                         manifests=[],
@@ -191,6 +194,7 @@ class TestSessionActionQueueDequeue:
                 ),
                 SyncInputJobAttachmentsAction(
                     id="id",
+                    session_id="session-1234",
                     step_details=StepDetails(
                         step_template=_TEST_STEP_TEMPLATE, dependencies=["step-1"]
                     ),
@@ -215,7 +219,6 @@ class TestSessionActionQueueDequeue:
         # THEN
         assert type(result) == type(expected)
         assert result.id == expected.id  # type: ignore
-        assert result.human_readable() == expected.human_readable()  # type: ignore
         assert len(session_queue._actions) == 0
         assert len(session_queue._actions_by_id) == 0
 
@@ -393,7 +396,8 @@ class TestCancelAll:
                 ),
             ),
         ]
-        with patch.object(session_queue, "cancel") as cancel_mock:
+        session_queue._actions_by_id = {"task-run": dict(), "env-exit": dict()}  # type: ignore
+        with patch.object(session_queue, "_cancel") as cancel_mock:
             # WHEN
             session_queue.cancel_all(
                 message=message,

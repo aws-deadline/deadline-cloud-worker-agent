@@ -85,9 +85,6 @@ class EnterEnvironmentAction(OpenjdAction):
             details=details,
         )
 
-    def human_readable(self) -> str:
-        return f"environment[{self._job_env_id}].enter()"
-
     @property
     def session_env_id(self) -> EnvironmentIdentifier | None:
         return self._session_env_id

@@ -20,14 +20,14 @@ class TestAwsCredentialRefresherInit:
         # GIVEN
         session = MagicMock()
         callback = MagicMock()
-        identifier = "ident"
+        resource = dict(queue_id="queue-1234")
         # intentionally different from defaults
         advisory = timedelta(minutes=60)
         mandatory = timedelta(minutes=30)
 
         # WHEN
         refresher = AwsCredentialsRefresher(
-            identifier=identifier,
+            resource=resource,
             session=session,
             failure_callback=callback,
             advisory_refresh_timeout=advisory,
@@ -36,7 +36,7 @@ class TestAwsCredentialRefresherInit:
 
         # THEN
         assert refresher._session is session
-        assert refresher._identifier == identifier
+        assert refresher._resource == resource
         assert refresher._advisory_refresh_timeout == advisory
         assert refresher._mandatory_refresh_timeout == mandatory
         assert refresher._timer is None
@@ -45,9 +45,9 @@ class TestAwsCredentialRefresherInit:
         # GIVEN
         session = MagicMock()
         callback = MagicMock()
-        identifier = "ident"
+        resource = dict(queue_id="queue-1234")
         refresher = AwsCredentialsRefresher(
-            identifier=identifier,
+            resource=resource,
             session=session,
             failure_callback=callback,
         )
@@ -77,9 +77,9 @@ class TestAwsCredentialRefresherInit:
         # GIVEN
         session = MagicMock()
         callback = MagicMock()
-        identifier = "ident"
+        resource = dict(resource="queue-1234")
         refresher = AwsCredentialsRefresher(
-            identifier=identifier,
+            resource=resource,
             session=session,
             failure_callback=callback,
         )
@@ -103,10 +103,10 @@ class TestAwsCredentialRefresherInit:
         # GIVEN
         session = MagicMock()
         callback = MagicMock()
-        identifier = "ident"
+        resource = dict(queue_id="queue-1234")
         with patch.object(AwsCredentialsRefresher, "_set_timer") as mock_set_timer:
             refresher = AwsCredentialsRefresher(
-                identifier=identifier,
+                resource=resource,
                 session=session,
                 failure_callback=callback,
             )
@@ -123,9 +123,9 @@ class TestAwsCredentialRefresherInit:
         # GIVEN
         session = MagicMock()
         callback = MagicMock()
-        identifier = "ident"
+        resource = dict(queue_id="queue-1234")
         refresher = AwsCredentialsRefresher(
-            identifier=identifier,
+            resource=resource,
             session=session,
             failure_callback=callback,
         )
@@ -147,7 +147,7 @@ class TestAwsCredentialRefresherInit:
         # GIVEN
         session = MagicMock()
         callback = MagicMock()
-        identifier = "ident"
+        resource = dict(queue_id="queue-1234")
         time_now = datetime.now(timezone.utc)
         time_remaining = timedelta(minutes=60)
 
@@ -160,7 +160,7 @@ class TestAwsCredentialRefresherInit:
             mock_time_to_expiry.return_value = (time_now, time_remaining)
 
             refresher = AwsCredentialsRefresher(
-                identifier=identifier,
+                resource=resource,
                 session=session,
                 failure_callback=callback,
             )
@@ -178,7 +178,7 @@ class TestAwsCredentialRefresherInit:
         # GIVEN
         session = MagicMock()
         callback = MagicMock()
-        identifier = "ident"
+        resource = dict(queue_id="queue-1234")
         time_now = datetime.now(timezone.utc)
         time_remaining = timedelta(minutes=5)  # Less than 10mins => mandatory timeout
         credentials = SettableCredentials()
@@ -194,7 +194,7 @@ class TestAwsCredentialRefresherInit:
             mock_time_to_expiry.return_value = (time_now, time_remaining)
 
             refresher = AwsCredentialsRefresher(
-                identifier=identifier,
+                resource=resource,
                 session=session,
                 failure_callback=callback,
             )
@@ -226,7 +226,7 @@ class TestAwsCredentialRefresherInit:
         # GIVEN
         session = MagicMock()
         callback = MagicMock()
-        identifier = "ident"
+        resource = dict(queue_id="queue-1234")
         time_now = datetime.now(timezone.utc)
         time_remaining = timedelta(minutes=60)
 
@@ -239,7 +239,7 @@ class TestAwsCredentialRefresherInit:
             mock_time_to_expiry.return_value = (time_now, time_remaining)
 
             refresher = AwsCredentialsRefresher(
-                identifier=identifier,
+                resource=resource,
                 session=session,
                 failure_callback=callback,
             )
@@ -273,7 +273,7 @@ class TestAwsCredentialRefresherInit:
         # GIVEN
         session = MagicMock()
         callback = MagicMock()
-        identifier = "ident"
+        resource = dict(queue_id="queue-1234")
         time_now = datetime.now(timezone.utc)
         time_remaining = timedelta(minutes=60)
 
@@ -286,7 +286,7 @@ class TestAwsCredentialRefresherInit:
             mock_time_to_expiry.return_value = (time_now, time_remaining)
 
             refresher = AwsCredentialsRefresher(
-                identifier=identifier,
+                resource=resource,
                 session=session,
                 failure_callback=callback,
             )

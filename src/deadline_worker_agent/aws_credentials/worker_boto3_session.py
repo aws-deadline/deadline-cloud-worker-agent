@@ -14,6 +14,12 @@ from ..aws.deadline import (
 )
 from .boto3_sessions import BaseBoto3Session, SettableCredentials
 from .temporary_credentials import TemporaryCredentials
+from ..log_messages import (
+    FilesystemLogEvent,
+    FilesystemLogEventOp,
+    AwsCredentialsLogEvent,
+    AwsCredentialsLogEventOp,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -76,7 +82,11 @@ class WorkerBoto3Session(BaseBoto3Session):
             session = self
 
         _logger.info(
-            "Requesting AWS Credentials for Worker %s via AssumeFleetRoleForWorker", self._worker_id
+            AwsCredentialsLogEvent(
+                op=AwsCredentialsLogEventOp.QUERY,
+                resource=self._worker_id,
+                message="Requesting AWS Credentials",
+            )
         )
 
         deadline_client = session.client("deadline", config=DEADLINE_BOTOCORE_CONFIG)
@@ -106,9 +116,17 @@ class WorkerBoto3Session(BaseBoto3Session):
         credentials_object.set_credentials(temporary_creds.to_deadline())
 
         _logger.info(
-            "New temporary Worker AWS Credentials obtained. They expire at %s",
-            temporary_creds.expiry_time,
+            AwsCredentialsLogEvent(
+                op=AwsCredentialsLogEventOp.QUERY,
+                resource=self._worker_id,
+                message="Obtained temporary Worker AWS Credentials.",
+                expiry=str(temporary_creds.expiry_time),
+            )
         )
         _logger.info(
-            f"Worker AWS Credentials cached to {self._file_cache._convert_cache_key(self._creds_filename)}"
+            FilesystemLogEvent(
+                op=FilesystemLogEventOp.WRITE,
+                filepath=str(self._file_cache._convert_cache_key(self._creds_filename)),
+                message="Worker AWS Credentials cached.",
+            )
         )

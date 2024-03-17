@@ -24,6 +24,7 @@ from deadline_worker_agent.log_sync.cloudwatch import (
     PartitionedCloudWatchLogEvent,
     stream_cloudwatch_logs,
 )
+from deadline_worker_agent.log_messages import LogRecordStringTranslationFilter
 
 
 @fixture
@@ -1461,12 +1462,10 @@ class TestCloudWatchHandler:
 
 
 @mark.parametrize(
-    argnames=("mock_logger"),
-    argvalues=(
-        (MagicMock(spec=logger_mod.OPENJD_ACTION_OUTPUT_LOGGER)),
-        (MagicMock(spec=logger_mod.ROOT_LOGGER)),
-    ),
-    ids=("OPENJD_ACTION_OUTPUT_LOGGER", "ROOT_LOGGER"),
+    "mock_logger",
+    [
+        param(MagicMock(spec=logger_mod.ROOT_LOGGER), id="ROOT_LOGGER"),
+    ],
 )
 def test_stream_cloudwatch(
     logs_client: MagicMock,
@@ -1501,6 +1500,7 @@ def test_stream_cloudwatch(
         handler_enter.return_value = handler
         handler_exit: MagicMock = handler.__exit__
         handler_set_formatter_mock: MagicMock = handler.setFormatter
+        handler_add_filter_mock: MagicMock = handler.addFilter
         ctx_mgr = stream_cloudwatch_logs(
             logs_client=logs_client,
             log_group_name=log_cw_group_name,
@@ -1529,7 +1529,12 @@ def test_stream_cloudwatch(
             assert isinstance(formatter, Formatter)
             # Assume the default formatting only contains the log message.
             # CloudWatch maintains timestamps for each log event already.
-            assert formatter._fmt == "%(message)s"
+            assert formatter._fmt == "%(json)s"
+
+            handler_add_filter_mock.assert_called_once()
+            assert isinstance(
+                handler_add_filter_mock.call_args.args[0], LogRecordStringTranslationFilter
+            )
 
             action_output_logger_add_handler.assert_called_once_with(handler)
             action_output_logger_remove_handler.assert_not_called()

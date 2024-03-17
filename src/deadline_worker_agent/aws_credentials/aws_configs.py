@@ -17,6 +17,7 @@ from ..file_system_operations import (
     FileSystemPermissionEnum,
     touch_file,
 )
+from ..log_messages import FilesystemLogEvent, FilesystemLogEventOp
 
 __all__ = [
     "AWSConfig",
@@ -138,7 +139,13 @@ class _AWSConfigBase(ABC):
         """
         Writes the config to the config path given in the constructor
         """
-        _logger.info(f"Writing updated {self.path} to disk.")
+        _logger.info(
+            FilesystemLogEvent(
+                op=FilesystemLogEventOp.WRITE,
+                filepath=str(self.path),
+                message="Saving profile updates.",
+            )
+        )
         with self.path.open(mode="w") as fp:
             self._config_parser.write(fp=fp, space_around_delimiters=False)
 

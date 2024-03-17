@@ -51,6 +51,10 @@ from deadline_worker_agent.sessions.job_entities import (
     JobDetails,
     StepDetails,
 )
+from deadline_worker_agent.log_messages import (
+    SessionActionLogEvent,
+    SessionActionLogEventSubtype,
+)
 from deadline.job_attachments.models import (
     Attachments,
     JobAttachmentsFileSystem,
@@ -172,6 +176,7 @@ def session(
         os_user=os_user,
         queue=session_action_queue,
         queue_id=queue_id,
+        job_id="job-1234",
         action_update_callback=action_update_callback,
         action_update_lock=action_update_lock,
     )
@@ -1323,7 +1328,7 @@ class TestSessionActionUpdatedImpl:
         session._current_action = current_action
         queue_cancel_all: MagicMock = session_action_queue.cancel_all
         expected_next_action_message = failed_action_status.fail_message or (
-            f"Previous action failed: {current_action.definition.human_readable()}"
+            f"Previous action failed: {current_action.definition.id}"
         )
         expected_action_update = SessionActionStatus(
             id=action_id,
@@ -1390,7 +1395,7 @@ class TestSessionActionUpdatedImpl:
         session._current_action = current_action
         queue_cancel_all: MagicMock = session_action_queue.cancel_all
         expected_next_action_message = failed_action_status.fail_message or (
-            f"Previous action failed: {current_action.definition.human_readable()}"
+            f"Previous action failed: {current_action.definition.id}"
         )
         expected_action_update = SessionActionStatus(
             id=action_id,
@@ -1534,7 +1539,7 @@ class TestSessionActionUpdatedImpl:
         sync_outputs_exception = Exception(sync_outputs_exception_msg)
         expected_fail_action_status = ActionStatus(
             state=ActionState.FAILED,
-            fail_message=f"Failed to sync job output attachments for {current_action.definition.human_readable()}: {sync_outputs_exception_msg}",
+            fail_message=f"Failed to sync job output attachments for {current_action.definition.id}: {sync_outputs_exception_msg}",
         )
         expected_action_update = SessionActionStatus(
             id=action_id,
@@ -1583,13 +1588,14 @@ class TestSessionActionUpdatedImpl:
         )
 
         # THEN
-        mock_mod_logger.info.assert_called_once_with(
-            "[%s] [%s] (%s): Action completed as %s",
-            session.id,
-            current_action.definition.id,
-            current_action.definition.human_readable(),
-            "SUCCEEDED",
+        mock_mod_logger.info.assert_called_once()
+        assert isinstance(mock_mod_logger.info.call_args.args[-1], SessionActionLogEvent)
+        assert (
+            mock_mod_logger.info.call_args.args[-1].subtype
+            == SessionActionLogEventSubtype.END.value
         )
+        assert mock_mod_logger.info.call_args.args[-1].status == "SUCCEEDED"
+        assert mock_mod_logger.info.call_args.args[-1].action_id == current_action.definition.id
 
     def test_logs_failed(
         self,
@@ -1607,13 +1613,13 @@ class TestSessionActionUpdatedImpl:
         )
 
         # THEN
-        mock_mod_logger.info.assert_called_once_with(
-            "[%s] [%s] (%s): Action completed as %s",
-            session.id,
-            current_action.definition.id,
-            current_action.definition.human_readable(),
-            "FAILED",
+        mock_mod_logger.info.assert_called_once()
+        assert isinstance(mock_mod_logger.info.call_args.args[0], SessionActionLogEvent)
+        assert (
+            mock_mod_logger.info.call_args.args[0].subtype == SessionActionLogEventSubtype.END.value
         )
+        assert mock_mod_logger.info.call_args.args[0].status == "FAILED"
+        assert mock_mod_logger.info.call_args.args[0].action_id == current_action.definition.id
 
     def test_logs_canceled(
         self,
@@ -1631,13 +1637,13 @@ class TestSessionActionUpdatedImpl:
         )
 
         # THEN
-        mock_mod_logger.info.assert_called_once_with(
-            "[%s] [%s] (%s): Action completed as %s",
-            session.id,
-            current_action.definition.id,
-            current_action.definition.human_readable(),
-            "CANCELED",
+        mock_mod_logger.info.assert_called_once()
+        assert isinstance(mock_mod_logger.info.call_args.args[0], SessionActionLogEvent)
+        assert (
+            mock_mod_logger.info.call_args.args[0].subtype == SessionActionLogEventSubtype.END.value
         )
+        assert mock_mod_logger.info.call_args.args[0].status == "CANCELED"
+        assert mock_mod_logger.info.call_args.args[0].action_id == current_action.definition.id
 
 
 @pytest.mark.usefixtures("mock_openjd_session")
@@ -1694,12 +1700,9 @@ class TestStartCancelingCurrentAction:
         session._start_canceling_current_action(time_limit=time_limit)
 
         # THEN
-        logger_info.assert_called_once_with(
-            "[%s] [%s] (%s): Canceling action",
-            session.id,
-            current_action.definition.id,
-            current_action.definition.human_readable(),
-        )
+        logger_info.assert_called_once()
+        assert isinstance(logger_info.call_args.args[0], SessionActionLogEvent)
+        assert logger_info.call_args.args[0].subtype == SessionActionLogEventSubtype.CANCEL
 
 
 class TestSessionStop:
@@ -1971,65 +1974,6 @@ class TestSessionStartAction:
             "exception-2",
         ),
     )
-    def test_initial_action_exception(
-        self,
-        exception_msg: str,
-        session: Session,
-        run_step_task_action: RunStepTaskAction,
-    ) -> None:
-        """Tests that if Session._initial_action_exception is set, that:
-
-        1.  the action is FAILED with a message representing the exception
-        2.  actions other than ENV_EXITS in the session action queue are FAILED with a message
-            representing the exception
-        3.  that the Session._current_action is set to None
-        """
-
-        # GIVEN
-        exception = Exception(exception_msg)
-        session._initial_action_exception = exception
-
-        with (
-            patch.object(session, "_report_action_update") as mock_report_action_update,
-            patch.object(session._queue, "dequeue", return_value=run_step_task_action),
-            patch.object(session._queue, "cancel_all") as mock_queue_cancel_all,
-            patch.object(session_mod, "datetime") as datetime_mock,
-        ):
-            now: MagicMock = datetime_mock.now.return_value
-
-            # WHEN
-            session._start_action()
-
-        # THEN
-        mock_report_action_update.assert_called_once_with(
-            SessionActionStatus(
-                completed_status="FAILED",
-                start_time=now,
-                end_time=now,
-                id=run_step_task_action.id,
-                status=ActionStatus(
-                    state=ActionState.FAILED,
-                    fail_message=exception_msg,
-                ),
-            ),
-        )
-        mock_queue_cancel_all.assert_called_once_with(
-            message=f"Error starting prior action {run_step_task_action.id}",
-            ignore_env_exits=True,
-        )
-        assert session._current_action is None
-
-    @pytest.mark.parametrize(
-        argnames="exception_msg",
-        argvalues=(
-            "msg1",
-            "msg2",
-        ),
-        ids=(
-            "exception-1",
-            "exception-2",
-        ),
-    )
     def test_run_exception(
         self,
         exception_msg: str,
@@ -2037,8 +1981,7 @@ class TestSessionStartAction:
         run_step_task_action: RunStepTaskAction,
         mock_mod_logger: MagicMock,
     ) -> None:
-        """Tests that if Session._initial_action_exception is not set, but attempting to call
-        SessionActionDefinition.run() raises an exception, that:
+        """Tests that if SessionActionDefinition.start() raises an exception, that:
 
         1.  the attempt to start the action is logged
         2.  the action is FAILED with a message representing the exception
@@ -2051,7 +1994,7 @@ class TestSessionStartAction:
         # GIVEN
         exception = Exception(exception_msg)
         logger_info: MagicMock = mock_mod_logger.info
-        logger_warn: MagicMock = mock_mod_logger.warn
+        logger_error: MagicMock = mock_mod_logger.error
 
         with (
             patch.object(session, "_report_action_update") as mock_report_action_update,
@@ -2066,12 +2009,11 @@ class TestSessionStartAction:
             session._start_action()
 
         # THEN
-        logger_info.assert_called_once_with(
-            "[%s] [%s] (%s): Starting action",
-            session.id,
-            run_step_task_action.id,
-            run_step_task_action.human_readable(),
-        )
+        logger_info.assert_called_once()
+        assert isinstance(logger_info.call_args.args[0], SessionActionLogEvent)
+        assert logger_info.call_args.args[0].subtype == SessionActionLogEventSubtype.START.value
+        assert logger_info.call_args.args[0].action_id == run_step_task_action.id
+
         mock_report_action_update.assert_called_once_with(
             SessionActionStatus(
                 completed_status="FAILED",
@@ -2089,13 +2031,11 @@ class TestSessionStartAction:
             ignore_env_exits=True,
         )
         assert session._current_action is None
-        logger_warn.assert_called_once_with(
-            "[%s] [%s] (%s): Error starting action: %s",
-            session.id,
-            run_step_task_action.id,
-            run_step_task_action.human_readable(),
-            exception,
-        )
+        logger_error.assert_called_once()
+        assert isinstance(logger_error.call_args.args[0], SessionActionLogEvent)
+        assert logger_error.call_args.args[0].subtype == SessionActionLogEventSubtype.END.value
+        assert logger_error.call_args.args[0].status == "FAILED"
+        assert logger_error.call_args.args[0].action_id == run_step_task_action.id
 
     def test_run_action_with_env_variables(
         self,
@@ -2118,12 +2058,10 @@ class TestSessionStartAction:
             session._start_action()
 
         # THEN
-        logger_info.assert_called_once_with(
-            "[%s] [%s] (%s): Starting action",
-            session.id,
-            run_step_task_action.id,
-            run_step_task_action.human_readable(),
-        )
+        logger_info.assert_called_once()
+        assert isinstance(logger_info.call_args.args[0], SessionActionLogEvent)
+        assert logger_info.call_args.args[0].subtype == SessionActionLogEventSubtype.START
+        assert logger_info.call_args.args[0].action_id == run_step_task_action.id
 
         session_run_task.assert_called_once()
         session_run_task.call_args.kwargs["os_env_vars"] == {
@@ -2149,12 +2087,10 @@ class TestSessionStartAction:
             session._start_action()
 
         # THEN
-        logger_info.assert_called_once_with(
-            "[%s] [%s] (%s): Starting action",
-            session.id,
-            enter_env_action.id,
-            enter_env_action.human_readable(),
-        )
+        logger_info.assert_called_once()
+        assert isinstance(logger_info.call_args.args[0], SessionActionLogEvent)
+        assert logger_info.call_args.args[0].subtype == SessionActionLogEventSubtype.START
+        assert logger_info.call_args.args[0].action_id == enter_env_action.id
 
         session_enter_env.assert_called_once()
         session_enter_env.call_args.kwargs["os_env_vars"] == {
@@ -2179,12 +2115,10 @@ class TestSessionStartAction:
             session._start_action()
 
         # THEN
-        logger_info.assert_called_once_with(
-            "[%s] [%s] (%s): Starting action",
-            session.id,
-            exit_env_action.id,
-            exit_env_action.human_readable(),
-        )
+        logger_info.assert_called_once()
+        assert isinstance(logger_info.call_args.args[0], SessionActionLogEvent)
+        assert logger_info.call_args.args[0].subtype == SessionActionLogEventSubtype.START
+        assert logger_info.call_args.args[0].action_id == exit_env_action.id
 
         session_exit_env.assert_called_once()
         session_exit_env.call_args.kwargs["os_env_vars"] == {

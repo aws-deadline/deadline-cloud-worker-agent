@@ -8,19 +8,14 @@ import logging
 import os
 import subprocess
 import sys
-from getpass import getuser
 from time import sleep
 from logging.handlers import TimedRotatingFileHandler
 from threading import Event
 from typing import Optional
 from pathlib import Path
 
-from openjd.model import version as openjd_model_version
-from openjd.sessions import version as openjd_sessions_version
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
-from deadline.job_attachments import version as deadline_job_attach_version
 
-from .._version import __version__
 from ..api_models import WorkerStatus
 from ..boto import DEADLINE_BOTOCORE_CONFIG, OTHER_BOTOCORE_CONFIG, DeadlineClient
 from ..errors import ServiceShutdown
@@ -30,6 +25,12 @@ from ..worker import Worker
 from .bootstrap import bootstrap_worker
 from .capabilities import detect_system_capabilities
 from .config import Configuration, ConfigurationError
+from ..log_messages import (
+    AgentInfoLogEvent,
+    LogRecordStringTranslationFilter,
+    WorkerLogEvent,
+    WorkerLogEventOp,
+)
 from ..aws.deadline import (
     update_worker,
     update_worker_schedule,
@@ -62,11 +63,13 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
 
         # Setup logging
         bootstrap_log_handler = _configure_base_logging(
-            worker_logs_dir=config.worker_logs_dir, verbose=config.verbose
+            worker_logs_dir=config.worker_logs_dir,
+            verbose=config.verbose,
+            structured_logs=config.structured_logs,
         )
 
         # Log startup message
-        _logger.info("Worker Agent starting")
+        _logger.info("👋 Worker Agent starting")
         _log_agent_info()
 
         # if customer manually provided the capabilities (to be added in this function)
@@ -75,7 +78,7 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
         record_worker_start_telemetry_event(system_capabilities)
         config.capabilities = system_capabilities.merge(config.capabilities)
 
-        # Log the configuration
+        # Log the configuration (logs to DEBUG by default)
         config.log()
 
         # Register the Worker
@@ -89,6 +92,16 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
         worker_info = worker_bootstrap.worker_info
         worker_id = worker_info.worker_id
 
+        _logger.info(
+            WorkerLogEvent(
+                op=WorkerLogEventOp.ID,
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                worker_id=worker_id,
+                message="Agent identity.",
+            )
+        )
+
         # Get the boto3 session
         session = worker_bootstrap.session
         deadline_client = session.client(
@@ -101,11 +114,14 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
         # Shutdown behavior flags set by Worker below
         shutdown_requested_by_service = False
 
-        # Let's treat this log line as a contract. It's the last thing that we'll
-        # emit to the bootstrapping log, and external systems can use it as a
+        # IMPORTANT
+        # ---------
+        # Treat this log line as a contract! It's the last thing that we'll
+        # emit to the bootstrapping log, and external systems use it as a
         # sentinel to know that the worker has progressed successfully to processing
         # jobs.
         _logger.info("Worker successfully bootstrapped and is now running.")
+        # ---------
 
         _remove_logging_handler(bootstrap_log_handler)
 
@@ -149,7 +165,7 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
             except ServiceShutdown:
                 shutdown_requested_by_service = True
             except Exception as e:
-                _logger.exception("Failed running worker: %s", e)
+                _logger.exception("Worker Agent abnormal exit: %s", e)
                 raise
 
             _agent_shutdown(deadline_client, config, worker_id, shutdown_requested_by_service)
@@ -165,7 +181,7 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
             record_uncaught_exception_telemetry_event(exception_type=str(type(e)))
             sys.exit(1)
     finally:
-        _logger.info("Worker Agent exiting")
+        _logger.info("🚪 Worker Agent exiting")
 
 
 def _agent_shutdown(
@@ -194,10 +210,24 @@ def _agent_shutdown(
             )
         except Exception as e:
             _logger.error(
-                "Failed set Worker to STOPPING. Continuing to shutdown loop. Error: %s", e
+                WorkerLogEvent(
+                    op=WorkerLogEventOp.STATUS,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    message="Failed to set status to STOPPING: %s" % str(e),
+                )
             )
         else:
-            _logger.info("Worker %s successfully set to STOPPING", worker_id)
+            _logger.info(
+                WorkerLogEvent(
+                    op=WorkerLogEventOp.STATUS,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    message="Status set to STOPPING.",
+                )
+            )
         while _repeatedly_attempt_host_shutdown():
             _host_shutdown(config=config)
             try:
@@ -209,10 +239,19 @@ def _agent_shutdown(
                 )
             except Exception as e:
                 # Just swallow the error and keep looping until the host shutsdown
-                _logger.error("Failed to heartbeat Worker: %s", e)
+                _logger.error(
+                    WorkerLogEvent(
+                        op=WorkerLogEventOp.STATUS,
+                        farm_id=config.farm_id,
+                        fleet_id=config.fleet_id,
+                        worker_id=worker_id,
+                        message="Failed to heartbeat with AWS Deadline Cloud: %s" % str(e),
+                    )
+                )
             # Sleep for 30s and then try again; hopefully we never wake up
             sleep(30)
     else:
+        _logger.info("Setting Worker state to STOPPED.")
         # Worker-initiated shutdown. We tell the service that we've STOPPED and then exit
         try:
             update_worker(
@@ -223,9 +262,25 @@ def _agent_shutdown(
                 status=WorkerStatus.STOPPED,
             )
         except Exception as e:
-            _logger.error("Failed to stop Worker: %s", e)
+            _logger.error(
+                WorkerLogEvent(
+                    op=WorkerLogEventOp.STATUS,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    message="Failed to set status to STOPPED: %s" % str(e),
+                )
+            )
         else:
-            _logger.info("Worker %s successfully stopped", worker_id)
+            _logger.info(
+                WorkerLogEvent(
+                    op=WorkerLogEventOp.STATUS,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    message="Status set to STOPPED.",
+                )
+            )
 
 
 def _host_shutdown(config: Configuration) -> None:
@@ -261,7 +316,9 @@ def _host_shutdown(config: Configuration) -> None:
         )
 
 
-def _configure_base_logging(worker_logs_dir: Path, verbose: bool) -> logging.Handler:
+def _configure_base_logging(
+    worker_logs_dir: Path, verbose: bool, structured_logs: bool
+) -> logging.Handler:
     """Configures the logger to write to both the console and a file"""
     root_logger = logging.getLogger()
     # Set the log level
@@ -284,8 +341,13 @@ def _configure_base_logging(worker_logs_dir: Path, verbose: bool) -> logging.Han
     # folk submitting jobs, so keep the sensitive stuff out of the agent log.
     OPENJD_SESSION_LOG.propagate = False
 
+    # Similarly, Job Attachments is a feature that only runs in the context of a
+    # Session. So, it's logs should not propagate to the root logger. Instead,
+    # the Job Attachments logs will route to the Session Logs only.
     JOB_ATTACHMENTS_LOGGER = logging.getLogger("deadline.job_attachments")
     JOB_ATTACHMENTS_LOGGER.propagate = False
+
+    translation_filter = LogRecordStringTranslationFilter()
 
     # Add quiet stderr output logger
     console_handler: logging.Handler
@@ -293,17 +355,16 @@ def _configure_base_logging(worker_logs_dir: Path, verbose: bool) -> logging.Han
         from rich.logging import RichHandler
     except ImportError:
         console_handler = logging.StreamHandler(sys.stderr)
-        console_fmt_str = "[%(levelname)8s] %(message)s"
-        if verbose:
-            console_fmt_str = "[%(asctime)s] [%(levelname)8s] [%(name)-50s] --- %(message)s"
     else:  # pragma: no cover
-        console_fmt_str = "%(message)s"
-        if verbose:
-            console_fmt_str = "[%(name)-50s] --- %(message)s"
         console_handler = RichHandler(rich_tracebacks=True, tracebacks_show_locals=verbose)
 
-    console_handler.formatter = logging.Formatter(console_fmt_str)
+    if structured_logs:
+        fmt_str = "%(json)s"
+    else:
+        fmt_str = "[%(asctime)s][%(levelname)-8s] %(desc)s%(message)s"
+    console_handler.formatter = logging.Formatter(fmt_str)
     root_logger.addHandler(console_handler)
+    console_handler.addFilter(translation_filter)
 
     if not (worker_logs_dir.exists() and worker_logs_dir.is_dir()):
         raise RuntimeError(
@@ -319,10 +380,9 @@ def _configure_base_logging(worker_logs_dir: Path, verbose: bool) -> logging.Han
         when="d",
         interval=1,
     )
-    bootstrapping_handler.formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s [%(name)s] %(message)s"
-    )
+    bootstrapping_handler.formatter = logging.Formatter(fmt_str)
     root_logger.addHandler(bootstrapping_handler)
+    bootstrapping_handler.addFilter(translation_filter)
 
     # Add rotating file handler with more verbose output
     rotating_file_handler = TimedRotatingFileHandler(
@@ -331,10 +391,9 @@ def _configure_base_logging(worker_logs_dir: Path, verbose: bool) -> logging.Han
         when="d",
         interval=1,
     )
-    rotating_file_handler.formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s [%(name)s] %(message)s"
-    )
+    rotating_file_handler.formatter = logging.Formatter(fmt_str)
     root_logger.addHandler(rotating_file_handler)
+    rotating_file_handler.addFilter(translation_filter)
 
     return bootstrapping_handler
 
@@ -346,19 +405,4 @@ def _remove_logging_handler(handler: logging.Handler) -> None:
 
 
 def _log_agent_info() -> None:
-    _logger.info(f"Python Interpreter: {sys.executable}")
-    _logger.info("Python Version: %s", sys.version.replace("\n", " - "))
-    _logger.info(f"Platform: {sys.platform}")
-    _logger.info("Agent Version: %s", __version__)
-    _logger.info("Installed at: %s", str(Path(__file__).resolve().parent.parent))
-    try:
-        user = getuser()
-    except Exception:
-        # This is best-effort. If we cannot determine the user we will not log
-        pass
-    else:
-        _logger.info("Running as: %s", user)
-    _logger.info("Dependency versions installed:")
-    _logger.info("\topenjd.model: %s", openjd_model_version)
-    _logger.info("\topenjd.sessions: %s", openjd_sessions_version)
-    _logger.info("\tdeadline.job_attachments: %s", deadline_job_attach_version)
+    _logger.info(AgentInfoLogEvent())

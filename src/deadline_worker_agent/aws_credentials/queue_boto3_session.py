@@ -35,6 +35,12 @@ from ..aws.deadline import (
 from .boto3_sessions import BaseBoto3Session, SettableCredentials
 from .temporary_credentials import TemporaryCredentials
 
+from ..log_messages import (
+    FilesystemLogEvent,
+    FilesystemLogEventOp,
+    AwsCredentialsLogEvent,
+    AwsCredentialsLogEventOp,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -93,6 +99,7 @@ class QueueBoto3Session(BaseBoto3Session):
     _fleet_id: str
     _queue_id: str
     _worker_id: str
+    _role_arn: str
     _os_user: Optional[SessionUser]
     _interrupt_event: Event
 
@@ -124,6 +131,7 @@ class QueueBoto3Session(BaseBoto3Session):
         fleet_id: str,
         worker_id: str,
         queue_id: str,
+        role_arn: str,
         os_user: Optional[SessionUser] = None,
         interrupt_event: Event,
         worker_persistence_dir: Path,
@@ -135,6 +143,7 @@ class QueueBoto3Session(BaseBoto3Session):
         self._fleet_id = fleet_id
         self._worker_id = worker_id
         self._queue_id = queue_id
+        self._role_arn = role_arn
         self._os_user = os_user
         self._interrupt_event = interrupt_event
 
@@ -263,9 +272,12 @@ class QueueBoto3Session(BaseBoto3Session):
               request that the caller may be able to recover from.
         """
         _logger.info(
-            "Requesting AWS Credentials for Queue %s on behalf of Worker %s via AssumeQueueRoleForWorker",
-            self._queue_id,
-            self._worker_id,
+            AwsCredentialsLogEvent(
+                op=AwsCredentialsLogEventOp.QUERY,
+                resource=self._queue_id,
+                role_arn=self._role_arn,
+                message="Requesting AWS Credentials",
+            )
         )
 
         try:
@@ -281,34 +293,47 @@ class QueueBoto3Session(BaseBoto3Session):
             # We were interrupted. Let our caller know so that they can respond accordingly.
             raise
         except DeadlineRequestWorkerOfflineError:
-            _logger.warning(
-                "Response to AssumeQueueRoleForWorker for Queue %s indicates that the Worker is not online.",
-                self._queue_id,
+            _logger.error(
+                AwsCredentialsLogEvent(
+                    op=AwsCredentialsLogEventOp.QUERY,
+                    resource=self._queue_id,
+                    role_arn=self._role_arn,
+                    message="Worker is not online.",
+                )
             )
             # We just return. Other code paths within the Worker Agent's main scheduler event loop will respond,
             # more appropriately, to this situation.
             raise
         except DeadlineRequestConditionallyRecoverableError as e:
             _logger.warning(
-                "Response to AssumeQueueRoleForWorker for Queue %s is a recoverable error: %s",
-                self._queue_id,
-                e.inner_exc,
+                AwsCredentialsLogEvent(
+                    op=AwsCredentialsLogEventOp.QUERY,
+                    resource=self._queue_id,
+                    role_arn=self._role_arn,
+                    message="Recoverable errror %s." % e.inner_exc,
+                )
             )
             raise
         except DeadlineRequestUnrecoverableError as e:
             _logger.error(
-                "Response to AssumeQueueRoleForWorker for Queue %s is an unrecoverable error: %s",
-                self._queue_id,
-                e.inner_exc,
+                AwsCredentialsLogEvent(
+                    op=AwsCredentialsLogEventOp.QUERY,
+                    resource=self._queue_id,
+                    role_arn=self._role_arn,
+                    message="Unrecoverable errror %s." % e.inner_exc,
+                )
             )
             raise
         except Exception as e:
             # This should never happen since assume_queue_role_for_worker only raises
             # DeadlineRequest*Errors, but let's be paranoid.
-            _logger.critical(
-                "Unexpected exception from AssumeQueueRoleForWorker for Queue %s. Please report this to the service team. -- %s",
-                self._queue_id,
-                e,
+            _logger.exception(
+                AwsCredentialsLogEvent(
+                    op=AwsCredentialsLogEventOp.QUERY,
+                    resource=self._queue_id,
+                    role_arn=self._role_arn,
+                    message="Unexpected exception. Please report this to the service team.",
+                )
             )
             raise DeadlineRequestUnrecoverableError(e)
 
@@ -358,12 +383,23 @@ class QueueBoto3Session(BaseBoto3Session):
             credentials_object.set_credentials(temporary_creds.to_deadline())
 
             _logger.info(
-                "New temporary Queue AWS Credentials obtained for Queue %s. They expire at %s.",
-                self._queue_id,
-                temporary_creds.expiry_time,
+                AwsCredentialsLogEvent(
+                    op=AwsCredentialsLogEventOp.QUERY,
+                    resource=self._queue_id,
+                    role_arn=self._role_arn,
+                    message="Obtained temporary Queue AWS Credentials.",
+                    expiry=str(temporary_creds.expiry_time),
+                )
             )
         else:
-            _logger.info("No AWS Credentials received for Queue %s.", self._queue_id)
+            _logger.info(
+                AwsCredentialsLogEvent(
+                    op=AwsCredentialsLogEventOp.QUERY,
+                    resource=self._queue_id,
+                    role_arn=self._role_arn,
+                    message="No AWS Credentials received.",
+                )
+            )
 
     def _create_credentials_directory(self, os_user: Optional[SessionUser] = None) -> None:
         """Creates the directory that we're going to write the credentials file to"""
@@ -376,10 +412,20 @@ class QueueBoto3Session(BaseBoto3Session):
             try:
                 self._credential_dir.mkdir(exist_ok=True, parents=True, mode=mode)
                 self._credential_dir.chmod(mode)
+                _logger.info(
+                    FilesystemLogEvent(
+                        op=FilesystemLogEventOp.CREATE,
+                        filepath=str(self._credential_dir),
+                        message="Credentials directory.",
+                    )
+                )
             except OSError:
                 _logger.error(
-                    "Please check user permissions. Could not create directory: %s",
-                    str(self._credential_dir),
+                    FilesystemLogEvent(
+                        op=FilesystemLogEventOp.CREATE,
+                        filepath=str(self._credential_dir),
+                        message="Could not create directory. Please check user permissions.",
+                    )
                 )
                 raise
             if os_user is not None:
@@ -407,6 +453,13 @@ class QueueBoto3Session(BaseBoto3Session):
                     agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
                     user_permission=FileSystemPermissionEnum.READ,
                 )
+            _logger.info(
+                FilesystemLogEvent(
+                    op=FilesystemLogEventOp.CREATE,
+                    filepath=str(self._credential_dir),
+                    message="Credentials directory.",
+                )
+            )
 
     def _delete_credentials_directory(self) -> None:
         # delete the <worker_persistence_dir>/queues/<queue-id> dir
@@ -419,7 +472,11 @@ class QueueBoto3Session(BaseBoto3Session):
 
             shutil.rmtree(self._credential_dir, onerror=onerror)
             for path in not_deleted:
-                _logger.warning("Failed to delete %s", path)
+                _logger.warning(
+                    FilesystemLogEvent(
+                        op=FilesystemLogEventOp.DELETE, filepath=path, message="Failed to delete."
+                    )
+                )
 
     def _install_credential_process(self) -> None:
         """
@@ -427,9 +484,12 @@ class QueueBoto3Session(BaseBoto3Session):
         """
 
         _logger.info(
-            "Installing Credential Process for Queue %s as profile %s.",
-            self._queue_id,
-            self._profile_name,
+            AwsCredentialsLogEvent(
+                op=AwsCredentialsLogEventOp.INSTALL,
+                resource=self._queue_id,
+                role_arn=self._role_arn,
+                message="Installing Credential Process as profile %s." % self._profile_name,
+            )
         )
 
         # write the credential process script and set permissions
@@ -473,6 +533,14 @@ class QueueBoto3Session(BaseBoto3Session):
 
             f.write(self._generate_credential_process_script())
 
+        _logger.info(
+            FilesystemLogEvent(
+                op=FilesystemLogEventOp.WRITE,
+                filepath=str(self._credentials_process_script_path),
+                message="Credential Process script.",
+            )
+        )
+
         # install credential process to the AWS config and credentials files
         for aws_cred_file in (self._aws_config, self._aws_credentials):
             aws_cred_file.install_credential_process(
@@ -503,6 +571,13 @@ class QueueBoto3Session(BaseBoto3Session):
         """
         # uninstall the credential process from /home/<job-user>/.aws/config and
         # /home/<job-user>/.aws/credentials
-        _logger.info("Uninstalling Credential Process for Queue %s", self._queue_id)
+        _logger.info(
+            AwsCredentialsLogEvent(
+                op=AwsCredentialsLogEventOp.DELETE,
+                resource=self._queue_id,
+                role_arn=self._role_arn,
+                message="Uninstalling Credential Process.",
+            )
+        )
         for aws_cred_file in (self._aws_config, self._aws_credentials):
             aws_cred_file.uninstall_credential_process(self._profile_name)

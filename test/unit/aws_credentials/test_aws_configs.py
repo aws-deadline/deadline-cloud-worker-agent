@@ -14,6 +14,7 @@ from deadline_worker_agent.aws_credentials.aws_configs import (
 )
 from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
 from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
+from deadline_worker_agent.log_messages import FilesystemLogEvent, FilesystemLogEventOp
 import os
 
 
@@ -377,7 +378,9 @@ class AWSConfigTestBase:
             config._write()
 
         # THEN
-        info_mock.assert_called_once_with(f"Writing updated {path} to disk.")
+        info_mock.assert_called_once()
+        assert isinstance(info_mock.call_args.args[0], FilesystemLogEvent)
+        assert info_mock.call_args.args[0].subtype == FilesystemLogEventOp.WRITE
         path.open.assert_called_once_with(mode="w")
         mock_config_parser.write.assert_called_once_with(
             fp=path.open.return_value.__enter__.return_value,

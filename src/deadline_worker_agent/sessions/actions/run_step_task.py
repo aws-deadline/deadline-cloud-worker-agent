@@ -77,9 +77,3 @@ class RunStepTaskAction(OpenjdAction):
             task_parameter_values=self._task_parameter_values,
             os_env_vars={"DEADLINE_SESSIONACTION_ID": self._id, "DEADLINE_TASK_ID": self.task_id},
         )
-
-    def human_readable(self) -> str:
-        param_str = ", ".join(
-            f"{name}={repr(param.value)}" for name, param in self._task_parameter_values.items()
-        )
-        return f"step[{self.step_id}].run({param_str})"

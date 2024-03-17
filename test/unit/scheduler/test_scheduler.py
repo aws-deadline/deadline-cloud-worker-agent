@@ -915,7 +915,7 @@ class TestCreateNewSessions:
                 ],
             ),
         }
-        expected_err_msg = "Job cannot run as WORKER_AGENT_USER as it has administrator privileges."
+        expected_err_msg = "Job cannot run as WORKER_AGENT_USER. Worker Agent is running with Administrator privileges."
 
         job_entity_mock = MagicMock()
         job_entity_mock.job_details.return_value = JobDetails(
@@ -1062,12 +1062,13 @@ class TestQueueAwsCredentialsManagement:
                 fleet_id=scheduler._fleet_id,
                 worker_id=scheduler._worker_id,
                 queue_id=queue_id,
+                role_arn=role_arn,
                 os_user=None,
                 interrupt_event=scheduler._shutdown,
                 worker_persistence_dir=Path("/var/lib/deadline"),
             )
             mock_cred_refresh_cls.assert_called_once_with(
-                identifier=ANY,
+                resource={"resource": queue_id, "role_arn": role_arn},
                 session=queue_boto3,
                 failure_callback=ANY,  # functools.partial(scheduler._queue_credentials_refresh_failed, hash_key),
             )

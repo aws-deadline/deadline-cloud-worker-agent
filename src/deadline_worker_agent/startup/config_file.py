@@ -43,6 +43,7 @@ class LoggingConfigSection(BaseModel):
     local_session_logs: Optional[bool] = None
     host_metrics_logging: Optional[bool] = None
     host_metrics_logging_interval_seconds: Optional[float] = None
+    structured_logs: Optional[bool] = None
 
 
 class OsConfigSection(BaseModel):
@@ -133,6 +134,8 @@ class ConfigFile(BaseModel):
             output_settings[
                 "host_metrics_logging_interval_seconds"
             ] = self.logging.host_metrics_logging_interval_seconds
+        if self.logging.structured_logs is not None:
+            output_settings["structured_logs"] = self.logging.structured_logs
         if self.os.shutdown_on_stop is not None:
             output_settings["no_shutdown"] = not self.os.shutdown_on_stop
         if self.os.run_jobs_as_agent_user is not None:

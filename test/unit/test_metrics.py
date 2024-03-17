@@ -12,6 +12,7 @@ import re
 
 from deadline_worker_agent.metrics import HostMetricsLogger
 import deadline_worker_agent.metrics as metrics_mod
+from deadline_worker_agent.log_messages import MetricsLogEvent
 
 
 @pytest.fixture(autouse=True)
@@ -183,54 +184,40 @@ class TestHostMetricsLogger:
 
         def test_logs_cpu(self, log_line: str):
             # THEN
-            assert re.search(
-                rf"cpu-usage-percent {TestHostMetricsLogger.PERCENT_PATTERN}", log_line
-            )
+            assert isinstance(log_line, MetricsLogEvent)
+            assert log_line.metrics.get("cpu-usage-percent", "") == "10"
 
         def test_logs_memory(self, log_line: str):
             # THEN
-            assert re.search(rf"memory-total-bytes {TestHostMetricsLogger.BYTES_PATTERN}", log_line)
-            assert re.search(rf"memory-used-bytes {TestHostMetricsLogger.BYTES_PATTERN}", log_line)
-            assert re.search(
-                rf"memory-used-percent {TestHostMetricsLogger.PERCENT_PATTERN}", log_line
-            )
+            assert isinstance(log_line, MetricsLogEvent)
+            assert log_line.metrics.get("memory-total-bytes", "") == "40"
+            assert log_line.metrics.get("memory-used-bytes", "") == "30"
+            assert log_line.metrics.get("memory-used-percent", "") == "25"
 
         def test_logs_swap(self, log_line: str):
             # THEN
-            assert re.search(rf"swap-used-bytes {TestHostMetricsLogger.BYTES_PATTERN}", log_line)
+            assert isinstance(log_line, MetricsLogEvent)
+            assert log_line.metrics.get("swap-used-bytes", "") == "10"
 
         def test_logs_disk(self, log_line: str):
             # THEN
-            assert re.search(rf"total-disk-bytes {TestHostMetricsLogger.BYTES_PATTERN}", log_line)
-            assert re.search(
-                rf"total-disk-used-bytes {TestHostMetricsLogger.BYTES_PATTERN}", log_line
-            )
-            assert re.search(
-                rf"total-disk-used-percent {TestHostMetricsLogger.PERCENT_PATTERN}", log_line
-            )
-            assert re.search(
-                rf"user-disk-available-bytes {TestHostMetricsLogger.BYTES_PATTERN}", log_line
-            )
+            assert isinstance(log_line, MetricsLogEvent)
+            assert log_line.metrics.get("total-disk-bytes", "") == "100"
+            assert log_line.metrics.get("total-disk-used-bytes", "") == "25"
+            assert log_line.metrics.get("total-disk-used-percent", "") == "0.2"
+            assert log_line.metrics.get("user-disk-available-bytes", "") == "75"
 
         def test_logs_disk_rate(self, log_line: str):
             # THEN
-            assert re.search(
-                rf"disk-read-bytes-per-second {TestHostMetricsLogger.BYTES_PATTERN}", log_line
-            )
-            assert re.search(
-                rf"disk-write-bytes-per-second {TestHostMetricsLogger.BYTES_PATTERN}", log_line
-            )
+            assert isinstance(log_line, MetricsLogEvent)
+            assert log_line.metrics.get("disk-read-bytes-per-second", "") == "123123"
+            assert log_line.metrics.get("disk-write-bytes-per-second", "") == "321321"
 
         def test_logs_network_rate(self, log_line: str):
             # THEN
-            assert re.search(
-                rf"network-sent-bytes-per-second {TestHostMetricsLogger.BYTES_PATTERN}",
-                log_line,
-            )
-            assert re.search(
-                rf"network-recv-bytes-per-second {TestHostMetricsLogger.BYTES_PATTERN}",
-                log_line,
-            )
+            assert isinstance(log_line, MetricsLogEvent)
+            assert log_line.metrics.get("network-sent-bytes-per-second", "") == "0"
+            assert log_line.metrics.get("network-recv-bytes-per-second", "") == "0"
 
         def test_disk_rate_not_available(
             self,
@@ -247,8 +234,9 @@ class TestHostMetricsLogger:
 
             # THEN
             log_line = get_first_and_only_call_arg(logger.info)
-            assert re.search(r"disk-read-bytes-per-second NOT_AVAILABLE", log_line)
-            assert re.search(r"disk-write-bytes-per-second NOT_AVAILABLE", log_line)
+            assert isinstance(log_line, MetricsLogEvent)
+            assert log_line.metrics.get("disk-read-bytes-per-second", "") == "NOT_AVAILABLE"
+            assert log_line.metrics.get("disk-write-bytes-per-second", "") == "NOT_AVAILABLE"
 
         def test_disk_rate_not_supported(
             self,
@@ -264,8 +252,9 @@ class TestHostMetricsLogger:
 
             # THEN
             log_line = get_first_and_only_call_arg(logger.info)
-            assert re.search(r"disk-read-bytes-per-second NOT_SUPPORTED", log_line)
-            assert re.search(r"disk-write-bytes-per-second NOT_SUPPORTED", log_line)
+            assert isinstance(log_line, MetricsLogEvent)
+            assert log_line.metrics.get("disk-read-bytes-per-second", "") == "NOT_SUPPORTED"
+            assert log_line.metrics.get("disk-write-bytes-per-second", "") == "NOT_SUPPORTED"
 
         def test_network_rate_not_available(
             self,
@@ -281,8 +270,9 @@ class TestHostMetricsLogger:
 
             # THEN
             log_line = get_first_and_only_call_arg(logger.info)
-            assert re.search(r"network-sent-bytes-per-second NOT_AVAILABLE", log_line)
-            assert re.search(r"network-recv-bytes-per-second NOT_AVAILABLE", log_line)
+            assert isinstance(log_line, MetricsLogEvent)
+            assert log_line.metrics.get("network-sent-bytes-per-second", "") == "NOT_AVAILABLE"
+            assert log_line.metrics.get("network-recv-bytes-per-second", "") == "NOT_AVAILABLE"
 
         def test_log_metrics_correct_encoding(
             self,
@@ -322,7 +312,8 @@ class TestHostMetricsLogger:
 
             # THEN
             assert len(caplog.messages) == 1
-            assert re.match(EXPECTED_LOG_MESSAGE_PATTERN, caplog.messages[0])
+            assert isinstance(caplog.records[0].msg, MetricsLogEvent)
+            assert re.match(EXPECTED_LOG_MESSAGE_PATTERN, caplog.records[0].msg.getMessage())
 
 
 def get_first_and_only_call_arg(mock: MagicMock) -> Any:

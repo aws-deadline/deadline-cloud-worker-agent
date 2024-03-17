@@ -173,18 +173,18 @@ class JobEntities:
             entity_identifier_fields = cast(
                 EnvironmentDetailsIdentifierFields, entity_identifier_fields
             )
-            return f'environmentDetails({entity_identifier_fields["environmentId"]})'
+            return entity_identifier_fields["environmentId"]
         elif entity_type == JobEntityType.STEP_DETAILS:
             entity_identifier_fields = cast(StepDetailsIdentifierFields, entity_identifier_fields)
-            return f'stepDetails({entity_identifier_fields["stepId"]})'
+            return entity_identifier_fields["stepId"]
         elif entity_type == JobEntityType.JOB_DETAILS:
             entity_identifier_fields = cast(JobDetailsIdentifierFields, entity_identifier_fields)
-            return f'jobDetails({entity_identifier_fields["jobId"]})'
+            return entity_identifier_fields["jobId"]
         elif entity_type == JobEntityType.JOB_ATTACHMENT_DETAILS:
             entity_identifier_fields = cast(
                 JobAttachmentDetailsIdentifierFields, entity_identifier_fields
             )
-            return f'job_attachments({entity_identifier_fields["jobId"]})'
+            return f'JA({entity_identifier_fields["jobId"]})'
         else:
             raise ValueError(f'Unexpected entity type "{entity_type}"')
 
@@ -225,12 +225,10 @@ class JobEntities:
                     worker_id=self._worker_id,
                     identifiers=[identifier for identifier in batched_identifiers],
                 )
-            except (DeadlineRequestWorkerNotFound, DeadlineRequestUnrecoverableError) as e:
-                logger.error(
-                    f"BatchGetJobEntity request: {str([identifier for identifier in batched_identifiers])} "
-                    f"failed due to: %s",
-                    e,
-                )
+            except (DeadlineRequestWorkerNotFound, DeadlineRequestUnrecoverableError):
+                # Technically, the API log reports this information, but we'll log anyways just to
+                # draw attention to it.
+                logger.error("Errors from BatchGetJobEntity! See API log event for details.")
                 continue
                 # Remaining responses: AccessDenied, InternalServerErrorException, ValidationException
                 # May be some race-ish conditions with the scheduler. Others may be recoverable, some not
@@ -245,6 +243,7 @@ class JobEntities:
                 #    { "stepDetails":          ... }
                 entity_items = list(entity.items())
                 if len(entity_items) != 1:
+                    # Only happens if there's a service bug.
                     raise ValueError(
                         f"Expected a single key in entity, but got {', '.join(entity.keys())}"
                     )
@@ -252,8 +251,6 @@ class JobEntities:
                 entity_data = cast(dict[str, Any], entity_item[1])
                 entity_key = self._entity_key(entity)
 
-                logger.info("Fetched %s", entity_key)
-                logger.debug("\tGot: %s", entity)
                 entity_record = self._entity_record_map[entity_key]
                 entity_record.data = entity_data
 
@@ -266,9 +263,11 @@ class JobEntities:
                 failed_entity_values = cast(
                     list[BaseEntityErrorFields], list(failed_entity.values())
                 )
+                # Assert only fails if there's a service bug.
                 assert (
                     len(failed_entity_values) == 1
                 ), f"Entity errors should contain a single key, but got {failed_entity.keys()}"
+
                 failed_entity_value = failed_entity_values[0]
                 if failed_entity_value["code"] == "MaxPayloadSizeExceeded":
                     # ignore MaxPayloadSizeExceeded, only matters for batch caching
@@ -278,9 +277,7 @@ class JobEntities:
                 failed_entity_key = self._entity_key(failed_entity)
                 entity_record = self._entity_record_map[failed_entity_key]
                 entity_record.error = failed_entity_value
-                logger.info(
-                    f"BatchGetJobEntity request: {failed_entity_key} failed due to {failed_entity_value['code']}: {failed_entity_value['message']}"
-                )
+                logger.error("Errors from BatchGetJobEntity! See API log event for details.")
 
     def job_attachment_details(self) -> JobAttachmentDetails:
         """Returns a future for the job attachment details.

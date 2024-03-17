@@ -36,6 +36,7 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "worker_logs_dir": Path("/var/log/amazon/deadline"),
         "worker_persistence_dir": Path("/var/lib/deadline"),
         "local_session_logs": None,
+        "structured_logs": True,
         "host_metrics_logging": True,
         "host_metrics_logging_interval_seconds": 10,
         "retain_session_dir": False,

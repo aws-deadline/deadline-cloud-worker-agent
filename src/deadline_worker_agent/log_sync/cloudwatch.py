@@ -17,6 +17,7 @@ from typing import Any, Deque, Generator, NamedTuple, Type
 from typing_extensions import TypedDict
 
 from .loggers import logger as _logger
+from ..log_messages import LogRecordStringTranslationFilter
 
 __all__ = [
     "CloudWatchHandler",
@@ -26,9 +27,6 @@ __all__ = [
 
 LOG_CONFIG_OPTION_GROUP_NAME_KEY = "logGroupName"
 LOG_CONFIG_OPTION_STREAM_NAME_KEY = "logStreamName"
-
-
-_DEFAULT_FMT_STRING = "%(message)s"
 
 
 class PutLogEventsConstraints(NamedTuple):
@@ -664,14 +662,20 @@ def stream_cloudwatch_logs(
     log_group_name: str,
     log_stream_name: str,
     logger: Logger,
-    log_fmt: str = _DEFAULT_FMT_STRING,
 ) -> Generator[CloudWatchHandler, None, None]:
+    """Stream the given logger for AGENT logs to CloudWatch.
+
+    Note: Session logs use LogConfiguration.log_session() instead.
+    """
+    # Always emit structured logs.
+    log_fmt = "%(json)s"
     with CloudWatchHandler(
         logs_client=logs_client,
         log_group_name=log_group_name,
         log_stream_name=log_stream_name,
     ) as handler:
         handler.setFormatter(Formatter(log_fmt))
+        handler.addFilter(LogRecordStringTranslationFilter())
         logger.addHandler(handler)
         try:
             _logger.info(f"logs streamed to CWL target: {log_group_name}/{log_stream_name}")

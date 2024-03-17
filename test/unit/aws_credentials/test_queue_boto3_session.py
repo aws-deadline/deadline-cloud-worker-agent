@@ -94,6 +94,7 @@ class TestInit:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
@@ -104,6 +105,7 @@ class TestInit:
             assert session._farm_id == farm_id
             assert session._fleet_id == fleet_id
             assert session._queue_id == queue_id
+            assert session._role_arn == "arn:aws:...:RoleName"
             assert session._worker_id == worker_id
             assert session._os_user is os_user
             assert session._interrupt_event is event
@@ -143,6 +145,7 @@ class TestInit:
                     fleet_id=fleet_id,
                     worker_id=worker_id,
                     queue_id=queue_id,
+                    role_arn="arn:aws:...:RoleName",
                     os_user=os_user,
                     interrupt_event=event,
                     worker_persistence_dir=Path("/var/lib/deadline"),
@@ -184,6 +187,7 @@ class TestCleanup:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
@@ -228,6 +232,7 @@ class TestHasCredentials:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
@@ -278,6 +283,7 @@ class TestRefreshCredentials:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
@@ -387,6 +393,7 @@ class TestRefreshCredentials:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
@@ -438,6 +445,7 @@ class TestRefreshCredentials:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
@@ -495,6 +503,7 @@ class TestCreateCredentialsDirectory:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=worker_persistence_dir,
@@ -567,6 +576,7 @@ class TestCreateCredentialsDirectory:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=mock_path,
@@ -610,6 +620,7 @@ class TestDeleteCredentialsDirectory:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=Path(tmpdir),
@@ -659,6 +670,7 @@ class TestInstallCredentialProcess:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=Path(tmpdir),
@@ -760,6 +772,7 @@ class TestUninstallCredentialProcess:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
+                role_arn="arn:aws:...:RoleName",
                 os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),

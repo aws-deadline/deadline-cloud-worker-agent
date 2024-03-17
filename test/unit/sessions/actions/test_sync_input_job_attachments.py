@@ -46,6 +46,7 @@ def action(
 ) -> SyncInputJobAttachmentsAction:
     return SyncInputJobAttachmentsAction(
         id=action_id,
+        session_id="session-1234",
         job_attachment_details=job_attachment_details,
     )
 
@@ -101,6 +102,7 @@ class TestStart:
         # WHEN
         action = SyncInputJobAttachmentsAction(
             id=action_id,
+            session_id="session-1234",
             step_details=StepDetails(
                 step_template=step_template,
                 dependencies=step_dependencies,

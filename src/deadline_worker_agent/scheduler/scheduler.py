@@ -20,6 +20,7 @@ import logging
 import os
 import stat
 import sys
+import getpass
 
 from openjd.sessions import ActionState, ActionStatus, SessionUser
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
@@ -59,6 +60,16 @@ from .session_queue import SessionActionQueue, SessionActionStatus
 from ..startup.config import JobsRunAsUserOverride
 from ..utils import MappingWithCallbacks
 from ..file_system_operations import FileSystemPermissionEnum, make_directory, touch_file
+from ..log_messages import (
+    AwsCredentialsLogEvent,
+    AwsCredentialsLogEventOp,
+    FilesystemLogEvent,
+    FilesystemLogEventOp,
+    SessionLogEvent,
+    SessionLogEventSubtype,
+    WorkerLogEvent,
+    WorkerLogEventOp,
+)
 
 if sys.platform == "win32":
     from ..windows.win_credentials_resolver import WindowsCredentialsResolver
@@ -293,6 +304,7 @@ class WorkerScheduler:
                 logger.exception("Exception in WorkerScheduler", exc_info=True)
                 raise
             finally:
+                logger.info("Main event loop exited.")
                 self._drain_scheduler()
                 if os.name == "nt":
                     assert self._windows_credentials_resolver is not None
@@ -304,8 +316,9 @@ class WorkerScheduler:
         # Note:
         #   When we're doing a worker-initiated drain we will have self._shutdown set. We may, optionally,
         #  have a value for self._shutdown_grace as well.
+        logger.info("Draining any remaining Sessions.")
         if self._sessions:
-            logger.info("Shutting down %d sessions", len(self._sessions))
+            logger.info("Shutting down %d Sessions", len(self._sessions))
 
         if self._shutdown.is_set() and self._sessions:
             # This is a worker-initiated drain. Inform the service that we're
@@ -393,13 +406,9 @@ class WorkerScheduler:
         """
         # Called by self.run() in the main event loop.
 
-        logger.info("Synchronizing with service (sending UpdateWorkerSchedule)")
-
         # 1. collect info to be sent in the UpdateWorkerSchedule API request
         #    1.1. finished/in-progress action results
         updated_actions, commit_completed_actions = self._updated_session_actions()
-        if updated_actions:
-            logger.info("Updating actions: %s", updated_actions)
 
         #    1.2. TODO: IP address changes
         #    1.3. TODO: metrics
@@ -437,8 +446,6 @@ class WorkerScheduler:
             logger.warning("Service requested shutdown initiated")
             raise ServiceShutdown()
 
-        logger.info("Done synchronizing with service")
-
         # Return the timers
         return response["updateIntervalSeconds"]
 
@@ -464,7 +471,15 @@ class WorkerScheduler:
                 status=WorkerStatus.STOPPING,
                 interrupt_event=timeout_event,
             )
-            logger.info("Successfully set Worker state to STOPPING.")
+            logger.info(
+                WorkerLogEvent(
+                    op=WorkerLogEventOp.STATUS,
+                    farm_id=self._farm_id,
+                    fleet_id=self._fleet_id,
+                    worker_id=self._worker_id,
+                    message="Status set to STOPPING.",
+                )
+            )
         except DeadlineRequestInterrupted:
             logger.info(
                 "Timeout reached trying to update Worker to STOPPING status. Proceeding without changing status..."
@@ -607,6 +622,15 @@ class WorkerScheduler:
             #   it has no SessionActions in it.
             ses.session.wait()
             del self._sessions[removed_session_id]
+            logger.info(
+                SessionLogEvent(
+                    subtype=SessionLogEventSubtype.COMPLETE,
+                    queue_id=ses.session._queue_id,
+                    job_id=ses.session._job_id,
+                    session_id=removed_session_id,
+                    message="Session complete.",
+                )
+            )
 
     def _handle_session_action_update(
         self,
@@ -658,6 +682,16 @@ class WorkerScheduler:
             job_id = session_spec["jobId"]
             queue_id = session_spec["queueId"]
 
+            logger.info(
+                SessionLogEvent(
+                    subtype=SessionLogEventSubtype.STARTING,
+                    queue_id=queue_id,
+                    job_id=job_id,
+                    session_id=new_session_id,
+                    message="Starting new Session.",
+                )
+            )
+
             # Log path
             session_log_file: Path | None = None
             if self._worker_logs_dir:
@@ -671,13 +705,29 @@ class WorkerScheduler:
                             exist_ok=True,
                             agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
                         )
-                except OSError:
+                except OSError as e:
                     error_msg = (
                         f"Failed to create local session log directory on worker: {queue_log_dir}"
                     )
                     self._fail_all_actions(session_spec, error_message=error_msg)
-                    logger.error("[%s] %s", new_session_id, error_msg)
+                    logger.error(
+                        FilesystemLogEvent(
+                            op=FilesystemLogEventOp.CREATE,
+                            filepath=str(queue_log_dir),
+                            message="Could not create local session log directory: %s" % str(e),
+                        )
+                    )
+                    logger.error(
+                        SessionLogEvent(
+                            subtype=SessionLogEventSubtype.FAILED,
+                            queue_id=queue_id,
+                            job_id=job_id,
+                            session_id=new_session_id,
+                            message="Could not create local session log directory.",
+                        )
+                    )
                     continue
+
                 session_log_file = self._session_log_file_path(
                     session_id=new_session_id, queue_log_dir=queue_log_dir
                 )
@@ -689,14 +739,31 @@ class WorkerScheduler:
                             file_path=session_log_file,
                             agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
                         )
-                except OSError:
+                except OSError as e:
                     error_msg = (
                         f"Failed to create local session log file on worker: {session_log_file}"
                     )
                     self._fail_all_actions(session_spec, error_message=error_msg)
-                    logger.error("[%s] %s", new_session_id, error_msg)
+                    logger.error(
+                        FilesystemLogEvent(
+                            op=FilesystemLogEventOp.CREATE,
+                            filepath=str(session_log_file),
+                            message="Could not create local session log file: %s" % str(e),
+                        )
+                    )
+                    logger.error(
+                        SessionLogEvent(
+                            subtype=SessionLogEventSubtype.FAILED,
+                            queue_id=queue_id,
+                            job_id=job_id,
+                            session_id=new_session_id,
+                            message="Could not create local session log file.",
+                        )
+                    )
                     continue
 
+            # TODO: Ideally, this would be before we create the log file and directory locally, but we currently
+            # require the session_log_file to construct the LogConfiguration.
             try:
                 log_config = LogConfiguration.from_boto(
                     loggers=[OPENJD_SESSION_LOG, JOB_ATTACHMENTS_LOGGER],
@@ -705,9 +772,15 @@ class WorkerScheduler:
                 )
             except LogProvisioningError as log_provision_error:
                 self._fail_all_actions(session_spec, str(log_provision_error))
-                logger.warning("[%s] %s", new_session_id, log_provision_error)
-                # Force an immediate UpdateWorkerSchedule request
-                self._wakeup.set()
+                logger.error(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.FAILED,
+                        queue_id=queue_id,
+                        job_id=job_id,
+                        session_id=new_session_id,
+                        message=str(log_provision_error),
+                    )
+                )
                 continue
 
             job_entities = JobEntities(
@@ -730,13 +803,17 @@ class WorkerScheduler:
                     and job_details.job_run_as_user
                     and job_details.job_run_as_user.is_worker_agent_user
                 ):
-                    err_msg = (
-                        "Job cannot run as WORKER_AGENT_USER as it has administrator privileges."
-                    )
+                    err_msg = "Job cannot run as WORKER_AGENT_USER. Worker Agent is running with Administrator privileges."
                     self._fail_all_actions(session_spec, err_msg)
-                    logger.warning("[%s] %s", new_session_id, err_msg)
-                    # Force an immediate UpdateWorkerSchedule request
-                    self._wakeup.set()
+                    logger.error(
+                        SessionLogEvent(
+                            subtype=SessionLogEventSubtype.FAILED,
+                            queue_id=queue_id,
+                            job_id=job_id,
+                            session_id=new_session_id,
+                            message=err_msg,
+                        )
+                    )
                     continue
 
             except (ValueError, RuntimeError) as error:
@@ -744,31 +821,74 @@ class WorkerScheduler:
                 # get valid job_details, so let's fail the actions
                 # in the same way as the log provisioning error
                 self._fail_all_actions(session_spec, str(error))
-                logger.warning("[%s] %s", new_session_id, error)
-                # Force an immediate UpdateWorkerSchedule request
-                self._wakeup.set()
+                logger.error(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.FAILED,
+                        queue_id=queue_id,
+                        job_id=job_id,
+                        session_id=new_session_id,
+                        message=str(error),
+                    )
+                )
                 continue
 
             queue = SessionActionQueue(
+                queue_id=queue_id,
                 job_id=job_id,
+                session_id=new_session_id,
                 job_entities=job_entities,
                 action_update_callback=self._handle_session_action_update,
             )
-            logger.debug(f"[{new_session_id}] Created action queue")
 
-            logger.debug(f"[{new_session_id}] Assigning actions...")
             queue.replace(actions=session_spec["sessionActions"])
-            logger.debug(f"[{new_session_id}] Assigned actions")
 
             os_user: Optional[SessionUser] = None
             if not self._job_run_as_user_override.run_as_agent:
                 if self._job_run_as_user_override.job_user is not None:
                     os_user = self._job_run_as_user_override.job_user
+                    logger.info(
+                        SessionLogEvent(
+                            subtype=SessionLogEventSubtype.USER,
+                            queue_id=queue_id,
+                            job_id=job_id,
+                            session_id=new_session_id,
+                            user=os_user.user,
+                            message="Running as host-configured override user.",
+                        )
+                    )
                 elif job_details.job_run_as_user:
                     if os.name == "posix":
                         os_user = job_details.job_run_as_user.posix
                     else:
                         os_user = job_details.job_run_as_user.windows
+                    if os_user is not None:
+                        logger.info(
+                            SessionLogEvent(
+                                subtype=SessionLogEventSubtype.USER,
+                                queue_id=queue_id,
+                                job_id=job_id,
+                                session_id=new_session_id,
+                                user=os_user.user,
+                                message="Running as Queue's jobRunAsUser.",
+                            )
+                        )
+
+            if os_user is None:
+                try:
+                    user_to_log = getpass.getuser()
+                except Exception:
+                    # This is best-effort. If we cannot determine the user we will not log
+                    user_to_log = "UNKNOWN"
+                logger.warning(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.USER,
+                        queue_id=queue_id,
+                        job_id=job_id,
+                        session_id=new_session_id,
+                        user=user_to_log,
+                        message="Running as the Worker Agent's user.",
+                    )
+                )
 
             queue_credentials: QueueAwsCredentials | None = None
             asset_sync: AssetSync | None = None
@@ -786,23 +906,56 @@ class WorkerScheduler:
                     RuntimeError,
                 ) as e:
                     # Terminal error. We need to fail the Session.
-                    message = f"Unrecoverable error trying to obtain AWS Credentials for the Queue Role: {e}"
+                    message = "Error obtaining AWS Credentials for the Queue Role: %s" % str(e)
                     self._fail_all_actions(session_spec, message)
-                    logger.warning("[%s] %s", new_session_id, message)
-                    # Force an immediate UpdateWorkerSchedule request
-                    self._wakeup.set()
+                    logger.error(
+                        SessionLogEvent(
+                            subtype=SessionLogEventSubtype.AWSCREDS,
+                            queue_id=queue_id,
+                            job_id=job_id,
+                            session_id=new_session_id,
+                            message=message,
+                        )
+                    )
                     continue
 
-                if queue_credentials is None:
-                    logger.warning("Could not obtain AWS Credentials for the Session.")
+                if queue_credentials is not None:
+                    logger.info(
+                        SessionLogEvent(
+                            subtype=SessionLogEventSubtype.AWSCREDS,
+                            queue_id=queue_id,
+                            job_id=job_id,
+                            session_id=new_session_id,
+                            message="AWS Credentials are available.",
+                        )
+                    )
                 else:
-                    asset_sync = AssetSync(
-                        farm_id=self._farm_id,
-                        boto3_session=queue_credentials.session,
-                        session_id=new_session_id,
+                    logger.warning(
+                        SessionLogEvent(
+                            subtype=SessionLogEventSubtype.AWSCREDS,
+                            queue_id=queue_id,
+                            job_id=job_id,
+                            session_id=new_session_id,
+                            message="AWS Credentials are not available: Failed to obtain credentials.",
+                        )
                     )
             else:
-                logger.info("Job has no Queue Role. Not obtaining AWS Credentials for the Session.")
+                logger.warning(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.AWSCREDS,
+                        queue_id=queue_id,
+                        job_id=job_id,
+                        session_id=new_session_id,
+                        message="AWS Credentials are not available: Queue has no IAM Role.",
+                    )
+                )
+
+            if queue_credentials:
+                asset_sync = AssetSync(
+                    farm_id=self._farm_id,
+                    boto3_session=queue_credentials.session,
+                    session_id=new_session_id,
+                )
 
             is_ja_settings_empty = job_details.job_attachment_settings is None or (
                 len(job_details.job_attachment_settings.s3_bucket_name) == 0
@@ -814,16 +967,20 @@ class WorkerScheduler:
                 # problem in a clear way.
                 fail_message: str
                 if job_details.queue_role_arn:
-                    fail_message = (
-                        f"Failed to obtain credentials for Role {job_details.queue_role_arn}"
-                    )
+                    fail_message = "Job Attachments are configured on the Queue, but AWS Credentials for the Queue are not available."
                 else:
-                    fail_message = "Misconfiguration. Job Attachments are provided, but the Queue has no IAM Role."
-                    self._fail_all_actions(session_spec, fail_message)
-                    logger.warning("[%s] %s", new_session_id, fail_message)
-                    # Force an immediate UpdateWorkerSchedule request
-                    self._wakeup.set()
-                    continue
+                    fail_message = "Misconfiguration. Job Attachments are configured on the Queue, but the Queue has no IAM Role."
+                self._fail_all_actions(session_spec, fail_message)
+                logger.error(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.FAILED,
+                        queue_id=queue_id,
+                        job_id=job_id,
+                        session_id=new_session_id,
+                        message=fail_message,
+                    )
+                )
+                continue
 
             env = {
                 "DEADLINE_SESSION_ID": new_session_id,
@@ -850,6 +1007,7 @@ class WorkerScheduler:
                 id=new_session_id,
                 queue=queue,
                 queue_id=queue_id,
+                job_id=job_id,
                 env=env,
                 asset_sync=asset_sync,
                 job_details=job_details,
@@ -869,6 +1027,8 @@ class WorkerScheduler:
                     queue_credentials_context = nullcontext()
                 with (
                     log_config.log_session(
+                        queue_id=queue_id,
+                        job_id=job_id,
                         session_id=new_session_id,
                         boto_session=self._boto_session,
                     ),
@@ -876,7 +1036,11 @@ class WorkerScheduler:
                     queue_credentials_context,
                 ):
                     if isinstance(queue_credentials_context, nullcontext):
-                        session.logger.info("Session running with no AWS Credentials.")
+                        session.logger.warning("Session running with no AWS Credentials.")
+                    if session.os_user is not None:
+                        session.logger.info(
+                            "Running Session Actions as user: %s" % session.os_user.user
+                        )
                     try:
                         session.run()
                     except Exception as e:
@@ -957,7 +1121,12 @@ class WorkerScheduler:
                     credentials_dataclass.session.cleanup()
                     del self._queue_aws_credentials[key]
                     logger.debug(
-                        f"Deleted AWS Credentials for Queue {queue_id} with IAM Role {role_arn}."
+                        AwsCredentialsLogEvent(
+                            op=AwsCredentialsLogEventOp.DELETE,
+                            resource=queue_id,
+                            role_arn=role_arn,
+                            message="AWS Credentials deleted.",
+                        )
                     )
 
     def _get_queue_aws_credentials(
@@ -979,6 +1148,7 @@ class WorkerScheduler:
                         fleet_id=self._fleet_id,
                         worker_id=self._worker_id,
                         queue_id=queue_id,
+                        role_arn=queue_role_arn,
                         os_user=os_user,
                         interrupt_event=self._shutdown,
                         worker_persistence_dir=self._worker_persistence_dir,
@@ -994,7 +1164,7 @@ class WorkerScheduler:
                     return None
 
                 refresher = AwsCredentialsRefresher(
-                    identifier=f"Queue {queue_id} Credentials for Role {queue_role_arn}",
+                    resource={"resource": queue_id, "role_arn": queue_role_arn},
                     session=session,
                     failure_callback=partial(
                         self._queue_credentials_refresh_failed, hash_key=hash_key
@@ -1007,9 +1177,6 @@ class WorkerScheduler:
                     f"Created new AWS Credentials for Queue {queue_id} with IAM Role {queue_role_arn}."
                 )
 
-            logger.info(
-                f"[{session_id}] AWS Credentials are available for Queue {queue_id} with IAM Role {queue_role_arn}."
-            )
             return self._queue_aws_credentials[hash_key]
 
         # Unreachable, but play it safe.

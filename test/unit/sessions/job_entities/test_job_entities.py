@@ -659,24 +659,14 @@ class TestCaching:
         job_entities.cache_entities(request)
 
         # THEN
-        assert job_entities._entity_record_map.get(f"jobDetails({job_id})") is not None
-        assert (
-            job_entities._entity_record_map.get(f"environmentDetails({environment_id})") is not None
-        )
-        assert job_entities._entity_record_map.get(f"stepDetails({step_id})") is not None
-        assert job_entities._entity_record_map.get(f"job_attachments({job_id})") is not None
-        assert job_entities._entity_record_map[f"jobDetails({job_id})"].data == expected_job_details
-        assert (
-            job_entities._entity_record_map[f"environmentDetails({environment_id})"].data
-            == expected_environment_details
-        )
-        assert (
-            job_entities._entity_record_map[f"stepDetails({step_id})"].data == expected_step_details
-        )
-        assert (
-            job_entities._entity_record_map[f"job_attachments({job_id})"].data
-            == expected_attachment_details
-        )
+        assert job_entities._entity_record_map.get(job_id) is not None
+        assert job_entities._entity_record_map.get(environment_id) is not None
+        assert job_entities._entity_record_map.get(step_id) is not None
+        assert job_entities._entity_record_map.get(f"JA({job_id})") is not None
+        assert job_entities._entity_record_map[job_id].data == expected_job_details
+        assert job_entities._entity_record_map[environment_id].data == expected_environment_details
+        assert job_entities._entity_record_map[step_id].data == expected_step_details
+        assert job_entities._entity_record_map[f"JA({job_id})"].data == expected_attachment_details
 
     @pytest.mark.parametrize("request_size", [i + 1 for i in range(0, 14)])
     def test_cache_entities_is_batched(

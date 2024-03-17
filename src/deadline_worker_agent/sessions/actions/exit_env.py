@@ -41,9 +41,6 @@ class ExitEnvironmentAction(OpenjdAction):
             and self._environment_id == other._environment_id
         )
 
-    def human_readable(self) -> str:
-        return f"environment[{self._environment_id}].exit()"
-
     def start(
         self,
         *,

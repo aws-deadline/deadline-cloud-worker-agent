@@ -26,6 +26,7 @@ from .scheduler import WorkerScheduler
 from .sessions import Session
 from .startup.config import JobsRunAsUserOverride
 from .aws_credentials import WorkerBoto3Session, AwsCredentialsRefresher
+from .log_messages import AwsCredentialsLogEvent, AwsCredentialsLogEventOp
 
 logger = getLogger(__name__)
 
@@ -203,7 +204,7 @@ class Worker:
         with (
             self._executor,
             AwsCredentialsRefresher(
-                identifier="Worker Agent",
+                resource={"resource": self._worker_id},
                 session=self._boto_session,
                 failure_callback=self._aws_credentials_refresh_failure,
             ),
@@ -279,13 +280,23 @@ class Worker:
             expiry_time = cast(datetime, exception.args[0])
             time_remaining = datetime.now(timezone.utc) - expiry_time
             if time_remaining < timedelta(minutes=0):
-                logger.critical("Worker AWS Credentials have expired!")
+                logger.critical(
+                    AwsCredentialsLogEvent(
+                        op=AwsCredentialsLogEventOp.EXPIRED,
+                        resource=self._worker_id,
+                        message="AWS Credentials have expired!",
+                    )
+                )
                 grace_time = timedelta(seconds=5)
                 fail_message = "Worker AWS Credentials have expired!"
             else:
                 logger.error(
-                    "Worker AWS Credentials could not be refreshed. They will expire in %s seconds",
-                    time_remaining.total_seconds(),
+                    AwsCredentialsLogEvent(
+                        op=AwsCredentialsLogEventOp.REFRESH,
+                        resource=self._worker_id,
+                        message="Worker AWS Credentials could not be refreshed. They will expire soon.",
+                        expiry=expiry_time.isoformat(),
+                    )
                 )
                 grace_time = time_remaining
                 fail_message = "Worker AWS Credentials are expiring and cannot be refreshed."
@@ -293,7 +304,13 @@ class Worker:
             # exception is: DeadlineRequestError or DeadlineRequestUnrecoverableError
             grace_time = timedelta(seconds=30)
             fail_message = "Fatal error refreshing Worker AWS Credentials. See log for details."
-            logger.critical("Fatal error refreshing Worker AWS Credentials: %s", str(exception))
+            logger.critical(
+                AwsCredentialsLogEvent(
+                    op=AwsCredentialsLogEventOp.REFRESH,
+                    resource=self._worker_id,
+                    message="Fatal error refreshing Worker AWS Credentials: %s" % str(exception),
+                )
+            )
         self._stop.set()
         self._scheduler.shutdown(grace_time=grace_time, fail_message=fail_message)
 

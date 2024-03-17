@@ -15,6 +15,7 @@ from ..aws.deadline import (
     DeadlineRequestConditionallyRecoverableError,
     DeadlineRequestError,
 )
+from ..log_messages import AwsCredentialsLogEvent, AwsCredentialsLogEventOp
 
 
 _logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ class AwsCredentialsRefresher:
     assert MIN_MANDATORY_REFRESH_TIMEOUT + timedelta(minutes=5) <= MIN_ADVISORY_REFRESH_TIMEOUT
 
     _session: BaseBoto3Session
+    _resource: dict[str, str]
     _advisory_refresh_timeout: timedelta
     _mandatory_refresh_timeout: timedelta
     _failure_callback: Callable[[Exception], None]
@@ -66,7 +68,7 @@ class AwsCredentialsRefresher:
     def __init__(
         self,
         *,
-        identifier: str,
+        resource: dict[str, str],
         session: BaseBoto3Session,
         failure_callback: Callable[[Exception], None],
         advisory_refresh_timeout: timedelta = timedelta(minutes=15),
@@ -96,7 +98,7 @@ class AwsCredentialsRefresher:
             raise RuntimeError("mandatory refresh too small")
 
         self._session = session
-        self._identifier = identifier
+        self._resource = resource
         self._advisory_refresh_timeout = advisory_refresh_timeout
         self._mandatory_refresh_timeout = mandatory_refresh_timeout
         self._failure_callback = failure_callback
@@ -145,9 +147,12 @@ class AwsCredentialsRefresher:
         self._timer = Timer(refresh_in.total_seconds(), self._refresh)
         self._timer.start()
         _logger.info(
-            "Refresh of AWS Credentials for %s scheduled for %s",
-            self._identifier,
-            (time_now + refresh_in).isoformat(),
+            AwsCredentialsLogEvent(
+                op=AwsCredentialsLogEventOp.REFRESH,
+                **self._resource,
+                message="Refresh scheduled.",
+                scheduled_time=str((time_now + refresh_in).isoformat()),
+            )
         )
 
     def _refresh(self) -> None:

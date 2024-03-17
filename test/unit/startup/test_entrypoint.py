@@ -25,6 +25,7 @@ from deadline_worker_agent.startup.bootstrap import (
 )
 from deadline_worker_agent.aws.deadline import WorkerLogConfig
 from deadline_worker_agent.startup.config import Configuration, ConfigurationError
+from deadline_worker_agent.log_messages import WorkerLogEvent
 
 entrypoint = entrypoint_mod.entrypoint
 
@@ -205,7 +206,7 @@ def test_worker_run_exception(
 
     # THEN
     logger_exception: MagicMock = logger.exception
-    logger_exception.assert_called_once_with("Failed running worker: %s", exception)
+    logger_exception.assert_called_once_with("Worker Agent abnormal exit: %s", exception)
     sys_exit_mock.assert_called_once_with(1)
     telemetry_mock.assert_called_once_with(exception_type=str(type(exception)))
 
@@ -269,11 +270,11 @@ def test_configuration_logged(
 @pytest.mark.parametrize(
     ("verbose", "expected_root_log_level", "expected_console_fmt_str"),
     (
-        pytest.param(False, logging.INFO, "[%(levelname)8s] %(message)s", id="non-verbose"),
+        pytest.param(False, logging.INFO, "%(json)s", id="non-verbose"),
         pytest.param(
             True,
             logging.DEBUG,
-            "[%(asctime)s] [%(levelname)8s] [%(name)-50s] --- %(message)s",
+            "%(json)s",
             id="verbose",
         ),
     ),
@@ -677,7 +678,12 @@ def test_worker_stop_exception(
         entrypoint()
 
     # THEN
-    logger_error_mock.assert_called_once_with("Failed to stop Worker: %s", exc)
+    logger_error_mock.assert_called_once()
+    assert isinstance(logger_error_mock.call_args.args[0], WorkerLogEvent)
+    assert (
+        "Failed to set status to STOPPED: %s" % str(exc)
+        in logger_error_mock.call_args.args[0].getMessage()
+    )
 
 
 class TestCloudWatchLogStreaming:

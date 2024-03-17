@@ -1,30 +1,15 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 import logging
-from typing import Any, TypedDict, Union
-from typing_extensions import NotRequired
+from typing import Any, Optional, TypedDict, Union
 import json
 import datetime
 import re
+from threading import Lock
+
+from .log_messages import ApiRequestLogEvent, ApiResponseLogEvent
 
 log = logging.getLogger(__name__)
-
-
-class BotoLogStatement(TypedDict):
-    """
-    This type is emitted as a json log for each request and response managed by boto
-    This structure can be used for log searches to narrow on particular operations
-    """
-
-    log_type: str
-    operation: str
-    # Only in requests
-    request_url: NotRequired[str]
-    params: Union[dict[str, Any], str]
-    # Only in responses
-    error: NotRequired[str]
-    status_code: NotRequired[str]
-    request_id: NotRequired[str]
 
 
 class Boto3ClientEvent:
@@ -54,12 +39,12 @@ class LoggingAllowList(TypedDict, total=False):
 # Note: The log must NEVER contain customer personal information, or information that a customer
 # might consider secret/sensitive.
 LOGGING_ALLOW_LIST: dict[str, LoggingAllowList] = {
-    "deadline.CreateWorker": {
+    "deadline:CreateWorker": {
         "log_request_url": True,
         "req_log_body": {"hostProperties": True},
         "res_log_body": {"workerId": True},
     },
-    "deadline.AssumeFleetRoleForWorker": {
+    "deadline:AssumeFleetRoleForWorker": {
         "log_request_url": True,
         # req_log_body -- no body to log
         "res_log_body": {
@@ -70,7 +55,7 @@ LOGGING_ALLOW_LIST: dict[str, LoggingAllowList] = {
             }
         },
     },
-    "deadline.AssumeQueueRoleForWorker": {
+    "deadline:AssumeQueueRoleForWorker": {
         "log_request_url": True,
         # req_log_body -- no body to log
         "res_log_body": {
@@ -81,7 +66,7 @@ LOGGING_ALLOW_LIST: dict[str, LoggingAllowList] = {
             }
         },
     },
-    "deadline.UpdateWorker": {
+    "deadline:UpdateWorker": {
         "log_request_url": True,
         "req_log_body": {
             "status": True,
@@ -91,7 +76,7 @@ LOGGING_ALLOW_LIST: dict[str, LoggingAllowList] = {
         },
         "res_log_body": {"log": True},
     },
-    "deadline.UpdateWorkerSchedule": {
+    "deadline:UpdateWorkerSchedule": {
         "log_request_url": True,
         "req_log_body": {
             "updatedSessionActions": {
@@ -135,7 +120,7 @@ LOGGING_ALLOW_LIST: dict[str, LoggingAllowList] = {
             "updateIntervalSeconds": True,
         },
     },
-    "deadline.BatchGetJobEntity": {
+    "deadline:BatchGetJobEntity": {
         "log_request_url": True,
         "req_log_body": {
             "identifiers": True,  # only contains identifiers
@@ -184,14 +169,14 @@ LOGGING_ALLOW_LIST: dict[str, LoggingAllowList] = {
             "errors": True,  # log all errors
         },
     },
-    "deadline.DeleteWorker": {
+    "deadline:DeleteWorker": {
         "log_request_url": True,
         # request is empty
         # response is empty
     },
     # =========================
     #  Non-Deadline Services
-    "secretsmanager.GetSecretValue": {
+    "secretsmanager:GetSecretValue": {
         "log_request_url": True,
         "req_log_body": {"SecretId": True, "VersionId": True, "VersionStage": True},
         "res_log_body": {
@@ -208,7 +193,7 @@ LOGGING_ALLOW_LIST: dict[str, LoggingAllowList] = {
 # Not logging:
 #  cloudwatch.PutLogEvents -- logging that you're logging just clutters the log
 #  s3.* -- For now. Very verbose to be logging these dataplane APIs; maybe when we have a verbose log mode.
-_IGNORE_LIST = ["cloudwatch-logs\..*", "s3\..*"]
+_IGNORE_LIST = [r"cloudwatch-logs:.*", r"s3:.*"]
 LOGGING_IGNORE_MATCHER = re.compile("^(" + "|".join(_IGNORE_LIST) + ")$")
 
 
@@ -241,6 +226,129 @@ def _get_loggable_parameters(
     return to_be_logged
 
 
+_deadline_resource_patterns = (
+    ("farm", r"farm-[0-9a-fA-F]+"),
+    ("fleet", r"fleet-[0-9a-fA-F]+"),
+    ("queue", r"queue-[0-9a-fA-F]+"),
+    ("worker", r"worker-[0-9a-fA-F]+"),
+)
+_deadline_resource_map: dict[str, str] = {
+    "farm": "farm-id",
+    "fleet": "fleet-id",
+    "queue": "queue-id",
+    "worker": "worker-id",
+}
+_DEADLINE_RESOURCE_REGEX = "|".join(
+    f"(?P<{pair[0]}>{pair[1]})" for pair in _deadline_resource_patterns
+)
+_DEADLINE_RESOURCE_MATCHER = re.compile(_DEADLINE_RESOURCE_REGEX)
+
+
+class PreviousRequestRecord:
+    # This is for deduplicating log entries; primarily aimed at
+    # deadline:UpdateWorkerSchedule, but it could include any API in future
+    # if desired. However, it should only be used for APIs that cannot be
+    # queried concurrently; that, basically, means that the API must only be
+    # queried within the Agent's main thread/event-loop.
+    #
+    # The structure's contents are:
+    # {
+    #    <api-name>: {
+    #       "request": {
+    #          <request parameters>
+    #          For deadline, this is the request 'params' and
+    #          deadline-resource (farm/fleet/queue/etc) merged together
+    #          into one dictionary.
+    #       },
+    #       "response": {
+    #          <response parameters>
+    #       }
+    #    },
+    #   ...
+    # }
+    _api_parameters: dict[str, dict[str, Any]]
+
+    # The API operation names that are subject to filtering
+    _allowlist: set[str] = {
+        "deadline:UpdateWorkerSchedule",
+    }
+
+    _lock: Lock
+
+    def __init__(self) -> None:
+        self._api_parameters = dict()
+        self._lock = Lock()
+
+    def record_request(
+        self,
+        *,
+        operation_name: str,
+        params: dict[str, Any],
+        resource: Optional[dict[str, str]] = None,
+    ) -> None:
+        if operation_name not in self._allowlist:
+            return
+        with self._lock:
+            if operation_name not in self._api_parameters:
+                self._api_parameters[operation_name] = dict(request=None)
+            self._api_parameters[operation_name]["request"] = dict(**params)
+            if resource:
+                self._api_parameters[operation_name]["request"].update(**resource)
+
+    def record_response(self, *, operation_name: str, params: dict[str, Any]) -> None:
+        if operation_name not in self._allowlist:
+            return
+        with self._lock:
+            if operation_name not in self._api_parameters:
+                self._api_parameters[operation_name] = dict(response=None)
+            self._api_parameters[operation_name]["response"] = dict(**params)
+
+    def filter_request(
+        self,
+        *,
+        operation_name: str,
+        params: dict[str, Any],
+        resource: Optional[dict[str, str]] = None,
+    ) -> bool:
+        # Return true if and only if the request should be suppressed from the log.
+        # i.e. That it exactly matches the previous request made.
+        if operation_name not in self._allowlist:
+            return False
+        with self._lock:
+            if operation_name not in self._api_parameters:
+                return False
+            if "request" not in self._api_parameters[operation_name]:
+                return False
+            curr_req = dict(**params)
+            if resource:
+                curr_req.update(**resource)
+            return curr_req == self._api_parameters[operation_name]["request"]
+
+    def filter_response(self, *, operation_name: str, params: dict[str, Any]) -> bool:
+        # Return true if and only if the request should be suppressed from the log.
+        # i.e. That it exactly matches the previous request made.
+        if operation_name not in self._allowlist:
+            return False
+        with self._lock:
+            if operation_name not in self._api_parameters:
+                return False
+            if "response" not in self._api_parameters[operation_name]:
+                return False
+            return params == self._api_parameters[operation_name]["response"]
+
+
+API_RECORD = PreviousRequestRecord()
+
+
+def _extract_deadline_resource_info(request_url: str) -> dict[str, str]:
+    dd = dict[str, str]()
+    for match in _DEADLINE_RESOURCE_MATCHER.finditer(request_url):
+        kind = match.lastgroup
+        value = match.group()
+        dd[_deadline_resource_map[kind]] = value  # type: ignore
+    return dd
+
+
 def log_before_call(event_name, params, **kwargs) -> None:
     # event name is of the form `before_call.{operation}`
     # params looks like:
@@ -263,7 +371,7 @@ def log_before_call(event_name, params, **kwargs) -> None:
     #   }
     # }
     try:
-        operation_name = event_name.split(".", 1)[1]
+        operation_name = event_name.split(".", 1)[1].replace(".", ":")
         if LOGGING_IGNORE_MATCHER.match(operation_name):
             return
         body = params["body"]
@@ -285,14 +393,24 @@ def log_before_call(event_name, params, **kwargs) -> None:
         else:
             loggable_params = "*REDACTED*"
             url = "*REDACTED*"
-        log_statement: BotoLogStatement = {
-            "log_type": "boto_request",
+        log_statement = {
             "operation": operation_name,
+            "request_url": url,
             "params": loggable_params,
         }  # noqa
-        if url is not None:
-            log_statement["request_url"] = url
-        log.info(json.dumps(log_statement))
+        if operation_name.startswith("deadline"):
+            log_statement["deadline_resource"] = _extract_deadline_resource_info(params["url"])
+        if not API_RECORD.filter_request(
+            operation_name=operation_name,
+            params=body,
+            resource=log_statement.get("deadline_resource"),
+        ):
+            log.info(ApiRequestLogEvent(**log_statement))
+            API_RECORD.record_request(
+                operation_name=operation_name,
+                params=body,
+                resource=log_statement.get("deadline_resource"),
+            )
     except Exception:
         log.exception(f"Error Logging Boto Request with name {event_name}!")
 
@@ -361,10 +479,10 @@ def log_after_call(event_name, parsed, **kwargs) -> None:
     #     "resourceType": "worker"
     # }
     try:
-        operation_name = event_name.split(".", 1)[1]
+        operation_name = event_name.split(".", 1)[1].replace(".", ":")
         if LOGGING_IGNORE_MATCHER.match(operation_name):
             return
-        loggable_params: Union[dict[str, Any], str] = {}
+        loggable_params: Union[dict[str, Any], str] = dict()
         if "Error" in parsed:
             loggable_params = dict(parsed)
             del loggable_params["Error"]
@@ -379,17 +497,31 @@ def log_after_call(event_name, parsed, **kwargs) -> None:
         if isinstance(loggable_params, dict):
             del loggable_params["ResponseMetadata"]
 
-        log_statement: BotoLogStatement = {
-            "log_type": "boto_response",
+        if "Error" not in parsed and API_RECORD.filter_response(
+            operation_name=operation_name,
+            params=loggable_params if isinstance(loggable_params, dict) else dict(),
+        ):
+            # If it's not an Error and it matches the previous response, then we just filter out the response parameters
+            loggable_params = "(Duplicate removed, see previous response)"
+        elif "Error" not in parsed:
+            # If it's not an error, then update the record of the last recorded response
+            API_RECORD.record_response(
+                operation_name=operation_name,
+                params=loggable_params if isinstance(loggable_params, dict) else dict(),
+            )
+
+        log_statement = {
             "operation": operation_name,
-            "status_code": parsed.get("ResponseMetadata", {}).get("HTTPStatusCode"),
+            "status_code": parsed.get("ResponseMetadata", {}).get("HTTPStatusCode", "UNKNOWN"),
             "params": loggable_params,
+            "request_id": parsed.get("ResponseMetadata", {}).get("RequestId", "UNKNOWN"),
         }
         error = parsed.get("Error")
         if error is not None:
             log_statement["error"] = error
-        log_statement["request_id"] = parsed.get("ResponseMetadata", {}).get("RequestId")
-        log.info(json.dumps(log_statement))
+            log.error(ApiResponseLogEvent(**log_statement))
+        else:
+            log.info(ApiResponseLogEvent(**log_statement))
     except Exception:
         log.exception(f"Error Logging Boto Response with name {event_name}!")
 
