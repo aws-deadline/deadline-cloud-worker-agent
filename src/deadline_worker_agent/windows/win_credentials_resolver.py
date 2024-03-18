@@ -219,21 +219,36 @@ class WindowsCredentialsResolver:
                                 Password=password,
                                 Domain=None,
                             )
-                            # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
-                            user_profile = LoadUserProfile(
-                                logon_token,
-                                {
-                                    "UserName": user,
-                                    "Flags": PI_NOUI,
-                                    "ProfilePath": None,
-                                },
-                            )
-                            windows_session_user = WindowsSessionUser(
-                                user=user,
-                                logon_token=cHANDLE(int(logon_token)),
-                            )
                         except OSError as e:
-                            logger.error(f'Error logging on as "{user}": {e}')
+                            logger.error(
+                                f'Error logging on as "{user}", please check that your password within {passwordArn} is correct: {e}'
+                            )
+                        else:
+                            try:
+                                # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
+                                user_profile = LoadUserProfile(
+                                    logon_token,
+                                    {
+                                        "UserName": user,
+                                        "Flags": PI_NOUI,
+                                        "ProfilePath": None,
+                                    },
+                                )
+                            except OSError as e:
+                                logger.error(
+                                    (
+                                        f'Error loading profile for "{user}": {e}\n'
+                                        "Please ensure that the Worker Agent is running as a user that is an Administrator, and has user rights to both backup and restore files and directories."
+                                    )
+                                )
+                            else:
+                                try:
+                                    windows_session_user = WindowsSessionUser(
+                                        user=user,
+                                        logon_token=cHANDLE(int(logon_token)),
+                                    )
+                                except OSError as e:
+                                    logger.error(f'Error logging on as "{user}": {e}')
                     else:
                         try:
                             # OpenJD will test the ultimate validity of the credentials when creating a WindowsSessionUser
