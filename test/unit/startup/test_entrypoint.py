@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+from deadline_worker_agent.api_models import WorkerStatus
 from deadline_worker_agent.errors import ServiceShutdown
 from deadline_worker_agent.log_sync.loggers import ROOT_LOGGER
 from deadline_worker_agent.startup import entrypoint as entrypoint_mod
@@ -151,9 +152,15 @@ def configuration_load(configuration: MagicMock) -> Generator[MagicMock, None, N
 
 
 @pytest.fixture
-def mock_system_shutdown() -> Generator[MagicMock, None, None]:
-    with patch.object(entrypoint_mod, "_system_shutdown") as system_shutdown_mock:
-        yield system_shutdown_mock
+def mock_agent_shutdown() -> Generator[MagicMock, None, None]:
+    with patch.object(entrypoint_mod, "_agent_shutdown") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_host_shutdown() -> Generator[MagicMock, None, None]:
+    with patch.object(entrypoint_mod, "_host_shutdown") as mock:
+        yield mock
 
 
 @pytest.fixture(autouse=True)
@@ -367,62 +374,21 @@ def test_log_configuration(
 
 
 @pytest.mark.parametrize(
-    argnames=("service_shutdown",),
-    argvalues=(
-        pytest.param(True, id="service-shutdown"),
-        pytest.param(False, id="no-service-shutdown"),
-    ),
-)
-@patch.object(entrypoint_mod._logger, "info")
-def test_worker_deletion(
-    logger_info_mock: MagicMock,
-    worker_info: WorkerPersistenceInfo,
-    service_shutdown: bool,
-    client: MagicMock,
-    configuration: Configuration,
-    mock_worker_run: MagicMock,
-) -> None:
-    # GIVEN
-    if service_shutdown:
-        mock_worker_run.side_effect = ServiceShutdown()
-
-    # WHEN
-    with patch.object(entrypoint_mod, "delete_worker") as mock_delete_worker:
-        entrypoint_mod.entrypoint()
-
-    # THEN
-    if service_shutdown:
-        mock_delete_worker.assert_called_with(
-            deadline_client=client,
-            config=configuration,
-            worker_id=worker_info.worker_id,
-        )
-        logger_info_mock.assert_has_calls(
-            (
-                call('Deleting worker with id "%s"', worker_info.worker_id),
-                call('Worker "%s" successfully deleted', worker_info.worker_id),
-            ),
-        )
-    else:
-        mock_delete_worker.assert_not_called()
-
-
-@pytest.mark.parametrize(
     ("request_shutdown"),
     [
         pytest.param(True, id="True"),
         pytest.param(False, id="False"),
     ],
 )
-def test_system_shutdown_called(
-    mock_system_shutdown: MagicMock,
+def test_host_shutdown_called(
+    mock_agent_shutdown: MagicMock,
     request_shutdown: bool,
     configuration: MagicMock,
     mock_worker_run: MagicMock,
 ) -> None:
     """
-    Tests that when Worker._system_shutdown() is called if the worker state is
-    either STOPPING or RUNNING_DRAINING
+    Tests that when the agent shutdown procedure is called as expected based on
+    whether or not the service requested the shutdown.
     """
     # GIVEN
     if request_shutdown:
@@ -432,10 +398,88 @@ def test_system_shutdown_called(
     entrypoint()
 
     # THEN
-    if request_shutdown:
-        mock_system_shutdown.assert_called_once_with(config=configuration)
-    else:
-        mock_system_shutdown.assert_not_called()
+    mock_agent_shutdown.assert_called_with(ANY, configuration, ANY, request_shutdown)
+
+
+def test_agent_service_initiated_shutdown(
+    mock_host_shutdown: MagicMock,
+    configuration: MagicMock,
+) -> None:
+    """Verifies that the agent behaves correctly when the Deadline Cloud service is
+    asking it to shutdown the host. In this situation it should:
+    1. Transition to STOPPING
+    2. Repeatedly:
+        a. Try to shutdown the host
+        b. Heartbeat with Deadline Cloud via the UpdateWorkerSchedule API
+        c. Sleep for a bit
+    """
+    # GIVEN
+    client_mock = MagicMock()
+    worker_id = "worker-1234"
+
+    with (
+        patch.object(entrypoint_mod, "_repeatedly_attempt_host_shutdown") as repeat_mock,
+        patch.object(entrypoint_mod, "update_worker") as update_worker_mock,
+        patch.object(entrypoint_mod, "update_worker_schedule") as update_worker_schedule_mock,
+        patch.object(entrypoint_mod, "sleep") as sleep_mock,
+    ):
+        repeat_mock.side_effect = [True, True, False]
+        # WHEN
+        entrypoint_mod._agent_shutdown(client_mock, configuration, worker_id, True)
+
+    # THEN
+    update_worker_mock.assert_called_once_with(
+        deadline_client=client_mock,
+        farm_id=configuration.farm_id,
+        fleet_id=configuration.fleet_id,
+        worker_id=worker_id,
+        status=WorkerStatus.STOPPING,
+    )
+    assert mock_host_shutdown.call_count == 2
+    assert update_worker_schedule_mock.call_count == 2
+    update_worker_schedule_mock.assert_called_with(
+        deadline_client=client_mock,
+        farm_id=configuration.farm_id,
+        fleet_id=configuration.fleet_id,
+        worker_id=worker_id,
+    )
+    assert sleep_mock.call_count == 2
+
+
+def test_agent_self_initiated_shutdown(
+    mock_host_shutdown: MagicMock,
+    configuration: MagicMock,
+) -> None:
+    """Verifies that the agent behaves correctly when there is a local shutdown initiated.
+     In this situation it should:
+    1. Transition to STOPPED
+    2. Exit
+    """
+    # GIVEN
+    client_mock = MagicMock()
+    worker_id = "worker-1234"
+
+    with (
+        patch.object(entrypoint_mod, "_repeatedly_attempt_host_shutdown") as repeat_mock,
+        patch.object(entrypoint_mod, "update_worker") as update_worker_mock,
+        patch.object(entrypoint_mod, "update_worker_schedule") as update_worker_schedule_mock,
+        patch.object(entrypoint_mod, "sleep") as sleep_mock,
+    ):
+        repeat_mock.side_effect = [True, True, False]
+        # WHEN
+        entrypoint_mod._agent_shutdown(client_mock, configuration, worker_id, False)
+
+    # THEN
+    update_worker_mock.assert_called_once_with(
+        deadline_client=client_mock,
+        farm_id=configuration.farm_id,
+        fleet_id=configuration.fleet_id,
+        worker_id=worker_id,
+        status=WorkerStatus.STOPPED,
+    )
+    mock_host_shutdown.assert_not_called()
+    update_worker_schedule_mock.assert_not_called()
+    sleep_mock.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -447,7 +491,7 @@ def test_system_shutdown_called(
 )
 @patch.object(entrypoint_mod._logger, "info")
 @patch.object(entrypoint_mod.subprocess, "Popen")
-def test_system_shutdown(
+def test_host_shutdown(
     subprocess_popen_mock: MagicMock,
     logger_info_mock: MagicMock,
     expected_platform: str,
@@ -455,7 +499,7 @@ def test_system_shutdown(
     configuration: MagicMock,
 ) -> None:
     """
-    Tests that entrypoint._system_shutdown() has the correct platform-specific behavior
+    Tests that entrypoint._host_shutdown() has the correct platform-specific behavior
     """
     # GIVEN
     process: MagicMock = subprocess_popen_mock.return_value
@@ -465,7 +509,7 @@ def test_system_shutdown(
     configuration.no_shutdown = False
     with patch.object(sys, "platform", expected_platform):
         # WHEN
-        entrypoint_mod._system_shutdown(config=configuration)
+        entrypoint_mod._host_shutdown(config=configuration)
 
     # THEN
     logger_info_mock.assert_any_call("Shutting down the host")
@@ -485,7 +529,7 @@ def test_system_shutdown(
 )
 @patch.object(entrypoint_mod, "_logger")
 @patch.object(entrypoint_mod.subprocess, "Popen")
-def test_system_shutdown_failure(
+def test_host_shutdown_failure(
     subprocess_popen_mock: MagicMock,
     logger_mock: MagicMock,
     expected_platform: str,
@@ -510,7 +554,7 @@ def test_system_shutdown_failure(
     configuration.no_shutdown = False
     with patch.object(sys, "platform", expected_platform):
         # WHEN
-        entrypoint_mod._system_shutdown(config=configuration)
+        entrypoint_mod._host_shutdown(config=configuration)
 
     # THEN
     logger_mock.info.assert_any_call("Shutting down the host")
@@ -551,7 +595,7 @@ def test_no_shutdown_only_log(
     configuration.no_shutdown = True
     with patch.object(sys, "platform", expected_platform):
         # WHEN
-        entrypoint_mod._system_shutdown(config=configuration)
+        entrypoint_mod._host_shutdown(config=configuration)
 
     # THEN
     logger_info_mock.assert_called_with(
