@@ -1,8 +1,8 @@
 name: Windows Integration Tests
 
 on:
-  workflow_call:
-    
+  workflow_dispatch:
+
 jobs:
   WindowsIntegrationTests:
     runs-on: windows-latest
