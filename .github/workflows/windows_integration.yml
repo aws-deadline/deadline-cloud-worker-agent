@@ -1,0 +1,39 @@
+name: Windows Integration Tests
+
+on:
+  workflow_call:
+    
+jobs:
+  WindowsIntegrationTests:
+    runs-on: windows-latest
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+    env:
+        PYTHON: ${{ matrix.python-version }}
+        CODEARTIFACT_REGION: "us-west-2"
+        CODEARTIFACT_DOMAIN: ${{ secrets.CODEARTIFACT_DOMAIN }}
+        CODEARTIFACT_ACCOUNT_ID: ${{ secrets.CODEARTIFACT_ACCOUNT_ID }}
+        CODEARTIFACT_REPOSITORY: ${{ secrets.CODEARTIFACT_REPOSITORY }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_CODEARTIFACT_ROLE }}
+        aws-region: us-west-2
+        mask-aws-account-id: true
+    
+    - name: Install Hatch
+      run: |
+        $CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token --domain ${{ secrets.CODEARTIFACT_DOMAIN }} --domain-owner ${{ secrets.CODEARTIFACT_ACCOUNT_ID }} --query authorizationToken --output text --region us-west-2)
+        echo "::add-mask::$CODEARTIFACT_AUTH_TOKEN"
+        echo CODEARTIFACT_AUTH_TOKEN=$CODEARTIFACT_AUTH_TOKEN >> $env:GITHUB_ENV
+        pip install --upgrade hatch
+
+    - name: Run Windows Integration Tests
+      run: hatch run integ-windows
