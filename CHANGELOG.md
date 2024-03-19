@@ -1,3 +1,10 @@
+## 0.22.1 (2024-03-19)
+
+
+
+### Bug Fixes
+* change OpenJD&#39;s session root directory to /sessions (#222) ([`3b68342`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/3b68342bc12307e63f84214b310ed616437c1c8e))
+
 ## 0.22.0 (2024-03-18)
 
 ### BREAKING CHANGES
