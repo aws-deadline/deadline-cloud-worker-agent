@@ -64,7 +64,6 @@ jobs:
           git config --local user.email "129794699+client-software-ci@users.noreply.github.com"
           git config --local user.name "client-software-ci"
 
-      
       - name: MergePushRelease
         run: |
           git merge --ff-only origin/mainline -v
