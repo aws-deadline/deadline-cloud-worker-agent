@@ -89,7 +89,7 @@ OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
     ActionState.SUCCESS: "SUCCEEDED",
     ActionState.TIMEOUT: "FAILED",
 }
-DEFAULT_POSIX_OPENJD_SESSION_DIR = Path("/var/tmp/openjd")
+DEFAULT_POSIX_OPENJD_SESSION_DIR = Path("/sessions")
 TIME_DELTA_ZERO = timedelta()
 
 # During a SYNC_INPUT_JOB_ATTACHMENTS session action, the transfer rate is periodically reported through
