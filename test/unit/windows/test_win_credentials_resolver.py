@@ -175,6 +175,7 @@ if sys.platform == "win32":
                 "ResourceNotFoundException",
                 "InvalidRequestException",
                 "DecryptionFailure",
+                "AccessDeniedException",
             ],
         )
         @patch(
