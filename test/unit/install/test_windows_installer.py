@@ -2,9 +2,7 @@
 
 import string
 import sys
-import sysconfig
 import typing
-from pathlib import Path
 from unittest.mock import Mock, call, patch, MagicMock, ANY
 
 import pytest
@@ -145,26 +143,6 @@ class TestCreateLocalAgentUser:
         with patch.object(win_installer.win32net, "NetUserAdd") as m:
             yield m
 
-    @pytest.fixture(autouse=True)
-    def mock_LogonUser(self) -> typing.Generator[MagicMock, None, None]:
-        with patch.object(win_installer.win32security, "LogonUser") as m:
-            yield m
-
-    @pytest.fixture(autouse=True)
-    def mock_LoadUserProfile(self) -> typing.Generator[MagicMock, None, None]:
-        with patch.object(win_installer.win32profile, "LoadUserProfile") as m:
-            yield m
-
-    @pytest.fixture(autouse=True)
-    def mock_UnloadUserProfile(self) -> typing.Generator[MagicMock, None, None]:
-        with patch.object(win_installer.win32profile, "UnloadUserProfile") as m:
-            yield m
-
-    @pytest.fixture(autouse=True)
-    def mock_CloseHandle(self) -> typing.Generator[MagicMock, None, None]:
-        with patch.object(win_installer.win32api, "CloseHandle") as m:
-            yield m
-
     def test_raises_on_creation_failure(
         self,
         username: str,
@@ -193,6 +171,92 @@ class TestCreateLocalAgentUser:
             f"Failed to create user '{username}'. Error: {error_message}"
         )
 
+    def test_creates_user(
+        self,
+        username: str,
+        password: str,
+        mock_NetUserAdd: MagicMock,
+    ):
+        # WHEN
+        win_installer.create_local_agent_user(username, password)
+
+        # THEN
+        expected_user_info = {
+            "name": username,
+            "password": password,
+            "priv": win32netcon.USER_PRIV_USER,
+            "home_dir": None,
+            "comment": "AWS Deadline Cloud Worker Agent User",
+            "flags": win32netcon.UF_DONT_EXPIRE_PASSWD,
+            "script_path": None,
+        }
+        mock_NetUserAdd.assert_called_once_with(None, 1, expected_user_info)
+
+
+class TestEnsureUserProfileExists:
+    """Tests for ensure_user_profile_exists function"""
+
+    @pytest.fixture
+    def username(self) -> str:
+        return "testuser"
+
+    @pytest.fixture
+    def password(self) -> str:
+        return "password123"
+
+    @pytest.fixture(autouse=True)
+    def mock_LogonUser(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32security, "LogonUser") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_LoadUserProfile(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32profile, "LoadUserProfile") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_UnloadUserProfile(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32profile, "UnloadUserProfile") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_CloseHandle(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32api, "CloseHandle") as m:
+            yield m
+
+    def test_loads_user_profile(
+        self,
+        username: str,
+        password: str,
+        mock_LogonUser: MagicMock,
+        mock_LoadUserProfile: MagicMock,
+        mock_UnloadUserProfile: MagicMock,
+        mock_CloseHandle: MagicMock,
+    ):
+        # WHEN
+        win_installer.ensure_user_profile_exists(username, password)
+
+        # THEN
+        mock_LogonUser.assert_called_once_with(
+            Username=username,
+            LogonType=win32security.LOGON32_LOGON_NETWORK_CLEARTEXT,
+            LogonProvider=win32security.LOGON32_PROVIDER_DEFAULT,
+            Password=password,
+            Domain=None,
+        )
+        mock_LoadUserProfile.assert_called_once_with(
+            mock_LogonUser.return_value,
+            {
+                "UserName": username,
+                "Flags": win32profile.PI_NOUI,
+                "ProfilePath": None,
+            },
+        )
+        mock_UnloadUserProfile.assert_called_once_with(
+            mock_LogonUser.return_value, mock_LoadUserProfile.return_value
+        )
+        mock_CloseHandle.assert_called_once_with(mock_LogonUser.return_value)
+
     def test_raises_on_logon_user_failure(
         self,
         username: str,
@@ -207,7 +271,7 @@ class TestCreateLocalAgentUser:
 
         with pytest.raises(Exception) as raised_exc:
             # WHEN
-            win_installer.create_local_agent_user(username, password)
+            win_installer.ensure_user_profile_exists(username, password)
 
         # THEN
         assert raised_exc.value is mock_LogonUser.side_effect
@@ -230,56 +294,12 @@ class TestCreateLocalAgentUser:
 
         with pytest.raises(Exception) as raised_exc:
             # WHEN
-            win_installer.create_local_agent_user(username, password)
+            win_installer.ensure_user_profile_exists(username, password)
 
         # THEN
         assert raised_exc.value is mock_LoadUserProfile.side_effect
         assert f"Failed to load user profile for '{username}'" in caplog.text
         mock_UnloadUserProfile.assert_not_called()
-        mock_CloseHandle.assert_called_once_with(mock_LogonUser.return_value)
-
-    def test_creates_user(
-        self,
-        username: str,
-        password: str,
-        mock_NetUserAdd: MagicMock,
-        mock_LogonUser: MagicMock,
-        mock_LoadUserProfile: MagicMock,
-        mock_UnloadUserProfile: MagicMock,
-        mock_CloseHandle: MagicMock,
-    ):
-        # WHEN
-        win_installer.create_local_agent_user(username, password)
-
-        # THEN
-        expected_user_info = {
-            "name": username,
-            "password": password,
-            "priv": win32netcon.USER_PRIV_USER,
-            "home_dir": None,
-            "comment": "AWS Deadline Cloud Worker Agent User",
-            "flags": win32netcon.UF_DONT_EXPIRE_PASSWD,
-            "script_path": None,
-        }
-        mock_NetUserAdd.assert_called_once_with(None, 1, expected_user_info)
-        mock_LogonUser.assert_called_once_with(
-            Username=username,
-            LogonType=win32security.LOGON32_LOGON_NETWORK_CLEARTEXT,
-            LogonProvider=win32security.LOGON32_PROVIDER_DEFAULT,
-            Password=password,
-            Domain=None,
-        )
-        mock_LoadUserProfile.assert_called_once_with(
-            mock_LogonUser.return_value,
-            {
-                "UserName": username,
-                "Flags": win32profile.PI_NOUI,
-                "ProfilePath": None,
-            },
-        )
-        mock_UnloadUserProfile.assert_called_once_with(
-            mock_LogonUser.return_value, mock_LoadUserProfile.return_value
-        )
         mock_CloseHandle.assert_called_once_with(mock_LogonUser.return_value)
 
 

@@ -185,8 +185,16 @@ def create_local_agent_user(username: str, password: str) -> None:
     else:
         logging.info(f"User '{username}' created successfully.")
 
-    # Create the user profile by loading it
-    logging.info("Loading Agent user profile")
+
+def ensure_user_profile_exists(username: str, password: str):
+    """
+    Ensures a user profile is created by loading it then unloading it.
+
+    Args:
+        username (str): The user whose profile to load
+        password (str): The user's password
+    """
+    logging.info(f"Loading user profile for '{username}'")
     logon_token = None
     user_profile = None
     try:
@@ -211,7 +219,7 @@ def create_local_agent_user(username: str, password: str) -> None:
         logging.error(f"Failed to load user profile for '{username}': {e}")
         raise
     else:
-        logging.info("Successfully loaded Agent user profile")
+        logging.info("Successfully loaded user profile")
     finally:
         if user_profile is not None:
             assert logon_token is not None
@@ -775,6 +783,9 @@ def start_windows_installer(
     else:
         create_local_agent_user(user_name, password)
         agent_user_created = True
+
+    # Load the user's profile to ensure it exists
+    ensure_user_profile_exists(username=user_name, password=password)
 
     if is_user_in_group("Administrators", user_name):
         logging.info(f"Agent user '{user_name}' is already an administrator")

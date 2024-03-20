@@ -71,13 +71,18 @@ def check_admin_privilege_and_skip_test():
 
 
 @pytest.fixture
-def windows_user():
+def windows_user_password():
+    return generate_password()
+
+
+@pytest.fixture
+def windows_user(windows_user_password):
     """
     Pytest fixture to create a user before the test and ensure it is deleted after the test.
     """
     check_admin_privilege_and_skip_test()
     username = "InstallerTestUser"
-    create_local_agent_user(username, generate_password())
+    create_local_agent_user(username, windows_user_password)
     yield username
     delete_local_user(username)
 
@@ -88,6 +93,12 @@ def test_create_local_agent_user(windows_user):
     """
     assert check_account_existence(windows_user)
 
+
+def test_ensure_user_profile_exists(windows_user, windows_user_password):
+    # WHEN
+    win_installer.ensure_user_profile_exists(windows_user, windows_user_password)
+
+    # THEN
     # Verify user profile was created by checking that the home directory exists
     assert pathlib.Path(f"~{windows_user}").expanduser().exists()
 
