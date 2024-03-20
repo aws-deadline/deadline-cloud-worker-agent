@@ -276,10 +276,12 @@ class TestSessionActionQueueDequeue:
     )
     def test_handle_job_entity_error_on_dequeue(
         self,
-        queue_entry: EnvironmentQueueEntry
-        | TaskRunQueueEntry
-        | SyncInputJobAttachmentsQueueEntry
-        | SyncInputJobAttachmentsStepDependenciesQueueEntry,
+        queue_entry: (
+            EnvironmentQueueEntry
+            | TaskRunQueueEntry
+            | SyncInputJobAttachmentsQueueEntry
+            | SyncInputJobAttachmentsStepDependenciesQueueEntry
+        ),
         error_type: type[Exception],
         session_queue: SessionActionQueue,
     ) -> None:
@@ -327,10 +329,12 @@ class TestSessionActionQueueDequeue:
     )
     def test_handle_unsupported_schema_on_dequeue(
         self,
-        queue_entry: EnvironmentQueueEntry
-        | TaskRunQueueEntry
-        | SyncInputJobAttachmentsQueueEntry
-        | SyncInputJobAttachmentsStepDependenciesQueueEntry,
+        queue_entry: (
+            EnvironmentQueueEntry
+            | TaskRunQueueEntry
+            | SyncInputJobAttachmentsQueueEntry
+            | SyncInputJobAttachmentsStepDependenciesQueueEntry
+        ),
         session_queue: SessionActionQueue,
     ) -> None:
         # GIVEN

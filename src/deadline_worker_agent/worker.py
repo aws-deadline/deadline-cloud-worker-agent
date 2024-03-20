@@ -32,8 +32,7 @@ logger = getLogger(__name__)
 
 
 class WorkerSessionCollection:
-    def __init__(self, *, worker: Worker) -> None:
-        ...
+    def __init__(self, *, worker: Worker) -> None: ...
 
     def __getitem__(self, session_id: str) -> Session:
         raise NotImplementedError()

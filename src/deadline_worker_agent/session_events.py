@@ -50,7 +50,7 @@ LOGGING_ALLOW_LIST: dict[str, LoggingAllowList] = {
         "res_log_body": {
             "credentials": {
                 "accessKeyId": True,  # Not a secret
-                "expiration": True
+                "expiration": True,
                 # exclude: secretAccessKey & sessionToken
             }
         },
@@ -61,7 +61,7 @@ LOGGING_ALLOW_LIST: dict[str, LoggingAllowList] = {
         "res_log_body": {
             "credentials": {
                 "accessKeyId": True,  # Not a secret
-                "expiration": True
+                "expiration": True,
                 # exclude: secretAccessKey & sessionToken
             }
         },
@@ -183,7 +183,7 @@ LOGGING_ALLOW_LIST: dict[str, LoggingAllowList] = {
             "ARN": True,
             "CreatedDate": True,
             "Name": True,
-            "VersionId": True
+            "VersionId": True,
             # excluding: SecretString/SecretBinary, for obvious reasons
             # excluding VersionStages; seems unnecessary
         },

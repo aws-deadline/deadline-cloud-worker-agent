@@ -120,18 +120,22 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         field_name="worker_logs_dir",
         expected_type=Path,
         expected_required=False,
-        expected_default=Path("/var/log/amazon/deadline")
-        if os.name == "posix"
-        else Path(os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Logs")),
+        expected_default=(
+            Path("/var/log/amazon/deadline")
+            if os.name == "posix"
+            else Path(os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Logs"))
+        ),
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(
         field_name="worker_persistence_dir",
         expected_type=Path,
         expected_required=False,
-        expected_default=Path("/var/lib/deadline")
-        if os.name == "posix"
-        else Path(os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Cache")),
+        expected_default=(
+            Path("/var/lib/deadline")
+            if os.name == "posix"
+            else Path(os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Cache"))
+        ),
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(

@@ -305,9 +305,9 @@ class TestWorkerInfo:
             "cloudwatch_log_stream": cloudwatch_log_stream,
         }
         if cloudwatch_log_stream_sequence_token:
-            json_load_result[
-                "cloudwatch_log_stream_sequence_token"
-            ] = cloudwatch_log_stream_sequence_token
+            json_load_result["cloudwatch_log_stream_sequence_token"] = (
+                cloudwatch_log_stream_sequence_token
+            )
         with config.worker_state_file.open("w") as fh:
             json.dump(json_load_result, fh)
 

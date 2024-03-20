@@ -131,9 +131,9 @@ class ConfigFile(BaseModel):
         if self.logging.host_metrics_logging is not None:
             output_settings["host_metrics_logging"] = self.logging.host_metrics_logging
         if self.logging.host_metrics_logging_interval_seconds is not None:
-            output_settings[
-                "host_metrics_logging_interval_seconds"
-            ] = self.logging.host_metrics_logging_interval_seconds
+            output_settings["host_metrics_logging_interval_seconds"] = (
+                self.logging.host_metrics_logging_interval_seconds
+            )
         if self.logging.structured_logs is not None:
             output_settings["structured_logs"] = self.logging.structured_logs
         if self.os.shutdown_on_stop is not None:

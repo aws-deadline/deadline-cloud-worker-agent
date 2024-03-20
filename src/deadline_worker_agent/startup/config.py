@@ -108,9 +108,9 @@ class Configuration:
         if parsed_cli_args.fleet_id is not None:
             settings_kwargs["fleet_id"] = parsed_cli_args.fleet_id
         if parsed_cli_args.cleanup_session_user_processes is not None:
-            settings_kwargs[
-                "cleanup_session_user_processes"
-            ] = parsed_cli_args.cleanup_session_user_processes
+            settings_kwargs["cleanup_session_user_processes"] = (
+                parsed_cli_args.cleanup_session_user_processes
+            )
         if parsed_cli_args.profile is not None:
             settings_kwargs["profile"] = parsed_cli_args.profile
         if parsed_cli_args.verbose is not None:
@@ -128,9 +128,9 @@ class Configuration:
         if parsed_cli_args.posix_job_user is not None:
             settings_kwargs["posix_job_user"] = parsed_cli_args.posix_job_user
         if parsed_cli_args.disallow_instance_profile is not None:
-            settings_kwargs[
-                "allow_instance_profile"
-            ] = not parsed_cli_args.disallow_instance_profile
+            settings_kwargs["allow_instance_profile"] = (
+                not parsed_cli_args.disallow_instance_profile
+            )
         if parsed_cli_args.logs_dir is not None:
             settings_kwargs["worker_logs_dir"] = parsed_cli_args.logs_dir.absolute()
         if parsed_cli_args.persistence_dir is not None:
@@ -140,9 +140,9 @@ class Configuration:
         if parsed_cli_args.host_metrics_logging is not None:
             settings_kwargs["host_metrics_logging"] = parsed_cli_args.host_metrics_logging
         if parsed_cli_args.host_metrics_logging_interval_seconds is not None:
-            settings_kwargs[
-                "host_metrics_logging_interval_seconds"
-            ] = parsed_cli_args.host_metrics_logging_interval_seconds
+            settings_kwargs["host_metrics_logging_interval_seconds"] = (
+                parsed_cli_args.host_metrics_logging_interval_seconds
+            )
         if parsed_cli_args.retain_session_dir is not None:
             settings_kwargs["retain_session_dir"] = parsed_cli_args.retain_session_dir
         if parsed_cli_args.structured_logs is not None:
