@@ -34,6 +34,7 @@ from ..aws.deadline import (
     update_worker,
     update_worker_schedule,
     record_worker_start_telemetry_event,
+    record_uncaught_exception_telemetry_event,
 )
 
 __all__ = ["entrypoint"]
@@ -161,6 +162,7 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
             raise
         else:
             _logger.critical(e, exc_info=True)
+            record_uncaught_exception_telemetry_event(exception_type=str(type(e)))
             sys.exit(1)
     finally:
         _logger.info("Worker Agent exiting")

@@ -8,6 +8,7 @@ from deadline_worker_agent.aws.deadline import (
     record_worker_start_telemetry_event,
     record_sync_inputs_telemetry_event,
     record_sync_outputs_telemetry_event,
+    record_uncaught_exception_telemetry_event,
 )
 from deadline_worker_agent.startup.capabilities import Capabilities
 from deadline.job_attachments.progress_tracker import SummaryStatistics
@@ -124,4 +125,26 @@ def test_record_sync_outputs_telemetry_event():
             "transfer_rate": 100.0,
             "queue_id": "queue-test",
         },
+    )
+
+
+def test_record_uncaught_exception_telemetry_event():
+    """
+    Tests that when record_uncaught_exception_telemetry_event() is called, the correct
+    event type and details are passed to the telemetry client's record_event() method.
+    """
+    # GIVEN
+    mock_telemetry_client = MagicMock()
+
+    with patch.object(deadline_mod, "_get_deadline_telemetry_client") as mock_get_telemetry_client:
+        mock_get_telemetry_client.return_value = mock_telemetry_client
+
+        # WHEN
+        error = ValueError()
+        record_uncaught_exception_telemetry_event(str(type(error)))
+
+    # THEN
+    mock_telemetry_client.record_error.assert_called_with(
+        exception_type="<class 'ValueError'>",
+        event_details={"exception_scope": "uncaught"},
     )

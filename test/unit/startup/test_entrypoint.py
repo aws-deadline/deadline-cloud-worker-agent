@@ -186,9 +186,11 @@ def test_calls_worker_run(
     mock_worker_run.assert_called_once_with()
 
 
+@patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")
 @patch.object(entrypoint_mod.sys, "exit")
 def test_worker_run_exception(
     sys_exit_mock: MagicMock,
+    telemetry_mock: MagicMock,
     mock_worker_run: MagicMock,
 ) -> None:
     """Tests that exceptions raised by Worker.run() are logged and the program exits with a non-zero exit code"""
@@ -205,6 +207,7 @@ def test_worker_run_exception(
     logger_exception: MagicMock = logger.exception
     logger_exception.assert_called_once_with("Failed running worker: %s", exception)
     sys_exit_mock.assert_called_once_with(1)
+    telemetry_mock.assert_called_once_with(exception_type=str(type(exception)))
 
 
 def test_configuration_load(
