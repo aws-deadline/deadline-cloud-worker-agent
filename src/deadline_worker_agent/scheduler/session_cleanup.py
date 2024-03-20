@@ -165,10 +165,9 @@ class SessionUserCleanupManager:
     @staticmethod
     def cleanup_session_user_processes(user: SessionUser):
         # Check that the session user isn't the current user (agent user)
-        current_user = getpass.getuser()
-        if current_user == user.user:
+        if SessionUserCleanupManager._is_current_user(user):
             logger.info(
-                f"Skipping cleaning up processes because the session user matches the agent user '{current_user}'"
+                f"Skipping cleaning up processes because the session user matches the agent user '{user.user}'"
             )
             return
 
