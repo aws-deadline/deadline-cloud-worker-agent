@@ -81,9 +81,16 @@ class SessionUserCleanupManager:
                 logger.warn(f"Failed to stop session user processes: {e}")
 
     @staticmethod
+    def _extract_username(user: str):
+        parts = user.split("\\")
+        return parts[-1].lower()
+
+    @staticmethod
     def _is_current_user(user: SessionUser):
         current_user = getpass.getuser()
-        return user.user == current_user
+        return SessionUserCleanupManager._extract_username(
+            user.user
+        ) == SessionUserCleanupManager._extract_username(current_user)
 
     @staticmethod
     def _posix_cleanup_user_processes(user: SessionUser):
@@ -119,7 +126,7 @@ class SessionUserCleanupManager:
         import win32con
 
         assert isinstance(user, WindowsSessionUser)
-        username = user.user
+        username = SessionUserCleanupManager._extract_username(user.user)
         processes = []
 
         for proc in psutil.process_iter(["pid", "username"]):
@@ -127,8 +134,10 @@ class SessionUserCleanupManager:
             try:
                 if process_owner_with_domain := proc_info.get("username"):
                     # username is always 'host\user' or 'domain\user' so split it
-                    domain, process_owner = process_owner_with_domain.split("\\")
-                    if username.lower() == process_owner:
+                    process_owner = SessionUserCleanupManager._extract_username(
+                        process_owner_with_domain
+                    )
+                    if username == process_owner:
                         processes.append(proc_info)
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 # Finding a process we can't get info for is not concerning
@@ -142,12 +151,14 @@ class SessionUserCleanupManager:
                     pid = proc_info["pid"]
                     process_handle = win32api.OpenProcess(win32con.PROCESS_TERMINATE, 0, pid)
                     win32api.TerminateProcess(process_handle, 0)
-                    win32api.CloseHandle(process_handle)
-                    logger.info(f"Stopped process PID: {pid} running as {username}")
                 except Exception as e:
                     logger.warning(
                         f"Failed to stop process PID: {pid} running as {username}: {str(e)}"
                     )
+                else:
+                    logger.info(f"Stopped process PID: {pid} running as {username}")
+                finally:
+                    win32api.CloseHandle(process_handle)
         else:
             logger.info(f"No processes stopped because none were found running as '{user.user}'")
 
