@@ -691,7 +691,7 @@ def start_windows_installer(
     start_service: bool = False,
     confirm: bool = False,
     telemetry_opt_out: bool = False,
-    elevate_existing_user: bool = False,
+    grant_required_access: bool = False,
 ):
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -787,11 +787,11 @@ def start_windows_installer(
 
     if is_user_in_group("Administrators", user_name):
         logging.info(f"Agent user '{user_name}' is already an administrator")
-    elif not agent_user_created and not elevate_existing_user:
+    elif not agent_user_created and not grant_required_access:
         logging.error(
             f"The Worker Agent user needs to run as an administrator, but the supplied user ({user_name}) exists "
             "and was not found to be in the Administrators group. Please provide an administrator user, specify a "
-            "new username to have one created, or provide the --elevate-existing-user option to allow the installer "
+            "new username to have one created, or provide the --grant-required-access option to allow the installer "
             "to make the existing user an administrator."
         )
         sys.exit(1)
@@ -806,10 +806,10 @@ def start_windows_installer(
     user_rights_to_grant -= agent_user_rights
 
     # Fail if an existing user was provided but there are rights to add and the user has not explicitly opted in
-    if user_rights_to_grant and not agent_user_created and not elevate_existing_user:
+    if user_rights_to_grant and not agent_user_created and not grant_required_access:
         logging.error(
             f"The existing worker agent user ({user_name}) is missing the following required user rights: {user_rights_to_grant}\n"
-            "Provide the --elevate-existing-user option to allow the installer to grant the missing rights to the user."
+            "Provide the --grant-required-access option to allow the installer to grant the missing rights to the user."
         )
         sys.exit(1)
 

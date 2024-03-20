@@ -79,7 +79,7 @@ def vfs_install_path() -> str:
 
 
 @pytest.fixture
-def elevate_existing_user() -> bool:
+def grant_required_access() -> bool:
     return True
 
 
@@ -97,7 +97,7 @@ def parsed_args(
     install_service: bool,
     telemetry_opt_out: bool,
     vfs_install_path: str,
-    elevate_existing_user: bool,
+    grant_required_access: bool,
 ) -> ParsedCommandLineArguments:
     parsed_args = ParsedCommandLineArguments()
     parsed_args.farm_id = farm_id
@@ -112,7 +112,7 @@ def parsed_args(
     parsed_args.install_service = install_service
     parsed_args.telemetry_opt_out = telemetry_opt_out
     parsed_args.vfs_install_path = vfs_install_path
-    parsed_args.elevate_existing_user = elevate_existing_user
+    parsed_args.grant_required_access = grant_required_access
     return parsed_args
 
 
