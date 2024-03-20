@@ -256,7 +256,7 @@ def test_grant_account_rights(windows_user: str):
     grant_account_rights(windows_user, rights)
 
     # THEN
-    user_sid = win32security.LookupAccountName(None, windows_user)
+    user_sid, _, _ = win32security.LookupAccountName(None, windows_user)
     policy_handle = win32security.LsaOpenPolicy(None, win32security.POLICY_ALL_ACCESS)
     try:
         actual_rights = win32security.LsaEnumerateAccountRights(policy_handle, user_sid)

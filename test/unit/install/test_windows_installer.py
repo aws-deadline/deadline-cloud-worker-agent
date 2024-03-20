@@ -17,6 +17,8 @@ from deadline_worker_agent.installer import ParsedCommandLineArguments, win_inst
 from deadline_worker_agent.windows.win_service import WorkerAgentWindowsService
 
 import win32netcon
+import win32profile
+import win32security
 import win32service
 import winerror
 from win32comext.shell import shell
@@ -41,7 +43,6 @@ def test_start_windows_installer(
                 farm_id=parsed_args.farm_id,
                 fleet_id=parsed_args.fleet_id,
                 region=parsed_args.region,
-                worker_agent_program=Path(sysconfig.get_path("scripts")),
                 install_service=parsed_args.install_service,
                 start_service=parsed_args.service_start,
                 confirm=parsed_args.confirmed,
@@ -70,7 +71,6 @@ def test_start_windows_installer_fails_when_run_as_non_admin_user(
                 farm_id=parsed_args.farm_id,
                 fleet_id=parsed_args.fleet_id,
                 region=parsed_args.region,
-                worker_agent_program=Path(sysconfig.get_path("scripts")),
                 install_service=parsed_args.install_service,
                 start_service=parsed_args.service_start,
                 confirm=parsed_args.confirmed,
@@ -146,18 +146,18 @@ class TestCreateLocalAgentUser:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_logon_user(self) -> typing.Generator[MagicMock, None, None]:
-        with patch.object(win_installer, "logon_user") as m:
+    def mock_LogonUser(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32security, "LogonUser") as m:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_load_user_profile(self) -> typing.Generator[MagicMock, None, None]:
-        with patch.object(win_installer, "load_user_profile") as m:
+    def mock_LoadUserProfile(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32profile, "LoadUserProfile") as m:
             yield m
 
     @pytest.fixture(autouse=True)
     def mock_UnloadUserProfile(self) -> typing.Generator[MagicMock, None, None]:
-        with patch.object(win_installer, "UnloadUserProfile") as m:
+        with patch.object(win_installer.win32profile, "UnloadUserProfile") as m:
             yield m
 
     @pytest.fixture(autouse=True)
@@ -197,20 +197,20 @@ class TestCreateLocalAgentUser:
         self,
         username: str,
         password: str,
-        mock_logon_user: MagicMock,
+        mock_LogonUser: MagicMock,
         mock_UnloadUserProfile: MagicMock,
         mock_CloseHandle: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ):
         # GIVEN
-        mock_logon_user.side_effect = Exception("Failed")
+        mock_LogonUser.side_effect = Exception("Failed")
 
         with pytest.raises(Exception) as raised_exc:
             # WHEN
             win_installer.create_local_agent_user(username, password)
 
         # THEN
-        assert raised_exc.value is mock_logon_user.side_effect
+        assert raised_exc.value is mock_LogonUser.side_effect
         assert f"Failed to load user profile for '{username}'" in caplog.text
         mock_UnloadUserProfile.assert_not_called()
         mock_CloseHandle.assert_not_called()
@@ -219,32 +219,32 @@ class TestCreateLocalAgentUser:
         self,
         username: str,
         password: str,
-        mock_logon_user: MagicMock,
-        mock_load_user_profile: MagicMock,
+        mock_LogonUser: MagicMock,
+        mock_LoadUserProfile: MagicMock,
         mock_UnloadUserProfile: MagicMock,
         mock_CloseHandle: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ):
         # GIVEN
-        mock_load_user_profile.side_effect = Exception("Failed")
+        mock_LoadUserProfile.side_effect = Exception("Failed")
 
         with pytest.raises(Exception) as raised_exc:
             # WHEN
             win_installer.create_local_agent_user(username, password)
 
         # THEN
-        assert raised_exc.value is mock_load_user_profile.side_effect
+        assert raised_exc.value is mock_LoadUserProfile.side_effect
         assert f"Failed to load user profile for '{username}'" in caplog.text
         mock_UnloadUserProfile.assert_not_called()
-        mock_CloseHandle.assert_called_once_with(mock_logon_user.return_value.value)
+        mock_CloseHandle.assert_called_once_with(mock_LogonUser.return_value)
 
     def test_creates_user(
         self,
         username: str,
         password: str,
         mock_NetUserAdd: MagicMock,
-        mock_logon_user: MagicMock,
-        mock_load_user_profile: MagicMock,
+        mock_LogonUser: MagicMock,
+        mock_LoadUserProfile: MagicMock,
         mock_UnloadUserProfile: MagicMock,
         mock_CloseHandle: MagicMock,
     ):
@@ -262,14 +262,25 @@ class TestCreateLocalAgentUser:
             "script_path": None,
         }
         mock_NetUserAdd.assert_called_once_with(None, 1, expected_user_info)
-        mock_logon_user.assert_called_once_with(username=username, password=password)
-        mock_load_user_profile.assert_called_once_with(
-            user=username, logon_token=mock_logon_user.return_value
+        mock_LogonUser.assert_called_once_with(
+            Username=username,
+            LogonType=win32security.LOGON32_LOGON_NETWORK_CLEARTEXT,
+            LogonProvider=win32security.LOGON32_PROVIDER_DEFAULT,
+            Password=password,
+            Domain=None,
+        )
+        mock_LoadUserProfile.assert_called_once_with(
+            mock_LogonUser.return_value,
+            {
+                "UserName": username,
+                "Flags": win32profile.PI_NOUI,
+                "ProfilePath": None,
+            },
         )
         mock_UnloadUserProfile.assert_called_once_with(
-            mock_logon_user.return_value, mock_load_user_profile.return_value.hProfile
+            mock_LogonUser.return_value, mock_LoadUserProfile.return_value
         )
-        mock_CloseHandle.assert_called_once_with(mock_logon_user.return_value.value)
+        mock_CloseHandle.assert_called_once_with(mock_LogonUser.return_value)
 
 
 @patch("deadline_worker_agent.installer.win_installer.secrets.choice")

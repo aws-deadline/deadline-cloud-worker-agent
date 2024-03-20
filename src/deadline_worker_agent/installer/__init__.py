@@ -33,7 +33,6 @@ def install() -> None:
             farm_id=args.farm_id,
             fleet_id=args.fleet_id,
             region=args.region,
-            worker_agent_program=scripts_path,
             install_service=args.install_service,
             start_service=args.service_start,
             confirm=args.confirmed,

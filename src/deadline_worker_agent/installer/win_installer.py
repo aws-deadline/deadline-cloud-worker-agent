@@ -18,6 +18,7 @@ import pywintypes
 import win32api
 import win32net
 import win32netcon
+import win32profile
 import win32security
 import win32service
 import win32serviceutil
@@ -30,8 +31,6 @@ from ..file_system_operations import (
     FileSystemPermissionEnum,
 )
 from ..windows.win_service import WorkerAgentWindowsService
-from ..windows.logon import load_user_profile, logon_user
-from ..windows.win_api import UnloadUserProfile
 
 
 # Defaults
@@ -173,7 +172,7 @@ def create_local_agent_user(username: str, password: str) -> None:
         "password": password,
         "priv": win32netcon.USER_PRIV_USER,  # User privilege level, Standard User
         "home_dir": None,
-        "comment": "Amazon Deadline Cloud Worker Agent User",
+        "comment": "AWS Deadline Cloud Worker Agent User",
         "flags": win32netcon.UF_DONT_EXPIRE_PASSWD,
         "script_path": None,
     }
@@ -191,8 +190,23 @@ def create_local_agent_user(username: str, password: str) -> None:
     logon_token = None
     user_profile = None
     try:
-        logon_token = logon_user(username=username, password=password)
-        user_profile = load_user_profile(user=username, logon_token=logon_token)
+        # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
+        logon_token = win32security.LogonUser(
+            Username=username,
+            LogonType=win32security.LOGON32_LOGON_NETWORK_CLEARTEXT,
+            LogonProvider=win32security.LOGON32_PROVIDER_DEFAULT,
+            Password=password,
+            Domain=None,
+        )
+        # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
+        user_profile = win32profile.LoadUserProfile(
+            logon_token,
+            {
+                "UserName": username,
+                "Flags": win32profile.PI_NOUI,
+                "ProfilePath": None,
+            },
+        )
     except Exception as e:
         logging.error(f"Failed to load user profile for '{username}': {e}")
         raise
@@ -201,12 +215,11 @@ def create_local_agent_user(username: str, password: str) -> None:
     finally:
         if user_profile is not None:
             assert logon_token is not None
-            assert user_profile.hProfile is not None
-            UnloadUserProfile(logon_token, user_profile.hProfile)
+            win32profile.UnloadUserProfile(logon_token, user_profile)
         if logon_token is not None:
             # Pass the handle directly as an int since logon_user returns a ctypes.HANDLE
             # and not a pywin32 PyHANDLE
-            win32api.CloseHandle(logon_token.value)
+            win32api.CloseHandle(logon_token)
 
 
 def grant_account_rights(account_name: str, rights: list[str]):
@@ -662,7 +675,6 @@ def start_windows_installer(
     farm_id: str,
     fleet_id: str,
     region: str,
-    worker_agent_program: Path,
     allow_shutdown: bool,
     parser: ArgumentParser,
     user_name: str = DEFAULT_WA_USER,
@@ -720,10 +732,9 @@ def start_windows_installer(
         f"Region: {region}\n"
         f"Worker agent user: {user_name}\n"
         f"Worker job group: {group_name}\n"
-        f"Worker agent program path: {str(worker_agent_program)}\n"
         f"Allow worker agent shutdown: {allow_shutdown}\n"
         f"Install Windows service: {install_service}\n"
-        f"Start service: {start_service}"
+        f"Start service: {start_service}\n"
         f"Telemetry opt-out: {telemetry_opt_out}"
     )
     print()
