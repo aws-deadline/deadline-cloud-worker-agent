@@ -11,5 +11,5 @@ types-python-dateutil ~= 2.9
 mypy ~= 1.8
 types-requests ~= 2.31
 ruff ~= 0.3.3
-twine ~= 4.0
+twine ~= 5.0
 types-psutil ~= 5.9
