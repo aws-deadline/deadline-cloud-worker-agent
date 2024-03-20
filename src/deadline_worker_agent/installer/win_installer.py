@@ -160,7 +160,6 @@ def create_local_agent_user(username: str, password: str) -> None:
     """
     Creates a local agent user account on Windows with a specified password and sets the account to never expire.
     The function sets the UF_DONT_EXPIRE_PASSWD flag to ensure the account's password never expires.
-    Also creates the user's profile by loading and unloading it.
 
     Args:
     username (str): The username of the new agent account.
@@ -198,7 +197,7 @@ def ensure_user_profile_exists(username: str, password: str):
     logon_token = None
     user_profile = None
     try:
-        # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
+        # https://timgolden.me.uk/pywin32-docs/win32security__LogonUser_meth.html
         logon_token = win32security.LogonUser(
             Username=username,
             LogonType=win32security.LOGON32_LOGON_NETWORK_CLEARTEXT,
@@ -692,8 +691,7 @@ def start_windows_installer(
     start_service: bool = False,
     confirm: bool = False,
     telemetry_opt_out: bool = False,
-    grant_existing_user_rights: bool = False,
-    allow_existing_user_admin: bool = False,
+    elevate_existing_user: bool = False,
 ):
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -789,11 +787,11 @@ def start_windows_installer(
 
     if is_user_in_group("Administrators", user_name):
         logging.info(f"Agent user '{user_name}' is already an administrator")
-    elif not agent_user_created and not allow_existing_user_admin:
+    elif not agent_user_created and not elevate_existing_user:
         logging.error(
             f"The Worker Agent user needs to run as an administrator, but the supplied user ({user_name}) exists "
             "and was not found to be in the Administrators group. Please provide an administrator user, specify a "
-            "new username to have one created, or provide the --allow-existing-user-admin option to allow the installer "
+            "new username to have one created, or provide the --elevate-existing-user option to allow the installer "
             "to make the existing user an administrator."
         )
         sys.exit(1)
@@ -808,10 +806,10 @@ def start_windows_installer(
     user_rights_to_grant -= agent_user_rights
 
     # Fail if an existing user was provided but there are rights to add and the user has not explicitly opted in
-    if user_rights_to_grant and not agent_user_created and not grant_existing_user_rights:
+    if user_rights_to_grant and not agent_user_created and not elevate_existing_user:
         logging.error(
             f"The existing worker agent user ({user_name}) is missing the following required user rights: {user_rights_to_grant}\n"
-            "Provide the --grant-existing-user-rights option to allow the installer to grant the missing rights to the user."
+            "Provide the --elevate-existing-user option to allow the installer to grant the missing rights to the user."
         )
         sys.exit(1)
 

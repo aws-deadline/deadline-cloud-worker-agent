@@ -50,8 +50,7 @@ def test_start_windows_installer(
                 password=parsed_args.password,
                 allow_shutdown=parsed_args.allow_shutdown,
                 telemetry_opt_out=parsed_args.telemetry_opt_out,
-                grant_existing_user_rights=parsed_args.grant_existing_user_rights,
-                allow_existing_user_admin=parsed_args.allow_existing_user_admin,
+                elevate_existing_user=parsed_args.elevate_existing_user,
             )
 
 

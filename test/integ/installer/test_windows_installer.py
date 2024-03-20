@@ -137,11 +137,20 @@ def test_create_local_queue_user_group():
         delete_group(group_name)
 
 
+def test_is_user_in_group(windows_user, windows_group):
+    # GIVEN
+    assert not is_user_in_group(
+        windows_group, windows_user
+    ), f"User '{windows_user}' is already in group '{windows_group}'"
+    win32net.NetLocalGroupAddMembers(None, windows_group, 3, [{"domainandname": windows_user}])
+
+    # WHEN/THEN
+    assert is_user_in_group(windows_group, windows_user)
+
+
 def test_add_user_to_group(windows_group, windows_user):
-    group_name = windows_group
-    user_name = windows_user
-    add_user_to_group(group_name, user_name)
-    assert is_user_in_group(group_name, user_name), "User was not added to group as expected."
+    add_user_to_group(windows_group, windows_user)
+    assert is_user_in_group(windows_group, windows_user), "User was not added to group as expected."
 
 
 @pytest.fixture

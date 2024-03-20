@@ -38,8 +38,7 @@ def install() -> None:
             confirm=args.confirmed,
             allow_shutdown=args.allow_shutdown,
             parser=arg_parser,
-            grant_existing_user_rights=args.grant_existing_user_rights,
-            allow_existing_user_admin=args.allow_existing_user_admin,
+            elevate_existing_user=args.elevate_existing_user,
         )
         if args.user:
             installer_args.update(user_name=args.user)
@@ -105,8 +104,7 @@ class ParsedCommandLineArguments(Namespace):
     install_service: bool
     telemetry_opt_out: bool
     vfs_install_path: str
-    grant_existing_user_rights: bool
-    allow_existing_user_admin: bool
+    elevate_existing_user: bool
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
@@ -195,15 +193,12 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
             default=None,
         )
         parser.add_argument(
-            "--grant-existing-user-rights",
-            help="Allows the installer to grant an existing user any missing user rights required to run the worker agent",
-            action="store_true",
-            required=False,
-            default=False,
-        )
-        parser.add_argument(
-            "--allow-existing-user-admin",
-            help="Allows the installer to add an existing user to the Administrators group which is required to run the worker agent",
+            "--elevate-existing-user",
+            help=(
+                "Allows the installer to modify an existing user so that it can successfully run the worker agent. This will allow "
+                "the installer to add the user to the Administrators group and grant any missing user rights which are required to "
+                "run the worker agent. This option has no effect if a new user is created by the installer."
+            ),
             action="store_true",
             required=False,
             default=False,
