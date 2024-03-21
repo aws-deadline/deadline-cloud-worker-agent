@@ -92,7 +92,7 @@ class WindowsCredentialsResolver:
                 break
             # Possible client error exceptions that could happen here are
             # Can be retried: InternalServiceError, ThrottlingException
-            # Can't be retired: ResourceNotFoundException, InvalidRequestException, DecryptionFailure
+            # Can't be retried: ResourceNotFoundException, InvalidRequestException, DecryptionFailure, AccessDeniedException
             except ClientError as e:
                 delay = backoff.delay_amount(RetryContext(retry))
                 code = e.response.get("Error", {}).get("Code", None)
@@ -101,7 +101,11 @@ class WindowsCredentialsResolver:
                         f"GetSecretValue received {code} ({str(e)}). Retrying in {delay} seconds..."
                     )
                 else:
-                    raise RuntimeError(e) from None
+                    if code in ["AccessDeniedException"]:
+                        logger.error(
+                            f"Access to secret was denied. Please ensure the resource policy for {secretArn} allows access to the fleet role, and the fleet role is correctly configured"
+                        )
+                    raise RuntimeError(e)
                 retry += 1
             except Exception as e:
                 # General catch-all for the unexpected, so that the agent can try to handle it gracefully.
@@ -198,9 +202,9 @@ class WindowsCredentialsResolver:
             # Fetch the secret from Secrets Manager
             try:
                 secret = self._fetch_secret_from_secrets_manager(passwordArn)
-            except Exception:
+            except Exception as e:
                 logger.error(
-                    f"Contents of secret {passwordArn} could not be fetched or were not valid"
+                    f"Contents of secret {passwordArn} could not be fetched or were not valid: {str(e)}"
                 )
             else:
                 password = secret.get("password")
