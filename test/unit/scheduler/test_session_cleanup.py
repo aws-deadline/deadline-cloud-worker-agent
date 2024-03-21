@@ -46,19 +46,18 @@ class TestSessionUserCleanupManager:
             return WindowsSessionUser(user="user", password="fakepassword")
 
     @pytest.fixture
-    def session(self, os_user: PosixSessionUser) -> MagicMock:
+    def session(self, os_user: SessionUser) -> MagicMock:
         session_stub = MagicMock()
         session_stub.os_user = os_user
         session_stub.id = "session-123"
         return session_stub
 
     class TestRegister:
-        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_registers_session(
             self,
             manager: SessionUserCleanupManager,
             session: MagicMock,
-            os_user: PosixSessionUser,
+            os_user: SessionUser,
             user_session_map_lock_mock: MagicMock,
         ):
             # WHEN
@@ -89,7 +88,6 @@ class TestSessionUserCleanupManager:
             user_session_map_lock_mock.__exit__.assert_not_called()
 
     class TestDeregister:
-        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_deregisters_session(
             self,
             manager: SessionUserCleanupManager,
@@ -110,7 +108,6 @@ class TestSessionUserCleanupManager:
             user_session_map_lock_mock.__enter__.assert_called_once()
             user_session_map_lock_mock.__exit__.assert_called_once()
 
-        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_deregister_skipped_no_user(
             self,
             manager: SessionUserCleanupManager,
@@ -139,7 +136,6 @@ class TestSessionUserCleanupManager:
             with patch.object(SessionUserCleanupManager, "cleanup_session_user_processes") as mock:
                 yield mock
 
-        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_calls_cleanup_session_user_processes(
             self,
             os_user: SessionUser,
@@ -152,7 +148,6 @@ class TestSessionUserCleanupManager:
             # THEN
             cleanup_session_user_processes_mock.assert_called_once_with(os_user)
 
-        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_skips_cleanup_when_configured_to(
             self,
             os_user: SessionUser,
@@ -177,7 +172,6 @@ class TestSessionUserCleanupManager:
             else:
                 return WindowsSessionUser(user="user", password="fakepassword")
 
-        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         @pytest.fixture(autouse=True)
         def subprocess_check_output_mock(
             self,
@@ -190,16 +184,15 @@ class TestSessionUserCleanupManager:
             ) as mock:
                 yield mock
 
-        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         @pytest.fixture(autouse=True)
         def subprocess_run_mock(self) -> Generator[MagicMock, None, None]:
             with patch.object(session_cleanup_mod.subprocess, "run") as mock:
                 yield mock
 
         @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
-        def test_cleans_up_processes(
+        def test_cleans_up_posix_processes(
             self,
-            os_user: PosixSessionUser,
+            os_user: SessionUser,
             subprocess_run_mock: MagicMock,
             caplog: pytest.LogCaptureFixture,
         ):
@@ -215,16 +208,99 @@ class TestSessionUserCleanupManager:
             assert (
                 f"Cleaning up remaining session user processes for '{os_user.user}'" in caplog.text
             )
-            subprocess_run_mock.assert_called_once_with(
-                args=["sudo", "-u", os_user.user, "/usr/bin/pkill", "-eU", os_user.user],
-                capture_output=True,
-                check=True,
-                text=True,
-            )
+            if os.name == "posix":
+                subprocess_run_mock.assert_called_once_with(
+                    args=["sudo", "-u", os_user.user, "/usr/bin/pkill", "-eU", os_user.user],
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                )
             assert "Stopped processes:\n" in caplog.text
 
+        @pytest.mark.skipif(os.name != "nt", reason="Windows-only test.")
+        def test_cleans_up_windows_processes(
+            self,
+            os_user: SessionUser,
+            caplog: pytest.LogCaptureFixture,
+        ):
+            # GIVEN
+            caplog.set_level(0)
+            pid = 123
+            bad_pid = 567
+            mock_process_iter = MagicMock()
+            mock_process_iter.return_value = [
+                MagicMock(
+                    info={"pid": pid, "name": "example.exe", "username": f"host\\{os_user.user}"}
+                ),
+                MagicMock(
+                    info={
+                        "pid": bad_pid,
+                        "name": "another_example.exe",
+                        "username": "host\\another_user",
+                    }
+                ),
+            ]
+            mock_open_process = MagicMock()
+            mock_terminate_process = MagicMock()
+            mock_close_handle = MagicMock()
+
+            with (
+                patch("psutil.process_iter", mock_process_iter),
+                patch("win32api.OpenProcess", mock_open_process),
+                patch("win32api.TerminateProcess", mock_terminate_process),
+                patch("win32api.CloseHandle", mock_close_handle),
+            ):
+                # WHEN
+                SessionUserCleanupManager.cleanup_session_user_processes(os_user)
+
+            # THEN
+            assert (
+                f"Cleaning up remaining session user processes for '{os_user.user}'" in caplog.text
+            )
+            assert f"Stopped process PID: {pid}" in caplog.text
+            assert f"Stopped process PID: {bad_pid}" not in caplog.text
+            mock_terminate_process.assert_called_once()
+
+        @pytest.mark.skipif(os.name != "nt", reason="Windows-only test.")
+        def test_no_windows_processes_to_clean_up(
+            self,
+            os_user: SessionUser,
+            caplog: pytest.LogCaptureFixture,
+        ):
+            # GIVEN
+            caplog.set_level(0)
+            mock_process_iter = MagicMock()
+            mock_process_iter.return_value = [
+                MagicMock(
+                    info={
+                        "pid": 123,
+                        "name": "example.exe",
+                        "username": "host\\another_user",
+                    }
+                ),
+            ]
+            mock_open_process = MagicMock()
+            mock_terminate_process = MagicMock()
+            mock_close_handle = MagicMock()
+
+            with (
+                patch("psutil.process_iter", mock_process_iter),
+                patch("win32api.OpenProcess", mock_open_process),
+                patch("win32api.TerminateProcess", mock_terminate_process),
+                patch("win32api.CloseHandle", mock_close_handle),
+            ):
+                # WHEN
+                SessionUserCleanupManager.cleanup_session_user_processes(os_user)
+
+            # THEN
+            assert (
+                f"No processes stopped because none were found running as '{os_user.user}'"
+                in caplog.text
+            )
+            mock_terminate_process.assert_not_called()
+
         @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
-        def test_no_processes_to_clean_up(
+        def test_no_posix_processes_to_clean_up(
             self,
             os_user: PosixSessionUser,
             subprocess_run_mock: MagicMock,
@@ -245,7 +321,7 @@ class TestSessionUserCleanupManager:
             )
 
         @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
-        def test_fails_to_clean_up_processes(
+        def test_fails_to_clean_up_posix_processes(
             self,
             os_user: PosixSessionUser,
             subprocess_run_mock: MagicMock,
@@ -265,11 +341,9 @@ class TestSessionUserCleanupManager:
             assert f"Failed to stop processes running as '{os_user.user}': {err}" in caplog.text
             assert raised_err.value is err
 
-        @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
         def test_skips_if_session_user_is_agent_user(
             self,
             subprocess_run_mock: MagicMock,
-            subprocess_check_output_mock: MagicMock,
             agent_user: PosixSessionUser,
             caplog: pytest.LogCaptureFixture,
         ):
@@ -277,10 +351,13 @@ class TestSessionUserCleanupManager:
             caplog.set_level(0)
 
             # WHEN
-            SessionUserCleanupManager.cleanup_session_user_processes(agent_user)
+            with patch(
+                "getpass.getuser",
+                return_value=agent_user.user,  # type: ignore
+            ):
+                SessionUserCleanupManager.cleanup_session_user_processes(agent_user)
 
             # THEN
-            subprocess_check_output_mock.assert_called_once_with(["/usr/bin/whoami"], text=True)
             subprocess_run_mock.assert_not_called()
             assert (
                 f"Skipping cleaning up processes because the session user matches the agent user '{agent_user.user}'"
