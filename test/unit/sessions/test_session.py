@@ -1930,6 +1930,7 @@ class TestSessionCleanup:
         mock_asset_sync_cleanup.assert_called_once_with(
             session_dir=mock_openjd_session.working_directory,
             file_system=job_attachment_details.job_attachments_file_system,
+            os_user="some-user",
         )
 
 
