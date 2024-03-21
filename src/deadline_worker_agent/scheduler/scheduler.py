@@ -618,8 +618,8 @@ class WorkerScheduler:
                 action["sessionActionId"]: SessionActionStatus(
                     id=action["sessionActionId"],
                     completed_status="FAILED" if action is actions[0] else "NEVER_ATTEMPTED",
-                    start_time=now,
-                    end_time=now,
+                    start_time=now if action is actions[0] else None,
+                    end_time=now if action is actions[0] else None,
                     status=ActionStatus(
                         state=ActionState.FAILED,
                         fail_message=str(error_message),
