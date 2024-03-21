@@ -21,17 +21,17 @@ The steps to take are:
     * Response: Success(200) -> Persist the worker id, and continue.
     * Response: ThrottlingException(429), InternalServerErrorException(500) -> Perform exponential backoff,
     and then retry indefinitely.
-    * Response: AccessDeniedException(403), ValidationException(400), ResourceNotFoundException(404) -> Abort.
+    * Response: AccessDeniedException(403), ValidationException(400), ResourceNotFoundException(404) -> Stop.
     Exit the application.
     * Response: ConflictException(409):
-        * `reason` is `RESOURCE_ALREADY_EXISTS` -> Abort. Exit the application. This happens when a set
+        * `reason` is `RESOURCE_ALREADY_EXISTS` -> Stop. Exit the application. This happens when a set
         of EC2 instance credentials has already created a Worker and that Worker has not been deleted; only 1 worker
         is allowed for each set of EC2 instance credentials as a security control to prevent privilege escalation.
         * `reason` is `STATUS_CONFLICT`, `resourceId` is the Worker's Fleet ID, and `context["status"]` is
         `CREATE_IN_PROGRESS` -> Perform exponential backoff, and then retry.
         * `reason` is `STATUS_CONFLICT`, `resourceId` is the Worker's Fleet ID, and `context["status"]` is
-        not `CREATE_IN_PROGRESS` -> Abort. Exit the application. The Fleet for this Worker cannot be joined.
-        * Otherwise -> Abort. Exit the application.
+        not `CREATE_IN_PROGRESS` -> Stop. Exit the application. The Fleet for this Worker cannot be joined.
+        * Otherwise -> Stop. Exit the application.
 2. Invoke the `AssumeFleetRoleForWorker` API with (farmId, fleetId, workerId)
     * Use the AWS Credentials that the Worker Agent was started with access to. i.e. The default credentials
     provider chain available in the AWS SDK.
@@ -41,9 +41,9 @@ The steps to take are:
     point forward**.
     * Response: ThrottlingException(429), InternalServerErrorException(500)  -> Perform exponential backoff,
     and then retry indefinitely.
-    * Response: ResourceNotFoundException(404) -> Abort. The Worker has been deleted. Either
+    * Response: ResourceNotFoundException(404) -> Stop. The Worker has been deleted. Either
     exit the application, or purge the worker id and go back to step 1 of the startup workflow.
-    * Response: AccessDenied(403), ValidationException(400) -> Abort. Exit the application.
+    * Response: AccessDenied(403), ValidationException(400) -> Stop. Exit the application.
 3. Invoke the `UpdateWorker` API with (farmId, fleetId, workerId, status=STARTED)
     * This informs the service that the Worker is now STARTED and will be available for
       doing work.
@@ -56,12 +56,12 @@ The steps to take are:
             current status. Invoke `UpdateWorker` API with (farmId, fleetId, workerId, status=STOPPED)
             successfully, and then retry this call.
         * `reason` is `CONCURRENT_MODIFICATION` -> Perform exponential backoff, and then retry.
-        * Otherwise -> Abort. Exit the application.
-    * Response: ResourceNotFoundException(404) -> Abort. The Worker has been deleted. Either
+        * Otherwise -> Stop. Exit the application.
+    * Response: ResourceNotFoundException(404) -> Stop. The Worker has been deleted. Either
     exit the application, or purge the worker id and go back to step 1 of the startup workflow.
-    * Response: AccessDeniedException(403) -> Abort. Exit the application. The IAM Role on the Fleet lacks the
+    * Response: AccessDeniedException(403) -> Stop. Exit the application. The IAM Role on the Fleet lacks the
     required permissions.
-    * Response: ValidationException(400) -> Abort. Exit the application.
+    * Response: ValidationException(400) -> Stop. Exit the application.
 4. Continue to the [Main Control Loop](#main-control-loop).
 
 ## Main Control Loop
@@ -143,13 +143,13 @@ Workflow before proceeding.
         in the STARTED status; this is likely due to failing to successfully call this API for an
         extended period of time.
         * `reason` is `CONCURRENT_MODIFICATION` -> Perform exponential backoff, and then retry.
-        * Any other -> Unrecoverable error. Abort. Exit the application.
-    * Response: AccessDeniedException(403) -> Abort. Exit the application. The IAM Role on the
+        * Any other -> Unrecoverable error. Stop. Exit the application.
+    * Response: AccessDeniedException(403) -> Stop. Exit the application. The IAM Role on the
     Fleet lacks the required permissions.
-    * Response: ResourceNotFoundException(404) -> Abort; the Worker has been deleted from the service.
+    * Response: ResourceNotFoundException(404) -> Stop; the Worker has been deleted from the service.
     If a service would restart the application, then exit. Alternatively, go back to the
     [Worker Agent Startup](#worker-agent-startup-workflow) Workflow.
-    * Response: ValidationException(400) -> Abort. Exit the application. The request was
+    * Response: ValidationException(400) -> Stop. Exit the application. The request was
     malformed, so the Worker Agent has a bug.
 
 Note: We recommend that the Worker Agent watch for SIGTERM or EC2 Spot Interruption, and transition to a
@@ -177,13 +177,13 @@ To request fresh credentials:
     * Response: ThrottlingException(429), InternalServerErrorException(500) -> Perform exponential backoff,
     and then retry indefinitely.
     * Response: ConflictException(409)
-        * `reason` is `STATUS_CONFLICT` and the `resourceId` is of the Fleet -> The Fleet is not ACTIVE. Abort,
+        * `reason` is `STATUS_CONFLICT` and the `resourceId` is of the Fleet -> The Fleet is not ACTIVE. Stop,
         and exit the application.
         * `reason` is `STATUS_CONFLICT` and the `resourceId` is of the Worker -> The request is likely being made
         with AWS Credentials from an EC2 instance profile while the Worker is online. This is not allowed as it
         can lead to a privilege escalation by the running Job. Retry the request with AWS Credentials previously
         obtained from this API.
-    * Response: AccessDeniedException(403), ValidationException(400), ResourceNotFoundException(404) -> Abort.
+    * Response: AccessDeniedException(403), ValidationException(400), ResourceNotFoundException(404) -> Stop.
     Exit the application.
 
 ## Running a Session
@@ -467,7 +467,7 @@ been met for that deletion then call the `DeleteWorker` API with (farmId, fleetI
     * Response: ConflictException(409):
         * `reason` is `STATUS_CONFLICT` and `resourceId` is of the Worker -> This only happens if the Worker does not
         have `CREATED` or `STOPPED` status. Update the Worker to `STOPPED` status, and try to delete again.
-        * Otherwise -> Abort. Exit the application.
+        * Otherwise -> Stop. Exit the application.
     * Response: ResourceNotFoundException(404), ValidationException(400), AccessDeniedException(403) -> Ignore; just continue.
 6. Exit the application as desired.
 
@@ -557,6 +557,6 @@ In the case of a Worker-initiated shutdown (e.g. SIGTERM, EC2 Spot Interruption,
     * Response: ConflictException(409)
         * `reason` is `CONCURRENT_MODIFICATION` -> Perform exponential backoff, and then retry.
         * Otherwise -> Ignore and continue.
-    * Response: ResourceNotFoundException(404) -> Abort. Exit the application, the worker has been deleted.
-    * Response: AccessDeniedException(403), ValidationException(400) -> Abort. Exit the application.
+    * Response: ResourceNotFoundException(404) -> Stop. Exit the application, the worker has been deleted.
+    * Response: AccessDeniedException(403), ValidationException(400) -> Stop. Exit the application.
 
