@@ -14,18 +14,22 @@ try:
 except ImportError:
     pytest.skip("win32api not available", allow_module_level=True)
 import win32net
+import win32security
 
 import deadline.client.config.config_file
-import deadline_worker_agent.installer.win_installer as installer_mod
+from deadline_worker_agent.installer import win_installer
 from deadline_worker_agent.installer.win_installer import (
     add_user_to_group,
-    check_user_existence,
+    check_account_existence,
     update_config_file,
-    ensure_local_agent_user,
-    ensure_local_queue_user_group_exists,
+    create_local_agent_user,
+    create_local_queue_user_group,
     generate_password,
+    get_effective_user_rights,
+    grant_account_rights,
     provision_directories,
     update_deadline_client_config,
+    is_user_in_group,
     WorkerAgentDirectories,
 )
 
@@ -35,12 +39,12 @@ if sys.platform != "win32":
 
 def test_user_existence():
     current_user = win32api.GetUserNameEx(win32api.NameSamCompatible)
-    result = check_user_existence(current_user)
+    result = check_account_existence(current_user)
     assert result
 
 
 def test_user_existence_with_without_existing_user():
-    result = check_user_existence("ImpossibleUser")
+    result = check_account_existence("ImpossibleUser")
     assert not result
 
 
@@ -63,79 +67,90 @@ def check_admin_privilege_and_skip_test():
     if env_var_value.lower() != "true":
         pytest.skip(
             "Skipping all tests required Admin permission because RUN_AS_ADMIN is not set or false",
-            allow_module_level=True,
         )
 
 
 @pytest.fixture
-def user_setup_and_teardown():
+def windows_user_password():
+    return generate_password()
+
+
+@pytest.fixture
+def windows_user(windows_user_password):
     """
     Pytest fixture to create a user before the test and ensure it is deleted after the test.
     """
     check_admin_privilege_and_skip_test()
     username = "InstallerTestUser"
-    ensure_local_agent_user(username, generate_password())
+    create_local_agent_user(username, windows_user_password)
     yield username
     delete_local_user(username)
 
 
-def test_ensure_local_agent_user(user_setup_and_teardown):
+def test_create_local_agent_user(windows_user):
     """
     Tests the creation of a local user and validates it exists.
     """
-    assert check_user_existence(user_setup_and_teardown)
+    assert check_account_existence(windows_user)
 
 
-def group_exists(group_name: str) -> bool:
-    """
-    Check if a local group exists.
-    """
-    try:
-        win32net.NetLocalGroupGetInfo(None, group_name, 1)
-        return True
-    except win32net.error:
-        return False
+def test_ensure_user_profile_exists(windows_user, windows_user_password):
+    # WHEN
+    win_installer.ensure_user_profile_exists(windows_user, windows_user_password)
+
+    # THEN
+    # Verify user profile was created by checking that the home directory exists
+    assert pathlib.Path(f"~{windows_user}").expanduser().exists()
 
 
 def delete_group(group_name: str) -> None:
     """
     Delete a local group if it exists.
     """
-    if group_exists(group_name):
+    if check_account_existence(group_name):
         win32net.NetLocalGroupDel(None, group_name)
 
 
-def is_user_in_group(group_name, username):
-    group_members_info = win32net.NetLocalGroupGetMembers(None, group_name, 1)
-    group_members = [member["name"] for member in group_members_info[0]]
-    return username in group_members
-
-
 @pytest.fixture
-def setup_and_teardown_group():
+def windows_group():
     check_admin_privilege_and_skip_test()
     group_name = "user_group_for_agent_testing_only"
-    # Ensure the group does not exist before the test
-    delete_group(group_name)
+    win32net.NetLocalGroupAdd(None, 1, {"name": group_name})
     yield group_name  # This value will be used in the test function
     # Cleanup after test execution
     delete_group(group_name)
 
 
-def test_ensure_local_group_exists(setup_and_teardown_group):
-    group_name = setup_and_teardown_group
+def test_create_local_queue_user_group():
+    group_name = "test_create_local_queue_user_group"
     # Ensure the group does not exist initially
-    assert not group_exists(group_name), "Group already exists before test."
-    ensure_local_queue_user_group_exists(group_name)
-    assert group_exists(group_name), "Group was not created as expected."
+    assert not check_account_existence(
+        group_name
+    ), f"Group '{group_name}' already exists before test."
+
+    try:
+        create_local_queue_user_group(group_name)
+        assert check_account_existence(
+            group_name
+        ), f"Group '{group_name}' was not created as expected."
+    finally:
+        delete_group(group_name)
 
 
-def test_add_user_to_group(setup_and_teardown_group, user_setup_and_teardown):
-    group_name = setup_and_teardown_group
-    ensure_local_queue_user_group_exists(group_name)
-    user_name = user_setup_and_teardown
-    add_user_to_group(group_name, user_name)
-    assert is_user_in_group(group_name, user_name), "User was not added to group as expected."
+def test_is_user_in_group(windows_user, windows_group):
+    # GIVEN
+    assert not is_user_in_group(
+        windows_group, windows_user
+    ), f"User '{windows_user}' is already in group '{windows_group}'"
+    win32net.NetLocalGroupAddMembers(None, windows_group, 3, [{"domainandname": windows_user}])
+
+    # WHEN/THEN
+    assert is_user_in_group(windows_group, windows_user)
+
+
+def test_add_user_to_group(windows_group, windows_user):
+    add_user_to_group(windows_group, windows_user)
+    assert is_user_in_group(windows_group, windows_user), "User was not added to group as expected."
 
 
 @pytest.fixture
@@ -197,7 +212,7 @@ def test_update_config_file_creates_backup(setup_example_config):
 
 
 def test_provision_directories(
-    user_setup_and_teardown: str,
+    windows_user: str,
     tmp_path: pathlib.Path,
 ):
     # GIVEN
@@ -223,8 +238,8 @@ def test_provision_directories(
     ), f"Cannot test provision_directories because {expected_dirs.deadline_config_subdir} already exists"
 
     # WHEN
-    with patch.dict(installer_mod.os.environ, {"PROGRAMDATA": str(root_dir)}):
-        actual_dirs = provision_directories(user_setup_and_teardown)
+    with patch.dict(win_installer.os.environ, {"PROGRAMDATA": str(root_dir)}):
+        actual_dirs = provision_directories(windows_user)
 
     # THEN
     assert actual_dirs == expected_dirs
@@ -251,3 +266,77 @@ def test_update_deadline_client_config(tmp_path: pathlib.Path) -> None:
 
         # THEN
         assert deadline.client.config.config_file.get_setting("telemetry.opt_out") == "true"
+
+
+def test_grant_account_rights(windows_user: str):
+    # GIVEN
+    rights = ["SeCreateSymbolicLinkPrivilege"]
+
+    # WHEN
+    grant_account_rights(windows_user, rights)
+
+    # THEN
+    user_sid, _, _ = win32security.LookupAccountName(None, windows_user)
+    policy_handle = win32security.LsaOpenPolicy(None, win32security.POLICY_ALL_ACCESS)
+    try:
+        actual_rights = win32security.LsaEnumerateAccountRights(policy_handle, user_sid)
+    finally:
+        if policy_handle is not None:
+            win32api.CloseHandle(policy_handle)
+
+    assert set(rights).issubset(set(actual_rights))
+
+
+def test_get_effective_user_rights(
+    windows_user: str,
+    windows_group: str,
+) -> None:
+    try:
+        # GIVEN
+        add_user_to_group(
+            group_name=windows_group,
+            user_name=windows_user,
+        )
+        grant_account_rights(
+            account_name=windows_user,
+            rights=[win32security.SE_BACKUP_NAME],
+        )
+        grant_account_rights(
+            account_name=windows_group,
+            rights=[win32security.SE_RESTORE_NAME],
+        )
+
+        # WHEN
+        effective_rights = get_effective_user_rights(windows_user)
+
+        # THEN
+        assert effective_rights == set(
+            [
+                win32security.SE_BACKUP_NAME,
+                win32security.SE_RESTORE_NAME,
+            ]
+        )
+    finally:
+        # Clean up the added rights since they stick around in Local Security Policy
+        # even after the user and group have been deleted
+        policy_handle = win32security.LsaOpenPolicy(None, win32security.POLICY_ALL_ACCESS)
+        try:
+            # Remove backup right from user
+            user_sid, _, _ = win32security.LookupAccountName(None, windows_user)
+            win32security.LsaRemoveAccountRights(
+                policy_handle,
+                user_sid,
+                AllRights=False,
+                UserRights=[win32security.SE_BACKUP_NAME],
+            )
+
+            # Remove restore right from group
+            group_sid, _, _ = win32security.LookupAccountName(None, windows_group)
+            win32security.LsaRemoveAccountRights(
+                policy_handle,
+                group_sid,
+                AllRights=False,
+                UserRights=[win32security.SE_RESTORE_NAME],
+            )
+        finally:
+            win32api.CloseHandle(policy_handle)
