@@ -24,6 +24,7 @@ from deadline_worker_agent.scheduler.scheduler import (
     UPDATE_WORKER_SCHEDULE_MAX_MESSAGE_CHARS,
 )
 from deadline_worker_agent.scheduler.session_action_status import SessionActionStatus
+from deadline_worker_agent.sessions.job_entities.job_details import JobDetails, JobRunAsUser
 from deadline_worker_agent.startup.config import JobsRunAsUserOverride
 from deadline_worker_agent.errors import ServiceShutdown
 import deadline_worker_agent.scheduler.scheduler as scheduler_mod
@@ -34,6 +35,7 @@ from deadline_worker_agent.aws.deadline import (
     DeadlineRequestInterrupted,
 )
 from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
+from openjd.model import SpecificationRevision
 
 
 @pytest.fixture
@@ -787,6 +789,79 @@ class TestCreateNewSessions:
             assert action_update.status is not None
             assert action_update.status.state == ActionState.FAILED
             assert action_update.status.fail_message == str(job_details_error)
+            assert action_update.start_time == datetime_now_mock.return_value
+            assert action_update.end_time == datetime_now_mock.return_value
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-only test.")
+    def test_job_details_run_as_worker_agent_user_windows(
+        self,
+        scheduler: WorkerScheduler,
+    ) -> None:
+        """Tests that when a session encounters a runAs: WORKER_AGENT_USER for Windows os,
+        the first assigned action is marked as FAILED, the rest are marked as NEVER_ATTEPTED,
+        and the scheduler's wakeup event is set so that it makes an
+        immediate follow-up UpdateWorkerSchedule request to signal the failure.
+        """
+        # GIVEN
+        queue_id = "queue-abcdef0123456789abcdef0123456789"
+        session_id = "session-abcdef0123456789abcdef0123456789"
+        assigned_sessions: dict[str, AssignedSession] = {
+            session_id: AssignedSession(
+                queueId=queue_id,
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs",
+                    options={},
+                    parameters={"interval": "15"},
+                ),
+                sessionActions=[
+                    EnvironmentAction(
+                        actionType="ENV_ENTER",
+                        environmentId="env-1",
+                        sessionActionId="action-1",
+                    ),
+                    TaskRunAction(
+                        actionType="TASK_RUN",
+                        parameters={},
+                        sessionActionId="action-2",
+                        stepId="step-1",
+                        taskId="task-1",
+                    ),
+                ],
+            ),
+        }
+        expected_err_msg = "Job cannot run as WORKER_AGENT_USER as it has administrator privileges."
+
+        job_entity_mock = MagicMock()
+        job_entity_mock.job_details.return_value = JobDetails(
+            log_group_name="/aws/deadline/queue-0000",
+            schema_version=SpecificationRevision.v2023_09,
+            job_run_as_user=JobRunAsUser(is_worker_agent_user=True),
+        )
+
+        with (
+            patch.object(scheduler_mod, "datetime") as datetime_mock,
+            patch.object(scheduler_mod, "JobEntities") as job_entities_mock,
+        ):
+            job_entities_mock.return_value = job_entity_mock
+            datetime_now_mock: MagicMock = datetime_mock.now
+
+            # WHEN
+            scheduler._create_new_sessions(assigned_sessions=assigned_sessions)
+
+        # THEN
+        for action_num in (1, 2):
+            action_id = f"action-{action_num}"
+            assert (
+                action_update := scheduler._action_updates_map.get(action_id, None)
+            ), f"no action update for {action_id}"
+            assert action_update.id == action_id
+            assert action_update.completed_status == (
+                "FAILED" if action_num == 1 else "NEVER_ATTEMPTED"
+            )
+            assert action_update.status is not None
+            assert action_update.status.state == ActionState.FAILED
+            assert action_update.status.fail_message == expected_err_msg
             assert action_update.start_time == datetime_now_mock.return_value
             assert action_update.end_time == datetime_now_mock.return_value
 

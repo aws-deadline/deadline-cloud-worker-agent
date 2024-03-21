@@ -93,7 +93,8 @@ def job_run_as_user_api_model_to_worker_agent(
     expected by the Worker Agent.
     """
     if "runAs" in job_run_as_user_data and job_run_as_user_data["runAs"] == "WORKER_AGENT_USER":
-        return None
+        job_run_as_user = JobRunAsUser(is_worker_agent_user=True)
+        return job_run_as_user
 
     if os.name == "posix":
         user = ""
@@ -154,6 +155,7 @@ class JobRunAsUser:
     posix: PosixSessionUser | None = None
     windows: WindowsSessionUser | None = None
     windows_settings: JobRunAsWindowsUser | None = None
+    is_worker_agent_user: bool = False
 
     def __eq__(self, other: Any) -> bool:
         if other is None:
