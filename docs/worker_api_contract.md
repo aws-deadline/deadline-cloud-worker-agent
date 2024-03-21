@@ -348,7 +348,8 @@ attempt to run.
 
 If the Worker Agent reports these Session Action as `FAILED`, `INTERRUPTED`, or `CANCELED` then the Worker Agent
 must report all queued Session Actions after it in the Session as `NEVER_ATTEMPTED`; except for
-`envExit` actions that correspond to already completed `envEnter` Session Actions. The service
+`envExit` actions that correspond to already completed `envEnter` Session Actions. Session Actions that are 
+reported as `NEVER_ATTEMPTED` must not report `startedAt` or `endedAt` times. The service
 must not queue additional Session Actions to the Session except for `envExit` Session Actions that
 correspond to already completed `envEnter` Session Actions for the same Session.
 
