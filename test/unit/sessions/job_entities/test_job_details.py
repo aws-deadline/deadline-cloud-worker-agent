@@ -49,6 +49,15 @@ def job_details_no_user() -> JobDetails:
     )
 
 
+@pytest.fixture
+def job_details_only_run_as_worker_agent_user() -> JobDetails:
+    return JobDetails(
+        log_group_name="/aws/deadline/queue-0000",
+        schema_version=SpecificationRevision.v2023_09,
+        job_run_as_user=JobRunAsUser(is_worker_agent_user=True),
+    )
+
+
 @pytest.mark.parametrize(
     "data",
     [
@@ -413,7 +422,7 @@ def test_input_validation_success(data: dict[str, Any]) -> None:
                     "runAs": "WORKER_AGENT_USER",
                 },
             },
-            "job_details_no_user",
+            "job_details_only_run_as_worker_agent_user",
             id="required with runAs WORKER_AGENT_USER",
         ),
     ],

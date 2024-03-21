@@ -708,6 +708,22 @@ class WorkerScheduler:
             # Requires some updates to the code below
             try:
                 job_details = job_entities.job_details()
+
+                # For Windows the WA runs as Administrator so fail jobs that were configured to runAs - WORKER_AGENT_USER as that would provide Admin privileges to the job
+                if (
+                    os.name == "nt"
+                    and job_details.job_run_as_user
+                    and job_details.job_run_as_user.is_worker_agent_user
+                ):
+                    err_msg = (
+                        "Job cannot run as WORKER_AGENT_USER as it has administrator privileges."
+                    )
+                    self._fail_all_actions(session_spec, err_msg)
+                    logger.warning("[%s] %s", new_session_id, err_msg)
+                    # Force an immediate UpdateWorkerSchedule request
+                    self._wakeup.set()
+                    continue
+
             except (ValueError, RuntimeError) as error:
                 # Can't even start a session right now if we don't
                 # get valid job_details, so let's fail the actions
