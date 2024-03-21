@@ -21,7 +21,7 @@ from openjd.sessions import WindowsSessionUser, BadCredentialsException
 from pywintypes import HANDLE as PyHANDLE
 from win32security import (
     LogonUser,
-    LOGON32_LOGON_NETWORK_CLEARTEXT,
+    LOGON32_LOGON_INTERACTIVE,
     LOGON32_PROVIDER_DEFAULT,
 )
 from win32profile import LoadUserProfile, PI_NOUI, UnloadUserProfile
@@ -214,7 +214,7 @@ class WindowsCredentialsResolver:
                             # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
                             logon_token = LogonUser(
                                 Username=user,
-                                LogonType=LOGON32_LOGON_NETWORK_CLEARTEXT,
+                                LogonType=LOGON32_LOGON_INTERACTIVE,
                                 LogonProvider=LOGON32_PROVIDER_DEFAULT,
                                 Password=password,
                                 Domain=None,

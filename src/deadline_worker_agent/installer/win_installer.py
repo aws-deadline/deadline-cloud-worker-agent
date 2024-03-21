@@ -200,7 +200,7 @@ def ensure_user_profile_exists(username: str, password: str):
         # https://timgolden.me.uk/pywin32-docs/win32security__LogonUser_meth.html
         logon_token = win32security.LogonUser(
             Username=username,
-            LogonType=win32security.LOGON32_LOGON_NETWORK_CLEARTEXT,
+            LogonType=win32security.LOGON32_LOGON_INTERACTIVE,
             LogonProvider=win32security.LOGON32_PROVIDER_DEFAULT,
             Password=password,
             Domain=None,
