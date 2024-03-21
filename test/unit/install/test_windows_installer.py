@@ -305,16 +305,18 @@ class TestEnsureUserProfileExists:
 @patch("deadline_worker_agent.installer.win_installer.secrets.choice")
 def test_generate_password(mock_choice):
     # Given
-    password_length = 27
+    password_length = 32
     characters = string.ascii_letters[:password_length]
     mock_choice.side_effect = characters
 
     # When
-    password = win_installer.generate_password(password_length)
+    password = win_installer.generate_password()
 
     # Then
+    assert win_installer.DEFAULT_PASSWORD_LENGTH == password_length
     expected_password = "".join(characters)
     assert password == expected_password
+    assert len(password) == password_length
 
 
 def test_validate_deadline_id():
