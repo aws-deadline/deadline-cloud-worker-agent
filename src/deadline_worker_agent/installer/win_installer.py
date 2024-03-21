@@ -56,7 +56,7 @@ class WorkerAgentDirectories:
     deadline_config_subdir: Path
 
 
-def generate_password(length: int = DEFAULT_PASSWORD_LENGTH) -> str:
+def generate_password() -> str:
     """
     Generate password of given length.
 
@@ -66,7 +66,7 @@ def generate_password(length: int = DEFAULT_PASSWORD_LENGTH) -> str:
     alphabet = string.ascii_letters + string.digits + string.punctuation
     # Use secrets.choice to ensure a secure random selection of characters
     # https://docs.python.org/3/library/secrets.html#recipes-and-best-practices
-    password = "".join(secrets.choice(alphabet) for _ in range(length))
+    password = "".join(secrets.choice(alphabet) for _ in range(DEFAULT_PASSWORD_LENGTH))
     return password
 
 
