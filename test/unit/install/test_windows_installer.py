@@ -238,7 +238,7 @@ class TestEnsureUserProfileExists:
         # THEN
         mock_LogonUser.assert_called_once_with(
             Username=username,
-            LogonType=win32security.LOGON32_LOGON_NETWORK_CLEARTEXT,
+            LogonType=win32security.LOGON32_LOGON_INTERACTIVE,
             LogonProvider=win32security.LOGON32_PROVIDER_DEFAULT,
             Password=password,
             Domain=None,
