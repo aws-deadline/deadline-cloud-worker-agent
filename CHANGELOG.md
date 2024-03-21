@@ -1,6 +1,21 @@
+## 0.23.0 (2024-03-21)
+
+### BREAKING CHANGES
+* Fail jobs configured to run as worker agent on Windows (#230) ([`7ce01a8`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/7ce01a8731005178a6da964c24870b3fc9d57f03))
+
+### Features
+* agent logs contain more verbose API request/response information (#215) ([`6e8e566`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/6e8e566dadfd39c77737ac5243276256f87d492c))
+* session cleanup on windows (#212) ([`93f4305`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/93f43053ccd498fd913b31b8aa96c4d43fae7157))
+* **windows-installer**: grant and validate agent user permissions (#206) ([`0d8e3de`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/0d8e3de5ee4ccdadffbbc365c2e822ff62efc0fd))
+* Add telemetry event for uncaught exceptions (#203) ([`9a17a07`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/9a17a0786fe47b1e0ad0d69ee55c0746823a95a5))
+
+### Bug Fixes
+* NEVER_ATTEMPTED session actions should not report startedAt or endedAt (#237) ([`99fd7d3`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/99fd7d385dedc25c22aeaecee7247bef3e682fa0))
+* improve logging when getting secret (#184) ([`d3e2e0c`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/d3e2e0c863efd2af8b1eeb0a6f3173b7c6b6a23d))
+* increasing default password length for windows users (#236) ([`c411c85`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/c411c851395fa6a46a174d9709b3b907dd9796f1))
+* change windows logon type from NETWORK to INTERACTIVE (#234) ([`82a5c11`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/82a5c11195102e3334961b4420915feccfc849b0))
+
 ## 0.22.1 (2024-03-19)
-
-
 
 ### Bug Fixes
 * change OpenJD&#39;s session root directory to /sessions (#222) ([`3b68342`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/3b68342bc12307e63f84214b310ed616437c1c8e))
