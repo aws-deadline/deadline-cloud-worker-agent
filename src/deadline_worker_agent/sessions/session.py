@@ -91,6 +91,7 @@ OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
 }
 DEFAULT_POSIX_OPENJD_SESSION_DIR = Path("/var/tmp/openjd")
 TIME_DELTA_ZERO = timedelta()
+DEFAULT_SHUTDOWN_USER = "job-user"
 
 # During a SYNC_INPUT_JOB_ATTACHMENTS session action, the transfer rate is periodically reported through
 # a callback function. If a transfer rate lower than LOW_TRANSFER_RATE_THRESHOLD is observed in a series
@@ -401,9 +402,11 @@ class Session:
         finally:
             if self._asset_sync is not None and self._job_attachment_details is not None:
                 # terminate any running virtual file systems
+                shutdown_user = self._os_user.user if self._os_user else DEFAULT_SHUTDOWN_USER
                 self._asset_sync.cleanup_session(
                     session_dir=self._session.working_directory,
                     file_system=self._job_attachment_details.job_attachments_file_system,
+                    os_user=shutdown_user,
                 )
             # Clean-up the Open Job Description session
             self._session.cleanup()
