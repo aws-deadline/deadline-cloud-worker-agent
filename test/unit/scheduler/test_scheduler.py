@@ -704,17 +704,21 @@ class TestCreateNewSessions:
                 action_update := scheduler._action_updates_map.get(action_id, None)
             ), f"no action update for {action_id}"
             assert action_update.id == action_id
-            assert action_update.completed_status == (
-                "FAILED" if action_num == 1 else "NEVER_ATTEMPTED"
-            )
             assert action_update.status is not None
             assert action_update.status.state == ActionState.FAILED
             assert (
                 action_update.status.fail_message
                 == f"Log provisioning error: {log_provision_error_msg}"
             )
-            assert action_update.start_time == datetime_now_mock.return_value
-            assert action_update.end_time == datetime_now_mock.return_value
+            if action_num == 1:
+                assert action_update.completed_status == "FAILED"
+
+                assert action_update.start_time == datetime_now_mock.return_value
+                assert action_update.end_time == datetime_now_mock.return_value
+            else:
+                assert action_update.completed_status == "NEVER_ATTEMPTED"
+                assert action_update.start_time is None
+                assert action_update.end_time is None
 
     @pytest.mark.parametrize(
         argnames="job_details_error",
@@ -783,14 +787,18 @@ class TestCreateNewSessions:
                 action_update := scheduler._action_updates_map.get(action_id, None)
             ), f"no action update for {action_id}"
             assert action_update.id == action_id
-            assert action_update.completed_status == (
-                "FAILED" if action_num == 1 else "NEVER_ATTEMPTED"
-            )
             assert action_update.status is not None
             assert action_update.status.state == ActionState.FAILED
             assert action_update.status.fail_message == str(job_details_error)
-            assert action_update.start_time == datetime_now_mock.return_value
-            assert action_update.end_time == datetime_now_mock.return_value
+            if action_num == 1:
+                assert action_update.completed_status == "FAILED"
+
+                assert action_update.start_time == datetime_now_mock.return_value
+                assert action_update.end_time == datetime_now_mock.return_value
+            else:
+                assert action_update.completed_status == "NEVER_ATTEMPTED"
+                assert action_update.start_time is None
+                assert action_update.end_time is None
 
     @pytest.mark.skipif(os.name != "nt", reason="Windows-only test.")
     def test_job_details_run_as_worker_agent_user_windows(
@@ -856,14 +864,17 @@ class TestCreateNewSessions:
                 action_update := scheduler._action_updates_map.get(action_id, None)
             ), f"no action update for {action_id}"
             assert action_update.id == action_id
-            assert action_update.completed_status == (
-                "FAILED" if action_num == 1 else "NEVER_ATTEMPTED"
-            )
             assert action_update.status is not None
             assert action_update.status.state == ActionState.FAILED
             assert action_update.status.fail_message == expected_err_msg
-            assert action_update.start_time == datetime_now_mock.return_value
-            assert action_update.end_time == datetime_now_mock.return_value
+            if action_num == 1:
+                assert action_update.completed_status == "FAILED"
+                assert action_update.start_time == datetime_now_mock.return_value
+                assert action_update.end_time == datetime_now_mock.return_value
+            else:
+                assert action_update.completed_status == "NEVER_ATTEMPTED"
+                assert action_update.start_time is None
+                assert action_update.end_time is None
 
 
 class TestQueueAwsCredentialsManagement:
