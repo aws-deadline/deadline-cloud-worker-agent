@@ -36,7 +36,7 @@ from ..windows.win_service import WorkerAgentWindowsService
 # Defaults
 DEFAULT_WA_USER = "deadline-worker"
 DEFAULT_JOB_GROUP = "deadline-job-users"
-DEFAULT_PASSWORD_LENGTH = 12
+DEFAULT_PASSWORD_LENGTH = 32
 
 # Environment variable that overrides the config path used by the Deadline client
 DEADLINE_CLIENT_CONFIG_PATH_OVERRIDE_ENV_VAR = "DEADLINE_CONFIG_FILE_PATH"
