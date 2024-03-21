@@ -33,12 +33,12 @@ def install() -> None:
             farm_id=args.farm_id,
             fleet_id=args.fleet_id,
             region=args.region,
-            worker_agent_program=scripts_path,
             install_service=args.install_service,
             start_service=args.service_start,
             confirm=args.confirmed,
             allow_shutdown=args.allow_shutdown,
             parser=arg_parser,
+            grant_required_access=args.grant_required_access,
         )
         if args.user:
             installer_args.update(user_name=args.user)
@@ -104,6 +104,7 @@ class ParsedCommandLineArguments(Namespace):
     install_service: bool
     telemetry_opt_out: bool
     vfs_install_path: str
+    grant_required_access: bool
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
@@ -190,6 +191,17 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
             ),
             required=False,
             default=None,
+        )
+        parser.add_argument(
+            "--grant-required-access",
+            help=(
+                "Allows the installer to modify an existing user so that it can successfully run the worker agent. This will allow "
+                "the installer to add the user to the Administrators group and grant any missing user rights which are required to "
+                "run the worker agent. This option has no effect if a new user is created by the installer."
+            ),
+            action="store_true",
+            required=False,
+            default=False,
         )
 
     return parser
