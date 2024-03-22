@@ -19,6 +19,9 @@ import win32con
 import win32net
 import win32security
 
+if typing.TYPE_CHECKING:
+    import _win32typing
+
 import deadline.client.config.config_file
 from deadline_worker_agent.installer import win_installer
 from deadline_worker_agent.installer.win_installer import (
@@ -214,42 +217,86 @@ def test_update_config_file_creates_backup(setup_example_config):
     assert os.path.isfile(backup_worker_config), "Backup of worker config file was not created"
 
 
-def test_provision_directories(
-    windows_user: str,
-    tmp_path: pathlib.Path,
-):
-    # GIVEN
-    root_dir = tmp_path / "ProgramDataTest"
-    root_dir.mkdir()
-    expected_dirs = WorkerAgentDirectories(
-        deadline_dir=root_dir / "Amazon" / "Deadline",
-        deadline_log_subdir=root_dir / "Amazon" / "Deadline" / "Logs",
-        deadline_persistence_subdir=root_dir / "Amazon" / "Deadline" / "Cache",
-        deadline_config_subdir=root_dir / "Amazon" / "Deadline" / "Config",
-    )
-    assert (
-        not expected_dirs.deadline_dir.exists()
-    ), f"Cannot test provision_directories because {expected_dirs.deadline_dir} already exists"
-    assert (
-        not expected_dirs.deadline_log_subdir.exists()
-    ), f"Cannot test provision_directories because {expected_dirs.deadline_log_subdir} already exists"
-    assert (
-        not expected_dirs.deadline_persistence_subdir.exists()
-    ), f"Cannot test provision_directories because {expected_dirs.deadline_persistence_subdir} already exists"
-    assert (
-        not expected_dirs.deadline_config_subdir.exists()
-    ), f"Cannot test provision_directories because {expected_dirs.deadline_config_subdir} already exists"
+class TestProvisionDirectories:
+    """Tests for provision_directories function"""
 
-    # WHEN
-    with patch.dict(win_installer.os.environ, {"PROGRAMDATA": str(root_dir)}):
-        actual_dirs = provision_directories(windows_user)
+    @pytest.fixture
+    def program_data_test_dir(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        root_dir = tmp_path / "ProgramDataTest"
+        root_dir.mkdir()
+        return root_dir
 
-    # THEN
-    assert actual_dirs == expected_dirs
-    assert actual_dirs.deadline_dir.exists()
-    assert actual_dirs.deadline_log_subdir.exists()
-    assert actual_dirs.deadline_persistence_subdir.exists()
-    assert actual_dirs.deadline_config_subdir.exists()
+    @pytest.fixture
+    def worker_agent_directories(
+        self,
+        program_data_test_dir: pathlib.Path,
+        windows_user: str,
+    ) -> WorkerAgentDirectories:
+        with patch.dict(win_installer.os.environ, {"PROGRAMDATA": str(program_data_test_dir)}):
+            # WHEN
+            actual_dirs = provision_directories(windows_user)
+        return actual_dirs
+
+    def test_creates_directories(
+        self,
+        worker_agent_directories: WorkerAgentDirectories,
+        program_data_test_dir: pathlib.Path,
+    ):
+        # GIVEN
+        expected_dirs = self._get_expected_dirs(program_data_test_dir)
+
+        # THEN
+        assert worker_agent_directories == expected_dirs
+        assert expected_dirs.deadline_dir.exists()
+        assert expected_dirs.deadline_log_subdir.exists()
+        assert expected_dirs.deadline_persistence_subdir.exists()
+        assert expected_dirs.deadline_config_subdir.exists()
+
+    def test_directory_acls_are_least_privilege(
+        self,
+        windows_user: str,
+        worker_agent_directories: WorkerAgentDirectories,
+    ):
+        # THEN
+        def verify_acl_least_privilege(user_sid: _win32typing.PySID, path: pathlib.Path) -> bool:
+            sd = win32security.GetFileSecurity(
+                str(path),
+                win32con.DACL_SECURITY_INFORMATION | win32con.OWNER_SECURITY_INFORMATION,
+            )
+            # Verify ownership
+            owner_sid = sd.GetSecurityDescriptorOwner()
+            assert user_sid == owner_sid, f"Expected file '{path}' to be owned by '{user_sid}' but got '{owner_sid}'"
+
+            # Verify all ACEs
+            dacl = sd.GetSecurityDescriptorDacl()
+            for ace in [dacl.GetAce(i) for i in range(dacl.GetAceCount())]:
+                _ace_info, mask, sid = ace
+                ace_type, ace_flags = _ace_info
+                win32con.ACCESS_DENIED_ACE_TYPE
+        user_sid, _, _ = win32security.LookupAccountName(None, windows_user)
+        worker_agent_directories.deadline_dir
+
+    def _get_expected_dirs(self, root_dir: pathlib.Path) -> WorkerAgentDirectories:
+        expected_dirs = WorkerAgentDirectories(
+            deadline_dir=root_dir / "Amazon" / "Deadline",
+            deadline_log_subdir=root_dir / "Amazon" / "Deadline" / "Logs",
+            deadline_persistence_subdir=root_dir / "Amazon" / "Deadline" / "Cache",
+            deadline_config_subdir=root_dir / "Amazon" / "Deadline" / "Config",
+        )
+        assert (
+            not expected_dirs.deadline_dir.exists()
+        ), f"Cannot test provision_directories because {expected_dirs.deadline_dir} already exists"
+        assert (
+            not expected_dirs.deadline_log_subdir.exists()
+        ), f"Cannot test provision_directories because {expected_dirs.deadline_log_subdir} already exists"
+        assert (
+            not expected_dirs.deadline_persistence_subdir.exists()
+        ), f"Cannot test provision_directories because {expected_dirs.deadline_persistence_subdir} already exists"
+        assert (
+            not expected_dirs.deadline_config_subdir.exists()
+        ), f"Cannot test provision_directories because {expected_dirs.deadline_config_subdir} already exists"
+
+        return expected_dirs
 
 
 def test_update_deadline_client_config(tmp_path: pathlib.Path) -> None:
