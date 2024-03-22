@@ -191,7 +191,7 @@ class TestSetupFile:
                     file_path=file_path,
                     permitted_user=os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
-                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
                 )
         else:
             file_path.exists.assert_called_once_with()
@@ -230,7 +230,7 @@ class TestSetupFile:
                     file_path=file_path,
                     permitted_user=os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
-                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
                 )
         else:
             chmod.assert_called_once_with(mode=0o640 if os_user is not None else 0o600)
@@ -267,7 +267,7 @@ class TestSetupFile:
                     file_path=file_path,
                     permitted_user=os_user,
                     user_permission=FileSystemPermissionEnum.READ_WRITE,
-                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
                 )
         else:
             mock_run_cmd_as.assert_not_called()

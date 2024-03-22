@@ -486,7 +486,7 @@ class TestCreateCredentialsDirectory:
                 exist_ok=True,
                 parents=True,
                 permitted_user=os_user,
-                agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
                 user_permission=FileSystemPermissionEnum.READ,
             )
 

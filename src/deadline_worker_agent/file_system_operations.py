@@ -5,12 +5,10 @@ from openjd.sessions import WindowsSessionUser, SessionUser
 import getpass
 from pathlib import Path
 import os
-from dataclasses import dataclass
 from typing import cast
 from enum import Enum
 
 
-@dataclass
 class FileSystemPermissionEnum(Enum):
     READ = "READ"
     WRITE = "WRITE"
