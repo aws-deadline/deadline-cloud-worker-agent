@@ -14,6 +14,7 @@ from deadline_worker_agent import installer as installer_mod
 from deadline_worker_agent.installer import ParsedCommandLineArguments, win_installer, install
 from deadline_worker_agent.windows.win_service import WorkerAgentWindowsService
 
+import win32con
 import win32netcon
 import win32profile
 import win32security
@@ -787,3 +788,87 @@ class TestConfigureServiceFailureActions:
             any_order=False,
         )
         assert mock_logging_debug.call_count == 9
+
+
+class TestSetRegistryKeyValue:
+    """Tests for set_registry_key_value"""
+
+    @pytest.fixture(autouse=True)
+    def mock_RegOpenKeyEx(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32api, "RegOpenKeyEx") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_RegSetValueEx(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32api, "RegSetValueEx") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_CloseHandle(self) -> typing.Generator[MagicMock, None, None]:
+        with patch.object(win_installer.win32api, "CloseHandle") as m:
+            yield m
+
+    @pytest.mark.parametrize(
+        ["reg_key", "expected_reg_key_call_arg"],
+        [
+            ["HKEY_LOCAL_MACHINE", win32con.HKEY_LOCAL_MACHINE],
+            [win32con.HKEY_USERS, win32con.HKEY_USERS],
+        ],
+    )
+    def test_sets_registry_key_value(
+        self,
+        reg_key: typing.Union[str, int],
+        expected_reg_key_call_arg: int,
+        mock_RegOpenKeyEx: MagicMock,
+        mock_RegSetValueEx: MagicMock,
+        mock_CloseHandle: MagicMock,
+    ):
+        # GIVEN
+        reg_sub_key = "Test\\Sub\\Key"
+        value_name = "ValueName"
+        value_type = win32con.REG_SZ
+        value_data = "ValueData"
+
+        # WHEN
+        win_installer.set_registry_key_value(
+            reg_key,
+            reg_sub_key,
+            value_name,
+            value_type,
+            value_data,
+        )
+
+        # THEN
+        mock_RegOpenKeyEx.assert_called_once_with(
+            expected_reg_key_call_arg,
+            reg_sub_key,
+            0,
+            win32con.KEY_SET_VALUE,
+        )
+        mock_RegSetValueEx.assert_called_once_with(
+            mock_RegOpenKeyEx.return_value,
+            value_name,
+            0,
+            value_type,
+            value_data,
+        )
+        mock_CloseHandle.assert_called_once_with(mock_RegOpenKeyEx.return_value)
+
+    def closes_handle_if_set_value_errors(
+        self,
+        mock_RegOpenKeyEx: MagicMock,
+        mock_RegSetValueEx: MagicMock,
+        mock_CloseHandle: MagicMock,
+    ):
+        # GIVEN
+        mock_RegSetValueEx.side_effect = Exception("ERROR")
+
+        with pytest.raises(Exception) as raised_exc:
+            # WHEN
+            win_installer.set_registry_key_value(
+                win32con.HKEY_CURRENT_USER, None, "", win32con.REG_SZ, ""
+            )
+
+        # THEN
+        assert raised_exc.value is mock_RegSetValueEx.side_effect
+        mock_CloseHandle.assert_called_once_with(mock_RegOpenKeyEx.return_value)

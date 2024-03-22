@@ -4,6 +4,8 @@ import pathlib
 import os
 import re
 import sys
+import typing
+import uuid
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +15,7 @@ try:
     import win32api
 except ImportError:
     pytest.skip("win32api not available", allow_module_level=True)
+import win32con
 import win32net
 import win32security
 
@@ -340,3 +343,64 @@ def test_get_effective_user_rights(
             )
         finally:
             win32api.CloseHandle(policy_handle)
+
+
+# TODO: Modify the test user's registry hive instead of the current user's registry hive
+# This is currently complicated by the fact a user's registry hive is not loaded by default.
+# Running a process as the user causes its registry hive to get loaded (it is unloaded when the process exits)
+def test_set_registry_key_value():
+    # GIVEN
+    reg_key = win32con.HKEY_CURRENT_USER
+    reg_sub_key = "Environment"
+    value_name = f"TEST-{uuid.uuid4()}"
+    value_type = win32con.REG_SZ
+    value_data = "TEST_VALUE"
+
+    try:
+        # WHEN
+        win_installer.set_registry_key_value(
+            reg_key, reg_sub_key, value_name, value_type, value_data
+        )
+
+        # THEN
+        data = get_registry_key_value_data(reg_key, reg_sub_key, value_name)
+        print(data)
+        assert data[0] == "TEST_VALUE"
+    finally:
+        handle = None
+        try:
+            handle = win32api.RegOpenKeyEx(reg_key, reg_sub_key, 0, win32con.KEY_SET_VALUE)
+            win32api.RegDeleteValue(handle, value_name)
+        finally:
+            if handle is not None:
+                win32api.CloseHandle(handle)
+
+
+def get_registry_key_value_data(
+    key: int, sub_key: typing.Optional[str], value_name: str
+) -> typing.Any:
+    """
+    Gets a registry key value data. If the key, sub key, or value name do not exist, an error is raised.
+
+    Args:
+        key (str): The registry key
+        sub_key (typing.Optional[str]): The registry sub key
+        value_name (str): The value name to get data for
+
+    Returns:
+        typing.Any: The value data
+    """
+    key_handle = None
+    try:
+        key_handle = win32api.RegOpenKeyEx(
+            key,
+            sub_key,
+            # Note: These two arguments are reversed in the type hints and docs
+            # This is the correct order
+            0,
+            win32con.KEY_READ,
+        )
+        return win32api.RegQueryValueEx(key_handle, value_name)
+    finally:
+        if key_handle is not None:
+            win32api.CloseHandle(key_handle)
