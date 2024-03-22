@@ -914,16 +914,20 @@ def start_windows_installer(
         )
 
         # Set the AWS region in the service's environment
-        logging.info(f"Setting region to {region} for DeadlineWorker service")
+        logging.info(
+            f"Setting region to {region} for {WorkerAgentWindowsService._svc_name_} service"
+        )
         set_registry_key_value(
             # Specify attribute name rather than the int constant for readability in logs
             reg_key="HKEY_LOCAL_MACHINE",
-            reg_sub_key="SYSTEM\\CurrentControlSet\\Services\\DeadlineWorker",
+            reg_sub_key=f"SYSTEM\\CurrentControlSet\\Services\\{WorkerAgentWindowsService._svc_name_}",
             value_name="Environment",
             value_type=win32con.REG_MULTI_SZ,  # Multi-string value
             value_data=[f"AWS_DEFAULT_REGION={region}"],
         )
-        logging.info(f"Successfully set region to {region} for DeadlineWorker service")
+        logging.info(
+            f"Successfully set region to {region} for {WorkerAgentWindowsService._svc_name_} service"
+        )
 
         # Start the Windows service if specified
         if start_service:
