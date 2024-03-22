@@ -11,11 +11,12 @@ import sys
 from argparse import ArgumentParser
 from getpass import getpass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, Union
 
 import deadline.client.config.config_file
 import pywintypes
 import win32api
+import win32con
 import win32net
 import win32netcon
 import win32profile
@@ -678,6 +679,62 @@ def get_effective_user_rights(user: str) -> set[str]:
             win32api.CloseHandle(policy_handle)
 
 
+def set_registry_key_value(
+    reg_key: Union[int, str],
+    reg_sub_key: Optional[str],
+    value_name: str,
+    value_type: int,
+    value_data: Any,
+):
+    """
+    Sets a value on the specified registry key
+
+    Note: Registry operations also have support for transactional operations if we need it in the future
+    See: https://timgolden.me.uk/pywin32-docs/win32api__RegOpenKeyTransacted_meth.html
+
+    Args:
+        reg_key (Union[int, str]): The registry key. Can either be a string name which will be used to lookup the value in win32con or int constants from win32con (e.g. win32con.HKEY_LOCAL_MACHINE, etc.)
+        reg_sub_key (Optional[str]): The registry sub key
+        value_name (str): The name of the value to set
+        value_type (int): The type of the value data. Constants are available in win32con (e.g. win32con.REG_SZ)
+        value_data (Any): The value data to set
+    """
+    full_reg_key = f"{reg_key}" + (f":{reg_sub_key}" if reg_sub_key else "")
+    if isinstance(reg_key, str):
+        assert hasattr(win32con, reg_key), f"{reg_key} not found in win32con"
+        reg_key = getattr(win32con, reg_key)
+    assert isinstance(reg_key, int)
+
+    logging.info(f"Setting '{value_name}' in registry key '{full_reg_key}'")
+    key_handle = None
+    try:
+        # https://timgolden.me.uk/pywin32-docs/win32api__RegOpenKeyEx_meth.html
+        key_handle = win32api.RegOpenKeyEx(
+            reg_key,
+            reg_sub_key,
+            # Note: These two arguments are reversed in the type hints and docs
+            # This is the correct order
+            0,  # reserved, only use 0
+            win32con.KEY_SET_VALUE,
+        )
+        # https://timgolden.me.uk/pywin32-docs/win32api__RegSetValueEx_meth.html
+        win32api.RegSetValueEx(
+            key_handle,
+            value_name,
+            0,  # reserved, only use 0,
+            value_type,
+            value_data,
+        )
+    except Exception as e:
+        logging.error(f"Failed to set '{value_name}' in registry key '{full_reg_key}': {e}")
+        raise
+    else:
+        logging.info(f"Successfully set '{value_name}' in registry key '{full_reg_key}'")
+    finally:
+        if key_handle is not None:
+            win32api.CloseHandle(key_handle)
+
+
 def start_windows_installer(
     farm_id: str,
     fleet_id: str,
@@ -854,6 +911,22 @@ def start_windows_installer(
         _install_service(
             agent_user_name=user_name,
             password=password,
+        )
+
+        # Set the AWS region in the service's environment
+        logging.info(
+            f"Setting region to {region} for {WorkerAgentWindowsService._svc_name_} service"
+        )
+        set_registry_key_value(
+            # Specify attribute name rather than the int constant for readability in logs
+            reg_key="HKEY_LOCAL_MACHINE",
+            reg_sub_key=f"SYSTEM\\CurrentControlSet\\Services\\{WorkerAgentWindowsService._svc_name_}",
+            value_name="Environment",
+            value_type=win32con.REG_MULTI_SZ,  # Multi-string value
+            value_data=[f"AWS_DEFAULT_REGION={region}"],
+        )
+        logging.info(
+            f"Successfully set region to {region} for {WorkerAgentWindowsService._svc_name_} service"
         )
 
         # Start the Windows service if specified
