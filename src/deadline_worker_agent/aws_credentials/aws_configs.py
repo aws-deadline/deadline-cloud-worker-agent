@@ -81,7 +81,7 @@ def _setup_file(*, file_path: Path, owner: SessionUser | None = None) -> None:
                 file_path=file_path,
                 permitted_user=owner,
                 user_permission=FileSystemPermissionEnum.READ_WRITE,
-                agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
             )
 
 

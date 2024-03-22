@@ -531,7 +531,7 @@ class TestCreateNewSessions:
         else:
             mock_make_directory.assert_called_once_with(
                 dir_path=queue_log_dir_path,
-                agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
                 exist_ok=True,
             )
         mock_queue_session_log_file_path.assert_called_once_with(
