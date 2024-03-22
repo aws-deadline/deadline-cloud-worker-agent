@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import call, MagicMock, patch
 import sysconfig
 
 import pytest
@@ -49,6 +49,7 @@ def expected_cmd(
     parsed_args: ParsedCommandLineArguments,
     platform: str,
 ) -> list[str]:
+    assert parsed_args.region is not None, "Region is required"
     expected_cmd = [
         "sudo",
         str(installer_mod.INSTALLER_PATH[platform]),
@@ -212,3 +213,140 @@ def test_unsupported_platform_raises(platform: str, capsys: pytest.CaptureFixtur
     capture = capsys.readouterr()
 
     assert capture.out == f"ERROR: Unsupported platform {platform}\n"
+
+
+class TestGetEc2Region:
+    """Tests for _get_ec2_region function"""
+
+    @pytest.fixture(autouse=True)
+    def mock_urlopen(self) -> Generator[MagicMock, None, None]:
+        with patch.object(installer_mod.urllib.request, "urlopen") as m:
+            yield m
+
+    @patch.object(installer_mod.urllib.request, "Request")
+    def test_gets_ec2_region(self, mock_Request: MagicMock, mock_urlopen: MagicMock):
+        # GIVEN
+        region = "us-east-2"
+        az = f"{region}a"
+
+        mock_token_request = MagicMock()
+        mock_token_response = MagicMock()
+
+        mock_az_request = MagicMock()
+        mock_az_response = MagicMock()
+        mock_az_response.__enter__().read().decode.return_value = az
+
+        mock_Request.side_effect = [mock_token_request, mock_az_request]
+        mock_urlopen.side_effect = [mock_token_response, mock_az_response]
+
+        # WHEN
+        actual = installer_mod._get_ec2_region()
+
+        # THEN
+        assert actual == region
+        mock_Request.assert_has_calls(
+            [
+                call(
+                    url="http://169.254.169.254/latest/api/token",
+                    headers={"X-aws-ec2-metadata-token-ttl-seconds": "10"},
+                    method="PUT",
+                ),
+                call(
+                    url="http://169.254.169.254/latest/meta-data/placement/availability-zone",
+                    headers={
+                        "X-aws-ec2-metadata-token": mock_token_response.__enter__()
+                        .read()
+                        .decode.return_value
+                    },
+                    method="GET",
+                ),
+            ]
+        )
+        mock_urlopen.assert_has_calls(
+            [
+                call(mock_token_request, timeout=1),
+                call(mock_az_request, timeout=1),
+            ]
+        )
+
+    @pytest.mark.parametrize(
+        "side_effect",
+        [
+            [Exception()],  # token request fails
+            [MagicMock(), Exception()],  # az request fails
+        ],
+    )
+    def test_fails_if_urlopen_raises(
+        self,
+        side_effect: list[Exception],
+        mock_urlopen: MagicMock,
+        capfd: pytest.CaptureFixture,
+    ):
+        # GIVEN
+        mock_urlopen.side_effect = side_effect
+
+        # WHEN
+        retval = installer_mod._get_ec2_region()
+
+        # THEN
+        assert retval is None
+        out, _ = capfd.readouterr()
+        assert "Failed to detect AWS region: " in out
+
+    def test_raises_if_empty_token_received(
+        self,
+        mock_urlopen: MagicMock,
+        capfd: pytest.CaptureFixture,
+    ):
+        # GIVEN
+        mock_token_response = MagicMock()
+        mock_token_response.__enter__().read().decode.return_value = None
+        mock_urlopen.side_effect = [mock_token_response]
+
+        # WHEN
+        retval = installer_mod._get_ec2_region()
+
+        # THEN
+        assert retval is None
+        out, _ = capfd.readouterr()
+        assert "Failed to detect AWS region: Received empty IMDSv2 token" in out
+
+    def test_fails_if_empty_az_received(
+        self,
+        mock_urlopen: MagicMock,
+        capfd: pytest.CaptureFixture,
+    ):
+        # GIVEN
+        mock_az_response = MagicMock()
+        mock_az_response.__enter__().read().decode.return_value = ""
+        mock_urlopen.side_effect = [MagicMock(), mock_az_response]
+
+        # WHEN
+        retval = installer_mod._get_ec2_region()
+
+        # THEN
+        assert retval is None
+        out, _ = capfd.readouterr()
+        assert "AWS region could not be detected, received empty response from IMDS" in out
+
+    def test_fails_if_nonvalid_az_received(
+        self,
+        mock_urlopen: MagicMock,
+        capfd: pytest.CaptureFixture,
+    ):
+        # GIVEN
+        az = "Not-A-Region-Code-123"
+        mock_az_response = MagicMock()
+        mock_az_response.__enter__().read().decode.return_value = az
+        mock_urlopen.side_effect = [MagicMock(), mock_az_response]
+
+        # WHEN
+        retval = installer_mod._get_ec2_region()
+
+        # THEN
+        assert retval is None
+        out, _ = capfd.readouterr()
+        assert (
+            f"AWS region could not be detected, got unexpected availability zone from IMDS: {az}"
+            in out
+        )
