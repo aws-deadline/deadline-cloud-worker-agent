@@ -29,9 +29,9 @@ RUN chmod 777 /code /aws && \
     chown ${AGENT_USER}:${AGENT_USER} /var/log/amazon/deadline && \
     chmod 700 /var/log/amazon/deadline && \
     mkdir -p /var/lib/deadline && \
-    mkdir -p /var/tmp/openjd && \
-    chown ${AGENT_USER}:${SHARED_GROUP} /var/tmp/openjd && \
-    chmod 755 /var/tmp/openjd && \
+    mkdir -p /sessions && \
+    chown ${AGENT_USER}:${SHARED_GROUP} /sessions && \
+    chmod 755 /sessions && \
     # Shared directory for sharing credentials process with the job user.
     mkdir -p /var/lib/deadline/queues && \
     chown ${AGENT_USER}:${SHARED_GROUP} /var/lib/deadline /var/lib/deadline/queues && \

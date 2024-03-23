@@ -456,6 +456,83 @@ class TestSchedulerSync:
             interrupt_event=scheduler._shutdown,
         )
 
+    @pytest.mark.parametrize(
+        "initial_updates_map, actions, expected_statuses",
+        (
+            pytest.param(
+                {
+                    "AA": SessionActionStatus(id="AA", completed_status="SUCCEEDED"),
+                },
+                [
+                    {"sessionActionId": "AA", "actionType": "ENV_EXIT"},
+                    {"sessionActionId": "BB", "actionType": "ENV_EXIT"},
+                ],
+                {"AA": "SUCCEEDED", "BB": "FAILED"},
+                id="Return existing status",
+            ),
+            pytest.param(
+                dict(),
+                [
+                    {"sessionActionId": "AA", "actionType": "ENV_EXIT"},
+                    {"sessionActionId": "BB", "actionType": "ENV_EXIT"},
+                ],
+                {"AA": "FAILED", "BB": "FAILED"},
+                id="Cases: 1,2,3",  # See comments in _return_sessionactions_from_stopped_session
+            ),
+            pytest.param(
+                dict(),
+                [
+                    {"sessionActionId": "AA", "actionType": "TASK_RUN"},
+                    {"sessionActionId": "BB", "actionType": "TASK_RUN"},
+                    {"sessionActionId": "CC", "actionType": "TASK_RUN"},
+                    {"sessionActionId": "DD", "actionType": "ENV_EXIT"},
+                    {"sessionActionId": "EE", "actionType": "ENV_EXIT"},
+                ],
+                {
+                    "AA": "FAILED",
+                    "BB": "NEVER_ATTEMPTED",
+                    "CC": "NEVER_ATTEMPTED",
+                    "DD": "FAILED",
+                    "EE": "FAILED",
+                },
+                id="Case 4",  # See comments in _return_sessionactions_from_stopped_session
+            ),
+        ),
+    )
+    def test_return_sessionactions_from_stopped_session(
+        self,
+        scheduler: WorkerScheduler,
+        initial_updates_map: dict[str, SessionActionStatus],
+        actions: list[dict[str, str]],
+        expected_statuses: dict[str, str],
+    ) -> None:
+        # GIVEN
+        failure_message = "This is a failure message"
+        scheduler._action_updates_map = initial_updates_map
+
+        # WHEN
+        scheduler._return_sessionactions_from_stopped_session(
+            assigned_session_actions=actions,  # type: ignore[arg-type]
+            failure_message=failure_message,
+        )
+
+        # THEN
+        assert len(scheduler._action_updates_map) == len(expected_statuses)
+        assert set(scheduler._action_updates_map.keys()) == set(expected_statuses.keys())
+        for id in expected_statuses:
+            action_status = scheduler._action_updates_map[id]
+            assert action_status.completed_status == expected_statuses[id], id
+            assert action_status.id == id
+            if expected_statuses[id] == "NEVER_ATTEMPTED":
+                # Per contract: NEVER_ATTEMPTED has to start/end time
+                assert action_status.start_time is None
+                assert action_status.end_time is None
+            elif expected_statuses[id] == "FAILED":
+                # Per contract: FAILED has both a start & end time
+                assert action_status.start_time is not None
+                assert action_status.end_time is not None
+                assert action_status.start_time <= action_status.end_time
+
 
 class TestCreateNewSessions:
     """Tests for WorkerScheduler._create_new_sessions"""
@@ -992,7 +1069,7 @@ class TestQueueAwsCredentialsManagement:
             mock_cred_refresh_cls.assert_called_once_with(
                 identifier=ANY,
                 session=queue_boto3,
-                failure_callback=scheduler._queue_credentials_refresh_failed,
+                failure_callback=ANY,  # functools.partial(scheduler._queue_credentials_refresh_failed, hash_key),
             )
             assert scheduler._queue_aws_credentials[hash_key] is result
 
