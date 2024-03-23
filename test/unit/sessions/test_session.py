@@ -1933,6 +1933,25 @@ class TestSessionCleanup:
             os_user="some-user",
         )
 
+    def test_asset_sync_cleanup_raises_with_no_os_user(
+        self,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+        mock_asset_sync: MagicMock,
+    ) -> None:
+        # GIVEN
+        mock_asset_sync_cleanup: MagicMock = mock_asset_sync.cleanup_session
+        session._job_attachment_details = job_attachment_details
+        session._os_user = None
+
+        # THEN
+        with pytest.raises(ValueError):
+            # WHEN
+            session._cleanup()
+
+        # THEN
+        mock_asset_sync_cleanup.assert_not_called()
+
 
 class TestSessionStartAction:
     """Tests for Session._start_action()"""
