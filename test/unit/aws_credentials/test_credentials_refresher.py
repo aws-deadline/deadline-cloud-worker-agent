@@ -205,9 +205,9 @@ class TestAwsCredentialRefresherInit:
             # THEN
             callback.assert_called_once()
             assert len(callback.call_args.args) == 1
-            callback_arg = callback.call_args.args[0]
-            assert isinstance(callback_arg, TimeoutError)
-            assert callback_arg.args[0] == credentials.expiry
+            callback_first_call_arg = callback.call_args.args[0]
+            assert isinstance(callback_first_call_arg, TimeoutError)
+            assert callback_first_call_arg.args[0] == credentials.expiry
 
     @pytest.mark.parametrize(
         "exception, invokes_callback",

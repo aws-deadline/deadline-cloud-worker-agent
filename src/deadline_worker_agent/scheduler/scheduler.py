@@ -11,9 +11,10 @@ from concurrent.futures import (
 from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from pathlib import Path
 from threading import Event, RLock, Lock, Timer
-from typing import Callable, Tuple, Union, cast, Optional, Any
+from typing import Callable, Literal, Tuple, Union, cast, Optional, Any
 import logging
 import os
 import stat
@@ -39,6 +40,9 @@ from ..api_models import (
     UpdateWorkerScheduleResponse,
     UpdatedSessionActionInfo,
     WorkerStatus,
+    EnvironmentAction,
+    TaskRunAction,
+    SyncInputJobAttachmentsAction,
 )
 from ..aws.deadline import (
     DeadlineRequestConditionallyRecoverableError,
@@ -294,6 +298,8 @@ class WorkerScheduler:
                     self._windows_credentials_resolver.clear()
 
     def _drain_scheduler(self) -> None:
+        # Called only from self.run() during shutdown.
+
         # Note:
         #   When we're doing a worker-initiated drain we will have self._shutdown set. We may, optionally,
         #  have a value for self._shutdown_grace as well.
@@ -384,6 +390,7 @@ class WorkerScheduler:
         int
             The interval (in seconds) to sync with the service returned in the UpdateWorkerSchedule response
         """
+        # Called by self.run() in the main event loop.
 
         logger.info("Synchronizing with service (sending UpdateWorkerSchedule)")
 
@@ -405,7 +412,11 @@ class WorkerScheduler:
             "updated_session_actions": updated_actions,
         }
         if interruptable:
+            # Pass our shutdown Event to interrupt the retry loop in the
+            # API wrapper. If we get shutdown and the API is doing backoff+retries
+            # then it'll stop retrying and exit.
             request["interrupt_event"] = self._shutdown
+
         # Raises: DeadlineRequestInterrupted, DeadlineRequestWorkerNotFoundError,
         # DeadlineRequestWorkerOfflineError, and DeadlineRequestUnrecoverableError
         #  - Let these go to the caller
@@ -611,6 +622,9 @@ class WorkerScheduler:
         assigned_session: AssignedSession,
         error_message: str,
     ) -> None:
+        # Called only in self._create_new_sessions() to fail all of the queued SessionActions
+        # if we experience an unrecoverable error during the setup phases of a new Session, but
+        # before we've started the Session's actions running
         actions = assigned_session["sessionActions"]
         now = datetime.now(tz=timezone.utc)
         self._action_updates_map.update(
@@ -972,7 +986,9 @@ class WorkerScheduler:
                 refresher = AwsCredentialsRefresher(
                     identifier=f"Queue {queue_id} Credentials for Role {queue_role_arn}",
                     session=session,
-                    failure_callback=self._queue_credentials_refresh_failed,
+                    failure_callback=partial(
+                        self._queue_credentials_refresh_failed, hash_key=hash_key
+                    ),
                 )
 
                 credentials_dataclass = QueueAwsCredentials(session=session, refresher=refresher)
@@ -989,7 +1005,7 @@ class WorkerScheduler:
         # Unreachable, but play it safe.
         return None
 
-    def _queue_credentials_refresh_failed(self, exception: Exception) -> None:
+    def _queue_credentials_refresh_failed(self, exception: Exception, *, hash_key: str) -> None:
         """Called by an AwsCredentialsRefresher instance when it was unable to refresh
         AWS Credentials for a Queue.
         In response we interrupt all Sessions that are currently in flight.
@@ -997,6 +1013,17 @@ class WorkerScheduler:
 
         # TODO: To be fully correct, we'd want to only interrupt the Sessions that
         # are using the particular credentials that failed to refresh.
+        if isinstance(exception, DeadlineRequestError):
+            # Unrecoverable. Delete the credential refresher. This will cause a future
+            # Session start for the same queue to attempt to recreate it if it can obtain
+            # credentials; the alternative would leave the Queue credentials permanently
+            # expired with no way to refresh them.
+            with self._queue_aws_credentials_lock:
+                if hash_key in self._queue_aws_credentials:
+                    credentials_dataclass = self._queue_aws_credentials[hash_key]
+                    credentials_dataclass.session.cleanup()
+                    del self._queue_aws_credentials[hash_key]
+
         gracetime = None  # Let the cancels happen as defined in the Job Template
         message = "Fatal error attempting to refresh AWS Credentials for the Queue. Please see logs for details."
         shutdown_futures = self._shutdown_sessions(gracetime, message)
@@ -1017,6 +1044,9 @@ class WorkerScheduler:
                 session_exception = session_entry.future.exception(timeout=0.2)
             except FutureTimeoutError:
                 pass
+            else:
+                if session_exception is None:
+                    session_exception = Exception("Session has previously been stopped.")
 
             with self._action_update_lock:
                 # 1. cancel in-flight actions
@@ -1042,19 +1072,123 @@ class WorkerScheduler:
                     ]
                     session.replace_assigned_actions(actions=assigned_session_actions)
                 else:
-                    # The thread that normally runs session actions crashed. We fail any assigned
-                    # actions with the exception message
-                    for action in assigned_session_actions:
-                        self._action_updates_map[action["sessionActionId"]] = SessionActionStatus(
-                            id=action["sessionActionId"],
-                            completed_status="FAILED",
-                            start_time=datetime.now(tz=timezone.utc),
-                            end_time=datetime.now(tz=timezone.utc),
-                            status=ActionStatus(
-                                state=ActionState.FAILED, fail_message=str(session_exception)
-                            ),
-                        )
+                    # The thread that normally runs session actions crashed or was stopped through a separate
+                    # failure flow (e.g. from an API response that said to stop it).
+                    self._return_sessionactions_from_stopped_session(
+                        assigned_session_actions=assigned_session_actions,
+                        failure_message=str(session_exception),
+                    )
                     self._wakeup.set()
+
+    def _return_sessionactions_from_stopped_session(
+        self,
+        *,
+        assigned_session_actions: list[
+            EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction
+        ],
+        failure_message: str,
+    ) -> None:
+        # The thread that normally runs session actions crashed or was stopped through a separate
+        # failure flow (e.g. from an API response that said to stop it).
+
+        # We need to return the actions that we were given according to the API contract.
+        # 1. First Action in the pipeline returns as failed;
+        # 2. Subsequent Actions returned as NEVER_ATTEMPTED
+        # 3. Exception for ENV_EXIT Actions corresponding to ENV_ENTERS that were attempted;
+        #    these must always be attempted, and should not return as NEVER_ATTEMPTED. We just
+        #    return those as FAILED
+        #
+        # We also check to see if there's already a status update queued to be reported
+        # for an action, and if so then we defer to what's already there.
+        #
+        # This is far from perfect, but we'll do the best that we can with the information
+        # that we have at this point.
+
+        # Cases that should be handled a-okay by this code:
+        #  1)
+        #    ENV_ENTER 1 (SUCCESS)
+        #    ENV_ENTER 2 (FAILED/INTERRUPTED) - Session main thread exited
+        #    ENV_ENTER 3 (NEVER_ATTEMPTED)
+        #    TASK_RUN(s) (NEVER_ATTEMPED)
+        # and gets the expected cleanup actions:
+        #    ENV_EXIT 2  (will be returned as FAILED)
+        #    ENV_EXIT 1  (will be returned as FAILED)
+        #
+        #  2)
+        #    ENV_ENTER(s) (SUCCESS)
+        #    TASK_RUN(s) (SUCCESS)
+        #    TASK_RUN (FAILED/INTERRUPTED) - Session main thread exited
+        #    TASK_RUN(s) (NEVER_ATTEMPTED)
+        # and gets the expected cleanup actions:
+        #    ENV_EXIT(s) (will be returned as FAILED)
+        #
+        #  3)
+        #    ENV_ENTER 1 (SUCCESS)
+        #    ENV_ENTER 2 (SUCCESS)
+        #    ENV_ENTER 3 (SUCCESS)
+        #    TASK_RUN(s)  (SUCCESS)
+        #    ENV_EXIT 3 (FAILED/INTERRUPTED) - Session main thread exited
+        #    ENV_EXIT 2 (SUCCESS/FAILED)
+        #    ENV_EXIT 1 (SUCCESS/FAILED)
+        #  agent will not get any cleanup actions queued to it in the response.
+        #  If the Session thread has a problem during an ENV_EXIT, then the Agent's
+        #  pipeline already contains *ALL* of the ENV_EXITs for the Session; if it has
+        #  one then it has them all. The Session's post-main-thread cleanup will ensure
+        #  that the ENV_EXIT 2 & 1 are properly returned. If somehow it doesn't, and we
+        #  get those actions back in the response from the service then this'll be just
+        #  like case (2).
+        #
+        #  4)
+        #    ENV_ENTER(s) (SUCCESS)
+        #    TASK_RUN(s) (SUCCESS)
+        #    TASK_RUN a (FAILED/INTERRUPTED) - Session main thread exited
+        #    TASK_RUN(s) (NEVER_ATTEMPTED)
+        # with the FAILED/INTERRUPTED TASK_RUN, and Actions after it not being reported to the
+        # service.
+        # Service response is it's understanding of the pipeline based on the responses that
+        # it has seen.
+        #    TASK_RUN a (will be returned as FAILED)
+        #    TASK_RUN(s) (will be returned as NEVER_ATTEMPTED)
+        #    ...
+        #    ENV_EXIT(s) (will be returned as FAILED)
+        # This case only possible if the dieing Agent's Session fails to return the
+        # status for the FAILED/INTERRUPTED TASK_RUN.
+        # Note: The service will only respond with TASK_RUN(s) if it never received the
+        #  FAILED/INTERRUPTED status for the TASK_RUN.
+
+        for i, action in enumerate(assigned_session_actions):
+            session_action_id = action["sessionActionId"]
+            if self._action_updates_map.get(session_action_id) is not None:
+                # Prefer the existing record; it must have been put there by the
+                # Session before it exited.
+                continue
+
+            completed_status: Optional[
+                Literal["SUCCEEDED", "FAILED", "INTERRUPTED", "CANCELED", "NEVER_ATTEMPTED"]
+            ]
+            start_time: Optional[datetime] = None
+            end_time: Optional[datetime] = None
+            if i == 0 or action["actionType"] == "ENV_EXIT":
+                # Fail the first Action, or all ENV_EXITs
+                completed_status = "FAILED"
+                start_time = end_time = datetime.now(tz=timezone.utc)
+            else:
+                # NEVER_ATTEMPTED all other Actions
+                # Note: NEVER_ATTEMPED must not be reported with a started/ended time.
+                completed_status = "NEVER_ATTEMPTED"
+
+            self._action_updates_map[action["sessionActionId"]] = SessionActionStatus(
+                id=session_action_id,
+                # FAILED for the first one in the list, NEVER_ATTEMPTED for all of the others.
+                completed_status=completed_status,
+                start_time=start_time,
+                end_time=end_time,
+                status=ActionStatus(
+                    # The 'state' is ignored; we just need this for the fail message.
+                    state=ActionState.FAILED,
+                    fail_message=failure_message,
+                ),
+            )
 
     def _update_session_logging(
         self,

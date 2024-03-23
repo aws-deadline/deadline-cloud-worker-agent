@@ -13,7 +13,7 @@ integ-test = "pytest test/integ {args}"
 integ-windows = "pytest --no-cov test/integ/installer {args:}"
 typing = "mypy {args:src test}"
 style = [
-  "ruff {args:.}",
+  "ruff check {args:.}",
   "black --check --diff {args:.}",
 ]
 fmt = [
