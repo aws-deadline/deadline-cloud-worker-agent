@@ -1922,6 +1922,7 @@ class TestSessionCleanup:
         # GIVEN
         mock_asset_sync_cleanup: MagicMock = mock_asset_sync.cleanup_session
         session._job_attachment_details = job_attachment_details
+        assert session._os_user
 
         # WHEN
         session._cleanup()
@@ -1930,6 +1931,29 @@ class TestSessionCleanup:
         mock_asset_sync_cleanup.assert_called_once_with(
             session_dir=mock_openjd_session.working_directory,
             file_system=job_attachment_details.job_attachments_file_system,
+            os_user=session._os_user.user,
+        )
+
+    def test_asset_sync_cleanup_calls_with_none_os_user(
+        self,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+        mock_asset_sync: MagicMock,
+        mock_openjd_session: MagicMock,
+    ) -> None:
+        # GIVEN
+        mock_asset_sync_cleanup: MagicMock = mock_asset_sync.cleanup_session
+        session._job_attachment_details = job_attachment_details
+        session._os_user = None
+
+        # WHEN
+        session._cleanup()
+
+        # THEN
+        mock_asset_sync_cleanup.assert_called_once_with(
+            session_dir=mock_openjd_session.working_directory,
+            file_system=job_attachment_details.job_attachments_file_system,
+            os_user=None,
         )
 
 

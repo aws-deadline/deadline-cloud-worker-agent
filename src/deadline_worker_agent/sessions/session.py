@@ -400,10 +400,11 @@ class Session:
                 cur_time = monotonic()
         finally:
             if self._asset_sync is not None and self._job_attachment_details is not None:
-                # terminate any running virtual file systems
+                # Perform any cleanup the job attachments system needs to do
                 self._asset_sync.cleanup_session(
                     session_dir=self._session.working_directory,
                     file_system=self._job_attachment_details.job_attachments_file_system,
+                    os_user=self._os_user.user if self._os_user else None,
                 )
             # Clean-up the Open Job Description session
             self._session.cleanup()
