@@ -1,3 +1,14 @@
+## 0.23.1 (2024-03-23)
+
+
+### Features
+* cleanup asset_sync session with os_user (#251) ([`b68922e`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/b68922e37d95c37b3eec88b990d88b7fba60875e))
+* **windows-installer**: configure AWS region in Windows service (#242) ([`adf164f`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/adf164ff56b56bc48837012d99bc086b1120193a))
+
+### Bug Fixes
+* return sessionactions if Session is stopped (#252) ([`1230d89`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/1230d89152ae72bae77747da32e551dbc92c9c98))
+* insufficient Windows ACLs for job user AWS config files (#246) ([`f5e2f52`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/f5e2f52aa747976f15540a6f0da561a0f7faa57d))
+
 ## 0.23.0 (2024-03-21)
 
 ### BREAKING CHANGES
