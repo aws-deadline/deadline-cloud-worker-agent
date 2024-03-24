@@ -252,6 +252,8 @@ class TestGetGPUCount:
         (
             pytest.param(FileNotFoundError("nvidia-smi not found"), 0, id="FileNotFoundError"),
             pytest.param(subprocess.CalledProcessError(1, "command"), 0, id="CalledProcessError"),
+            pytest.param(PermissionError("Permission denied"), 0, id="PermissionError"),
+            pytest.param(Exception("something went wrong"), 0, id="OSError"),
         ),
     )
     @patch.object(capabilities_mod.subprocess, "check_output")
@@ -304,6 +306,8 @@ class TestGetGPUMemory:
         (
             pytest.param(FileNotFoundError("nvidia-smi not found"), 0, id="FileNotFoundError"),
             pytest.param(subprocess.CalledProcessError(1, "command"), 0, id="CalledProcessError"),
+            pytest.param(PermissionError("Permission denied"), 0, id="PermissionError"),
+            pytest.param(Exception("something went wrong"), 0, id="OSError"),
         ),
     )
     @patch.object(capabilities_mod.subprocess, "check_output")

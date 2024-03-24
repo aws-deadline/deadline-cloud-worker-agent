@@ -84,6 +84,16 @@ def _get_gpu_count(*, verbose: bool = True) -> int:
         if verbose:
             _logger.warning("Could not detect GPU count, error running nvidia-smi")
         return 0
+    except PermissionError:
+        if verbose:
+            _logger.warning(
+                "Could not detect GPU count, permission denied trying to run nvidia-smi"
+            )
+        return 0
+    except Exception:
+        if verbose:
+            _logger.warning("Could not detect GPU count, unexpected error running nvidia-smi")
+        return 0
     else:
         if verbose:
             _logger.info("Number of GPUs: %s", output.decode().strip())
@@ -110,6 +120,16 @@ def _get_gpu_memory(*, verbose: bool = True) -> int:
     except subprocess.CalledProcessError:
         if verbose:
             _logger.warning("Could not detect GPU memory, error running nvidia-smi")
+        return 0
+    except PermissionError:
+        if verbose:
+            _logger.warning(
+                "Could not detect GPU memory, permission denied trying to run nvidia-smi"
+            )
+        return 0
+    except Exception:
+        if verbose:
+            _logger.warning("Could not detect GPU memory, unexpected error running nvidia-smi")
         return 0
     else:
         if verbose:
