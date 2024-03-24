@@ -544,7 +544,7 @@ then the Worker Agent must:
         * Response: ConflictException(409)
             * `reason` is `CONCURRENT_MODIFICATION` -> Perform exponential backoff, and then retry.
             * Any other -> Ignore & continue.
-        * Response: AccessDeniedException(403), ResourceNotFoundException(404) -> Ignore & continue.
+        * Response: ValidationException(400), AccessDeniedException(403), ResourceNotFoundException(404) -> Ignore & continue.
     3. Sleep for 30 seconds.
 
 In the case of a Worker-initiated shutdown (e.g. SIGTERM, EC2 Spot Interruption, etc) then follow the
