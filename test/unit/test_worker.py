@@ -266,29 +266,41 @@ class TestMonitorEc2Shutdown:
 
         assert return_value is None
 
-    def test_no_imds(
+    def test_no_imds_temporarily_continues_till_stop_called(
         self,
         worker: Worker,
         mock_logger: MagicMock,
     ) -> None:
         """Asserts that when Worker._get_ec2_metadata_imdsv2_token() returns None which indicates
-        that IMDS is not available, that Worker._monitor_ec2_shutdown() returns None"""
+        that IMDS is not available, that Worker._monitor_ec2_shutdown() continues looping until
+        _stop called"""
         # GIVEN
         logger_info: MagicMock = mock_logger.info
+        wait_side_effect = ([False] * 2) + [True]
 
-        with patch.object(
-            worker, "_get_ec2_metadata_imdsv2_token"
-        ) as mock_get_ec2_metadata_imdsv2_token:
+        with (
+            patch.object(
+                worker, "_get_ec2_metadata_imdsv2_token"
+            ) as mock_get_ec2_metadata_imdsv2_token,
+            patch.object(worker._stop, "wait", side_effect=wait_side_effect),
+        ):
             mock_get_ec2_metadata_imdsv2_token.return_value = None
 
             # WHEN
             result = worker._monitor_ec2_shutdown()
 
         # THEN
-        assert result is None
-        logger_info.assert_called_once_with(
-            "IMDS unavailable - unable to monitor for spot interruption or ASG life-cycle changes"
+        logger_info.assert_has_calls(
+            [
+                call(
+                    "IMDS unavailable - unable to monitor for spot interruption or ASG life-cycle changes"
+                ),
+                call(
+                    "IMDS unavailable - unable to monitor for spot interruption or ASG life-cycle changes"
+                ),
+            ]
         )
+        assert result is None
 
     def test_asg_termination(
         self,

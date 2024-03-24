@@ -239,9 +239,7 @@ class Worker:
                         logger.debug("monitor ec2 shutdown future complete")
                         worker_shutdown: WorkerShutdown | None = future.result()
                         # We only stop the other threads if we detected an imminent EC2 shutdown.
-                        # The monitoring thread returns None if:
-                        #     1. The Worker is not on EC2, or IMDS is not turned on
-                        #     2. The monitor thread was stopped by the OS signal handler
+                        # The monitoring thread returns None if the monitor thread was stopped by the OS signal handler
                         if worker_shutdown:
                             self._stop.set()
                             self._scheduler.shutdown(
@@ -322,7 +320,7 @@ class Worker:
                     "IMDS unavailable - unable to monitor for spot interruption or ASG life-cycle "
                     "changes"
                 )
-                return None
+                continue
 
             # Check for spot interruption or shutdown
             if (
