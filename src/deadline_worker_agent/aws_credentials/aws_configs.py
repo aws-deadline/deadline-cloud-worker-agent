@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-import stat
-import os
-import logging
 from abc import ABC, abstractmethod
 from configparser import ConfigParser
 from pathlib import Path
+from shutil import chown
 from typing import Optional
+import logging
+import os
+import stat
+
 from openjd.sessions import PosixSessionUser, SessionUser
-from subprocess import run, DEVNULL, PIPE, STDOUT
+
 from ..file_system_operations import (
     FileSystemPermissionEnum,
-    make_directory,
     touch_file,
 )
 
@@ -25,51 +26,26 @@ __all__ = [
 _logger = logging.getLogger(__name__)
 
 
-def _run_cmd_as(*, user: PosixSessionUser, cmd: list[str]) -> None:
-    sudo = ["sudo", "-u", user.user, "-i"]
-    # Raises: CalledProcessError
-    run(sudo + cmd, stdin=DEVNULL, stderr=STDOUT, stdout=PIPE, check=True)
-
-
-def _setup_parent_dir(*, dir_path: Path, owner: SessionUser | None = None) -> None:
-    if os.name == "posix":
-        if owner is None:
-            create_perms: int = stat.S_IRWXU
-            dir_path.mkdir(mode=create_perms, exist_ok=True)
-        else:
-            assert isinstance(owner, PosixSessionUser)
-            _run_cmd_as(user=owner, cmd=["mkdir", "-p", str(dir_path)])
-            _run_cmd_as(user=owner, cmd=["chown", f"{owner.user}:{owner.group}", str(dir_path)])
-            _run_cmd_as(user=owner, cmd=["chmod", "770", str(dir_path)])
-    else:
-        if owner is None:
-            make_directory(
-                dir_path=dir_path,
-                agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
-            )
-        else:
-            make_directory(
-                dir_path=dir_path,
-                permitted_user=owner,
-                user_permission=FileSystemPermissionEnum.READ_WRITE,
-                agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
-                parents=True,
-                exist_ok=True,
-            )
-
-
 def _setup_file(*, file_path: Path, owner: SessionUser | None = None) -> None:
     if os.name == "posix":
         if owner is None:
-            if not file_path.exists():
-                file_path.touch()
+            # Read-write for owner user
             mode = stat.S_IRUSR | stat.S_IWUSR
+            file_path.touch(mode=mode)
             file_path.chmod(mode=mode)
         else:
             assert isinstance(owner, PosixSessionUser)
-            _run_cmd_as(user=owner, cmd=["touch", str(file_path)])
-            _run_cmd_as(user=owner, cmd=["chown", f"{owner.user}:{owner.group}", str(file_path)])
-            _run_cmd_as(user=owner, cmd=["chmod", "660", str(file_path)])
+            mode = (
+                # Read/write for owner user
+                stat.S_IRUSR
+                | stat.S_IWUSR
+                |
+                # Read for owner group
+                stat.S_IRGRP
+            )
+            file_path.touch(mode=mode)
+            file_path.chmod(mode=mode)
+            chown(file_path, group=owner.group)
     else:
         if owner is None:
             touch_file(
@@ -80,7 +56,7 @@ def _setup_file(*, file_path: Path, owner: SessionUser | None = None) -> None:
             touch_file(
                 file_path=file_path,
                 permitted_user=owner,
-                user_permission=FileSystemPermissionEnum.READ_WRITE,
+                user_permission=FileSystemPermissionEnum.READ,
                 agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
             )
 
@@ -95,11 +71,16 @@ class _AWSConfigBase(ABC):
     uninstalling the config.
     """
 
-    _config_path: Path
     _config_parser: ConfigParser
     _os_user: Optional[SessionUser]
+    _parent_dir: Path
 
-    def __init__(self, os_user: Optional[SessionUser]) -> None:
+    def __init__(
+        self,
+        *,
+        os_user: Optional[SessionUser],
+        parent_dir: Path,
+    ) -> None:
         """
         Constructor for the AWSConfigBase class
 
@@ -107,29 +88,23 @@ class _AWSConfigBase(ABC):
             os_user (Optional[SessionUser]): If non-None, then this is the os user to add read
                 permissions for. If None, then the only the process user will be able to read
                 the credentials files.
+            parent_dir (Path): The directory where the AWS config and credentials files will be
+                written to.
         """
         super().__init__()
 
-        self._config_path = self._get_path(
-            os_user=os_user.user if os_user is not None else ""  # type: ignore
-        )
-        self._config_parser = ConfigParser()
+        self._parent_dir = parent_dir
 
-        # setup the containing directory permissions and ownership
-        config_dir = self._config_path.parent
-        _setup_parent_dir(
-            dir_path=config_dir,
-            owner=os_user,
-        )
+        self._config_parser = ConfigParser()
 
         # ensure the file exists and has correct permissions and ownership
         _setup_file(
-            file_path=self._config_path,
+            file_path=self.path,
             owner=os_user,
         )
 
         # finally, read the config
-        self._config_parser.read(self._config_path)
+        self._config_parser.read(self.path)
 
     def install_credential_process(self, profile_name: str, script_path: Path) -> None:
         """
@@ -163,8 +138,8 @@ class _AWSConfigBase(ABC):
         """
         Writes the config to the config path given in the constructor
         """
-        _logger.info(f"Writing updated {self._config_path} to disk.")
-        with self._config_path.open(mode="w") as fp:
+        _logger.info(f"Writing updated {self.path} to disk.")
+        with self.path.open(mode="w") as fp:
             self._config_parser.write(fp=fp, space_around_delimiters=False)
 
     @abstractmethod
@@ -177,10 +152,13 @@ class _AWSConfigBase(ABC):
         """
         raise NotImplementedError("_get_profile_name is not implemented by _AWSConfigBase")
 
-    @staticmethod
+    @property
     @abstractmethod
-    def _get_path(os_user: str) -> Path:  # pragma: no cover
-        raise NotImplementedError("_get_path is not implemented by _AWSConfigBase")
+    def path(self) -> Path:  # pragma: no cover
+        typ = type(self)
+        raise NotImplementedError(
+            f"path property is not implemented by {typ.__module__}.{typ.__name__}"
+        )
 
 
 class AWSConfig(_AWSConfigBase):
@@ -191,9 +169,9 @@ class AWSConfig(_AWSConfigBase):
     def _get_profile_name(self, profile_name: str) -> str:
         return f"profile {profile_name}"
 
-    @staticmethod
-    def _get_path(os_user: str) -> Path:
-        return Path(f"~{os_user}/.aws/config").expanduser()
+    @property
+    def path(self) -> Path:
+        return self._parent_dir / "config"
 
 
 class AWSCredentials(_AWSConfigBase):
@@ -204,6 +182,6 @@ class AWSCredentials(_AWSConfigBase):
     def _get_profile_name(self, profile_name: str) -> str:
         return profile_name
 
-    @staticmethod
-    def _get_path(os_user: str) -> Path:
-        return Path(f"~{os_user}/.aws/credentials").expanduser()
+    @property
+    def path(self) -> Path:
+        return self._parent_dir / "credentials"

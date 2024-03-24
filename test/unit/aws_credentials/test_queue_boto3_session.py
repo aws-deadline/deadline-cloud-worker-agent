@@ -1,15 +1,20 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-import os
-import stat
+# Built-in
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from threading import Event
 from typing import Optional, Generator
 from unittest.mock import ANY, MagicMock, patch
-from datetime import datetime, timezone, timedelta
-from threading import Event
-from pathlib import Path
+import os
+import stat
 import tempfile
+
+# Third-party
+from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
 import pytest
 
+# First-party
 from deadline_worker_agent.aws.deadline import (
     DeadlineRequestInterrupted,
     DeadlineRequestWorkerOfflineError,
@@ -17,10 +22,9 @@ from deadline_worker_agent.aws.deadline import (
     DeadlineRequestUnrecoverableError,
     DeadlineRequestError,
 )
-import deadline_worker_agent.aws_credentials.queue_boto3_session as queue_boto3_session_mod
 from deadline_worker_agent.aws_credentials.queue_boto3_session import QueueBoto3Session
-from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
 from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
+import deadline_worker_agent.aws_credentials.queue_boto3_session as queue_boto3_session_mod
 
 
 @pytest.fixture(autouse=True)
@@ -255,6 +259,7 @@ class TestRefreshCredentials:
         queue_id: str,
         file_cache_cls_mock: MagicMock,
         temporary_credentials_cls_mock: MagicMock,
+        os_user: SessionUser,
     ) -> None:
         # Test that if the Session contains credentials that ARE expired,
         # then it will use the given bootstrap_session credentials to do the refresh.
@@ -273,7 +278,7 @@ class TestRefreshCredentials:
                 fleet_id=fleet_id,
                 worker_id=worker_id,
                 queue_id=queue_id,
-                os_user=None,
+                os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
             )
@@ -283,6 +288,9 @@ class TestRefreshCredentials:
                 queue_boto3_session_mod, "assume_queue_role_for_worker"
             ) as assume_role_mock,
             patch.object(QueueBoto3Session, "get_credentials") as mock_get_credentials,
+            patch.object(queue_boto3_session_mod.shutil, "chown") as mock_chown,
+            patch.object(queue_boto3_session_mod, "set_permissions") as mock_set_permissions,
+            patch.object(QueueBoto3Session, "_credentials_file_path") as mock_credentials_file_path,
         ):
             assume_role_mock.return_value = SAMPLE_ASSUME_ROLE_RESPONSE
             mock_temporary_creds = MagicMock()
@@ -310,11 +318,35 @@ class TestRefreshCredentials:
                 api_name="AssumeQueueRoleForWorker",
             )
             mock_temporary_creds.cache.assert_called_once_with(
-                cache=file_cache_cls_mock.return_value, cache_key=session._credentials_filename
+                cache=file_cache_cls_mock.return_value,
+                cache_key=session._credentials_filename_no_ext,
             )
             mock_credentials_object.set_credentials.assert_called_once_with(
                 mock_temporary_creds.to_deadline.return_value
             )
+            if os_user:
+                if os.name == "posix":
+                    assert isinstance(os_user, PosixSessionUser)
+                    mock_credentials_file_path.return_value.chmod(0o640)
+                    mock_chown.assert_called_once_with(
+                        mock_credentials_file_path.return_value, group=os_user.group
+                    )
+                else:
+                    mock_set_permissions.assert_called_once_with(
+                        file_path=mock_credentials_file_path.return_value,
+                        permitted_user=os_user,
+                        agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                        user_permission=FileSystemPermissionEnum.READ,
+                    )
+            else:
+                if os.name == "posix":
+                    mock_credentials_file_path.return_value.chmod(0o600)
+                    mock_chown.assert_not_called()
+                else:
+                    mock_set_permissions.assert_called_once_with(
+                        file_path=mock_credentials_file_path.return_value,
+                        agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                    )
 
     @pytest.mark.parametrize(
         "exception",
@@ -444,16 +476,20 @@ class TestCreateCredentialsDirectory:
 
         # GIVEN
         event = Event()
+        expected_mode = 0o750 if os_user else 0o700
         with (
             # To get through __init__
-            patch.object(QueueBoto3Session, "_create_credentials_directory"),
+            patch.object(QueueBoto3Session, "_credentials_file_path"),
+            patch.object(QueueBoto3Session, "_get_credentials_dir") as mock_get_credentials_dir,
             patch.object(QueueBoto3Session, "_install_credential_process"),
             patch.object(QueueBoto3Session, "refresh_credentials"),
+            patch.object(queue_boto3_session_mod, "make_directory") as mock_make_directory,
+            patch.object(queue_boto3_session_mod.shutil, "chown") as mock_chown,
         ):
-            mock_path = MagicMock()
-            mock_path.__truediv__.return_value = mock_path
+            worker_persistence_dir = MagicMock()
 
-            session = QueueBoto3Session(
+            # WHEN
+            QueueBoto3Session(
                 deadline_client=deadline_client,
                 farm_id=farm_id,
                 fleet_id=fleet_id,
@@ -461,33 +497,47 @@ class TestCreateCredentialsDirectory:
                 queue_id=queue_id,
                 os_user=os_user,
                 interrupt_event=event,
-                worker_persistence_dir=mock_path,
+                worker_persistence_dir=worker_persistence_dir,
             )
-
-        with (
-            patch.object(queue_boto3_session_mod, "make_directory") as mock_make_directory,
-            patch.object(queue_boto3_session_mod.shutil, "chown") as mock_chown,
-        ):
-            # WHEN
-            session._create_credentials_directory()
 
         # THEN
 
         if isinstance(os_user, PosixSessionUser):
-            mock_path.mkdir.assert_called_once_with(
+            assert os.name == "posix"
+            mock_get_credentials_dir.return_value.mkdir.assert_called_once_with(
                 exist_ok=True,
                 parents=True,
-                mode=0o750,
+                mode=expected_mode,
             )
-            mock_chown.assert_called_once_with(mock_path, group=os_user.group)
-        else:
+            mock_get_credentials_dir.return_value.chmod.assert_called_once_with(expected_mode)
+            mock_chown.assert_called_once_with(
+                mock_get_credentials_dir.return_value, group=os_user.group
+            )
+            mock_get_credentials_dir.return_value.chmod.assert_called_once_with(expected_mode)
+        elif isinstance(os_user, WindowsSessionUser):
+            assert os.name != "posix"
             mock_make_directory.assert_called_once_with(
-                dir_path=mock_path,
+                dir_path=mock_get_credentials_dir.return_value,
                 exist_ok=True,
                 parents=True,
                 permitted_user=os_user,
                 agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
                 user_permission=FileSystemPermissionEnum.READ,
+            )
+        elif os.name == "posix":
+            mock_get_credentials_dir.return_value.mkdir.assert_called_once_with(
+                exist_ok=True,
+                parents=True,
+                mode=expected_mode,
+            )
+            mock_get_credentials_dir.return_value.chmod.assert_called_once_with(expected_mode)
+            mock_chown.assert_not_called()
+        else:
+            mock_make_directory.assert_called_once_with(
+                dir_path=worker_persistence_dir,
+                exist_ok=True,
+                parents=True,
+                agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
             )
 
     def test_reraises_oserror(
@@ -645,9 +695,8 @@ class TestInstallCredentialProcess:
             if os_user is None
             else (stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP),
         )
-        mock_builtins_open.assert_called_once_with(
-            mock_os_open.return_value, mode="w", encoding="utf-8"
-        )
+        descriptor = mock_os_open.return_value
+        mock_builtins_open.assert_called_once_with(descriptor, mode="w", encoding="utf-8")
         mock_builtins_open.return_value.__enter__.assert_called_once()
         mock_builtins_open.return_value.__exit__.assert_called_once()
         mock_builtins_open.return_value.__enter__.return_value.write.assert_called_once_with(
@@ -659,9 +708,7 @@ class TestInstallCredentialProcess:
             # This assert for type checking. Expand the if-else chain when adding new user kinds.
             if os.name == "posix":
                 assert isinstance(os_user, PosixSessionUser)
-                mock_chown.assert_called_once_with(
-                    credentials_process_script_path, group=os_user.group
-                )
+                mock_chown.assert_called_once_with(descriptor, group=os_user.group)
             else:
                 assert isinstance(os_user, WindowsSessionUser)
                 mock_set_permissions.assert_called_once_with(

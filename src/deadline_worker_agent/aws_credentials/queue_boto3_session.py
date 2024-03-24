@@ -2,25 +2,29 @@
 
 from __future__ import annotations
 
-import os
-import logging
-from typing import Any, Optional, cast
+# Built-in
 from pathlib import Path
+import shlex
+from threading import Event
+from typing import Any, Optional, cast
+import logging
+import os
 import shutil
 import stat
-from threading import Event
+import subprocess
 
+# Third-party
 from botocore.utils import JSONFileCache
 from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
 
+# First-party
 from ..boto import DeadlineClient
 from ..file_system_operations import (
     make_directory,
     set_permissions,
     FileSystemPermissionEnum,
 )
-
-from .temporary_credentials import TemporaryCredentials
+from .aws_configs import AWSConfig, AWSCredentials
 from ..aws.deadline import (
     DeadlineRequestUnrecoverableError,
     DeadlineRequestInterrupted,
@@ -28,32 +32,60 @@ from ..aws.deadline import (
     DeadlineRequestConditionallyRecoverableError,
     assume_queue_role_for_worker,
 )
-from .aws_configs import AWSConfig, AWSCredentials
 from .boto3_sessions import BaseBoto3Session, SettableCredentials
+from .temporary_credentials import TemporaryCredentials
+
 
 _logger = logging.getLogger(__name__)
 
 
 class QueueBoto3Session(BaseBoto3Session):
     """A Boto3 Session that contains Queue Role AWS Credentials for use by:
-    1. Any service Session Action run within an Open Job Description Session; and
-    2. The Worker when performing actions on behalf of a service Session Action for
-       an Open Job Description Session.
+
+    1.  Any session action run within an Open Job Description session; and
+    2.  The Worker when performing actions on behalf of a session [action] for an Open Job
+        Description session.
 
     When created, this Session:
-    1. Installs an AWS Credentials Process in the ~/.aws of the given os_user, or the current user if
-       not provided.
-    2. Creates a directory in which to put: a/ a file containing this session's credentials; and b/ a
-       script file to use as an AWS Credentials Process for the Queue's job user.
 
-    **If you create an instance of this class, then you must ensure that a code path will always
-    result in the cleanup() method of that instance being called when done with the instance object.**
+    1.  Creates a queue-specific directory under the worker agent's persistence directory.
+        The directory ownership and permissions are configured such that the OS user that the worker
+        agent runs as is able to write to it and the job user is able to read from it. No other
+        OS users are granted access to these files
 
-    Calling QueueBoto3Session.refresh_credentials() will cause a service call to AssumeQueueRoleForWorker.
-    When successful, a refresh will:
-    1. Update the AWS Credentials stored & used by this Boto3 Session;
-    2. Persist the obtained AWS Credentials to disk for use in the credential's process; and
-    3. Update this Boto3 Session's AWS Credentials will be updated with the result.
+        The directory contains:
+
+        *   an AWS config file
+        *   an AWS credentials file
+        *   a script file to use as an AWS Credentials Process for the Queue's job user
+        *   a file containing a JSON representation of the session's credentials
+
+    2.  Creates an aws profile with a "credential_process" within the AWS config and credentials
+        files. This looks like:
+
+            ```ini
+            [profile queue-897585318504478c9bc7eeeae7785dbb]
+            credential_process=/var/lib/deadline/queues/queue-897585318504478c9bc7eeeae7785dbb/get_aws_credentials
+            ```
+
+        This feature is supported by official AWS SDKs and the CLI to provide IAM credentials.
+        See https://docs.aws.amazon.com/sdkref/latest/guide/feature-process-credentials.html
+
+    3.  Calls AssumeQueueRoleForWorker and writes the resulting credentials in the format expected
+        by credential_process to the JSON file.
+
+    ****************************************** IMPORTANT *******************************************
+    If you successfully create an instance of this class, then you must ensure that a code path will
+    alwaysresult in the cleanup() method of that instance being called when done with the instance
+    object.
+    ****************************************** IMPORTANT *******************************************
+
+    Calling QueueBoto3Session.refresh_credentials() will cause a service call to
+    AssumeQueueRoleForWorker. When successful, a refresh will:
+
+    1.  Update the AWS Credentials stored & used by this Boto3 Session;
+    2.  Persist the obtained AWS Credentials to disk for use in the credential's process; and
+    3.  Update this Boto3 Session's AWS Credentials will be updated with the result.
     """
 
     _deadline_client: DeadlineClient
@@ -76,7 +108,7 @@ class QueueBoto3Session(BaseBoto3Session):
     _file_cache: JSONFileCache
 
     # Basename of the filename (minus extension) of the file that credentials are written to
-    _credentials_filename: str
+    _credentials_filename_no_ext: str
 
     # Location of the credentials process script written to disk
     _credentials_process_script_path: Path
@@ -108,9 +140,9 @@ class QueueBoto3Session(BaseBoto3Session):
 
         self._profile_name = f"deadline-{self._queue_id}"
 
-        self._credential_dir = worker_persistence_dir / "queues" / self._queue_id
+        self._credential_dir = self._get_credentials_dir(worker_persistence_dir, queue_id)
         self._file_cache = JSONFileCache(working_dir=self._credential_dir)
-        self._credentials_filename = (
+        self._credentials_filename_no_ext = (
             "aws_credentials"  # note: .json extension added by JSONFileCache
         )
 
@@ -119,17 +151,64 @@ class QueueBoto3Session(BaseBoto3Session):
         else:
             self._credentials_process_script_path = self._credential_dir / "get_aws_credentials.cmd"
 
-        self._aws_config = AWSConfig(self._os_user)
-        self._aws_credentials = AWSCredentials(self._os_user)
+        self._create_credentials_directory(os_user)
 
-        self._create_credentials_directory()
+        self._aws_config = AWSConfig(os_user=self._os_user, parent_dir=self._credential_dir)
+        self._aws_credentials = AWSCredentials(
+            os_user=self._os_user, parent_dir=self._credential_dir
+        )
+
         self._install_credential_process()
+
+        # Output at debug level queue credential file ownership and permissions
+        self._debug_path_permissions(self._credential_dir)
+        self._debug_path_permissions(self._aws_config.path)
+        self._debug_path_permissions(self._aws_credentials.path)
+        self._debug_path_permissions(self._credentials_process_script_path)
 
         try:
             self.refresh_credentials()
         except:
             self.cleanup()
             raise
+
+    def _get_credentials_dir(self, worker_persistence_dir: Path, queue_id: str) -> Path:
+        return worker_persistence_dir / "queues" / queue_id
+
+    def _debug_path_permissions(self, path: Path, level: int = logging.DEBUG) -> None:
+        """Outputs information about the ownership and permissions of a path.
+
+        The output format is:
+
+            <PATH> | user = <USER> | group = <GROUP> | mode = <MODE>
+
+        Argument
+        --------
+            path (Path): The path
+            level (int): The logging level. Defaults to DEBUG.
+        """
+
+        # This is a performance optimization since production workers will log at INFO or higher
+        if os.name == "posix" and logging.root.isEnabledFor(level) and _logger.isEnabledFor(level):
+            # These imports are not at the top because otherwise mypy complains with:
+            #
+            # src\deadline_worker_agent\aws_credentials\queue_boto3_session.py:203: error:
+            # Module has no attribute "getpwuid"  [attr-defined]
+            import grp
+            import pwd
+
+            if not path.exists():
+                _logger.log(level, "path does not exist: %s", path)
+                return
+            st = path.stat()
+            _logger.log(
+                level,
+                "%s | user = %s | group = %s | mode = %s",
+                path,
+                pwd.getpwuid(st.st_uid).pw_name,  # type: ignore[attr-defined]
+                grp.getgrgid(st.st_gid).gr_name,  # type: ignore[attr-defined]
+                oct(st.st_mode),
+            )
 
     def cleanup(self) -> None:
         """This must be called when you are done with the constructed object.
@@ -145,6 +224,16 @@ class QueueBoto3Session(BaseBoto3Session):
         under.
         """
         return self._profile_name
+
+    @property
+    def aws_config(self) -> AWSConfig:
+        """The path to the AWS configuration file"""
+        return self._aws_config
+
+    @property
+    def aws_credentials(self) -> AWSCredentials:
+        """The path to the AWS credentials file"""
+        return self._aws_credentials
 
     @property
     def has_credentials(self) -> bool:
@@ -233,28 +322,38 @@ class QueueBoto3Session(BaseBoto3Session):
             # Something was bad with the response. That's unrecoverable.
             raise DeadlineRequestUnrecoverableError(e)
 
+        credentials_file_path = self._credentials_file_path()
+
         if temporary_creds:
-            temporary_creds.cache(cache=self._file_cache, cache_key=self._credentials_filename)
+            temporary_creds.cache(
+                cache=self._file_cache, cache_key=self._credentials_filename_no_ext
+            )
+            self._debug_path_permissions(credentials_file_path)
             if self._os_user is not None:
                 if os.name == "posix":
                     assert isinstance(self._os_user, PosixSessionUser)
-                    (self._credential_dir / self._credentials_filename).with_suffix(".json").chmod(
-                        stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP
-                    )
+                    credentials_file_path.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)
                     shutil.chown(
-                        (self._credential_dir / self._credentials_filename).with_suffix(".json"),
+                        credentials_file_path,
                         group=self._os_user.group,
                     )
+                    self._debug_path_permissions(credentials_file_path)
                 else:
                     assert isinstance(self._os_user, WindowsSessionUser)
                     set_permissions(
-                        file_path=(self._credential_dir / self._credentials_filename).with_suffix(
-                            ".json"
-                        ),
+                        file_path=credentials_file_path,
                         permitted_user=self._os_user,
                         agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
                         user_permission=FileSystemPermissionEnum.READ,
                     )
+            elif os.name == "posix":
+                credentials_file_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+            else:
+                set_permissions(
+                    file_path=credentials_file_path,
+                    permitted_user=self._os_user,
+                    agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                )
             credentials_object = cast(SettableCredentials, self.get_credentials())
             credentials_object.set_credentials(temporary_creds.to_deadline())
 
@@ -266,24 +365,31 @@ class QueueBoto3Session(BaseBoto3Session):
         else:
             _logger.info("No AWS Credentials received for Queue %s.", self._queue_id)
 
-    def _create_credentials_directory(self) -> None:
+    def _create_credentials_directory(self, os_user: Optional[SessionUser] = None) -> None:
         """Creates the directory that we're going to write the credentials file to"""
 
         # make the <worker_persistence_dir>/queues/<queue-id> dir and set permissions
         if os.name == "posix":
+            mode: int = stat.S_IRWXU
+            if os_user:
+                mode = mode | stat.S_IXGRP | stat.S_IRGRP
             try:
-                self._credential_dir.mkdir(
-                    exist_ok=True, parents=True, mode=(stat.S_IRWXU | stat.S_IXGRP | stat.S_IRGRP)
-                )
+                self._credential_dir.mkdir(exist_ok=True, parents=True, mode=mode)
+                self._credential_dir.chmod(mode)
             except OSError:
                 _logger.error(
                     "Please check user permissions. Could not create directory: %s",
                     str(self._credential_dir),
                 )
                 raise
-            if self._os_user is not None:
-                if isinstance(self._os_user, PosixSessionUser):
-                    shutil.chown(self._credential_dir, group=self._os_user.group)
+            if os_user is not None:
+                assert isinstance(os_user, PosixSessionUser)
+                _logger.debug(
+                    "Changing group ownership of %s to %s",
+                    self._credential_dir,
+                    os_user.group,
+                )
+                shutil.chown(self._credential_dir, group=os_user.group)
         else:
             if self._os_user is None:
                 make_directory(
@@ -336,11 +442,19 @@ class QueueBoto3Session(BaseBoto3Session):
             mode=mode,
         )
         with open(descriptor, mode="w", encoding="utf-8") as f:
-            f.write(self._generate_credential_process_script())
+            if os.name == "posix":
+                # If the file pre-existed, the mode argument in os.open(..., mode=...) will
+                # not be used.
+                os.chmod(
+                    descriptor,
+                    mode=mode,
+                )
+
+            # Change permissions
             if self._os_user is not None:
                 if os.name == "posix":
                     assert isinstance(self._os_user, PosixSessionUser)
-                    shutil.chown(self._credentials_process_script_path, group=self._os_user.group)
+                    shutil.chown(descriptor, group=self._os_user.group)
                 else:
                     assert isinstance(self._os_user, WindowsSessionUser)
                     set_permissions(
@@ -349,26 +463,38 @@ class QueueBoto3Session(BaseBoto3Session):
                         agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
                         user_permission=FileSystemPermissionEnum.EXECUTE,
                     )
+            elif os.name == "nt":
+                # If the file pre-existed, the mode argument in os.open(..., mode=...) will
+                # not be used.
+                set_permissions(
+                    file_path=self._credentials_process_script_path,
+                    user_permission=FileSystemPermissionEnum.EXECUTE,
+                )
 
-        # install credential process to ~<job-user>/.aws/config and
-        # ~<job-user>/.aws/credentials
+            f.write(self._generate_credential_process_script())
+
+        # install credential process to the AWS config and credentials files
         for aws_cred_file in (self._aws_config, self._aws_credentials):
             aws_cred_file.install_credential_process(
                 self._profile_name, self._credentials_process_script_path
             )
+
+    def _credentials_file_path(self) -> Path:
+        return (self._credential_dir / self._credentials_filename_no_ext).with_suffix(".json")
 
     def _generate_credential_process_script(self) -> str:
         """
         Generates the bash script which generates the credentials as JSON output on STDOUT.
         This script will be used by the installed credential process.
         """
+        credential_files_path = self._credentials_file_path()
         if os.name == "posix":
-            return ("#!/bin/bash\nset -eu\ncat {0}\n").format(
-                (self._credential_dir / self._credentials_filename).with_suffix(".json")
+            return ("#!/bin/bash\nset -eu\n{0}").format(
+                " ".join(shlex.quote(arg) for arg in ["cat", str(credential_files_path)])
             )
         else:
-            return ('@echo off\ntype "{0}"\n').format(
-                (self._credential_dir / self._credentials_filename).with_suffix(".json")
+            return ("@echo off\n{0}\n").format(
+                subprocess.list2cmdline(["type", str(credential_files_path)])
             )
 
     def _uninstall_credential_process(self) -> None:
