@@ -61,6 +61,7 @@ def test_start_windows_installer_fails_when_run_as_non_admin_user(
 ) -> None:
     # GIVEN
     is_user_an_admin.return_value = False
+    assert parsed_args.region is not None, "Region is required"
 
     with (patch.object(installer_mod, "get_argument_parser") as mock_get_arg_parser,):
         with pytest.raises(SystemExit):

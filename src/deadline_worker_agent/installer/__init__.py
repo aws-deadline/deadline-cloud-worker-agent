@@ -5,6 +5,8 @@ from typing import Optional, Any
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from subprocess import CalledProcessError, run
+import re
+import requests
 import sys
 import sysconfig
 
@@ -18,6 +20,45 @@ INSTALLER_PATH = {
 }
 
 
+def _get_ec2_region() -> Optional[str]:
+    """
+    Gets the AWS region if running on EC2 by querying IMDS.
+    Returns None if region could not be detected.
+    """
+    try:
+        # Create IMDSv2 token
+        token_response = requests.put(
+            url="http://169.254.169.254/latest/api/token",
+            headers={"X-aws-ec2-metadata-token-ttl-seconds": "10"},  # 10 second expiry
+        )
+        token = token_response.text
+        if not token:
+            raise RuntimeError("Received empty IMDSv2 token")
+
+        # Get AZ
+        az_response = requests.get(
+            url="http://169.254.169.254/latest/meta-data/placement/availability-zone",
+            headers={"X-aws-ec2-metadata-token": token},
+        )
+        az = az_response.text
+    except Exception as e:
+        print(f"Failed to detect AWS region: {e}")
+        return None
+    else:
+        if not az:
+            print("AWS region could not be detected, received empty response from IMDS")
+            return None
+
+        match = re.match(r"^([a-z-]+-[0-9])([a-z])?$", az)
+        if not match:
+            print(
+                f"AWS region could not be detected, got unexpected availability zone from IMDS: {az}"
+            )
+            return None
+
+        return match.group(1)
+
+
 def install() -> None:
     """Installer entrypoint for the AWS Deadline Cloud Worker Agent"""
 
@@ -28,6 +69,13 @@ def install() -> None:
     arg_parser = get_argument_parser()
     args = arg_parser.parse_args(namespace=ParsedCommandLineArguments)
     scripts_path = Path(sysconfig.get_path("scripts"))
+
+    if args.region is None:
+        args.region = _get_ec2_region()
+        if args.region is None:
+            print("ERROR: Unable to detect AWS region. Please provide a value for --region.")
+            sys.exit(1)
+
     if sys.platform == "win32":
         installer_args: dict[str, Any] = dict(
             farm_id=args.farm_id,
@@ -94,7 +142,7 @@ class ParsedCommandLineArguments(Namespace):
 
     farm_id: str
     fleet_id: str
-    region: str
+    region: Optional[str] = None
     user: str
     password: Optional[str] = None
     group: Optional[str] = None
@@ -126,8 +174,11 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     )
     parser.add_argument(
         "--region",
-        help='The AWS region of the AWS Deadline Cloud farm. Defaults to "us-west-2".',
-        default="us-west-2",
+        help=(
+            "The AWS region of the AWS Deadline Cloud farm. "
+            "If on EC2, this is optional and the region will be automatically detected. Otherwise, this option is required."
+        ),
+        default=None,
     )
 
     # Windows local usernames are restricted to 20 characters in length.

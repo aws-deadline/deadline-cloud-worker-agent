@@ -36,7 +36,7 @@ farm_id=unset
 fleet_id=unset
 wa_user=$default_wa_user
 confirm=""
-region="us-west-2"
+region="unset"
 scripts_path="unset"
 worker_agent_program="deadline-worker-agent"
 client_library_program="deadline"
@@ -62,7 +62,7 @@ usage()
     echo "    --fleet-id FLEET_ID"
     echo "        The AWS Deadline Cloud Fleet ID that the Worker belongs to."
     echo "    --region REGION"
-    echo "        The AWS region of the AWS Deadline Cloud farm. Defaults to $region."
+    echo "        The AWS region of the AWS Deadline Cloud farm."
     echo "    --user USER"
     echo "        A user name that the AWS Deadline Cloud Worker Agent will run as. Defaults to $default_wa_user."
     echo "    --group GROUP"
@@ -197,7 +197,11 @@ else
     set -e
 fi
 
-if [[ ! -z "${region}" ]] && [[ ! "${region}" =~ ^[a-z]+-[a-z]+-[0-9]+$ ]]; then
+if [[ "${region}" == "unset" ]]; then
+    echo "ERROR: --region not specified"
+    usage
+fi
+if [[ ! "${region}" =~ ^[a-z]+-[a-z]+-([a-z]+-)?[0-9]+$ ]]; then
     echo "ERROR: Not a valid value for --region: ${region}"
     usage
 fi
