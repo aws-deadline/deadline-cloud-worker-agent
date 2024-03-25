@@ -15,6 +15,7 @@ from functools import partial
 from pathlib import Path
 from threading import Event, RLock, Lock, Timer
 from typing import Callable, Literal, Tuple, Union, cast, Optional, Any
+import json
 import logging
 import os
 import stat
@@ -786,8 +787,6 @@ class WorkerScheduler:
                 ) as e:
                     # Terminal error. We need to fail the Session.
                     message = f"Unrecoverable error trying to obtain AWS Credentials for the Queue Role: {e}"
-                    if str(e).startswith("Can't determine home directory"):
-                        message += ". Possible non-valid username."
                     self._fail_all_actions(session_spec, message)
                     logger.warning("[%s] %s", new_session_id, message)
                     # Force an immediate UpdateWorkerSchedule request
@@ -826,21 +825,32 @@ class WorkerScheduler:
                     self._wakeup.set()
                     continue
 
+            env = {
+                "DEADLINE_SESSION_ID": new_session_id,
+                "DEADLINE_FARM_ID": self._farm_id,
+                "DEADLINE_QUEUE_ID": queue_id,
+                "DEADLINE_JOB_ID": job_id,
+                "DEADLINE_FLEET_ID": self._fleet_id,
+                "DEADLINE_WORKER_ID": self._worker_id,
+            }
+            if queue_credentials:
+                env.update(
+                    {
+                        "AWS_PROFILE": queue_credentials.session.credential_process_profile_name,
+                        "AWS_CONFIG_FILE": str(queue_credentials.session.aws_config.path),
+                        "AWS_SHARED_CREDENTIALS_FILE": str(
+                            queue_credentials.session.aws_credentials.path
+                        ),
+                    }
+                )
+
+            logger.debug("env = \n%s", json.dumps(env, indent=2))
+
             session = Session(
                 id=new_session_id,
                 queue=queue,
                 queue_id=queue_id,
-                env={
-                    "AWS_PROFILE": queue_credentials.session.credential_process_profile_name,
-                    "DEADLINE_SESSION_ID": new_session_id,
-                    "DEADLINE_FARM_ID": self._farm_id,
-                    "DEADLINE_QUEUE_ID": queue_id,
-                    "DEADLINE_JOB_ID": job_id,
-                    "DEADLINE_FLEET_ID": self._fleet_id,
-                    "DEADLINE_WORKER_ID": self._worker_id,
-                }
-                if queue_credentials
-                else None,
+                env=env,
                 asset_sync=asset_sync,
                 job_details=job_details,
                 os_user=os_user,
