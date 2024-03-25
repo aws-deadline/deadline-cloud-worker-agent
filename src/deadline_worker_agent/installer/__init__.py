@@ -6,9 +6,9 @@ from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from subprocess import CalledProcessError, run
 import re
+import requests
 import sys
 import sysconfig
-import urllib.request
 
 
 if sys.platform == "win32":
@@ -27,24 +27,20 @@ def _get_ec2_region() -> Optional[str]:
     """
     try:
         # Create IMDSv2 token
-        token_request = urllib.request.Request(
+        token_response = requests.put(
             url="http://169.254.169.254/latest/api/token",
             headers={"X-aws-ec2-metadata-token-ttl-seconds": "10"},  # 10 second expiry
-            method="PUT",
         )
-        with urllib.request.urlopen(token_request, timeout=1) as response:
-            token = response.read().decode("utf-8")
+        token = token_response.text
         if not token:
             raise RuntimeError("Received empty IMDSv2 token")
 
         # Get AZ
-        az_request = urllib.request.Request(
+        az_response = requests.get(
             url="http://169.254.169.254/latest/meta-data/placement/availability-zone",
             headers={"X-aws-ec2-metadata-token": token},
-            method="GET",
         )
-        with urllib.request.urlopen(az_request, timeout=1) as response:
-            az = response.read().decode("utf-8")
+        az = az_response.text
     except Exception as e:
         print(f"Failed to detect AWS region: {e}")
         return None
