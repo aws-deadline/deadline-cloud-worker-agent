@@ -18,6 +18,8 @@ except ImportError:
 import win32con
 import win32net
 import win32security
+import win32file
+import ntsecuritycon
 
 import deadline.client.config.config_file
 from deadline_worker_agent.installer import win_installer
@@ -214,6 +216,40 @@ def test_update_config_file_creates_backup(setup_example_config):
     assert os.path.isfile(backup_worker_config), "Backup of worker config file was not created"
 
 
+def verify_least_privilege(windows_user: str, path: pathlib.Path):
+    builtin_admin_group_sid, _, _ = win32security.LookupAccountName(None, "Administrators")
+    user_sid, _, _ = win32security.LookupAccountName(None, windows_user)
+    sd = win32security.GetFileSecurity(
+        str(path),
+        win32con.DACL_SECURITY_INFORMATION | win32con.OWNER_SECURITY_INFORMATION,
+    )
+    # Verify ownership
+    owner_sid = sd.GetSecurityDescriptorOwner()
+    assert (
+        builtin_admin_group_sid == owner_sid
+    ), f"Expected directory '{path}' to be owned by 'Administrators' but got '{win32security.LookupAccountSid(None, owner_sid)}'"
+
+    # Verify all ACEs
+    dacl = sd.GetSecurityDescriptorDacl()
+    assert dacl.GetAceCount() == 2, f"Number of aces for {path} was not as expected"
+    for ace in [dacl.GetAce(i) for i in range(dacl.GetAceCount())]:
+        _ace_info, mask, sid = ace
+        ace_type, ace_flags = _ace_info
+
+        assert (
+            ace_type == ntsecuritycon.ACCESS_ALLOWED_ACE_TYPE
+        ), f"Unexpected ace type found for {path}"
+        assert (
+            ace_flags == ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE
+        ), "Unexpected inheritance in ace for  {path}"
+        assert (
+            # we set ntsecuritycon.GENERIC_ALL but that gets converted to win32File.FILE_ALL_ACCESS
+            mask
+            == win32file.FILE_ALL_ACCESS
+        ), f"Expected only FILE_FULL_ACCESS aces for {path} but found {mask}"
+        assert sid in [builtin_admin_group_sid, user_sid], f"Unexpected sid found in ace for {path}"
+
+
 def test_provision_directories(
     windows_user: str,
     tmp_path: pathlib.Path,
@@ -247,9 +283,13 @@ def test_provision_directories(
     # THEN
     assert actual_dirs == expected_dirs
     assert actual_dirs.deadline_dir.exists()
+    verify_least_privilege(windows_user, actual_dirs.deadline_dir)
     assert actual_dirs.deadline_log_subdir.exists()
+    verify_least_privilege(windows_user, actual_dirs.deadline_log_subdir)
     assert actual_dirs.deadline_persistence_subdir.exists()
+    verify_least_privilege(windows_user, actual_dirs.deadline_persistence_subdir)
     assert actual_dirs.deadline_config_subdir.exists()
+    verify_least_privilege(windows_user, actual_dirs.deadline_config_subdir)
 
 
 def test_update_deadline_client_config(tmp_path: pathlib.Path) -> None:
