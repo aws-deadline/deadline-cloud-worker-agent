@@ -40,7 +40,6 @@ def parameters_from_api_response(
 ) -> dict[str, ParameterValue]:
     result = dict[str, ParameterValue]()
     for name, value in params.items():
-        print(name, value)
         if "string" in value:
             value = cast(StringParameter, value)
             param_value = ParameterValue(type=ParameterValueType.STRING, value=value["string"])
