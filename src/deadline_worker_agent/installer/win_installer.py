@@ -307,6 +307,7 @@ def update_config_file(
     farm_id: str,
     fleet_id: str,
     shutdown_on_stop: Optional[bool] = None,
+    allow_ec2_instance_profile: Optional[bool] = None,
 ) -> None:
     """
     Updates the worker configuration file, creating it from the example if it does not exist.
@@ -387,6 +388,24 @@ def update_config_file(
             )
         else:
             updated_keys.append("shutdown_on_stop")
+    if allow_ec2_instance_profile is not None:
+        allow_ec2_instance_profile_toml = str(allow_ec2_instance_profile).lower()
+        content = re.sub(
+            r"^#*\s*allow_ec2_instance_profile\s*=\s*\w+$",
+            f"allow_ec2_instance_profile = {allow_ec2_instance_profile_toml}",
+            content,
+            flags=re.MULTILINE,
+        )
+        if not re.search(
+            rf"^allow_ec2_instance_profile = {re.escape(allow_ec2_instance_profile_toml)}$",
+            content,
+            flags=re.MULTILINE,
+        ):
+            raise InstallerFailedException(
+                f"Failed to configure allow_ec2_instance_profile in {worker_config_file}"
+            )
+        else:
+            updated_keys.append("allow_ec2_instance_profile")
 
     # Write the updated content back to the worker configuration file
     with open(worker_config_file, "w") as file:
@@ -749,6 +768,7 @@ def start_windows_installer(
     confirm: bool = False,
     telemetry_opt_out: bool = False,
     grant_required_access: bool = False,
+    allow_ec2_instance_profile: bool = True,
 ):
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -798,7 +818,8 @@ def start_windows_installer(
         f"Allow worker agent shutdown: {allow_shutdown}\n"
         f"Install Windows service: {install_service}\n"
         f"Start service: {start_service}\n"
-        f"Telemetry opt-out: {telemetry_opt_out}"
+        f"Telemetry opt-out: {telemetry_opt_out}\n"
+        f"Disallow EC2 instance profile: {not allow_ec2_instance_profile}"
     )
     print()
 
@@ -896,6 +917,7 @@ def start_windows_installer(
         # This always sets shutdown_on_stop even if the user did not provide
         # any "shutdown" option to be consistent with POSIX installer
         shutdown_on_stop=allow_shutdown,
+        allow_ec2_instance_profile=allow_ec2_instance_profile,
     )
 
     if telemetry_opt_out:

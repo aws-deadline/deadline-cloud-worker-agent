@@ -77,6 +77,8 @@ def expected_cmd(
         expected_cmd.append("--allow-shutdown")
     if parsed_args.telemetry_opt_out:
         expected_cmd.append("--telemetry-opt-out")
+    if parsed_args.disallow_instance_profile:
+        expected_cmd.append("--disallow-instance-profile")
     return expected_cmd
 
 

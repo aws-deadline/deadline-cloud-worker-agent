@@ -41,6 +41,7 @@ scripts_path="unset"
 worker_agent_program="deadline-worker-agent"
 client_library_program="deadline"
 allow_shutdown="no"
+disallow_instance_profile="no"
 no_install_service="no"
 start_service="no"
 telemetry_opt_out="no"
@@ -90,6 +91,11 @@ usage()
     echo "    --vfs-install-path VFS_INSTALL_PATH"
     echo "        An optional, absolute path to the directory that the Deadline Virtual File System (VFS) is"
     echo "        installed."
+    echo "    --disallow-instance-profile"
+    echo "        Disallow running the worker agent with an EC2 instance profile. When this is provided, the worker "
+    echo "        agent makes requests to the EC2 instance meta-data service (IMDS) to check for an instance profile. "
+    echo "        If an instance profile is detected, the worker agent will stop and exit. When this is not provided, "
+    echo "        the worker agent no longer performs these checks, allowing it to run with an EC2 instance profile."
 
     exit 2
 }
@@ -115,7 +121,7 @@ validate_deadline_id() {
 }
 
 # Validate arguments
-PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,scripts-path:,vfs-install-path:,start,allow-shutdown,no-install-service,telemetry-opt-out -- "y" "$@")
+PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,scripts-path:,vfs-install-path:,start,allow-shutdown,no-install-service,telemetry-opt-out,disallow-instance-profile -- "y" "$@")
 VALID_ARGUMENTS=$?
 if [ "${VALID_ARGUMENTS}" != "0" ]; then
     usage
@@ -128,18 +134,19 @@ eval set -- "$PARSED_ARGUMENTS"
 while :
 do
     case "${1}" in
-    --farm-id)               farm_id="$2"               ; shift 2 ;;
-    --fleet-id)              fleet_id="$2"              ; shift 2 ;;
-    --region)                region="$2"                ; shift 2 ;;
-    --user)                  wa_user="$2"               ; shift 2 ;;
-    --group)                 job_group="$2"             ; shift 2 ;;
-    --scripts-path)          scripts_path="$2"          ; shift 2 ;;
-    --vfs-install-path)      vfs_install_path="$2"      ; shift 2 ;;
-    --allow-shutdown)        allow_shutdown="yes"       ; shift   ;;
-    --no-install-service)    no_install_service="yes"   ; shift   ;;
-    --telemetry-opt-out)     telemetry_opt_out="yes"    ; shift   ;;
-    --start)                 start_service="yes"        ; shift   ;;
-    -y)                      confirm="$1"               ; shift   ;;
+    --farm-id)                      farm_id="$2"                    ; shift 2 ;;
+    --fleet-id)                     fleet_id="$2"                   ; shift 2 ;;
+    --region)                       region="$2"                     ; shift 2 ;;
+    --user)                         wa_user="$2"                    ; shift 2 ;;
+    --group)                        job_group="$2"                  ; shift 2 ;;
+    --scripts-path)                 scripts_path="$2"               ; shift 2 ;;
+    --vfs-install-path)             vfs_install_path="$2"           ; shift 2 ;;
+    --allow-shutdown)               allow_shutdown="yes"            ; shift   ;;
+    --disallow-instance-profile)    disallow_instance_profile="yes" ; shift   ;;
+    --no-install-service)           no_install_service="yes"        ; shift   ;;
+    --telemetry-opt-out)            telemetry_opt_out="yes"         ; shift   ;;
+    --start)                        start_service="yes"             ; shift   ;;
+    -y)                             confirm="$1"                    ; shift   ;;
     # -- means the end of the arguments; drop this, and break out of the while loop
     --) shift; break ;;
     # If non-valid options were passed, then getopt should have reported an error,
@@ -256,6 +263,7 @@ echo "Allow worker agent shutdown: ${allow_shutdown}"
 echo "Start systemd service: ${start_service}"
 echo "Telemetry opt-out: ${telemetry_opt_out}"
 echo "VFS install path: ${vfs_install_path}"
+echo "Disallow EC2 instance profile: ${disallow_instance_profile}"
 
 # Confirmation prompt
 if [ -z "$confirm" ]; then
@@ -378,14 +386,21 @@ if [[ "${allow_shutdown}" == "yes" ]]; then
 else
    shutdown_on_stop="false"
 fi
+if [[ "${disallow_instance_profile}" == "yes" ]]; then
+   allow_ec2_instance_profile="false"
+else
+   allow_ec2_instance_profile="true"
+fi
 
 echo "Configuring farm and fleet"
 echo "Configuring shutdown on stop"
+echo "Configuring allow ec2 instance profile"
 sed -E                                                          \
     --in-place=.bak                                             \
     -e "s,^# farm_id\s*=\s*\"REPLACE-WITH-WORKER-FARM-ID\"$,farm_id = \"${farm_id}\",g"    \
     -e "s,^# fleet_id\s*=\s*\"REPLACE-WITH-WORKER-FLEET-ID\"$,fleet_id = \"${fleet_id}\",g" \
     -e "s,^[#]*\s*shutdown_on_stop\s*=\s*\w+$,shutdown_on_stop = ${shutdown_on_stop},g"    \
+    -e "s,^[#]*\s*allow_ec2_instance_profile\s*=\s*\w+$,allow_ec2_instance_profile = ${allow_ec2_instance_profile},g"    \
     /etc/amazon/deadline/worker.toml
 if ! grep "farm_id = \"${farm_id}\"" /etc/amazon/deadline/worker.toml; then
     echo "ERROR: Failed to configure farm ID in /etc/amazon/deadline/worker.toml."
@@ -395,7 +410,17 @@ if ! grep "fleet_id = \"${fleet_id}\"" /etc/amazon/deadline/worker.toml; then
     echo "ERROR: Failed to configure fleet ID in /etc/amazon/deadline/worker.toml."
     exit 1
 fi
+if ! grep "shutdown_on_stop = ${shutdown_on_stop}" /etc/amazon/deadline/worker.toml; then
+    echo "ERROR: Failed to configure shutdown on stop in /etc/amazon/deadline/worker.toml."
+    exit 1
+fi
+if ! grep "allow_ec2_instance_profile = ${allow_ec2_instance_profile}" /etc/amazon/deadline/worker.toml; then
+    echo "ERROR: Failed to configure allow ec2 instance profile in /etc/amazon/deadline/worker.toml."
+    exit 1
+fi
 echo "Done configuring farm and fleet"
+echo "Done configuring shutdown on stop"
+echo "Done configuring allow ec2 instance profile"
 
 if ! [[ "${no_install_service}" == "yes" ]]; then
     # Set up the service

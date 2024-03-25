@@ -119,7 +119,7 @@ def config(
         cli_args.no_shutdown = no_shutdown
         cli_args.profile = profile
         cli_args.verbose = verbose
-        cli_args.allow_instance_profile = allow_instance_profile
+        cli_args.disallow_instance_profile = not allow_instance_profile
         # Direct the logs and persistence state into a temporary directory
         cli_args.logs_dir = Path(tempdir) / "temp-logs-dir"
         cli_args.persistence_dir = Path(tempdir) / "temp-persist-dir"

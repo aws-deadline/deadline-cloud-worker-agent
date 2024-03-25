@@ -57,10 +57,11 @@ class WorkerSettings(BaseSettings):
     windows_job_user_password_arn : str
         The ARN of an AWS Secrets Manager secret containing the password of the job user for Windows.
     allow_instance_profile : bool
-        If false (the default) and the worker is running on an EC2 instance with IMDS, then the
+        If false and the worker is running on an EC2 instance with IMDS, then the
         worker will wait until the instance profile is disassociated before running worker sessions.
         This will repeatedly attempt to make requests to IMDS. If the instance profile is still
-        associated after some threshold, the worker agent program will log the error and exit .
+        associated after some threshold, the worker agent program will log the error and exit.
+        Default is true.
     capabilities : deadline_worker_agent.startup.Capabilities
         A set of capabilities that will be declared when the worker starts. These capabilities
         can be used by the service to determine if the worker is eligible to run sessions for a
@@ -96,7 +97,7 @@ class WorkerSettings(BaseSettings):
     windows_job_user_password_arn: Optional[str] = Field(
         regex=r"^arn:aws:secretsmanager:[a-z0-9\-]+:\d{12}:secret\/[a-zA-Z0-9/_+=.@-]+$"
     )
-    allow_instance_profile: bool = False
+    allow_instance_profile: bool = True
     capabilities: Capabilities = Field(
         default_factory=lambda: Capabilities(amounts={}, attributes={})
     )

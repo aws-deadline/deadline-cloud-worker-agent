@@ -224,20 +224,20 @@ class TestLoad:
         assert config.no_shutdown == no_shutdown
 
     @pytest.mark.parametrize(
-        ("allow_instance_profile",),
+        ("disallow_instance_profile",),
         (
             pytest.param(True, id="TrueArgument"),
             pytest.param(False, id="FalseArgument"),
         ),
     )
-    def test_uses_parsed_allow_instance_profile(
+    def test_uses_parsed_disallow_instance_profile(
         self,
         parsed_args: config_mod.ParsedCommandLineArguments,
-        allow_instance_profile: bool,
+        disallow_instance_profile: bool,
     ) -> None:
         """Tests that the parsed allow_instance_profile argument is returned"""
         # GIVEN
-        parsed_args.allow_instance_profile = allow_instance_profile
+        parsed_args.disallow_instance_profile = disallow_instance_profile
         # Must be present or a ConfigurationError is raised
         parsed_args.fleet_id = "fleet_id"
         parsed_args.farm_id = "farm_id"
@@ -246,7 +246,7 @@ class TestLoad:
         config = config_mod.Configuration.load()
 
         # THEN
-        assert config.allow_instance_profile == allow_instance_profile
+        assert config.allow_instance_profile == (not disallow_instance_profile)
 
     @pytest.mark.parametrize(
         ("cleanup_session_user_processes",),
@@ -689,21 +689,21 @@ class TestInit:
             assert "posix_job_user" not in call.kwargs
 
     @pytest.mark.parametrize(
-        argnames="allow_instance_profile",
+        argnames="disallow_instance_profile",
         argvalues=(
             True,
             False,
             None,
         ),
     )
-    def test_allow_instance_profile_passed_to_settings_initializer(
+    def test_disallow_instance_profile_passed_to_settings_initializer(
         self,
-        allow_instance_profile: bool | None,
+        disallow_instance_profile: bool | None,
         parsed_args: ParsedCommandLineArguments,
         mock_worker_settings_cls: MagicMock,
     ) -> None:
         # GIVEN
-        parsed_args.allow_instance_profile = allow_instance_profile
+        parsed_args.disallow_instance_profile = disallow_instance_profile
 
         # WHEN
         config_mod.Configuration(parsed_cli_args=parsed_args)
@@ -712,9 +712,9 @@ class TestInit:
         mock_worker_settings_cls.assert_called_once()
         call = mock_worker_settings_cls.call_args_list[0]
 
-        if allow_instance_profile is not None:
+        if disallow_instance_profile is not None:
             assert "allow_instance_profile" in call.kwargs
-            assert call.kwargs.get("allow_instance_profile") == allow_instance_profile
+            assert call.kwargs.get("allow_instance_profile") == (not disallow_instance_profile)
         else:
             assert "allow_instance_profile" not in call.kwargs
 

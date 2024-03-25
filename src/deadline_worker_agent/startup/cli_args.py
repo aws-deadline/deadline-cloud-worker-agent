@@ -19,7 +19,7 @@ class ParsedCommandLineArguments(Namespace):
     no_impersonation: bool | None = None
     run_jobs_as_agent_user: bool | None = None
     posix_job_user: str | None = None
-    allow_instance_profile: bool | None = None
+    disallow_instance_profile: bool | None = None
     logs_dir: Path | None = None
     local_session_logs: bool | None = None
     persistence_dir: Path | None = None
@@ -118,12 +118,21 @@ def get_argument_parser() -> ArgumentParser:
         action="store_true",
         dest="no_allow_instance_profile",
     )
+    # TODO: This is deprecated. Remove this eventually
     parser.add_argument(
         "--allow-instance-profile",
-        help="Turns off validation that the host EC2 instance profile is disassociated before starting",
+        help="DEPRECATED. This does nothing",
         action="store_const",
         const=True,
         dest="allow_instance_profile",
+        default=None,
+    )
+    parser.add_argument(
+        "--disallow-instance-profile",
+        help="Turns on validation that the host EC2 instance profile is disassociated before starting",
+        action="store_const",
+        const=True,
+        dest="disallow_instance_profile",
         default=None,
     )
     parser.add_argument(
