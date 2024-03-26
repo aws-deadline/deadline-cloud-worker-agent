@@ -550,11 +550,8 @@ def test_messages_logged(
     assert text_result == expected_message
 
     # Make sure that the generated json is as expected
-    assert "time" in dict_result
-    assert list(dict_result.keys())[0] == "time"  # time is first
     assert dict_result.get("level") == record.levelname
-    assert list(dict_result.keys())[1] == "level"  # level is second
-    del dict_result["time"]
+    assert list(dict_result.keys())[0] == "level"  # level is fist
     del dict_result["level"]
     assert dict_result == expected_dict
     assert list(dict_result.keys()) == list(expected_dict.keys()), "Key ordering differs"
@@ -610,7 +607,7 @@ def test_messages_logged_exception(
         'in test_messages_logged_exception\n    raise RuntimeError("Test exception!")\nRuntimeError: Test exception!'
         in dict_result["exception"]
     )
-    for extra_key in ("time", "level", "exception"):
+    for extra_key in ("level", "exception"):
         del dict_result[extra_key]
     assert dict_result == expected_dict
 

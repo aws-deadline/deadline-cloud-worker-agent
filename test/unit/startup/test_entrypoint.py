@@ -270,11 +270,16 @@ def test_configuration_logged(
 @pytest.mark.parametrize(
     ("verbose", "expected_root_log_level", "expected_console_fmt_str"),
     (
-        pytest.param(False, logging.INFO, "%(json)s", id="non-verbose"),
+        pytest.param(
+            False,
+            logging.INFO,
+            "[%(asctime)s][%(levelname)-8s] %(desc)s%(message)s",
+            id="non-verbose",
+        ),
         pytest.param(
             True,
             logging.DEBUG,
-            "%(json)s",
+            "[%(asctime)s][%(levelname)-8s] %(desc)s%(message)s",
             id="verbose",
         ),
     ),
@@ -304,6 +309,7 @@ def test_log_configuration(
         _config_mock.load().worker_credentials_dir.mkdir()
         # Required because MagicMock does not support int comparison
         _config_mock.load().host_metrics_logging_interval_seconds = 10
+        _config_mock.load().structured_logs = False
 
         # Mock logging.getLogger
         root_logger = MagicMock()

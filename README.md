@@ -57,9 +57,8 @@ with information about the specific log event.
 
 All log events structures contain:
 
-1. An `time` field that indicates the local time on the host at which the event was generated.
-2. A `level` field that indicates the severity of the log event, following the typical Python Logger
-   semantics: INFO, WARNING, ERROR, EXCEPTION, and CRITICAL.
+- A `level` field that indicates the severity of the log event, following the typical Python Logger
+  semantics: INFO, WARNING, ERROR, EXCEPTION, and CRITICAL.
 
 Log events may also contain a `type`, `subtype`, icon (`ti`), and additional fields as indicated in the following table.
 

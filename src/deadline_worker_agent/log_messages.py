@@ -559,10 +559,9 @@ class LogRecordStringTranslationFilter(logging.Filter):
             record.exc_info = None
 
         if not hasattr(record, "json"):
-            # Order is important here; we want 'time to be first followed by 'level'
+            # Order is important here; we want 'level' to be the first thing
             # when printing the dictionary as a string.
             structure = {
-                "time": self.formatter.formatTime(record, self.formatter.datefmt),
                 "level": record.levelname,
             }
             if isinstance(record.msg, BaseLogEvent):
