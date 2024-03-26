@@ -703,9 +703,9 @@ class TestInstallCredentialProcess:
         mock_os_open.assert_called_once_with(
             path=str(credentials_process_script_path),
             flags=os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-            mode=(stat.S_IRWXU)
-            if os_user is None
-            else (stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP),
+            mode=(
+                (stat.S_IRWXU) if os_user is None else (stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
+            ),
         )
         descriptor = mock_os_open.return_value
         mock_builtins_open.assert_called_once_with(descriptor, mode="w", encoding="utf-8")

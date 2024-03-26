@@ -626,9 +626,7 @@ class TestConfigureServiceFailureActions:
                 "ResetPeriod": 1200,
                 "RebootMsg": None,
                 "Command": None,
-                "Actions": [
-                    (mock_win32_service.SC_ACTION_RESTART, 2000 * 2**i) for i in range(8)
-                ],
+                "Actions": [(mock_win32_service.SC_ACTION_RESTART, 2000 * 2**i) for i in range(8)],
             },
         )
         mock_close_service_handle.assert_has_calls(
@@ -765,9 +763,7 @@ class TestConfigureServiceFailureActions:
                 "ResetPeriod": 1200,
                 "RebootMsg": None,
                 "Command": None,
-                "Actions": [
-                    (mock_win32_service.SC_ACTION_RESTART, 2000 * 2**i) for i in range(8)
-                ],
+                "Actions": [(mock_win32_service.SC_ACTION_RESTART, 2000 * 2**i) for i in range(8)],
             },
         )
         mock_close_service_handle.assert_has_calls(
