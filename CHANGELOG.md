@@ -1,3 +1,17 @@
+## 0.24.0 (2024-03-26)
+
+### BREAKING CHANGES
+* overhaul agent logging to introduce structured logs (#216) ([`abed8c9`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/abed8c95c932f0890eb03f5ed383ce8def3a37dc))
+* **installer**: allow ec2 instance profile by default (#259) ([`7e4d947`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/7e4d9474bd96d1d0b7a7ba749acca80d1266b0a3))
+* **installer**: detect default AWS region on EC2 (#250) ([`3db8685`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/3db86851bc9bcc9afec33c9fdd1b981897266b12))
+
+### Features
+* aws config directory managed by agent (#254) ([`2f4fd8a`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/2f4fd8a7a2431f8b4bbbfd92cbc435095be8278b))
+
+### Bug Fixes
+* handle OSError when detecting GPU capabilities (#255) ([`677fda6`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/677fda63e51a8c436c47faf9650b147a462b2a31))
+* handle IMDS disruptions gracefully (#249) ([`ea6b701`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/ea6b70102add121362da7009724146c604ebfa45))
+
 ## 0.23.1 (2024-03-23)
 
 
