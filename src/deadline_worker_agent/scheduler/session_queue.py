@@ -38,6 +38,7 @@ from ..sessions.errors import (
     StepDetailsError,
 )
 from ..sessions.job_entities.job_details import parameters_from_api_response
+from ..log_messages import SessionLogEvent, SessionLogEventSubtype
 
 if TYPE_CHECKING:
     from ..sessions.job_entities import JobEntities
@@ -100,12 +101,16 @@ class SessionActionQueue:
     ]
     _action_update_callback: Callable[[SessionActionStatus], None]
     _job_entities: JobEntities
+    _queue_id: str
     _job_id: str
+    _session_id: str
 
     def __init__(
         self,
         *,
+        queue_id: str,
         job_id: str,
+        session_id: str,
         job_entities: JobEntities,
         action_update_callback: Callable[[SessionActionStatus], None],
     ) -> None:
@@ -113,7 +118,9 @@ class SessionActionQueue:
         self._actions_by_id = {}
         self._actions = []
         self._job_entities = job_entities
+        self._queue_id = queue_id
         self._job_id = job_id
+        self._session_id = session_id
 
     def is_empty(self) -> bool:
         """Returns whether the queue is empty
@@ -164,14 +171,14 @@ class SessionActionQueue:
                         ),
                     )
             else:
-                logger.warning(f"Unknown action type in the session action queue: {action_type}")
+                logger.critical(f"Unknown action type in the session action queue: {action_type}")
                 continue
 
             all_action_identifiers.append(identifier)
 
         return all_action_identifiers
 
-    def cancel(
+    def _cancel(
         self,
         *,
         id: str,
@@ -190,10 +197,7 @@ class SessionActionQueue:
             Whether to fail the action or mark it as never attempted
         """
         action: SessionActionQueueEntry
-        try:
-            action = self._actions_by_id.pop(id)
-        except KeyError:
-            raise KeyError(f'No session action found with ID "{id}"') from None
+        action = self._actions_by_id.pop(id)
 
         self._actions.remove(action)
         action.cancel.set()
@@ -217,8 +221,6 @@ class SessionActionQueue:
                 ),
             )
         )
-
-        logger.info("Canceled %s as %s", action.definition["sessionActionId"], cancel_outcome)
 
     def cancel_all(
         self,
@@ -244,10 +246,23 @@ class SessionActionQueue:
         ]
 
         for action_id in action_ids:
-            self.cancel(
-                id=action_id,
-                message=message,
-                cancel_outcome="NEVER_ATTEMPTED",
+            # Ignore ids that are missing; cause would likely be a data race.
+            if action_id in self._actions_by_id:
+                self._cancel(
+                    id=action_id,
+                    message=message,
+                    cancel_outcome="NEVER_ATTEMPTED",
+                )
+        if action_ids:
+            logger.info(
+                SessionLogEvent(
+                    subtype=SessionLogEventSubtype.REMOVE,
+                    queue_id=self._queue_id,
+                    job_id=self._job_id,
+                    session_id=self._session_id,
+                    action_ids=action_ids,
+                    message="Removed SessionActions.",
+                )
             )
 
     def replace(
@@ -266,6 +281,8 @@ class SessionActionQueue:
             | SyncInputJobAttachmentsQueueEntry
             | SyncInputJobAttachmentsStepDependenciesQueueEntry
         ] = []
+
+        action_ids_added = list[str]()
 
         for action in actions:
             action_type = action["actionType"]
@@ -301,12 +318,24 @@ class SessionActionQueue:
                 else:
                     raise NotImplementedError(f"Unknown action type '{action_type}'")
                 self._actions_by_id[action_id] = queue_entry
-                logger.info("Enqueued new action: %s", action)
+                action_ids_added.append(action_id)
             else:
                 logger.debug("Action %s already queued", action_id)
             queue_entries.append(queue_entry)
 
         self._actions = queue_entries
+
+        if action_ids_added:
+            logger.info(
+                SessionLogEvent(
+                    subtype=SessionLogEventSubtype.ADD,
+                    queue_id=self._queue_id,
+                    job_id=self._job_id,
+                    session_id=self._session_id,
+                    action_ids=action_ids_added,
+                    message="Appended new SessionActions.",
+                )
+            )
 
     def dequeue(self) -> SessionActionDefinition | None:
         """Removes and returns an action from the front of the queue.
@@ -361,9 +390,7 @@ class SessionActionQueue:
                         environment_id=environment_id,
                     )
                 else:
-                    raise ValueError(
-                        f'Unknown action type "{action_type}". Complete action = {action_definition}'
-                    )
+                    raise ValueError(f'Unknown action type "{action_type}".')
             elif action_type == "TASK_RUN":
                 action_queue_entry = cast(TaskRunQueueEntry, action_queue_entry)
                 action_definition = action_queue_entry.definition
@@ -397,6 +424,7 @@ class SessionActionQueue:
                         raise JobAttachmentDetailsError(action_id, str(e)) from e
                     next_action = SyncInputJobAttachmentsAction(
                         id=action_id,
+                        session_id=self._session_id,
                         job_attachment_details=job_attachment_details,
                     )
                 else:
@@ -414,6 +442,7 @@ class SessionActionQueue:
                         raise StepDetailsError(action_id, str(e)) from e
                     next_action = SyncInputJobAttachmentsAction(
                         id=action_id,
+                        session_id=self._session_id,
                         step_details=step_details,
                     )
             else:

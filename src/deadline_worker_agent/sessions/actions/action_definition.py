@@ -77,35 +77,3 @@ class SessionActionDefinition(ABC):
             Raised if there was an issue initiating the canceling of the running action
         """
         ...
-
-    @abstractmethod
-    def human_readable(self) -> str:
-        """Returns a structured human-readable string that represents the subject and verb of the
-        action. The structural convention for the action ID is:
-
-            SUBJECT.VERB[ (PARAM_NAME=PARAM_VALUE, ...) ]
-
-        SUBJECT describes that subject of the action and may contain letters (a-z, A-Z),
-        numbers (0-9), and hyphens (-), square brackets ([]), parentheses (()).
-
-        VERB describes the verb of the action being performed and may contain letters(a-z, A-Z),
-        and hyphens.
-
-        PARAM_NAME and PARAM_VALUE describe the parameters to the action. The allowable values for
-        are inherited from Open Job Description step parameter spaces.
-
-        For example:
-
-        environment.activate()
-        environment.deactivate()
-        environment[maya].activate()
-        environment[scene-airship].activate()
-        step[render].run(frame=1)
-        environment[scene-airshop].deactivate()
-        environment[maya].deactivate()
-        step[animate-ffmpeg].run()
-
-        The above sequence of action IDs depict a worker session that first opens up AutoDesk Maya,
-        loads a scene file, renders a frame from the scene, unloads the scene, closes the
-        application and then animates the results using ffmpeg."""
-        ...

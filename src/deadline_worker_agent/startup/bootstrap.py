@@ -27,6 +27,14 @@ from ..api_models import WorkerStatus
 from ..boto import DEADLINE_BOTOCORE_CONFIG, DeadlineClient, Session
 from ..aws_credentials import WorkerBoto3Session
 from ..session_events import configure_session_events
+from ..log_messages import (
+    AwsCredentialsLogEvent,
+    AwsCredentialsLogEventOp,
+    FilesystemLogEvent,
+    FilesystemLogEventOp,
+    WorkerLogEvent,
+    WorkerLogEventOp,
+)
 
 __all__ = [
     "WorkerPersistenceInfo",
@@ -93,6 +101,14 @@ class WorkerPersistenceInfo:
         if not config.worker_state_file.is_file():
             return None
 
+        _logger.info(
+            FilesystemLogEvent(
+                op=FilesystemLogEventOp.READ,
+                filepath=str(config.worker_state_file),
+                message="Worker state from previous run.",
+            )
+        )
+
         with config.worker_state_file.open("r", encoding="utf8") as fh:
             data: dict[str, str] = json.load(fh)
 
@@ -101,7 +117,11 @@ class WorkerPersistenceInfo:
         ignored_keys = data.keys() - own_fields
         if ignored_keys:
             _logger.warning(
-                "Ignoring unknown keys in worker persistence file: %s", ", ".join(ignored_keys)
+                FilesystemLogEvent(
+                    op=FilesystemLogEventOp.READ,
+                    filepath=str(config.worker_state_file),
+                    message=f"Ignoring unknown keys in worker state file: {', '.join(ignored_keys)}",
+                )
             )
 
         return cls(**selected_data)
@@ -111,23 +131,40 @@ class WorkerPersistenceInfo:
         if not (
             config.worker_state_file.parent.exists() and config.worker_state_file.parent.is_dir()
         ):
-            raise RuntimeError(
-                f"The configured directory for the worker state file does not exist:\n{config.worker_state_file.parent}"
+            _logger.error(
+                FilesystemLogEvent(
+                    op=FilesystemLogEventOp.WRITE,
+                    filepath=str(config.worker_state_file.parent),
+                    message="The configured directory for the worker state file does not exist",
+                )
             )
+            raise RuntimeError("Cannot save worker state file")
 
         if (
             config.worker_state_file.is_file()
             and config.worker_state_file.stat().st_mode & stat.S_IWOTH
         ):
             _logger.warning(
-                f"Worker state file {config.worker_state_file} is world writeable which could lead to tampering."
+                FilesystemLogEvent(
+                    op=FilesystemLogEventOp.WRITE,
+                    filepath=str(config.worker_state_file),
+                    message="Worker state file is world writeable. Any Job can tamper with it.",
+                )
             )
+
         config.worker_state_file.touch(mode=stat.S_IWUSR | stat.S_IRUSR, exist_ok=True)
         with config.worker_state_file.open("w", encoding="utf8") as fh:
             json.dump(
                 asdict(self),
                 fh,
             )
+        _logger.info(
+            FilesystemLogEvent(
+                op=FilesystemLogEventOp.WRITE,
+                filepath=str(config.worker_state_file),
+                message="Worker state saved.",
+            )
+        )
 
 
 @dataclass
@@ -166,10 +203,9 @@ def bootstrap_worker(config: Configuration, *, use_existing_worker: bool = True)
             has_existing_worker=has_existing_worker,
         )
     except BootstrapWithoutWorkerLoad:
-        _logger.info(
-            "Cannot obtain AWS Credentials for Worker %s, loaded from the local host settings. Creating a new Worker.",
-            worker_info.worker_id,
-        )
+        # No need to log anything here:
+        #  1) _get_boto3_session_for_fleet_role will have logged the error; and
+        #  2) _load_or_create_worker will log that we're creating a new Worker.
         return bootstrap_worker(config, use_existing_worker=False)
 
     deadline_client = worker_session.client("deadline", config=DEADLINE_BOTOCORE_CONFIG)
@@ -183,9 +219,14 @@ def bootstrap_worker(config: Configuration, *, use_existing_worker: bool = True)
             has_existing_worker=has_existing_worker,
         )
     except BootstrapWithoutWorkerLoad:
-        _logger.info(
-            "Worker %s, loaded from the local host settings, could not be STARTED. Creating a new Worker.",
-            worker_info.worker_id,
+        _logger.error(
+            WorkerLogEvent(
+                op=WorkerLogEventOp.LOAD,
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                worker_id=worker_info.worker_id,
+                message="Worker status could not be set to STARTED. Creating a new Worker.",
+            )
         )
         return bootstrap_worker(config, use_existing_worker=False)
 
@@ -229,14 +270,29 @@ def _load_or_create_worker(
         worker_info = WorkerPersistenceInfo.load(config=config)
         if worker_info:
             has_existing_worker = True
-            _logger.info("Found existing Worker (%s) from prior launch", worker_info.worker_id)
+            _logger.info(
+                WorkerLogEvent(
+                    op=WorkerLogEventOp.LOAD,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_info.worker_id,
+                    message="Worker identity loaded from prior run.",
+                )
+            )
 
     if not worker_info:
         # Worker creation must be done using bootstrap credentials from the environment
         deadline_client = session.client("deadline", config=DEADLINE_BOTOCORE_CONFIG)
 
         host_properties = _get_host_properties()
-        _logger.info('Creating worker for hostname "%s"', host_properties["hostName"])
+        _logger.info(
+            WorkerLogEvent(
+                op=WorkerLogEventOp.LOAD,
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                message='Creating worker for hostname "%s"' % host_properties["hostName"],
+            )
+        )
         try:
             # raises: DeadlineRequestUnrecoverableError
             create_worker_response = create_worker(
@@ -248,7 +304,15 @@ def _load_or_create_worker(
             sys.exit(1)
         worker_id = create_worker_response["workerId"]
         worker_info = WorkerPersistenceInfo(worker_id=worker_id)
-        _logger.info('Worker "%s" successfully created', worker_id)
+        _logger.info(
+            WorkerLogEvent(
+                op=WorkerLogEventOp.CREATE,
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                worker_id=worker_id,
+                message="Worker successfully created",
+            )
+        )
         worker_info.save(config=config)
 
     return worker_info, has_existing_worker
@@ -287,16 +351,33 @@ def _get_boto3_session_for_fleet_role(
             # then we can retry without using the existing worker.
             # Otherwise, the error is terminal and we must exit.
             if code == "ResourceNotFoundException" and has_existing_worker:
-                _logger.info(
-                    "The previously saved worker, %s, has been deleted.",
-                    worker_id,
+                _logger.error(
+                    WorkerLogEvent(
+                        op=WorkerLogEventOp.DELETE,
+                        farm_id=config.farm_id,
+                        fleet_id=config.fleet_id,
+                        worker_id=worker_id,
+                        message="Worker no longer exists.",
+                    )
                 )
                 raise BootstrapWithoutWorkerLoad()
-        _logger.error("Could not obtain AWS Credentials for Worker %s", worker_id, exc_info=True)
+        _logger.exception(
+            AwsCredentialsLogEvent(
+                op=AwsCredentialsLogEventOp.LOAD,
+                resource=worker_id,
+                message="Could not obtain AWS Credentials.",
+            )
+        )
         sys.exit(1)
     except Exception:
         # Note: A naked exception should be impossible, but let's be paranoid.
-        _logger.error("Could not obtain AWS Credentials for Worker %s", worker_id, exc_info=True)
+        _logger.exception(
+            AwsCredentialsLogEvent(
+                op=AwsCredentialsLogEventOp.LOAD,
+                resource=worker_id,
+                message="Could not obtain AWS Credentials.",
+            )
+        )
         sys.exit(1)
 
     return worker_session
@@ -335,13 +416,39 @@ def _start_worker(
             host_properties=host_properties,
         )
     except DeadlineRequestUnrecoverableError:
-        _logger.error("Could not set status of %s to STARTED", worker_id, exc_info=True)
+        _logger.exception(
+            WorkerLogEvent(
+                op=WorkerLogEventOp.STATUS,
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                worker_id=worker_id,
+                message="Failed to set status to STARTED.",
+            )
+        )
         sys.exit(1)
     except DeadlineRequestConditionallyRecoverableError:
         if has_existing_worker:
             raise BootstrapWithoutWorkerLoad()
-        _logger.error("Could not set status of %s to STARTED", worker_id, exc_info=True)
+        _logger.exception(
+            WorkerLogEvent(
+                op=WorkerLogEventOp.STATUS,
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                worker_id=worker_id,
+                message="Failed to set status to STARTED.",
+            )
+        )
         sys.exit(1)
+
+    _logger.info(
+        WorkerLogEvent(
+            op=WorkerLogEventOp.STATUS,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
+            worker_id=worker_id,
+            message="Status set to STARTED.",
+        )
+    )
 
     if log_config := response.get("log"):
         return construct_worker_log_config(log_config=log_config)
@@ -378,14 +485,38 @@ def _enforce_no_instance_profile_or_stop_worker(
                 worker_id=worker_id,
                 status=WorkerStatus.STOPPED,
             )
-        except DeadlineRequestUnrecoverableError as e:
+        except DeadlineRequestUnrecoverableError:
             _logger.critical(
-                "Error encountered trying to stop worker: %s", e.inner_exc, exc_info=True
+                WorkerLogEvent(
+                    op=WorkerLogEventOp.STATUS,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    message="Failed to set status to STOPPED.",
+                ),
+                exc_info=True,
             )
         except Exception:
-            _logger.critical("Error encountered trying to stop worker", exc_info=True)
+            _logger.critical(
+                WorkerLogEvent(
+                    op=WorkerLogEventOp.STATUS,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    message="Failed to set status to STOPPED.",
+                ),
+                exc_info=True,
+            )
         else:
-            _logger.info("Worker %s stopped", worker_id)
+            _logger.info(
+                WorkerLogEvent(
+                    op=WorkerLogEventOp.STATUS,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    message="Status set to STOPPED.",
+                )
+            )
         raise
 
 

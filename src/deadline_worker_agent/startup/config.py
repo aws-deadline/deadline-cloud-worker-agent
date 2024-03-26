@@ -72,6 +72,8 @@ class Configuration:
     """The interval in seconds between host metrics logs"""
     retain_session_dir: bool
     """Whether to retain the OpenJD's session directory on completion"""
+    structured_logs: bool
+    """Whether or not the Worker Agent logs are structured logs."""
 
     # Used to optimize the memory allocation and attribute lookup speed. Tells python to not create a dict
     # for the attributes.
@@ -93,6 +95,7 @@ class Configuration:
         "host_metrics_logging",
         "host_metrics_logging_interval_seconds",
         "retain_session_dir",
+        "structured_logs",
     )
 
     def __init__(
@@ -142,6 +145,8 @@ class Configuration:
             ] = parsed_cli_args.host_metrics_logging_interval_seconds
         if parsed_cli_args.retain_session_dir is not None:
             settings_kwargs["retain_session_dir"] = parsed_cli_args.retain_session_dir
+        if parsed_cli_args.structured_logs is not None:
+            settings_kwargs["structured_logs"] = parsed_cli_args.structured_logs
 
         settings = WorkerSettings(**settings_kwargs)
 
@@ -174,6 +179,7 @@ class Configuration:
         self.host_metrics_logging = settings.host_metrics_logging
         self.host_metrics_logging_interval_seconds = settings.host_metrics_logging_interval_seconds
         self.retain_session_dir = settings.retain_session_dir
+        self.structured_logs = settings.structured_logs
 
         self._validate()
 

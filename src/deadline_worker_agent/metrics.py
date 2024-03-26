@@ -9,6 +9,8 @@ from typing import Any
 import os
 import psutil
 
+from .log_messages import MetricsLogEvent, MetricsLogEventSubtype
+
 module_logger = getLogger(__name__)
 
 
@@ -98,8 +100,7 @@ class HostMetricsLogger:
                 "disk-write-bytes-per-second": disk_write,
             }
 
-            # Output as space-delimited "key value" pairs for consumption by Cloudwatch to use as metrics
-            self.logger.info(" ".join(" ".join(kvp) for kvp in stats.items()))
+            self.logger.info(MetricsLogEvent(subtype=MetricsLogEventSubtype.SYSTEM, metrics=stats))
         finally:
             self._set_timer()
 

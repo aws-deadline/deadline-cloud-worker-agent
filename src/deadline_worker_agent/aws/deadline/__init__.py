@@ -540,8 +540,6 @@ def update_worker(
     backoff = Backoff(max_backoff=30)
     retry = 0
 
-    _logger.info(f"Invoking UpdateWorker to set {worker_id} to status={status.value}.")
-
     request: dict[str, Any] = dict(
         farmId=farm_id,
         fleetId=fleet_id,
@@ -553,7 +551,6 @@ def update_worker(
     if host_properties:
         request["hostProperties"] = host_properties
 
-    _logger.debug("UpdateWorker request: %s", request)
     while True:
         # If true, then we're trying to go to STARTED but have determined that we must first
         # go to STOPPED
@@ -627,7 +624,6 @@ def update_worker(
                     sleep(delay)
                 retry += 1
         except Exception as e:
-            _logger.error("Failed to start worker %s", worker_id)
             raise DeadlineRequestUnrecoverableError(e)
 
         if must_stop_first:
@@ -649,8 +645,6 @@ def update_worker(
             # Reset our throttle retry count to treat the attempts at going to STARTED
             # as fresh
             retry = 0
-
-    _logger.info("Worker %s successfully set to status %s", worker_id, status)
 
     return response
 
@@ -728,8 +722,6 @@ def update_worker_schedule(
         # defined) we get a Parameter validation error from botocore if we
         # don't provide a value for this field.
         request["updatedSessionActions"] = dict[str, UpdatedSessionActionInfo]()
-
-    _logger.debug("UpdateWorkerSchedule request: %s", request)
 
     # Retry API call when being throttled
     backoff = Backoff(max_backoff=30)

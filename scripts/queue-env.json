@@ -1,0 +1,18 @@
+{
+    "specificationVersion": "environment-2023-09",
+    "environment": {
+        "name": "TestEnvironment",
+        "script": {
+            "actions": {
+                "onEnter": {
+                    "command": "echo",
+                    "args": ["Enter", "Environment"]
+                },
+                "onExit": {
+                    "command": "echo",
+                    "args": ["Exit", "Environment"]
+                }
+            }
+        }
+    }
+}

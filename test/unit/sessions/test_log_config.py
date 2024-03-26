@@ -86,6 +86,8 @@ class TestLogConfiguration:
         ):
             # WHEN
             with log_config.log_session(
+                queue_id="queue-1234",
+                job_id="job-1234",
                 session_id="some-session",
                 boto_session=MagicMock(),
             ):

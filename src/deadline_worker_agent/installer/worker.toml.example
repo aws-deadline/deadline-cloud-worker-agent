@@ -146,6 +146,21 @@
 # local_session_logs = false
 
 
+# Whether the Worker Agent's own logs (written to stdout, and <worker_logs_dir>/worker-agent*.log) 
+# are output as structured logs or not.
+# Note that the Agent logs emited to AWS CloudWatch Logs are unaffected by this option.
+#
+# This value is overridden when the DEADLINE_WORKER_STRUCTURED_LOGS environment variable is set using
+# one of the following case-insensitive values:
+#
+#     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+#
+# or if the --structured-logs command-line flag is specified.
+#
+# By default logs are unstructured. To turn on structured logging, uncomment the line below:
+#
+# structured_logs = true
+
 [os]
 
 # AWS Deadline Cloud may specify an OS user to run a Job's session actions as. By setting

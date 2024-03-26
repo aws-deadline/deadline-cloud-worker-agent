@@ -79,6 +79,8 @@ class WorkerSettings(BaseSettings):
         The interval between host metrics log messages
     retain_session_dir : bool
         If true, then the OpenJD's session directory will not be removed after the job is finished.
+    structured_logs: bool
+        If true, then the Worker Agent's logs are structured.
     """
 
     farm_id: str = Field(regex=r"^farm-[a-z0-9]{32}$")
@@ -113,6 +115,7 @@ class WorkerSettings(BaseSettings):
     host_metrics_logging: bool = True
     host_metrics_logging_interval_seconds: float = 60
     retain_session_dir: bool = False
+    structured_logs: bool = False
 
     class Config:
         fields = {
@@ -140,6 +143,7 @@ class WorkerSettings(BaseSettings):
                 "env": "DEADLINE_WORKER_HOST_METRICS_LOGGING_INTERVAL_SECONDS"
             },
             "retain_session_dir": {"env": "DEADLINE_WORKER_RETAIN_SESSION_DIR"},
+            "structured_logs": {"env": "DEADLINE_WORKER_STRUCTURED_LOGS"},
         }
 
         @classmethod

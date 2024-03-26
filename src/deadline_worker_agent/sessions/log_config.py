@@ -19,6 +19,7 @@ from ..boto import (
     OTHER_BOTOCORE_CONFIG,
 )
 from ..log_sync.cloudwatch import CloudWatchHandler
+from ..log_messages import SessionLogEvent, SessionLogEventSubtype
 
 
 logger = logging.getLogger(__name__)
@@ -222,6 +223,8 @@ class LogConfiguration:
     def log_session(
         self,
         *,
+        queue_id: str,
+        job_id: str,
         session_id: str,
         boto_session: BotoSession,
     ) -> Generator[logging.Handler | None, None, None]:
@@ -267,10 +270,26 @@ class LogConfiguration:
             log_group_name = self.options[LOG_CONFIG_OPTION_GROUP_NAME_KEY]
             log_stream_name = self.options[LOG_CONFIG_OPTION_STREAM_NAME_KEY]
             logger.info(
-                f"[{session_id}] logs streamed to CloudWatch target: {log_group_name}/{log_stream_name}"
+                SessionLogEvent(
+                    subtype=SessionLogEventSubtype.LOGS,
+                    queue_id=queue_id,
+                    job_id=job_id,
+                    session_id=session_id,
+                    message="Logs streamed to: AWS CloudWatch Logs.",
+                    log_dest=f"{log_group_name}/{log_stream_name}",
+                )
             )
             if local_file_handler:
-                logger.info(f"[{session_id}] local logs target: {self.session_log_file}")
+                logger.info(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.LOGS,
+                        queue_id=queue_id,
+                        job_id=job_id,
+                        session_id=session_id,
+                        message="Logs streamed to: local file.",
+                        log_dest=str(self.session_log_file),
+                    )
+                )
             try:
                 yield remote_handler
             finally:

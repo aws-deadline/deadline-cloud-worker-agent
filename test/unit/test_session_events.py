@@ -7,29 +7,31 @@ from deadline_worker_agent.session_events import (
     LoggingAllowList,
     LOGGING_ALLOW_LIST,
 )
-from typing import Dict
-from typing import Any
+from typing import Any, Dict
 import datetime
+import json
+
+from deadline_worker_agent.log_messages import ApiRequestLogEvent, ApiResponseLogEvent
 
 
 def test_logging_allow_list():
     # This test exists to ensure that no ACCIDENTAL changes are made to the logging allow-list
 
     test_allow_list: Dict[str, LoggingAllowList] = {
-        "deadline.CreateWorker": {
+        "deadline:CreateWorker": {
             "log_request_url": True,
             "req_log_body": {"hostProperties": True},
             "res_log_body": {"workerId": True},
         },
-        "deadline.AssumeFleetRoleForWorker": {
+        "deadline:AssumeFleetRoleForWorker": {
             "log_request_url": True,
             "res_log_body": {"credentials": {"accessKeyId": True, "expiration": True}},
         },
-        "deadline.AssumeQueueRoleForWorker": {
+        "deadline:AssumeQueueRoleForWorker": {
             "log_request_url": True,
             "res_log_body": {"credentials": {"accessKeyId": True, "expiration": True}},
         },
-        "deadline.UpdateWorker": {
+        "deadline:UpdateWorker": {
             "log_request_url": True,
             "req_log_body": {
                 "status": True,
@@ -38,7 +40,7 @@ def test_logging_allow_list():
             },
             "res_log_body": {"log": True},
         },
-        "deadline.UpdateWorkerSchedule": {
+        "deadline:UpdateWorkerSchedule": {
             "log_request_url": True,
             "req_log_body": {
                 "updatedSessionActions": {
@@ -77,7 +79,7 @@ def test_logging_allow_list():
                 "updateIntervalSeconds": True,
             },
         },
-        "deadline.BatchGetJobEntity": {
+        "deadline:BatchGetJobEntity": {
             "log_request_url": True,
             "req_log_body": {
                 "identifiers": True,
@@ -122,10 +124,10 @@ def test_logging_allow_list():
                 "errors": True,
             },
         },
-        "deadline.DeleteWorker": {
+        "deadline:DeleteWorker": {
             "log_request_url": True,
         },
-        "secretsmanager.GetSecretValue": {
+        "secretsmanager:GetSecretValue": {
             "log_request_url": True,
             "req_log_body": {"SecretId": True, "VersionId": True, "VersionStage": True},
             "res_log_body": {"ARN": True, "CreatedDate": True, "Name": True, "VersionId": True},
@@ -145,7 +147,7 @@ def test_logging_allow_list():
                 "body": '{"hostProperties": {"ipAddresses": {"ipV4Addresses": ["0.0.0.0", "127.0.0.1", "0.0.0.0"], "ipV6Addresses": ["0000:0000:0000:0000:0000:0000:0000:0000", "0000:0000:0000:0000:0000:0000:0000:0000", "0000:0000:0000:0000:0000:0000:0000:0000"]}, "hostName": "host.us-west-2.amazon.com"}}',
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers",
             },
-            '{"log_type": "boto_request", "operation": "deadline.CreateWorker", "params": {"hostProperties": {"ipAddresses": {"ipV4Addresses": ["0.0.0.0", "127.0.0.1", "0.0.0.0"], "ipV6Addresses": ["0000:0000:0000:0000:0000:0000:0000:0000", "0000:0000:0000:0000:0000:0000:0000:0000", "0000:0000:0000:0000:0000:0000:0000:0000"]}, "hostName": "host.us-west-2.amazon.com"}}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:CreateWorker", "params": {"hostProperties": {"ipAddresses": {"ipV4Addresses": ["0.0.0.0", "127.0.0.1", "0.0.0.0"], "ipV6Addresses": ["0000:0000:0000:0000:0000:0000:0000:0000", "0000:0000:0000:0000:0000:0000:0000:0000", "0000:0000:0000:0000:0000:0000:0000:0000"]}, "hostName": "host.us-west-2.amazon.com"}}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000"}}',
             id="CreateWorkerBeforeCallTest",
         ),
         pytest.param(
@@ -160,7 +162,7 @@ def test_logging_allow_list():
                 "body": b"",
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/fleet-role",
             },
-            '{"log_type": "boto_request", "operation": "deadline.AssumeFleetRoleForWorker", "params": {}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/fleet-role"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:AssumeFleetRoleForWorker", "params": {}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/fleet-role", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000", "worker-id": "worker-0000000000000000000000000000000"}}',
             id="AssumeFleetRoleForWorkerBeforeCallTest",
         ),
         pytest.param(
@@ -175,7 +177,7 @@ def test_logging_allow_list():
                 "body": b"",
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/queue-role?queueId=queue-0000000000000000000000000000000",
             },
-            '{"log_type": "boto_request", "operation": "deadline.AssumeQueueRoleForWorker", "params": {}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/queue-role?queueId=queue-0000000000000000000000000000000"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:AssumeQueueRoleForWorker", "params": {}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/queue-role?queueId=queue-0000000000000000000000000000000", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000", "worker-id": "worker-0000000000000000000000000000000", "queue-id": "queue-0000000000000000000000000000000"}}',
             id="AssumeQueueRoleForWorkerBeforeCallTest",
         ),
         pytest.param(
@@ -191,7 +193,7 @@ def test_logging_allow_list():
                 "body": b'{"status": "STARTED", "capabilities": {"amounts": [{"name": "amount.worker.vcpu", "value": 8.0}, {"name": "amount.worker.memory", "value": 14987.5234375}, {"name": "amount.worker.disk.scratch", "value": 0.0}, {"name": "amount.worker.gpu", "value": 0.0}, {"name": "amount.worker.gpu.memory", "value": 0.0}], "attributes": [{"name": "attr.worker.os.family", "values": ["linux"]}, {"name": "attr.worker.cpu.arch", "values": ["x86_64"]}]}, "hostProperties": {"ipAddresses": {"ipV4Addresses": ["127.0.0.1", "0.0.0.0", "0.0.0.0"], "ipV6Addresses": ["0000:0000:0000:0000:0000:0000:00000:0000", "0000:0000:0000:0000:0000:0000:0000:0001", "0000:0000:0000:0000:0000:0000:0000:0000"]}, "hostName": "host.us-west-2.amazon.com"}}',
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000",
             },
-            '{"log_type": "boto_request", "operation": "deadline.UpdateWorker", "params": {"status": "STARTED", "capabilities": {"amounts": [{"name": "amount.worker.vcpu", "value": 8.0}, {"name": "amount.worker.memory", "value": 14987.5234375}, {"name": "amount.worker.disk.scratch", "value": 0.0}, {"name": "amount.worker.gpu", "value": 0.0}, {"name": "amount.worker.gpu.memory", "value": 0.0}], "attributes": [{"name": "attr.worker.os.family", "values": ["linux"]}, {"name": "attr.worker.cpu.arch", "values": ["x86_64"]}]}, "hostProperties": {"ipAddresses": {"ipV4Addresses": ["127.0.0.1", "0.0.0.0", "0.0.0.0"], "ipV6Addresses": ["0000:0000:0000:0000:0000:0000:00000:0000", "0000:0000:0000:0000:0000:0000:0000:0001", "0000:0000:0000:0000:0000:0000:0000:0000"]}, "hostName": "host.us-west-2.amazon.com"}}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:UpdateWorker", "params": {"status": "STARTED", "capabilities": {"amounts": [{"name": "amount.worker.vcpu", "value": 8.0}, {"name": "amount.worker.memory", "value": 14987.5234375}, {"name": "amount.worker.disk.scratch", "value": 0.0}, {"name": "amount.worker.gpu", "value": 0.0}, {"name": "amount.worker.gpu.memory", "value": 0.0}], "attributes": [{"name": "attr.worker.os.family", "values": ["linux"]}, {"name": "attr.worker.cpu.arch", "values": ["x86_64"]}]}, "hostProperties": {"ipAddresses": {"ipV4Addresses": ["127.0.0.1", "0.0.0.0", "0.0.0.0"], "ipV6Addresses": ["0000:0000:0000:0000:0000:0000:00000:0000", "0000:0000:0000:0000:0000:0000:0000:0001", "0000:0000:0000:0000:0000:0000:0000:0000"]}, "hostName": "host.us-west-2.amazon.com"}}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000", "worker-id": "worker-0000000000000000000000000000000"}}',
             id="UpdateWorkerBeforeCallTest",
         ),
         pytest.param(
@@ -207,7 +209,7 @@ def test_logging_allow_list():
                 "body": b'{"updatedSessionActions": {"sessionaction-45044d1fbc4f4d6388f5ef694ed0c298-0": {"startedAt": "2024-03-15T22:58:02.574480Z", "completedStatus": "FAILED", "processExitCode": 126, "endedAt": "2024-03-15T22:58:02.589172Z"}, "sessionaction-45044d1fbc4f4d6388f5ef694ed0c298-1": {"completedStatus": "NEVER_ATTEMPTED", "progressMessage": "We dun failed"}, "sessionaction-45044d1fbc4f4d6388f5ef694ed0c298-2": {"completedStatus": "NEVER_ATTEMPTED", "progressMessage": "We dun failed"}}}',
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/schedule",
             },
-            '{"log_type": "boto_request", "operation": "deadline.UpdateWorkerSchedule", "params": {"updatedSessionActions": {"sessionaction-45044d1fbc4f4d6388f5ef694ed0c298-0": {"startedAt": "2024-03-15T22:58:02.574480Z", "completedStatus": "FAILED", "processExitCode": 126, "endedAt": "2024-03-15T22:58:02.589172Z"}, "sessionaction-45044d1fbc4f4d6388f5ef694ed0c298-1": {"completedStatus": "NEVER_ATTEMPTED", "progressMessage": "*REDACTED*"}, "sessionaction-45044d1fbc4f4d6388f5ef694ed0c298-2": {"completedStatus": "NEVER_ATTEMPTED", "progressMessage": "*REDACTED*"}}}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/schedule"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:UpdateWorkerSchedule", "params": {"updatedSessionActions": {"sessionaction-45044d1fbc4f4d6388f5ef694ed0c298-0": {"startedAt": "2024-03-15T22:58:02.574480Z", "completedStatus": "FAILED", "processExitCode": 126, "endedAt": "2024-03-15T22:58:02.589172Z"}, "sessionaction-45044d1fbc4f4d6388f5ef694ed0c298-1": {"completedStatus": "NEVER_ATTEMPTED", "progressMessage": "*REDACTED*"}, "sessionaction-45044d1fbc4f4d6388f5ef694ed0c298-2": {"completedStatus": "NEVER_ATTEMPTED", "progressMessage": "*REDACTED*"}}}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/schedule", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000", "worker-id": "worker-0000000000000000000000000000000"}}',
             id="UpdateWorkerScheduleBeforeCallTest",
         ),
         pytest.param(
@@ -223,7 +225,7 @@ def test_logging_allow_list():
                 "body": b'{"identifiers": [{"jobDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82"}}]}',
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity",
             },
-            '{"log_type": "boto_request", "operation": "deadline.BatchGetJobEntity", "params": {"identifiers": [{"jobDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82"}}]}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:BatchGetJobEntity", "params": {"identifiers": [{"jobDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82"}}]}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000", "worker-id": "worker-0000000000000000000000000000000"}}',
             id="BatchGetJobEntityBeforeCallTest-JobDetails",
         ),
         pytest.param(
@@ -239,7 +241,7 @@ def test_logging_allow_list():
                 "body": b'{"identifiers": [{"jobAttachmentDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82"}}]}',
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity",
             },
-            '{"log_type": "boto_request", "operation": "deadline.BatchGetJobEntity", "params": {"identifiers": [{"jobAttachmentDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82"}}]}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:BatchGetJobEntity", "params": {"identifiers": [{"jobAttachmentDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82"}}]}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000", "worker-id": "worker-0000000000000000000000000000000"}}',
             id="BatchGetJobEntityBeforeCallTest-JobAttachmentDetails",
         ),
         pytest.param(
@@ -255,7 +257,7 @@ def test_logging_allow_list():
                 "body": b'{"identifiers": [{"stepDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82", "stepId": "step-0771968389a54c26adf4afd80bac1b82"}}]}',
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity",
             },
-            '{"log_type": "boto_request", "operation": "deadline.BatchGetJobEntity", "params": {"identifiers": [{"stepDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82", "stepId": "step-0771968389a54c26adf4afd80bac1b82"}}]}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:BatchGetJobEntity", "params": {"identifiers": [{"stepDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82", "stepId": "step-0771968389a54c26adf4afd80bac1b82"}}]}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000", "worker-id": "worker-0000000000000000000000000000000"}}',
             id="BatchGetJobEntityBeforeCallTest-StepDetails",
         ),
         pytest.param(
@@ -271,7 +273,7 @@ def test_logging_allow_list():
                 "body": b'{"identifiers": [{"environmentDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82", "environmentId": "STEP:step-0771968389a54c26adf4afd80bac1b82:Identifier"}}]}',
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity",
             },
-            '{"log_type": "boto_request", "operation": "deadline.BatchGetJobEntity", "params": {"identifiers": [{"environmentDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82", "environmentId": "STEP:step-0771968389a54c26adf4afd80bac1b82:Identifier"}}]}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:BatchGetJobEntity", "params": {"identifiers": [{"environmentDetails": {"jobId": "job-0771968389a54c26adf4afd80bac1b82", "environmentId": "STEP:step-0771968389a54c26adf4afd80bac1b82:Identifier"}}]}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000/batchGetJobEntity", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000", "worker-id": "worker-0000000000000000000000000000000"}}',
             id="BatchGetJobEntityBeforeCallTest-EnvironmentDetails",
         ),
         pytest.param(
@@ -286,7 +288,7 @@ def test_logging_allow_list():
                 "body": b"",
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000",
             },
-            '{"log_type": "boto_request", "operation": "deadline.DeleteWorker", "params": {}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:DeleteWorker", "params": {}, "request_url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/workers/worker-0000000000000000000000000000000", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000", "worker-id": "worker-0000000000000000000000000000000"}}',
             id="DeleteWorkerBeforeCallTest",
         ),
         # ====================
@@ -302,7 +304,7 @@ def test_logging_allow_list():
                 "body": b'{"SecretId": "secret-id", "VersionId": "6fb9f17a-f9a9-4729-af0f-df67e976484c", "VersionStage": "AWSCURRENT"}',
                 "url": "https://secretsmanager.us-west-2.amazonaws.com/",
             },
-            '{"log_type": "boto_request", "operation": "secretsmanager.GetSecretValue", "params": {"SecretId": "secret-id", "VersionId": "6fb9f17a-f9a9-4729-af0f-df67e976484c", "VersionStage": "AWSCURRENT"}, "request_url": "https://secretsmanager.us-west-2.amazonaws.com/"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "secretsmanager:GetSecretValue", "params": {"SecretId": "secret-id", "VersionId": "6fb9f17a-f9a9-4729-af0f-df67e976484c", "VersionStage": "AWSCURRENT"}, "request_url": "https://secretsmanager.us-west-2.amazonaws.com/"}',
             id="GetSecretValueBeforeCallTest",
         ),
         # ====================
@@ -314,7 +316,7 @@ def test_logging_allow_list():
                 "body": '{"requestParam": "requestValue"}',
                 "url": "https://**********.execute-api.us-west-2.amazonaws.com/2020-08-21/farms/farm-0000000000000000000000000000000/fleets/fleet-0000000000000000000000000000000/newthing",
             },
-            '{"log_type": "boto_request", "operation": "deadline.NotAnAPI", "params": "*REDACTED*", "request_url": "*REDACTED*"}',
+            '{"ti": "📤", "type": "API", "subtype": "Req", "operation": "deadline:NotAnAPI", "params": "*REDACTED*", "request_url": "*REDACTED*", "resource": {"farm-id": "farm-0000000000000000000000000000000", "fleet-id": "fleet-0000000000000000000000000000000"}}',
             id="NotAnAPIBeforeCallTest",
         ),
     ),
@@ -324,7 +326,9 @@ def test_log_before_call(
 ) -> None:
     caplog.set_level(0)
     log_before_call(event_name, params)
-    assert caplog.messages == [expected_result]
+    assert len(caplog.records) == 1
+    assert isinstance(caplog.records[0].msg, ApiRequestLogEvent)
+    assert json.dumps(caplog.records[0].msg.asdict(), ensure_ascii=False) == expected_result
 
 
 @pytest.mark.parametrize(
@@ -370,7 +374,7 @@ def test_log_before_ignore_list(
                 },
                 "workerId": "worker-38aab2f87d2b45298b39875639580970",
             },
-            '{"log_type": "boto_response", "operation": "deadline.CreateWorker", "status_code": 200, "params": {"workerId": "worker-38aab2f87d2b45298b39875639580970"}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
+            '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "deadline:CreateWorker", "status_code": 200, "params": {"workerId": "worker-38aab2f87d2b45298b39875639580970"}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
             id="CreateWorkerAfterCallTest",
         ),
         pytest.param(
@@ -387,7 +391,7 @@ def test_log_before_ignore_list(
                     "expiration": "some date",
                 },
             },
-            '{"log_type": "boto_response", "operation": "deadline.AssumeFleetRoleForWorker", "status_code": 200, "params": {"credentials": {"accessKeyId": "accesskey", "secretAccessKey": "*REDACTED*", "sessionToken": "*REDACTED*", "expiration": "some date"}}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
+            '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "deadline:AssumeFleetRoleForWorker", "status_code": 200, "params": {"credentials": {"accessKeyId": "accesskey", "secretAccessKey": "*REDACTED*", "sessionToken": "*REDACTED*", "expiration": "some date"}}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
             id="AssumeFleetRoleForWorkerAfterCallTest",
         ),
         pytest.param(
@@ -404,7 +408,7 @@ def test_log_before_ignore_list(
                     "expiration": "some date",
                 },
             },
-            '{"log_type": "boto_response", "operation": "deadline.AssumeQueueRoleForWorker", "status_code": 200, "params": {"credentials": {"accessKeyId": "accesskey", "secretAccessKey": "*REDACTED*", "sessionToken": "*REDACTED*", "expiration": "some date"}}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
+            '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "deadline:AssumeQueueRoleForWorker", "status_code": 200, "params": {"credentials": {"accessKeyId": "accesskey", "secretAccessKey": "*REDACTED*", "sessionToken": "*REDACTED*", "expiration": "some date"}}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
             id="AssumeQueueRoleForWorkerAfterCallTest",
         ),
         pytest.param(
@@ -421,7 +425,7 @@ def test_log_before_ignore_list(
                     "error": "AccessDeniedException",
                 },
             },
-            '{"log_type": "boto_response", "operation": "deadline.UpdateWorker", "status_code": 200, "params": {"log": {"logDriver": "AWS", "options": {"option1": "foo"}, "parameters": {"param1": "bar"}, "error": "AccessDeniedException"}}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
+            '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "deadline:UpdateWorker", "status_code": 200, "params": {"log": {"logDriver": "AWS", "options": {"option1": "foo"}, "parameters": {"param1": "bar"}, "error": "AccessDeniedException"}}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
             id="UpdateWorkerAfterCallTest",
         ),
         pytest.param(
@@ -480,7 +484,7 @@ def test_log_before_ignore_list(
                     },
                 },
             },
-            '{"log_type": "boto_response", "operation": "deadline.UpdateWorkerSchedule", "status_code": 200, "params": {"assignedSessions": {"session-e4ffe548f48d456ca11b5337bdc7a175": {"queueId": "queue-f9848b67822d49299296e3e47d8cc523", "jobId": "job-ac95524e7128498b9082375f8e3d7665", "sessionActions": [{"sessionActionId": "sessionaction-e4ffe548f48d456ca11b5337bdc7a175-0", "definition": {"envEnter": {"environmentId": "JOB:job-ac95524e7128498b9082375f8e3d7665:TestEnvironment"}}}, {"sessionActionId": "sessionaction-e4ffe548f48d456ca11b5337bdc7a175-1", "definition": {"envEnter": {"environmentId": "STEP:step-ff15e0f18561495399cb07b64342b538:myenv"}}}, {"sessionActionId": "sessionaction-e4ffe548f48d456ca11b5337bdc7a175-2", "definition": {"taskRun": {"taskId": "task-ff15e0f18561495399cb07b64342b538-0", "stepId": "step-ff15e0f18561495399cb07b64342b538", "parameters": "*REDACTED*"}}}, {"sessionActionId": "sessionaction-e4ffe548f48d456ca11b5337bdc7a175-3", "definition": {"syncInputJobAttachments": {"stepId": "step-ff15e0f18561495399cb07b64342b500"}}}], "logConfiguration": {"logDriver": "AWS", "options": {"option1": "foo"}, "parameters": {"param1": "bar"}, "error": "AccessDeniedException"}}}}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
+            '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "deadline:UpdateWorkerSchedule", "status_code": 200, "params": {"assignedSessions": {"session-e4ffe548f48d456ca11b5337bdc7a175": {"queueId": "queue-f9848b67822d49299296e3e47d8cc523", "jobId": "job-ac95524e7128498b9082375f8e3d7665", "sessionActions": [{"sessionActionId": "sessionaction-e4ffe548f48d456ca11b5337bdc7a175-0", "definition": {"envEnter": {"environmentId": "JOB:job-ac95524e7128498b9082375f8e3d7665:TestEnvironment"}}}, {"sessionActionId": "sessionaction-e4ffe548f48d456ca11b5337bdc7a175-1", "definition": {"envEnter": {"environmentId": "STEP:step-ff15e0f18561495399cb07b64342b538:myenv"}}}, {"sessionActionId": "sessionaction-e4ffe548f48d456ca11b5337bdc7a175-2", "definition": {"taskRun": {"taskId": "task-ff15e0f18561495399cb07b64342b538-0", "stepId": "step-ff15e0f18561495399cb07b64342b538", "parameters": "*REDACTED*"}}}, {"sessionActionId": "sessionaction-e4ffe548f48d456ca11b5337bdc7a175-3", "definition": {"syncInputJobAttachments": {"stepId": "step-ff15e0f18561495399cb07b64342b500"}}}], "logConfiguration": {"logDriver": "AWS", "options": {"option1": "foo"}, "parameters": {"param1": "bar"}, "error": "AccessDeniedException"}}}}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
             id="UpdateWorkerScheduleAfterCallTest",
         ),
         pytest.param(
@@ -553,7 +557,7 @@ def test_log_before_ignore_list(
                     }
                 ],
             },
-            '{"log_type": "boto_response", "operation": "deadline.BatchGetJobEntity", "status_code": 200, "params": {"entities": [{"jobDetails": {"jobId": "job-ac95524e7128498b9082375f8e3d7665", "jobAttachmentSettings": {"s3BucketName": "bucketname", "rootPrefix": "assets/"}, "jobRunAsUser": {"posix": {"user": "jobuser", "group": "jobuser"}, "windows": {"user": "jobuser", "passwordArn": "arn:aws:secretsmanager:us-west-2:000000000000:secret:PasswordSecret-qsrF9d"}, "runAs": "QUEUE_CONFIGURED_USER"}, "logGroupName": "/aws/deadline/farm-1b84ca8d938d47d99a00675ff4eedd41/queue-f9848b67822d49299296e3e47d8cc523", "queueRoleArn": "arn:aws:iam::000000000000:role/QueueRole", "parameters": "*REDACTED*", "schemaVersion": "jobtemplate-2023-09"}, "stepDetails": {"jobId": "job-ac95524e7128498b9082375f8e3d7665", "stepId": "step-ff15e0f18561495399cb07b64342b538", "schemaVersion": "jobtemplate-2023-09", "template": "*REDACTED*", "dependencies": ["step-ff15e0f18561495399cb07b64342b500"]}, "environmentDetails": {"jobId": "job-ac95524e7128498b9082375f8e3d7665", "environmentId": "JOB:job-ac95524e7128498b9082375f8e3d7665:TestEnvironment", "schemaVersion": "jobtemplate-2023-09", "template": "*REDACTED*"}, "jobAttachmentDetails": {"jobId": "job-ac95524e7128498b9082375f8e3d7665", "attachments": {"manifests": [{"fileSystemLocationName": "Filesystem", "rootPath": "*REDACTED*", "rootPathFormat": "posix", "outputRelativeDirectories": "*REDACTED*", "inputManifestPath": "manifest_file", "inputManifestHash": "1234"}], "fileSystem": "COPIED"}}}]}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
+            '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "deadline:BatchGetJobEntity", "status_code": 200, "params": {"entities": [{"jobDetails": {"jobId": "job-ac95524e7128498b9082375f8e3d7665", "jobAttachmentSettings": {"s3BucketName": "bucketname", "rootPrefix": "assets/"}, "jobRunAsUser": {"posix": {"user": "jobuser", "group": "jobuser"}, "windows": {"user": "jobuser", "passwordArn": "arn:aws:secretsmanager:us-west-2:000000000000:secret:PasswordSecret-qsrF9d"}, "runAs": "QUEUE_CONFIGURED_USER"}, "logGroupName": "/aws/deadline/farm-1b84ca8d938d47d99a00675ff4eedd41/queue-f9848b67822d49299296e3e47d8cc523", "queueRoleArn": "arn:aws:iam::000000000000:role/QueueRole", "parameters": "*REDACTED*", "schemaVersion": "jobtemplate-2023-09"}, "stepDetails": {"jobId": "job-ac95524e7128498b9082375f8e3d7665", "stepId": "step-ff15e0f18561495399cb07b64342b538", "schemaVersion": "jobtemplate-2023-09", "template": "*REDACTED*", "dependencies": ["step-ff15e0f18561495399cb07b64342b500"]}, "environmentDetails": {"jobId": "job-ac95524e7128498b9082375f8e3d7665", "environmentId": "JOB:job-ac95524e7128498b9082375f8e3d7665:TestEnvironment", "schemaVersion": "jobtemplate-2023-09", "template": "*REDACTED*"}, "jobAttachmentDetails": {"jobId": "job-ac95524e7128498b9082375f8e3d7665", "attachments": {"manifests": [{"fileSystemLocationName": "Filesystem", "rootPath": "*REDACTED*", "rootPathFormat": "posix", "outputRelativeDirectories": "*REDACTED*", "inputManifestPath": "manifest_file", "inputManifestHash": "1234"}], "fileSystem": "COPIED"}}}]}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
             id="BatchGetJobEntityAfterCallTest",
         ),
         pytest.param(
@@ -564,7 +568,7 @@ def test_log_before_ignore_list(
                     "HTTPStatusCode": 200,
                 },
             },
-            '{"log_type": "boto_response", "operation": "deadline.DeleteWorker", "status_code": 200, "params": {}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
+            '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "deadline:DeleteWorker", "status_code": 200, "params": {}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
             id="DeleteWorkerAfterCallTest",
         ),
         # ====================
@@ -578,7 +582,7 @@ def test_log_before_ignore_list(
                 },
                 "ResponseParam": "ResponseValue",
             },
-            '{"log_type": "boto_response", "operation": "deadline.NotAnAPI", "status_code": 200, "params": "*REDACTED*", "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
+            '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "deadline:NotAnAPI", "status_code": 200, "params": "*REDACTED*", "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
             id="NotAnAPIBeforeCallTest",
         ),
         # ====================
@@ -599,7 +603,7 @@ def test_log_before_ignore_list(
                     2021, 4, 27, 14, 8, 44, 337000, tzinfo=datetime.timezone.utc
                 ),
             },
-            '{"log_type": "boto_response", "operation": "secretsmanager.GetSecretValue", "status_code": 200, "params": {"ARN": "arn:aws:secretsmanager:us-west-2:000000000000:secret:Secret-qsrF9d", "Name": "Secret", "VersionId": "6fb9f17a-f9a9-4729-af0f-df67e976484c", "SecretString": "*REDACTED*", "SecretBinary": "*REDACTED*", "VersionStages": "*REDACTED*", "CreatedDate": "2021-04-27 14:08:44.337000+00:00"}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
+            '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "secretsmanager:GetSecretValue", "status_code": 200, "params": {"ARN": "arn:aws:secretsmanager:us-west-2:000000000000:secret:Secret-qsrF9d", "Name": "Secret", "VersionId": "6fb9f17a-f9a9-4729-af0f-df67e976484c", "SecretString": "*REDACTED*", "SecretBinary": "*REDACTED*", "VersionStages": "*REDACTED*", "CreatedDate": "2021-04-27 14:08:44.337000+00:00"}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
             id="GetSecretValueAfterCallTest",
         ),
         # ====================
@@ -614,7 +618,7 @@ def test_log_before_ignore_list(
                 "Error": {"Message": "This is a test", "Code": "InternalServerException"},
                 "reason": "CONFLICT_EXCEPTION",
             },
-            '{"log_type": "boto_response", "operation": "deadline.CreateWorker", "status_code": 500, "params": {"reason": "CONFLICT_EXCEPTION"}, "error": {"Message": "This is a test", "Code": "InternalServerException"}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
+            '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "deadline:CreateWorker", "status_code": 500, "error": {"Message": "This is a test", "Code": "InternalServerException"}, "params": {"reason": "CONFLICT_EXCEPTION"}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
             id="ErrorCase",
         ),
     ),
@@ -624,7 +628,9 @@ def test_log_after_call(
 ):
     caplog.set_level(0)
     log_after_call(event_name, params)
-    assert caplog.messages == [expected_result]
+    assert len(caplog.records) == 1
+    assert isinstance(caplog.records[0].msg, ApiResponseLogEvent)
+    assert json.dumps(caplog.records[0].msg.asdict(), ensure_ascii=False) == expected_result
 
 
 @pytest.mark.parametrize(

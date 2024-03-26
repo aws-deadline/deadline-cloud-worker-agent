@@ -28,6 +28,7 @@ class ParsedCommandLineArguments(Namespace):
     no_allow_instance_profile: bool | None = None
     host_metrics_logging: bool | None = None
     host_metrics_logging_interval_seconds: float | None = None
+    structured_logs: bool | None = None
 
 
 def get_argument_parser() -> ArgumentParser:
@@ -161,6 +162,14 @@ def get_argument_parser() -> ArgumentParser:
         "--retain-session-dir",
         help="Retain the session directory on completion",
         dest="retain_session_dir",
+        action="store_const",
+        const=True,
+        default=None,
+    )
+    parser.add_argument(
+        "--structured-logs",
+        help="Enable structured logging for the Agent's stdout and local file logs.",
+        dest="structured_logs",
         action="store_const",
         const=True,
         default=None,

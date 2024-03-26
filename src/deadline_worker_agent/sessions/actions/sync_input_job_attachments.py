@@ -8,12 +8,12 @@ from concurrent.futures import (
 )
 from functools import partial
 from datetime import timedelta
-from logging import getLogger
+from logging import getLogger, LoggerAdapter
 from threading import Event
 from typing import Any, TYPE_CHECKING, Optional
 
 from deadline.job_attachments.exceptions import AssetSyncCancelledError
-from openjd.sessions import ActionState, ActionStatus
+from openjd.sessions import ActionState, ActionStatus, LOG as OPENJD_LOG
 
 from ..session import Session
 
@@ -52,6 +52,7 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
         self,
         *,
         id: str,
+        session_id: str,
         job_attachment_details: Optional[JobAttachmentDetails] = None,
         step_details: Optional[StepDetails] = None,
     ) -> None:
@@ -61,6 +62,7 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
         self._cancel = Event()
         self._job_attachment_details = job_attachment_details
         self._step_details = step_details
+        self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
     def __eq__(self, other: Any) -> bool:
         return (
@@ -85,6 +87,16 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
         executor : Executor
             An executor for running futures
         """
+        if self._step_details:
+            section_title = "Job Attachments Download for Step"
+        else:
+            section_title = "Job Attachments Download for Job"
+        # Banner mimicing the one printed by the openjd-sessions runtime
+        self._logger.info("")
+        self._logger.info("==============================================")
+        self._logger.info(f"--------- {section_title}")
+        self._logger.info("==============================================")
+
         sync_asset_inputs_kwargs: dict[str, Any] = {
             "cancel": self._cancel,
             "job_attachment_details": self._job_attachment_details,
@@ -135,9 +147,6 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
             # We need to directly complete the action. Other actions rely on the Open Job Description session's
             # callback to complete the action
             session.update_action(action_status=action_status)
-
-    def human_readable(self) -> str:
-        return "job.sync_input_job_attachments()"
 
     def cancel(self, *, session: Session, time_limit: timedelta | None = None) -> None:
         if self._future.cancel():

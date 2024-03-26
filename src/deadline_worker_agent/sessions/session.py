@@ -53,7 +53,6 @@ from openjd.sessions import (
 )
 
 from deadline.job_attachments.asset_sync import AssetSync
-from deadline.job_attachments.asset_sync import logger as ASSET_SYNC_LOGGER
 from deadline.job_attachments.models import (
     Attachments,
     JobAttachmentS3Settings,
@@ -75,6 +74,12 @@ from ..aws.deadline import (
 )
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
+from ..log_messages import (
+    SessionLogEvent,
+    SessionLogEventSubtype,
+    SessionActionLogEvent,
+    SessionActionLogEventSubtype,
+)
 
 # TODO: Un-comment this when pipelined actions can be reported as NEVER_ATTEMPTED before the
 # currently canceling action is completed
@@ -156,10 +161,10 @@ class Session:
 
     _os_user: SessionUser | None = None
     _queue_id: str
+    _job_id: str
     _retain_session_dir: bool = False
     _job_details: JobDetails
     _job_attachment_details: JobAttachmentDetails | None = None
-    _initial_action_exception: Exception | None = None
 
     # Event that is set only when this Session is not running at all
     # i.e. it has exited, or never started, its main run loop/logic.
@@ -174,6 +179,7 @@ class Session:
         queue: SessionActionQueue,
         env: dict[str, str] | None = None,
         queue_id: str,
+        job_id: str,
         asset_sync: Optional[AssetSync],
         os_user: SessionUser | None,
         retain_session_dir: bool = False,
@@ -187,6 +193,7 @@ class Session:
         self._asset_sync = asset_sync
         self._current_action_lock = RLock()
         self._queue_id = queue_id
+        self._job_id = job_id
         self._os_user = os_user
         self._retain_session_dir = retain_session_dir
         self._job_details = job_details
@@ -241,13 +248,37 @@ class Session:
         """
         identifiers: list[EntityIdentifier] = self._queue.list_all_action_identifiers()
 
-        logger.info("Warming Job Entity Cache")
+        logger.info(
+            SessionLogEvent(
+                subtype=SessionLogEventSubtype.INFO,
+                queue_id=self._queue_id,
+                job_id=self._job_id,
+                session_id=self.id,
+                message="Warming Job Entity Cache",
+            )
+        )
         try:
             self._queue._job_entities.cache_entities(identifiers)
         except Exception as e:
-            logger.warning(f"Did not fully warm job entity cache: {str(e)}. Continuing")
+            logger.info(
+                SessionLogEvent(
+                    subtype=SessionLogEventSubtype.INFO,
+                    queue_id=self._queue_id,
+                    job_id=self._job_id,
+                    session_id=self.id,
+                    message=f"Did not fully warm job entity cache: {str(e)}. Continuing",
+                )
+            )
         else:
-            logger.info("Fully warmed Job Entity Cache")
+            logger.info(
+                SessionLogEvent(
+                    subtype=SessionLogEventSubtype.INFO,
+                    queue_id=self._queue_id,
+                    job_id=self._job_id,
+                    session_id=self.id,
+                    message="Fully warmed Job Entity Cache",
+                )
+            )
 
     def run(self) -> None:
         """Runs the Worker session.
@@ -256,7 +287,6 @@ class Session:
         """
         self._warm_job_entities_cache()
 
-        logger.info("[%s]: Session started", self._id)
         self._stopped_running.clear()
 
         try:
@@ -274,12 +304,16 @@ class Session:
                 self._cleanup()
             except Exception as error:
                 logger.exception(
-                    f"Unexpected exception while performing cleanup of Session {self._id}: {error}."
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.INFO,
+                        queue_id=self._queue_id,
+                        job_id=self._job_id,
+                        session_id=self.id,
+                        message=f"Unexpected exception while performing cleanup: {str(error)}",
+                    )
                 )
             finally:
                 self._stopped_running.set()
-
-        logger.info("[%s]: Session complete", self._id)
 
     def wait(self, timeout: timedelta | None = None) -> None:
         # Wait until this Session is not running anymore.
@@ -495,6 +529,7 @@ class Session:
             # out-of-order (while the current action is still canceling). In the meantime,
             # the logic in Session._action_updated_impl() will mark all non-ENV_EXIT actions as
             # NEVER_ATTEMPTED when the current action is canceled.
+            #  NOTE -- This code is stale and will need to be updated.
             # else:
             #     try:
             #         self._queue.cancel(id=canceled_action_id)
@@ -517,17 +552,18 @@ class Session:
 
         # Cancel the action
         logger.info(
-            "[%s] [%s] (%s): Canceling action",
-            self._id,
-            current_action.definition.id,
-            current_action.definition.human_readable(),
+            SessionActionLogEvent(
+                subtype=SessionActionLogEventSubtype.CANCEL,
+                queue_id=self._queue_id,
+                job_id=self._job_id,
+                session_id=self.id,
+                action_id=current_action.definition.id,
+                message="Canceling Action.",
+            )
         )
         current_action.definition.cancel(session=self, time_limit=time_limit)
 
     def _start_action(self) -> None:
-        # Imported in function to avoid a circular import
-        from .actions import ExitEnvironmentAction
-
         try:
             if not (action_definition := self._queue.dequeue()):
                 self._current_action = None
@@ -545,6 +581,17 @@ class Session:
                     ),
                 )
             )
+            logger.error(
+                SessionActionLogEvent(
+                    subtype=SessionActionLogEventSubtype.END,
+                    queue_id=self._queue_id,
+                    job_id=self._job_id,
+                    session_id=self.id,
+                    action_id=e.action_id,
+                    message="Failed to dequeue next Action: %s" % str(e),
+                    status="FAILED",
+                )
+            )
             self._queue.cancel_all(
                 message=f"Error starting prior action {e.action_id}",
                 ignore_env_exits=True,
@@ -554,36 +601,15 @@ class Session:
 
         now = datetime.now(tz=timezone.utc)
 
-        # If we have an initial failure (log provisioning), then we fail
-        # any actions except environment exits for cleanup.
-        if self._initial_action_exception and not isinstance(
-            action_definition, ExitEnvironmentAction
-        ):
-            error_msg = str(self._initial_action_exception)
-            self._report_action_update(
-                SessionActionStatus(
-                    completed_status="FAILED",
-                    start_time=datetime.now(tz=timezone.utc),
-                    end_time=datetime.now(tz=timezone.utc),
-                    id=action_definition.id,
-                    status=ActionStatus(
-                        state=ActionState.FAILED,
-                        fail_message=error_msg,
-                    ),
-                )
-            )
-            self._queue.cancel_all(
-                message=f"Error starting prior action {action_definition.id}",
-                ignore_env_exits=True,
-            )
-            self._current_action = None
-            return
-
         logger.info(
-            "[%s] [%s] (%s): Starting action",
-            self._id,
-            action_definition.id,
-            action_definition.human_readable(),
+            SessionActionLogEvent(
+                subtype=SessionActionLogEventSubtype.START,
+                queue_id=self._queue_id,
+                job_id=self._job_id,
+                session_id=self.id,
+                action_id=action_definition.id,
+                message="Action started.",
+            )
         )
 
         try:
@@ -596,12 +622,16 @@ class Session:
                 executor=self._executor,
             )
         except Exception as e:
-            logger.warn(
-                "[%s] [%s] (%s): Error starting action: %s",
-                self.id,
-                action_definition.id,
-                action_definition.human_readable(),
-                e,
+            logger.error(
+                SessionActionLogEvent(
+                    subtype=SessionActionLogEventSubtype.END,
+                    queue_id=self._queue_id,
+                    job_id=self._job_id,
+                    session_id=self.id,
+                    action_id=action_definition.id,
+                    message="Action failed to start: %s" % str(e),
+                    status="FAILED",
+                )
             )
             self._report_action_update(
                 SessionActionStatus(
@@ -690,6 +720,7 @@ class Session:
         TimeoutError
             Raised when the action has not completed within the specified timeout.
         """
+        # This is only used during Session Cleanup.
 
         # Validation
         if timeout is not None and timeout < TIME_DELTA_ZERO:
@@ -910,7 +941,7 @@ class Session:
                     )
 
         # Add path mapping rules for root paths in job attachments
-        ASSET_SYNC_LOGGER.info("Syncing inputs using Job Attachments")
+        self.logger.info("Syncing inputs using Job Attachments")
         download_summary_statistics: SummaryStatistics
         path_mapping_rules: List[Dict[str, str]]
         (download_summary_statistics, path_mapping_rules) = self._asset_sync.sync_inputs(
@@ -926,9 +957,7 @@ class Session:
             os_env_vars=self._env,
         )
 
-        ASSET_SYNC_LOGGER.info(
-            f"Summary Statistics for file downloads:\n{download_summary_statistics}"
-        )
+        self.logger.info(f"Summary Statistics for file downloads:\n{download_summary_statistics}")
 
         # Send the summary stats of input syncing through the telemetry client.
         record_sync_inputs_telemetry_event(self._queue_id, download_summary_statistics)
@@ -1055,6 +1084,11 @@ class Session:
             # Synchronizing job output attachments is currently bundled together with the
             # RunStepTaskAction. The synchronization happens after the task run succeeds,
             # and both must be successful in order to mark the action as SUCCEEDED.
+
+            # Banner matching the subsection banner generated by openjd-sessions
+            self.logger.info("----------------------------------------------")
+            self.logger.info("Uploading output files to Job Attachments")
+            self.logger.info("----------------------------------------------")
             future = self._executor.submit(
                 self._sync_asset_outputs,
                 current_action=current_action,
@@ -1081,7 +1115,9 @@ class Session:
             future.result()
         except Exception as e:
             # Log and fail the task run action if we are unable to sync output job attachments
-            fail_message = f"Failed to sync job output attachments for {current_action.definition.human_readable()}: {e}"
+            fail_message = (
+                f"Failed to sync job output attachments for {current_action.definition.id}: {e}"
+            )
             self.logger.warning(fail_message)
             action_status = ActionStatus(state=ActionState.FAILED, fail_message=fail_message)
             is_unsuccessful = True
@@ -1106,11 +1142,30 @@ class Session:
         current_action: CurrentAction,
         now: datetime,
     ):
+        completed_status = OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
+            action_status.state, None
+        )
+        if completed_status:
+            # Log before anything like, say, canceling the whole pipeline to give a person
+            # reading through the logs some context before they see a Session have actions
+            # removed.
+            logger.info(
+                SessionActionLogEvent(
+                    subtype=SessionActionLogEventSubtype.END,
+                    queue_id=self._queue_id,
+                    job_id=self._job_id,
+                    session_id=self.id,
+                    action_id=current_action.definition.id,
+                    message="Action complete.",
+                    status=completed_status,
+                )
+            )
+
         if is_unsuccessful:
             fail_message = action_status.fail_message or (
-                f"TIMEOUT - Previous action exceeded runtime limit: {current_action.definition.human_readable()}"
+                f"TIMEOUT - Previous action exceeded runtime limit: {current_action.definition.id}"
                 if action_status.state == ActionState.TIMEOUT
-                else f"Previous action failed: {current_action.definition.human_readable()}"
+                else f"Previous action failed: {current_action.definition.id}"
             )
 
             # If the current action failed, we mark future actions assigned to the session as
@@ -1139,9 +1194,6 @@ class Session:
                 fail_message="TIMEOUT - Exceeded the allotted runtime limit.",
             )
 
-        completed_status = OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
-            action_status.state, None
-        )
         self._report_action_update(
             SessionActionStatus(
                 id=current_action.definition.id,
@@ -1152,14 +1204,6 @@ class Session:
                 completed_status=completed_status,
             )
         )
-        if completed_status:
-            logger.info(
-                "[%s] [%s] (%s): Action completed as %s",
-                self.id,
-                current_action.definition.id,
-                current_action.definition.human_readable(),
-                completed_status,
-            )
 
     def _sync_asset_outputs(
         self,
@@ -1207,7 +1251,7 @@ class Session:
             for rule in self._job_details.path_mapping_rules
         }
 
-        ASSET_SYNC_LOGGER.info("Started syncing outputs using Job Attachments")
+        self.logger.info("Started syncing outputs using Job Attachments")
         # avoid circular import
         from .actions import RunStepTaskAction
 
@@ -1226,12 +1270,12 @@ class Session:
             on_uploading_files=partial(self._notifier_callback, current_action),
         )
 
-        ASSET_SYNC_LOGGER.info(f"Summary Statistics for file uploads:\n{upload_summary_statistics}")
+        self.logger.info(f"Summary Statistics for file uploads:\n{upload_summary_statistics}")
 
         # Send the summary stats of output syncing through the telemetry client.
         record_sync_outputs_telemetry_event(self._queue_id, upload_summary_statistics)
 
-        ASSET_SYNC_LOGGER.info("Finished syncing outputs using Job Attachments")
+        self.logger.info("Finished syncing outputs using Job Attachments")
 
     def run_task(
         self,
