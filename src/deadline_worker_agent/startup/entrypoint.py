@@ -359,7 +359,7 @@ def _configure_base_logging(
         console_handler = RichHandler(rich_tracebacks=True, tracebacks_show_locals=verbose)
 
     if structured_logs:
-        fmt_str = "%(json)s"
+        fmt_str = "[%(asctime)s] %(json)s"
     else:
         fmt_str = "[%(asctime)s][%(levelname)-8s] %(desc)s%(message)s"
     console_handler.formatter = logging.Formatter(fmt_str)
@@ -380,7 +380,10 @@ def _configure_base_logging(
         when="d",
         interval=1,
     )
-    bootstrapping_handler.formatter = logging.Formatter(fmt_str)
+    # Bootstrap file should always be json. It's primarily intended
+    # for use by Service Managed Fleet workers, and needs to be queryable
+    # via AWS CloudWatch logs.
+    bootstrapping_handler.formatter = logging.Formatter("%(json)s")
     root_logger.addHandler(bootstrapping_handler)
     bootstrapping_handler.addFilter(translation_filter)
 
