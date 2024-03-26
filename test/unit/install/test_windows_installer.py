@@ -52,6 +52,7 @@ def test_start_windows_installer(
                 allow_shutdown=parsed_args.allow_shutdown,
                 telemetry_opt_out=parsed_args.telemetry_opt_out,
                 grant_required_access=parsed_args.grant_required_access,
+                allow_ec2_instance_profile=not parsed_args.disallow_instance_profile,
             )
 
 

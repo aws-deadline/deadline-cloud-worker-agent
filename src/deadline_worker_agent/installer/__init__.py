@@ -87,6 +87,7 @@ def install() -> None:
             allow_shutdown=args.allow_shutdown,
             parser=arg_parser,
             grant_required_access=args.grant_required_access,
+            allow_ec2_instance_profile=not args.disallow_instance_profile,
         )
         if args.user:
             installer_args.update(user_name=args.user)
@@ -127,6 +128,8 @@ def install() -> None:
             cmd.append("--no-install-service")
         if args.telemetry_opt_out:
             cmd.append("--telemetry-opt-out")
+        if args.disallow_instance_profile:
+            cmd.append("--disallow-instance-profile")
 
         try:
             run(
@@ -153,6 +156,7 @@ class ParsedCommandLineArguments(Namespace):
     telemetry_opt_out: bool
     vfs_install_path: str
     grant_required_access: bool
+    disallow_instance_profile: bool
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
@@ -231,6 +235,17 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
     parser.add_argument(
         "--vfs-install-path",
         help="Absolute path for the install location of the deadline vfs.",
+    )
+    parser.add_argument(
+        "--disallow-instance-profile",
+        help=(
+            "Disallow running the worker agent with an EC2 instance profile. When this is provided, the worker "
+            "agent makes requests to the EC2 instance meta-data service (IMDS) to check for an instance profile. "
+            "If an instance profile is detected, the worker agent will stop and exit. When this is not provided, "
+            "the worker agent no longer performs these checks, allowing it to run with an EC2 instance profile."
+        ),
+        action="store_true",
+        default=False,
     )
 
     if sys.platform == "win32":

@@ -106,7 +106,7 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         field_name="allow_instance_profile",
         expected_type=bool,
         expected_required=False,
-        expected_default=False,
+        expected_default=True,
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(
