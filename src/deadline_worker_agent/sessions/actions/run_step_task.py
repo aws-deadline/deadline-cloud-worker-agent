@@ -6,6 +6,7 @@ from typing import Any, TYPE_CHECKING
 
 from openjd.model import TaskParameterSet
 
+from ...log_messages import SessionActionLogKind
 from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
@@ -45,7 +46,7 @@ class RunStepTaskAction(OpenjdAction):
         task_parameter_values: TaskParameterSet,
     ) -> None:
         super(RunStepTaskAction, self).__init__(
-            id=id,
+            id=id, action_log_kind=SessionActionLogKind.TASK_RUN
         )
         self._details = details
         self.step_id = step_id

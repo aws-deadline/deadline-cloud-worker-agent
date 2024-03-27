@@ -38,7 +38,7 @@ from ..sessions.errors import (
     StepDetailsError,
 )
 from ..sessions.job_entities.job_details import parameters_from_api_response
-from ..log_messages import SessionLogEvent, SessionLogEventSubtype
+from ..log_messages import SessionLogEvent, SessionLogEventSubtype, SessionActionLogKind
 
 if TYPE_CHECKING:
     from ..sessions.job_entities import JobEntities
@@ -261,6 +261,7 @@ class SessionActionQueue:
                     job_id=self._job_id,
                     session_id=self._session_id,
                     action_ids=action_ids,
+                    queued_action_count=len(self._actions),
                     message="Removed SessionActions.",
                 )
             )
@@ -333,6 +334,7 @@ class SessionActionQueue:
                     job_id=self._job_id,
                     session_id=self._session_id,
                     action_ids=action_ids_added,
+                    queued_action_count=len(self._actions),
                     message="Appended new SessionActions.",
                 )
             )
@@ -375,9 +377,23 @@ class SessionActionQueue:
                         environment_id=environment_id
                     )
                 except UnsupportedSchema as e:
-                    raise JobEntityUnsupportedSchemaError(action_id, e._version)
+                    if action_type == "ENV_ENTER":
+                        raise JobEntityUnsupportedSchemaError(
+                            action_id, SessionActionLogKind.ENV_ENTER, e._version
+                        )
+                    else:
+                        raise JobEntityUnsupportedSchemaError(
+                            action_id, SessionActionLogKind.ENV_EXIT, e._version
+                        )
                 except (ValueError, RuntimeError) as e:
-                    raise EnvironmentDetailsError(action_id, str(e)) from e
+                    if action_type == "ENV_ENTER":
+                        raise EnvironmentDetailsError(
+                            action_id, SessionActionLogKind.ENV_ENTER, str(e)
+                        ) from e
+                    else:
+                        raise EnvironmentDetailsError(
+                            action_id, SessionActionLogKind.ENV_EXIT, str(e)
+                        ) from e
                 if action_type == "ENV_ENTER":
                     next_action = EnterEnvironmentAction(
                         id=action_id,
@@ -398,9 +414,11 @@ class SessionActionQueue:
                 try:
                     step_details = self._job_entities.step_details(step_id=step_id)
                 except UnsupportedSchema as e:
-                    raise JobEntityUnsupportedSchemaError(action_id, e._version) from e
+                    raise JobEntityUnsupportedSchemaError(
+                        action_id, SessionActionLogKind.TASK_RUN, e._version
+                    ) from e
                 except (ValueError, RuntimeError) as e:
-                    raise StepDetailsError(action_id, str(e)) from e
+                    raise StepDetailsError(action_id, SessionActionLogKind.TASK_RUN, str(e)) from e
                 task_parameters_data: dict = action_definition.get("parameters", {})
                 task_parameters = parameters_from_api_response(task_parameters_data)
 
@@ -419,9 +437,13 @@ class SessionActionQueue:
                     try:
                         job_attachment_details = self._job_entities.job_attachment_details()
                     except UnsupportedSchema as e:
-                        raise JobEntityUnsupportedSchemaError(action_id, e._version) from e
+                        raise JobEntityUnsupportedSchemaError(
+                            action_id, SessionActionLogKind.JA_SYNC, e._version
+                        ) from e
                     except ValueError as e:
-                        raise JobAttachmentDetailsError(action_id, str(e)) from e
+                        raise JobAttachmentDetailsError(
+                            action_id, SessionActionLogKind.JA_SYNC, str(e)
+                        ) from e
                     next_action = SyncInputJobAttachmentsAction(
                         id=action_id,
                         session_id=self._session_id,
@@ -437,9 +459,13 @@ class SessionActionQueue:
                             step_id=action_definition["stepId"],
                         )
                     except UnsupportedSchema as e:
-                        raise JobEntityUnsupportedSchemaError(action_id, e._version) from e
+                        raise JobEntityUnsupportedSchemaError(
+                            action_id, SessionActionLogKind.JA_SYNC, e._version
+                        ) from e
                     except ValueError as e:
-                        raise StepDetailsError(action_id, str(e)) from e
+                        raise StepDetailsError(
+                            action_id, SessionActionLogKind.JA_SYNC, str(e)
+                        ) from e
                     next_action = SyncInputJobAttachmentsAction(
                         id=action_id,
                         session_id=self._session_id,

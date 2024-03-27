@@ -396,6 +396,7 @@ class SessionLogEvent(BaseLogEvent):
     user: Optional[str]
     action_ids: Optional[list[str]]  # for Add/Cancel
     log_dest: Optional[str]
+    queued_action_count: Optional[int]
 
     def __init__(
         self,
@@ -408,6 +409,7 @@ class SessionLogEvent(BaseLogEvent):
         message: str,
         action_ids: Optional[list[str]] = None,
         log_dest: Optional[str] = None,
+        queued_action_count: Optional[int] = None,
     ) -> None:
         self.subtype = subtype.value
         self.session_id = session_id
@@ -417,19 +419,17 @@ class SessionLogEvent(BaseLogEvent):
         self.msg = message
         self.action_ids = action_ids
         self.log_dest = log_dest
+        self.queued_action_count = queued_action_count
 
     def getMessage(self) -> str:
         dd = self.asdict()
-        # TODO - Rearrange. Put (%(queue_id)s/%(job_id)s) after the message
         if self.subtype == SessionLogEventSubtype.USER.value and self.user is not None:
             fmt_str = "[%(session_id)s] %(message)s (User: %(user)s) [%(queue_id)s/%(job_id)s]"
-        elif (
-            self.subtype in (SessionLogEventSubtype.ADD.value, SessionLogEventSubtype.REMOVE.value)
-            and self.action_ids is not None
+        elif self.subtype in (
+            SessionLogEventSubtype.ADD.value,
+            SessionLogEventSubtype.REMOVE.value,
         ):
-            fmt_str = (
-                "[%(session_id)s] %(message)s (ActionIds: %(action_ids)s) [%(queue_id)s/%(job_id)s]"
-            )
+            fmt_str = "[%(session_id)s] %(message)s (ActionIds: %(action_ids)s) (QueuedActionCount: %(queued_action_count)s) [%(queue_id)s/%(job_id)s]"
         elif self.subtype == SessionLogEventSubtype.LOGS.value and self.log_dest is not None:
             fmt_str = "[%(session_id)s] %(message)s (LogDestination: %(log_dest)s) [%(queue_id)s/%(job_id)s]"
         else:
@@ -446,6 +446,8 @@ class SessionLogEvent(BaseLogEvent):
             dd.update(user=self.user)
         if self.action_ids is not None:
             dd.update(action_ids=self.action_ids)
+        if self.queued_action_count is not None:
+            dd.update(queued_action_count=self.queued_action_count)
         if self.log_dest is not None:
             dd.update(log_dest=self.log_dest)
         dd.update(queue_id=self.queue_id, job_id=self.job_id)
@@ -459,12 +461,20 @@ class SessionActionLogEventSubtype(str, Enum):
     END = "End"  # will have a status key
 
 
+class SessionActionLogKind(str, Enum):
+    ENV_ENTER = "EnvEnter"
+    ENV_EXIT = "EnvExit"
+    TASK_RUN = "TaskRun"
+    JA_SYNC = "JobAttachSyncInput"
+
+
 class SessionActionLogEvent(BaseLogEvent):
     type = "Action"
 
     queue_id: str
     job_id: str
     session_id: str
+    kind: SessionActionLogKind
     action_id: str
     status: Optional[str]
     msg: str
@@ -476,6 +486,7 @@ class SessionActionLogEvent(BaseLogEvent):
         queue_id: str,
         job_id: str,
         session_id: str,
+        action_log_kind: SessionActionLogKind,
         action_id: str,
         message: str,
         status: Optional[str] = None,
@@ -491,6 +502,7 @@ class SessionActionLogEvent(BaseLogEvent):
             self.ti = "🟣"
         self.subtype = subtype.value
         self.session_id = session_id
+        self.kind = action_log_kind
         self.queue_id = queue_id
         self.job_id = job_id
         self.action_id = action_id
@@ -501,9 +513,9 @@ class SessionActionLogEvent(BaseLogEvent):
         dd = self.asdict()
         # TODO - Rearrange. Put (%(queue_id)s/%(job_id)s) after the message
         if self.subtype == SessionActionLogEventSubtype.END.value and self.status is not None:
-            fmt_str = "[%(session_id)s](%(action_id)s) %(message)s (Status: %(status)s) [%(queue_id)s/%(job_id)s]"
+            fmt_str = "[%(session_id)s](%(action_id)s) %(message)s (Status: %(status)s) (Kind: %(kind)s) [%(queue_id)s/%(job_id)s]"
         else:
-            fmt_str = "[%(session_id)s](%(action_id)s) %(message)s [%(queue_id)s/%(job_id)s]"
+            fmt_str = "[%(session_id)s](%(action_id)s) %(message)s (Kind: %(kind)s) [%(queue_id)s/%(job_id)s]"
         return self.add_exception_to_message(fmt_str % dd)
 
     def asdict(self) -> dict[str, Any]:
@@ -512,6 +524,7 @@ class SessionActionLogEvent(BaseLogEvent):
         dd.update(
             session_id=self.session_id,
             action_id=self.action_id,
+            kind=self.kind.value,
             message=self.msg,
         )
         if self.subtype == SessionActionLogEventSubtype.END.value and self.status is not None:

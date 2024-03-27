@@ -139,6 +139,15 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
 
             agent_cw_log_handler.addFilter(LogSyncFilter())
 
+            if not config.structured_logs:
+                _logger.warning(
+                    "The content and formatting of unstructured logs may change at any time and without warning. We recommend structured logs for programmatic log queries."
+                )
+            # Always print this one because structured logs always go to cloudwatch
+            _logger.warning(
+                "The content and formatting of structured log records that do not have a 'type' field may change at any time and without warning and must not be relied upon for programmatic log queries."
+            )
+
             # Re-send the agent info to the log so that it also appears in the
             # logs that we forward to CloudWatch.
             _log_agent_info()

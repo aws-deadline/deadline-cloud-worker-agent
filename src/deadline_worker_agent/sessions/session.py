@@ -557,6 +557,7 @@ class Session:
                 queue_id=self._queue_id,
                 job_id=self._job_id,
                 session_id=self.id,
+                action_log_kind=current_action.definition.action_log_kind,
                 action_id=current_action.definition.id,
                 message="Canceling Action.",
             )
@@ -587,6 +588,7 @@ class Session:
                     queue_id=self._queue_id,
                     job_id=self._job_id,
                     session_id=self.id,
+                    action_log_kind=e.action_log_kind,
                     action_id=e.action_id,
                     message="Failed to dequeue next Action: %s" % str(e),
                     status="FAILED",
@@ -608,6 +610,7 @@ class Session:
                 job_id=self._job_id,
                 session_id=self.id,
                 action_id=action_definition.id,
+                action_log_kind=action_definition.action_log_kind,
                 message="Action started.",
             )
         )
@@ -629,6 +632,7 @@ class Session:
                     job_id=self._job_id,
                     session_id=self.id,
                     action_id=action_definition.id,
+                    action_log_kind=action_definition.action_log_kind,
                     message="Action failed to start: %s" % str(e),
                     status="FAILED",
                 )
@@ -1155,6 +1159,7 @@ class Session:
                     queue_id=self._queue_id,
                     job_id=self._job_id,
                     session_id=self.id,
+                    action_log_kind=current_action.definition.action_log_kind,
                     action_id=current_action.definition.id,
                     message="Action complete.",
                     status=completed_status,

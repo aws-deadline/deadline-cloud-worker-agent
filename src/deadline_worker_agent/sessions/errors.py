@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from .._version import version
 
+from ..log_messages import SessionActionLogKind
+
 
 class CancelationError(Exception):
     """Raised when there was an error trying to cancel a session action"""
@@ -15,9 +17,10 @@ class SessionActionError(Exception):
     """Captures the action_id of an action that failed"""
 
     action_id: str
+    action_log_kind: SessionActionLogKind
     message: str
 
-    def __init__(self, action_id: str, message: str):
+    def __init__(self, action_id: str, action_log_kind: SessionActionLogKind, message: str):
         super().__init__()
         self.action_id = action_id
         self.message = message
@@ -50,10 +53,10 @@ class JobEntityUnsupportedSchemaError(SessionActionError):
 
     schema_version: str
 
-    def __init__(self, action_id: str, schema_version: str):
+    def __init__(self, action_id: str, action_log_kind: SessionActionLogKind, schema_version: str):
         self.schema_version = schema_version
         self.message = (
             f"Worker Agent: {version} does not support Open Job Description Schema Version {self.schema_version}. "
             f"Consider upgrading to a newer Worker Agent."
         )
-        super().__init__(action_id=action_id, message=self.message)
+        super().__init__(action_id=action_id, action_log_kind=action_log_kind, message=self.message)

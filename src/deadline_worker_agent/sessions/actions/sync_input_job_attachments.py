@@ -16,6 +16,7 @@ from deadline.job_attachments.exceptions import AssetSyncCancelledError
 from openjd.sessions import ActionState, ActionStatus, LOG as OPENJD_LOG
 
 from ..session import Session
+from ...log_messages import SessionActionLogKind
 
 from .action_definition import SessionActionDefinition
 
@@ -57,7 +58,7 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
         step_details: Optional[StepDetails] = None,
     ) -> None:
         super(SyncInputJobAttachmentsAction, self).__init__(
-            id=id,
+            id=id, action_log_kind=SessionActionLogKind.JA_SYNC
         )
         self._cancel = Event()
         self._job_attachment_details = job_attachment_details

@@ -4,6 +4,7 @@ from __future__ import annotations
 from concurrent.futures import Executor
 from typing import TYPE_CHECKING, Any
 
+from ...log_messages import SessionActionLogKind
 from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ class ExitEnvironmentAction(OpenjdAction):
         environment_id: str,
     ) -> None:
         super(ExitEnvironmentAction, self).__init__(
-            id=id,
+            id=id, action_log_kind=SessionActionLogKind.ENV_EXIT
         )
         self._environment_id = environment_id
 
