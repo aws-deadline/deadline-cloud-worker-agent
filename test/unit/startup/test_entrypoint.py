@@ -364,6 +364,7 @@ def test_log_configuration(
             _config_mock.load().worker_logs_dir / "worker-agent.log",
             when="d",
             interval=1,
+            encoding="utf-8",
         )
         root_logger.addHandler.assert_any_call(mock_file_logger)
 

@@ -388,6 +388,7 @@ def _configure_base_logging(
         # Daily rotation
         when="d",
         interval=1,
+        encoding="utf-8",
     )
     # Bootstrap file should always be json. It's primarily intended
     # for use by Service Managed Fleet workers, and needs to be queryable
@@ -402,6 +403,7 @@ def _configure_base_logging(
         # Daily rotation
         when="d",
         interval=1,
+        encoding="utf-8",
     )
     rotating_file_handler.formatter = logging.Formatter(fmt_str)
     root_logger.addHandler(rotating_file_handler)
