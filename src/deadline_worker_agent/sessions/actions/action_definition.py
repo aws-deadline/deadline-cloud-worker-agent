@@ -7,6 +7,7 @@ from datetime import timedelta
 from abc import ABC, abstractmethod
 
 from ..session import Session
+from ...log_messages import SessionActionLogKind
 
 
 class SessionActionDefinition(ABC):
@@ -20,18 +21,20 @@ class SessionActionDefinition(ABC):
     """
 
     _id: str
+    _action_log_kind: SessionActionLogKind
 
-    def __init__(
-        self,
-        *,
-        id: str,
-    ) -> None:
+    def __init__(self, *, id: str, action_log_kind: SessionActionLogKind) -> None:
         self._id = id
+        self._action_log_kind = action_log_kind
 
     @property
     def id(self) -> str:
         """The unique identifier of the SessionAction"""
         return self._id
+
+    @property
+    def action_log_kind(self) -> SessionActionLogKind:
+        return self._action_log_kind
 
     @abstractmethod
     def start(

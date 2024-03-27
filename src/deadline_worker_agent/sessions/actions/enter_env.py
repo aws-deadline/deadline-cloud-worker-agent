@@ -7,6 +7,7 @@ from typing import Any, TYPE_CHECKING
 from openjd.sessions import EnvironmentIdentifier
 
 from ..job_entities import EnvironmentDetails
+from ...log_messages import SessionActionLogKind
 from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
@@ -40,7 +41,7 @@ class EnterEnvironmentAction(OpenjdAction):
         details: EnvironmentDetails,
     ) -> None:
         super(EnterEnvironmentAction, self).__init__(
-            id=id,
+            id=id, action_log_kind=SessionActionLogKind.ENV_ENTER
         )
         self._job_env_id = job_env_id
         self._details = details

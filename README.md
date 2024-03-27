@@ -65,9 +65,9 @@ Log events may also contain a `type`, `subtype`, icon (`ti`), and additional fie
 | type | subtype | ti | fields | purpose |
 | --- | --- | --- | --- | --- |
 | None | None | None | message | A simple status message or update and its log level. These messages may change at any time and must not be relied upon for automation. |
-| Action | Start | 🟢 | session_id; queue_id; job_id; action_id; message | A SessionAction has started running. |
-| Action | Cancel/Interrupt | 🟨 | session_id; queue_id; job_id; action_id; message | A cancel/interrupt of a SessionAction has been initiated. |
-| Action | End | 🟣 | session_id; queue_id; job_id; action_id; status; message | A SessionAction has completed running. |
+| Action | Start | 🟢 | session_id; queue_id; job_id; action_id; kind; message | A SessionAction has started running. |
+| Action | Cancel/Interrupt | 🟨 | session_id; queue_id; job_id; action_id; kind; message | A cancel/interrupt of a SessionAction has been initiated. |
+| Action | End | 🟣 | session_id; queue_id; job_id; action_id; kind; status; message | A SessionAction has completed running. |
 | AgentInfo | None | None | platform; python[interpreter,version]; agent[version,installedAt,runningAs]; depenencies | Information about the running Agent software. |
 | API | Req | 📤 | operation; request_url; params; resource (optional) | A request to an AWS API. Only requests to AWS Deadline Cloud APIs contain a resource field. |
 | API | Resp | 📥 | operation; params; status_code, request_id; error (optional) | A response from an AWS API request. |
@@ -77,7 +77,7 @@ Log events may also contain a `type`, `subtype`, icon (`ti`), and additional fie
 | AWSCreds | Refresh | 🔑 | resource; message; role_arn (optional); expiry (optional); scheduled_time (optional) | Related to an operation for AWS Credentials. |
 | Metrics | System | 📊 | many | System metrics. |
 | Session | Starting/Failed/AWSCreds/Complete/Info | 🔷 | queue_id; job_id; session_id | An update or information related to a Session. |
-| Session | Add/Remove | 🔷 | queue_id; job_id; session_id; action_ids | Adding or removing SessionActions in a Session. |
+| Session | Add/Remove | 🔷 | queue_id; job_id; session_id; action_ids; queued_actions | Adding or removing SessionActions in a Session. |
 | Session | Logs | 🔷 | queue_id; job_id; session_id; log_dest | Information regarding where the Session logs are located. |
 | Session | User | 🔷 | queue_id; job_id; session_id; user | The user that a Session is running Actions as. |
 | Worker | Create/Load/ID/Status/Delete | 💻 | farm_id; fleet_id; worker_id (optional); message | A notification related to a Worker resource within AWS Deadline Cloud. |

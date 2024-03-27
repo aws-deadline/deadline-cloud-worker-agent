@@ -12,11 +12,12 @@ import pytest
 
 from deadline_worker_agent.sessions.actions.openjd_action import OpenjdAction
 from deadline_worker_agent.sessions.errors import CancelationError
+from deadline_worker_agent.log_messages import SessionActionLogKind
 
 
 class DerivedOpenjdAction(OpenjdAction):
     def __init__(self, *, id: str) -> None:
-        super().__init__(id=id)
+        super().__init__(id=id, action_log_kind=SessionActionLogKind.TASK_RUN)
         self.start_mock = Mock()
 
     def start(self, *, session: Session, executor: Executor) -> None:
