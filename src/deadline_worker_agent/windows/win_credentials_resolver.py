@@ -143,7 +143,7 @@ class WindowsCredentialsResolver:
                     )
                     if user.user_profile:
                         # https://timgolden.me.uk/pywin32-docs/win32profile__UnloadUserProfile_meth.html
-                        UnloadUserProfile(user.windows_session_user.logon_token, user.user_profile)
+                        UnloadUserProfile(user.logon_token, user.user_profile)
                     assert user.logon_token is not None
                     user.logon_token.Close()
         self._user_cache.clear()
