@@ -1,3 +1,12 @@
+## 0.25.0 (2024-03-27)
+
+### BREAKING CHANGES
+* remove time field from structured logs (#263) ([`d246abf`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/d246abf1595d07e5cb99bb9a451d3fb7162baf2f))
+
+
+### Bug Fixes
+* unhandled exception unloading user profile (#264) ([`62a404b`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/62a404b0d9db8d95e02b4e977d4a343f2444cc00))
+
 ## 0.24.0 (2024-03-26)
 
 ### BREAKING CHANGES
