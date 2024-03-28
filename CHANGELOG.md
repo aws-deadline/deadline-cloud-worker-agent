@@ -1,3 +1,12 @@
+## 0.25.1 (2024-03-28)
+
+
+### Features
+* adds data on action kind and queue length to logs (#266) ([`bb10c47`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/bb10c4758dab094738b23859a3e8aae64fac4850))
+
+### Bug Fixes
+* agent not logging events with emojis on Windows due to default encoding (#267) ([`1008083`](https://github.com/casillas2/deadline-cloud-worker-agent/commit/10080837558bc369c35243b5c15af82d45e35467))
+
 ## 0.25.0 (2024-03-27)
 
 ### BREAKING CHANGES
