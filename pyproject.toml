@@ -19,6 +19,21 @@ dependencies = [
     "requests == 2.31.*",
 ]
 requires-python = ">=3.7"
+description = "The AWS Deadline Cloud worker agent can be used to run a worker in an AWS Deadline Cloud fleet"
+# https://pypi.org/classifiers/
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: Microsoft :: Windows",
+  "License :: OSI Approved :: Apache Software License",
+  "Intended Audience :: End Users/Desktop",
+]
 
 [project.scripts]
 deadline-worker-agent = "deadline_worker_agent:entrypoint"
