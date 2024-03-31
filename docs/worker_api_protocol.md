@@ -1,4 +1,4 @@
-# AWS Deadline Cloud Worker API Workflows Contract
+# AWS Deadline Cloud Worker API Protocol
 
 This document outlines the various workflows that a Worker Agent for AWS Deadline Cloud
 must perform, and the formal requirement for how those workflows are implemented in terms
