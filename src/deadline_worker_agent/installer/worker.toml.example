@@ -69,11 +69,12 @@
 #
 #     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
 #
-# or if the --allow-instance-profile command-line flag is specified.
+# or if the --disallow-instance-profile command-line flag is specified.
 #
-# By default, this value is false and the worker agent makes requests to the EC2 instance meta-data
-# service (IMDS) to check for an instance profile. If an instance profile is detected, the worker
-# agent will stop and exit.
+# By default, this value is true and the worker agent will run with or without an instance profile
+# if the worker is on an EC2 host. If this value is false, the worker host will query the EC2
+# instance meta-data service (IMDS) to check for an instance profile. If an instance profile is
+# detected, the worker agent will stop and exit.
 #
 #  ***************************************** WARNING *****************************************
 #  *                                                                                         *
@@ -82,10 +83,10 @@
 #  *                                                                                         *
 #  *******************************************************************************************
 #
-# To accept this risk and allow the worker agent to run with an EC2 instance profile, uncomment
-# the line below:
+# To turn on this feature and have the worker agent not run with an EC2 instance profile,
+# uncomment the line below:
 #
-# allow_ec2_instance_profile = true
+# allow_ec2_instance_profile = false
 
 [logging]
 
