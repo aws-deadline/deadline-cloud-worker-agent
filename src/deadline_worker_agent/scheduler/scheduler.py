@@ -411,7 +411,6 @@ class WorkerScheduler:
         updated_actions, commit_completed_actions = self._updated_session_actions()
 
         #    1.2. TODO: IP address changes
-        #    1.3. TODO: metrics
 
         # 2. make request
         request: dict[str, Any] = {

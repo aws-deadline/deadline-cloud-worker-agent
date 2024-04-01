@@ -167,8 +167,6 @@ class DeadlineClient:
             mapped_action = SyncInputJobAttachmentsAction(
                 sessionActionId=action_id,
                 actionType="SYNC_INPUT_JOB_ATTACHMENTS",
-                # TODO: Add this in when we support it
-                # mode=action["mode"],
             )
             if step_id := action.get("stepId", None):
                 mapped_action["stepId"] = step_id

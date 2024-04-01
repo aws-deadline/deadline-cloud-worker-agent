@@ -15,8 +15,6 @@ class ParsedCommandLineArguments(Namespace):
     profile: str | None = None
     verbose: bool | None = None
     no_shutdown: bool | None = None
-    # TODO - Remove no_impersonation when removing corresponding CLI option
-    no_impersonation: bool | None = None
     run_jobs_as_agent_user: bool | None = None
     posix_job_user: str | None = None
     disallow_instance_profile: bool | None = None
@@ -24,8 +22,6 @@ class ParsedCommandLineArguments(Namespace):
     local_session_logs: bool | None = None
     persistence_dir: Path | None = None
     retain_session_dir: bool | None = None
-    # TODO: Remove when deprecating --no-allow-instance-profile
-    no_allow_instance_profile: bool | None = None
     host_metrics_logging: bool | None = None
     host_metrics_logging_interval_seconds: float | None = None
     structured_logs: bool | None = None
@@ -66,16 +62,6 @@ def get_argument_parser() -> ArgumentParser:
         const=True,
         default=None,
     )
-    # TODO - Remove the no-impersonation option after a deprecation period.
-    #  Remove the test named test_impersonation_mutual_exclusion at the same time
-    parser.add_argument(
-        "--no-impersonation",
-        help="(DEPRECATED: use --run-jobs-as-agent-user instead) If set, then all Jobs' session actions will run as the same user as the agent. WARNING: this is insecure - for development use only.",
-        action="store_const",
-        const=True,
-        dest="no_impersonation",
-        default=None,
-    )
     parser.add_argument(
         "--run-jobs-as-agent-user",
         help="If set, then all Jobs' session actions will run as the same user as the agent. WARNING: this is insecure - for development use only.",
@@ -111,22 +97,6 @@ def get_argument_parser() -> ArgumentParser:
         help="Overrides the directory where the Worker Agent persists files across restarts.",
         default=None,
         type=Path,
-    )
-    # TODO: This is deprecated. Remove this eventually
-    parser.add_argument(
-        "--no-allow-instance-profile",
-        help="DEPRECATED. This does nothing",
-        action="store_true",
-        dest="no_allow_instance_profile",
-    )
-    # TODO: This is deprecated. Remove this eventually
-    parser.add_argument(
-        "--allow-instance-profile",
-        help="DEPRECATED. This does nothing",
-        action="store_const",
-        const=True,
-        dest="allow_instance_profile",
-        default=None,
     )
     parser.add_argument(
         "--disallow-instance-profile",

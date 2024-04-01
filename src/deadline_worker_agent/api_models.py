@@ -76,9 +76,8 @@ class TaskRunAction(TypedDict):
     actionType: StepActionType
     taskId: str
     stepId: str
-    # TODO - Remove 'str' type from this; it's for an older incarnation of the API
     parameters: NotRequired[
-        dict[str, StringParameter | PathParameter | IntParameter | FloatParameter | str]
+        dict[str, StringParameter | PathParameter | IntParameter | FloatParameter]
     ]
 
 
@@ -277,12 +276,6 @@ class JobDetailsData(JobDetailsIdentifierFields):
 
     pathMappingRules: NotRequired[list[PathMappingRule]]
     """The path mapping rules from the service (before job attachments rules are added)"""
-
-    queueSessionRoleArn: NotRequired[str]
-    """An optional IAM role ARN corresponding used for worker sessions on the job's queue.
-    TODO Deprecated. This is the old name of the queueRoleArn field and will be deleted before
-    release.
-    """
 
     queueRoleArn: NotRequired[str]
     """An optional IAM role ARN corresponding used for worker sessions on the job's queue"""
