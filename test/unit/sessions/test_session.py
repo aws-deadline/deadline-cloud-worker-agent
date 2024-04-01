@@ -837,9 +837,12 @@ class TestSessionSyncAssetInputs:
         mock_asset_sync.sync_inputs = mock_sync_inputs
         mock_cancel = MagicMock(spec=Event)
 
-        with patch.object(session, "update_action") as mock_update_action, patch.object(
-            session_mod, "record_sync_inputs_fail_telemetry_event"
-        ) as mock_record_sync_inputs_fail_telemetry_event:
+        with (
+            patch.object(session, "update_action") as mock_update_action,
+            patch.object(
+                session_mod, "record_sync_inputs_fail_telemetry_event"
+            ) as mock_record_sync_inputs_fail_telemetry_event,
+        ):
             session.sync_asset_inputs(
                 cancel=mock_cancel,
                 job_attachment_details=JobAttachmentDetails(
@@ -1471,9 +1474,10 @@ class TestSessionActionUpdatedImpl:
         def mock_now(*arg, **kwarg) -> datetime:
             return action_complete_time
 
-        with patch.object(session_mod, "datetime") as mock_datetime, patch.object(
-            session, "_sync_asset_outputs"
-        ) as mock_sync_asset_outputs:
+        with (
+            patch.object(session_mod, "datetime") as mock_datetime,
+            patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs,
+        ):
             mock_datetime.now.side_effect = mock_now
 
             # Assert that reporting the action update happens AFTER syncing the output job
@@ -1552,9 +1556,12 @@ class TestSessionActionUpdatedImpl:
         def mock_now(*arg, **kwarg) -> datetime:
             return action_complete_time
 
-        with patch.object(session_mod, "datetime") as mock_datetime, patch.object(
-            session, "_sync_asset_outputs", side_effect=sync_outputs_exception
-        ) as mock_sync_asset_outputs:
+        with (
+            patch.object(session_mod, "datetime") as mock_datetime,
+            patch.object(
+                session, "_sync_asset_outputs", side_effect=sync_outputs_exception
+            ) as mock_sync_asset_outputs,
+        ):
             mock_datetime.now.side_effect = mock_now
 
             # WHEN
