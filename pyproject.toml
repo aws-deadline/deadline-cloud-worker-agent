@@ -8,6 +8,8 @@ authors = [
   {name = "Amazon Web Services"},
 ]
 dynamic = ["version"]
+readme = "README.md"
+license = "Apache-2.0"
 dependencies = [
     "requests ~= 2.31",
     "boto3 >= 1.28.80",
