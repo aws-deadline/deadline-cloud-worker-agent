@@ -38,6 +38,10 @@ classifiers = [
   "Intended Audience :: End Users/Desktop",
 ]
 
+[project.urls]
+Homepage = "https://github.com/aws-deadline/deadline-cloud-worker-agent"
+Source = "https://github.com/aws-deadline/deadline-cloud-worker-agent"
+
 [project.scripts]
 deadline-worker-agent = "deadline_worker_agent:entrypoint"
 install-deadline-worker = "deadline_worker_agent:install"
