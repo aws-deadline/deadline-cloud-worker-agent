@@ -799,7 +799,6 @@ class Session:
 
     def _notifier_callback(
         self,
-        current_action: CurrentAction,
         progress_report: ProgressReportMetadata,
     ) -> bool:
         """Callback to be passed into JobAttachments to track the file transfer.
@@ -808,22 +807,6 @@ class Session:
         current_action is added by the Worker Agent (via partial)
         progress and status message are passed in by Job Attachments."""
         return True
-        # TODO: Since moving to the Open Job Description callback, asset sync no longer blocks
-        # the next action. Therefore we can end up in a situation where
-        # this callback attempts to re-open a completed session action
-        # and/or attempts to complete a session action in the wrong order.
-
-        # status = ActionStatus(
-        #     state=ActionState.RUNNING,
-        #     progress=float(progress_report.progress),
-        #     status_message=progress_report.progressMessage,
-        # )
-        # self._action_update_callback(SessionActionStatus(
-        #     id=current_action.definition.id,
-        #     start_time=current_action.start_time,
-        #     status=status,
-        #     update_time=datetime.now(tz=timezone.utc),
-        # ))
 
     def sync_asset_inputs(
         self,
@@ -1272,7 +1255,7 @@ class Session:
             start_time=current_action.start_time.timestamp(),
             session_dir=self._session.working_directory,
             storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
-            on_uploading_files=partial(self._notifier_callback, current_action),
+            on_uploading_files=self._notifier_callback,
         )
 
         self.logger.info(f"Summary Statistics for file uploads:\n{upload_summary_statistics}")

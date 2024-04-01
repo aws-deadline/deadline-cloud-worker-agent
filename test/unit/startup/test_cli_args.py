@@ -26,11 +26,20 @@ class TestArgumentParser:
         result = arg_parser.parse_args(args, namespace=cli_args_mod.ParsedCommandLineArguments())
 
         # THEN
+        assert result.disallow_instance_profile is None
         assert result.farm_id is None
         assert result.fleet_id is None
+        assert result.host_metrics_logging is None
+        assert result.host_metrics_logging_interval_seconds is None
+        assert result.local_session_logs is None
+        assert result.logs_dir is None
+        assert result.no_shutdown is None
+        assert result.persistence_dir is None
         assert result.profile is None
+        assert result.run_jobs_as_agent_user is None
+        assert result.retain_session_dir is None
+        assert result.structured_logs is None
         assert result.verbose is None
-        assert result.allow_instance_profile is None
 
     @pytest.mark.parametrize(
         ["farm_id"],
@@ -120,26 +129,6 @@ class TestArgumentParser:
 
         # THEN
         assert result.no_shutdown == expected
-
-    @pytest.mark.parametrize(
-        ("args", "expected_allow_instance_profile"),
-        (
-            pytest.param(["--allow-instance-profile"], True, id="AllowInstanceProfilePresent"),
-            pytest.param([], None, id="AllowInstanceProfileAbsent"),
-        ),
-    )
-    def test_allow_instance_profile(
-        self,
-        arg_parser: ArgumentParser,
-        args: list[str],
-        expected_allow_instance_profile: bool | None,
-    ) -> None:
-        """Asserts that the --allow-instance-profile command-line argument is parsed"""
-        # WHEN
-        result = arg_parser.parse_args(args, namespace=cli_args_mod.ParsedCommandLineArguments())
-
-        # THEN
-        assert result.allow_instance_profile == expected_allow_instance_profile
 
     @pytest.mark.parametrize(
         ("args", "expected_cleanup_session_user_processes"),

@@ -216,7 +216,6 @@ class TestJobEntity:
                     },
                     "windows": {
                         "user": "job-user",
-                        "group": "job-group",
                         "passwordArn": "job-password-arn",
                     },
                 },
@@ -268,7 +267,6 @@ class TestJobEntity:
                 },
                 "windows": {
                     "user": expected_user,
-                    "group": expected_group,
                     "passwordArn": expected_password_arn,
                 },
             },
@@ -314,7 +312,6 @@ class TestDetails:
                     },
                     "windows": {
                         "user": "job-user",
-                        "group": "job-group",
                         "passwordArn": "job-password-arn",
                     },
                 },

@@ -118,13 +118,7 @@ class Configuration:
         if parsed_cli_args.no_shutdown is not None:
             settings_kwargs["no_shutdown"] = parsed_cli_args.no_shutdown
         if parsed_cli_args.run_jobs_as_agent_user is not None:
-            if parsed_cli_args.no_impersonation is not None:
-                raise ConfigurationError(
-                    "Only one of --no-impersonation or --run-jobs-as-agent-user may be supplied."
-                )
             settings_kwargs["run_jobs_as_agent_user"] = parsed_cli_args.run_jobs_as_agent_user
-        elif parsed_cli_args.no_impersonation is not None:
-            settings_kwargs["run_jobs_as_agent_user"] = parsed_cli_args.no_impersonation
         if parsed_cli_args.posix_job_user is not None:
             settings_kwargs["posix_job_user"] = parsed_cli_args.posix_job_user
         if parsed_cli_args.disallow_instance_profile is not None:

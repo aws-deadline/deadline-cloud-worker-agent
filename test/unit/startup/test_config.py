@@ -386,17 +386,6 @@ class TestLoad:
         # THEN
         assert config.retain_session_dir == retain_session_dir
 
-    def test_impersonation_mutual_exclusion(
-        self, parsed_args: config_mod.ParsedCommandLineArguments
-    ):
-        # GIVEN
-        parsed_args.no_impersonation = True
-        parsed_args.run_jobs_as_agent_user = True
-
-        # THEN
-        with pytest.raises(config_mod.ConfigurationError):
-            config_mod.Configuration(parsed_cli_args=parsed_args)
-
 
 class TestInit:
     """Tests for Configuration.__init__"""

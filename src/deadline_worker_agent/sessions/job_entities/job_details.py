@@ -244,11 +244,7 @@ class JobDetails:
         )
 
         # Note: Record the empty string as a None as well.
-        queue_role_arn: str | None = (
-            job_details_data.get("queueSessionRoleArn", None)
-            or job_details_data.get("queueRoleArn", None)
-            or None
-        )
+        queue_role_arn: str | None = job_details_data.get("queueRoleArn", None)
 
         given_schema_version = TemplateSpecificationVersion(job_details_data["schemaVersion"])
 
@@ -330,8 +326,6 @@ class JobDetails:
                             required=False,
                             fields=(
                                 Field(key="user", expected_type=str, required=True),
-                                # TODO: Remove this once the API field is removed
-                                Field(key="group", expected_type=str, required=False),
                                 Field(key="passwordArn", expected_type=str, required=True),
                             ),
                         ),
@@ -346,8 +340,6 @@ class JobDetails:
                         Field(key="rootPrefix", expected_type=str, required=True),
                     ),
                 ),
-                # TODO - Remove queueSessionRoleArn
-                Field(key="queueSessionRoleArn", expected_type=str, required=False),
                 Field(key="queueRoleArn", expected_type=str, required=False),
             ),
         )
