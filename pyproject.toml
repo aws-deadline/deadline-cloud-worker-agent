@@ -4,6 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "deadline-cloud-worker-agent"
+authors = [
+  {name = "Amazon Web Services"},
+]
 dynamic = ["version"]
 dependencies = [
     "requests ~= 2.31",
