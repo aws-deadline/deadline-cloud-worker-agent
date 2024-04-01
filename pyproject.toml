@@ -4,6 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "deadline-cloud-worker-agent"
+description = "The AWS Deadline Cloud worker agent can be used to run a worker in an AWS Deadline Cloud fleet"
+authors = [
+  {name = "Amazon Web Services"},
+]
 dynamic = ["version"]
 dependencies = [
     "requests ~= 2.31",
@@ -19,7 +23,6 @@ dependencies = [
     "requests == 2.31.*",
 ]
 requires-python = ">=3.7"
-description = "The AWS Deadline Cloud worker agent can be used to run a worker in an AWS Deadline Cloud fleet"
 # https://pypi.org/classifiers/
 classifiers = [
   "Development Status :: 5 - Production/Stable",
