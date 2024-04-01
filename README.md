@@ -1,6 +1,8 @@
 # AWS Deadline Cloud Worker Agent
 
 [![pypi](https://img.shields.io/pypi/v/deadline-cloud-worker-agent.svg)](https://pypi.python.org/pypi/deadline-cloud-worker-agent)
+[![python](https://img.shields.io/pypi/pyversions/deadline-cloud-worker-agent.svg?style=flat)](https://pypi.python.org/pypi/deadline-cloud-worker-agent)
+[![license](https://img.shields.io/pypi/l/deadline-cloud-worker-agent.svg?style=flat)](https://github.com/aws-deadline/deadline-cloud-worker-agent/blob/mainline/LICENSE)
 
 The AWS Deadline Cloud worker agent can be used to run a worker in an
 [AWS Deadline Cloud][deadline-cloud] fleet. This includes managing the life-cycle of a worker and
