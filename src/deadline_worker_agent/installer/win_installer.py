@@ -8,6 +8,7 @@ import secrets
 import shutil
 import string
 import sys
+import time
 from argparse import ArgumentParser
 from getpass import getpass
 from pathlib import Path
@@ -32,7 +33,6 @@ from ..file_system_operations import (
     FileSystemPermissionEnum,
 )
 from ..windows.win_service import WorkerAgentWindowsService
-
 
 # Defaults
 DEFAULT_WA_USER = "deadline-worker"
@@ -506,6 +506,45 @@ def update_deadline_client_config(
         os.environ.update(old_environ)
 
 
+def _check_and_stop_service(service_name: str):
+    """
+    Checks the status of a Windows service and stops it if running.
+
+    Parameters:
+        service_name (str): The name of the Windows service to check and stop
+    """
+    try:
+        # Check if the service is installed.
+        # It will return the SERVICE_STATUS objece
+        # https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status
+        status = win32serviceutil.QueryServiceStatus(service_name)
+        # The service is installed, now check its state
+        if status[1] == win32service.SERVICE_RUNNING:
+            logging.info(f"Service '{service_name}' is installed and running.")
+            logging.info(f"Before installation, attempting to stop '{service_name}'...")
+            win32serviceutil.StopService(service_name)
+            service_stop_time_out_in_seconds = 300
+            for seconds in range(service_stop_time_out_in_seconds):
+                time.sleep(1)
+                status = win32serviceutil.QueryServiceStatus(service_name)
+                if status[1] == win32service.SERVICE_STOPPED:
+                    logging.info(f"Service '{service_name}' has been stopped successfully.")
+                    break
+            else:
+                logging.error(
+                    f"Service '{service_name}' could not be stopped within {service_stop_time_out_in_seconds}."
+                )
+                exit(1)
+    except pywintypes.error as e:
+        if e.winerror == winerror.ERROR_SERVICE_DOES_NOT_EXIST:
+            pass
+        else:
+            logging.error(
+                f"Service '{service_name}' could not be stopped due to the exception: {e}."
+            )
+            exit(e.winerror)
+
+
 def _install_service(
     *,
     agent_user_name: str,
@@ -534,6 +573,9 @@ def _install_service(
     service_description = getattr(WorkerAgentWindowsService, "_svc_description_", None)
     exe_name = getattr(WorkerAgentWindowsService, "_exe_name_", None)
     exe_args = getattr(WorkerAgentWindowsService, "_exe_args_", None)
+
+    # Check if the service is installed and stop it if running.
+    _check_and_stop_service(service_name)
 
     # Configure the service to start on boot
     startup = win32service.SERVICE_AUTO_START
