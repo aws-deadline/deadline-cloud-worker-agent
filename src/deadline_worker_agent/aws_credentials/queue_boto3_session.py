@@ -102,6 +102,7 @@ class QueueBoto3Session(BaseBoto3Session):
     _role_arn: str
     _os_user: Optional[SessionUser]
     _interrupt_event: Event
+    _region: str
 
     # Name of the profile written to the user's AWS configuration for the
     # credentials process
@@ -135,6 +136,7 @@ class QueueBoto3Session(BaseBoto3Session):
         os_user: Optional[SessionUser] = None,
         interrupt_event: Event,
         worker_persistence_dir: Path,
+        region: str,
     ) -> None:
         super().__init__()
 
@@ -146,6 +148,7 @@ class QueueBoto3Session(BaseBoto3Session):
         self._role_arn = role_arn
         self._os_user = os_user
         self._interrupt_event = interrupt_event
+        self._region = region
 
         self._profile_name = f"deadline-{self._queue_id}"
 
@@ -162,9 +165,14 @@ class QueueBoto3Session(BaseBoto3Session):
 
         self._create_credentials_directory(os_user)
 
-        self._aws_config = AWSConfig(os_user=self._os_user, parent_dir=self._credential_dir)
+        self._aws_config = AWSConfig(
+            os_user=self._os_user,
+            parent_dir=self._credential_dir,
+            region=self._region,
+        )
         self._aws_credentials = AWSCredentials(
-            os_user=self._os_user, parent_dir=self._credential_dir
+            os_user=self._os_user,
+            parent_dir=self._credential_dir,
         )
 
         self._install_credential_process()

@@ -1,9 +1,9 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 import pytest
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import ANY, patch, MagicMock, PropertyMock
 from pathlib import Path
-from typing import Type, Generator, Optional
+from typing import Callable, Generator, Optional, cast
 
 import deadline_worker_agent.aws_credentials.aws_configs as aws_configs_mod
 from deadline_worker_agent.aws_credentials.aws_configs import (
@@ -44,6 +44,11 @@ def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
             return WindowsSessionUser(user="user", password="fakepassword")
     else:
         return None
+
+
+@pytest.fixture
+def region() -> str:
+    return "us-west-2"
 
 
 class TestSetupFile:
@@ -232,10 +237,9 @@ class AWSConfigTestBase:
 
     def test_init(
         self,
-        config_class: Type[_AWSConfigBase],
+        create_config_class: Callable[[], _AWSConfigBase],
         os_user: Optional[SessionUser],
         mock_config_parser: MagicMock,
-        parent_dir: MagicMock,
     ) -> None:
         # GIVEN
         if os.name == "posix":
@@ -246,10 +250,7 @@ class AWSConfigTestBase:
 
         with patch.object(aws_configs_mod, "_setup_file") as setup_file_mock:
             # WHEN
-            config = config_class(
-                os_user=os_user,
-                parent_dir=parent_dir,
-            )
+            config = create_config_class()
 
         # THEN
         setup_file_mock.assert_called_once_with(
@@ -260,7 +261,7 @@ class AWSConfigTestBase:
 
     def test_path(
         self,
-        config_class: Type[_AWSConfigBase],
+        create_config_class: Callable[[], _AWSConfigBase],
         expected_path: Path,
         os_user: Optional[SessionUser],
         parent_dir: MagicMock,
@@ -271,10 +272,7 @@ class AWSConfigTestBase:
         else:
             assert isinstance(os_user, WindowsSessionUser) or os_user is None
 
-        config = config_class(
-            os_user=os_user,
-            parent_dir=parent_dir,
-        )
+        config = create_config_class()
         result = config.path
 
         # THEN
@@ -284,19 +282,18 @@ class AWSConfigTestBase:
     def test_install_credential_process(
         self,
         mock_absolute: MagicMock,
-        config_class: Type[_AWSConfigBase],
+        create_config_class: Callable[[], _AWSConfigBase],
         profile_name: str,
         expected_profile_name_section: str,
         os_user: Optional[SessionUser],
         mock_config_parser: MagicMock,
-        parent_dir: MagicMock,
     ) -> None:
         # GIVEN
         if os.name == "posix":
             assert isinstance(os_user, PosixSessionUser) or os_user is None
         else:
             assert isinstance(os_user, WindowsSessionUser) or os_user is None
-        config = config_class(os_user=os_user, parent_dir=parent_dir)
+        config = create_config_class()
         script_path = Path("/path/to/installdir/echo_them_credentials.sh")
         with patch.object(config, "_write") as write_mock:
             # WHEN
@@ -315,30 +312,24 @@ class AWSConfigTestBase:
     def test_uninstall_credential_process(
         self,
         mock_absolute: MagicMock,
-        config_class: Type[_AWSConfigBase],
+        create_config_class: Callable[[], _AWSConfigBase],
         profile_name: str,
         expected_profile_name_section: str,
         os_user: Optional[SessionUser],
         mock_config_parser: MagicMock,
-        parent_dir: MagicMock,
     ) -> None:
         # GIVEN
         if os.name == "posix":
             assert isinstance(os_user, PosixSessionUser) or os_user is None
         else:
             assert isinstance(os_user, WindowsSessionUser) or os_user is None
-        config = config_class(
-            os_user=os_user,
-            parent_dir=parent_dir,
-        )
+        config = create_config_class()
         script_path = Path("/path/to/installdir/echo_them_credentials.sh")
         with patch.object(config, "_write") as write_mock:
             config.install_credential_process(profile_name=profile_name, script_path=script_path)
             mock_config_parser.__setitem__.assert_called_once_with(
                 expected_profile_name_section,
-                {
-                    "credential_process": mock_absolute.return_value.__str__.return_value,
-                },
+                ANY,
             )
             write_mock.assert_called_once_with()
             write_mock.reset_mock()
@@ -353,25 +344,18 @@ class AWSConfigTestBase:
 
     def test_write(
         self,
-        config_class: Type[_AWSConfigBase],
+        create_config_class: Callable[[], _AWSConfigBase],
         os_user: Optional[SessionUser],
         mock_config_parser: MagicMock,
-        parent_dir: MagicMock,
     ) -> None:
         # GIVEN
         if os.name == "posix":
             assert isinstance(os_user, PosixSessionUser) or os_user is None
         else:
             assert isinstance(os_user, WindowsSessionUser) or os_user is None
-        with (
-            patch.object(aws_configs_mod, "_logger") as logger_mock,
-            patch.object(config_class, "path", new_callable=PropertyMock) as path_prop_mock,
-        ):
-            path: MagicMock = path_prop_mock.return_value
-            config = config_class(
-                os_user=os_user,
-                parent_dir=parent_dir,
-            )
+        with patch.object(aws_configs_mod, "_logger") as logger_mock:
+            config = create_config_class()
+
             info_mock: MagicMock = logger_mock.info
 
             # WHEN
@@ -381,9 +365,9 @@ class AWSConfigTestBase:
         info_mock.assert_called_once()
         assert isinstance(info_mock.call_args.args[0], FilesystemLogEvent)
         assert info_mock.call_args.args[0].subtype == FilesystemLogEventOp.WRITE
-        path.open.assert_called_once_with(mode="w")
+        cast(MagicMock, config.path.open).assert_called_once_with(mode="w")
         mock_config_parser.write.assert_called_once_with(
-            fp=path.open.return_value.__enter__.return_value,
+            fp=cast(MagicMock, config.path.open).return_value.__enter__.return_value,
             space_around_delimiters=False,
         )
 
@@ -396,16 +380,59 @@ class TestAWSConfig(AWSConfigTestBase):
     """
 
     @pytest.fixture
-    def config_class(self) -> Type[_AWSConfigBase]:
-        return AWSConfig
+    def create_config_class(
+        self,
+        os_user: Optional[SessionUser],
+        parent_dir: Path,
+        region: str,
+    ) -> Callable[[], _AWSConfigBase]:
+        def creator() -> AWSConfig:
+            return AWSConfig(
+                os_user=os_user,
+                parent_dir=parent_dir,
+                region=region,
+            )
+
+        return creator
 
     @pytest.fixture
     def expected_profile_name_section(self, profile_name: str) -> str:
         return f"profile {profile_name}"
 
     @pytest.fixture
-    def expected_path(self, parent_dir: MagicMock) -> str:
-        return parent_dir / "config"
+    def expected_path(
+        self,
+        parent_dir: MagicMock,
+    ) -> str:
+        return parent_dir.__truediv__.return_value
+
+    @patch.object(aws_configs_mod.Path, "absolute")
+    def test_install_credential_process(
+        self,
+        mock_absolute: MagicMock,
+        create_config_class: Callable[[], _AWSConfigBase],
+        profile_name: str,
+        expected_profile_name_section: str,
+        mock_config_parser: MagicMock,  # type: ignore[override]
+        region: str,
+    ) -> None:
+        """Tests that the region is added to the config file"""
+        # GIVEN
+        config = create_config_class()
+        script_path = Path("/path/to/installdir/echo_them_credentials.sh")
+        with patch.object(config, "_write") as write_mock:
+            # WHEN
+            config.install_credential_process(profile_name=profile_name, script_path=script_path)
+
+        # THEN
+        mock_config_parser.__setitem__.assert_called_once_with(
+            expected_profile_name_section,
+            {
+                "credential_process": mock_absolute.return_value.__str__.return_value,
+                "region": region,
+            },
+        )
+        write_mock.assert_called_once_with()
 
 
 class TestAWSCredentials(AWSConfigTestBase):
@@ -416,13 +443,26 @@ class TestAWSCredentials(AWSConfigTestBase):
     """
 
     @pytest.fixture
-    def config_class(self) -> Type[_AWSConfigBase]:
-        return AWSCredentials
+    def create_config_class(
+        self,
+        os_user: Optional[SessionUser],
+        parent_dir: Path,
+    ) -> Callable[[], _AWSConfigBase]:
+        def creator() -> AWSCredentials:
+            return AWSCredentials(
+                os_user=os_user,
+                parent_dir=parent_dir,
+            )
+
+        return creator
 
     @pytest.fixture
     def expected_profile_name_section(self, profile_name: str) -> str:
         return f"{profile_name}"
 
     @pytest.fixture
-    def expected_path(self, parent_dir: MagicMock) -> str:
-        return parent_dir / "credentials"
+    def expected_path(
+        self,
+        parent_dir: PropertyMock,
+    ) -> str:
+        return parent_dir.__truediv__.return_value

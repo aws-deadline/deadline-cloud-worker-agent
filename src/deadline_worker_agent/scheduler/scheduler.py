@@ -1151,6 +1151,7 @@ class WorkerScheduler:
                         os_user=os_user,
                         interrupt_event=self._shutdown,
                         worker_persistence_dir=self._worker_persistence_dir,
+                        region=self._boto_session.region_name,
                     )
                 except (DeadlineRequestWorkerOfflineError, DeadlineRequestUnrecoverableError):
                     # These are terminal errors for the Session. We need to fail it, without attempting,
