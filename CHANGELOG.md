@@ -1,3 +1,13 @@
+## 0.26.0 (2024-04-02)
+
+### BREAKING CHANGES
+* public release (#271) ([`ed1e14d`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/ed1e14df818e8161490a5c6b884320eeb7b6832e))
+* remove deprecated features (#277) ([`d984094`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/d984094f74b9ad60dd0bc82ec3eb917cda4e138d))
+
+
+### Bug Fixes
+* example config file inaccurately documents allow_ec2_instance_profile (#278) ([`1d1ecc1`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/1d1ecc165384c6f14ace4465236460ba12b176ee))
+
 ## 0.25.2 (2024-03-29)
 
 
