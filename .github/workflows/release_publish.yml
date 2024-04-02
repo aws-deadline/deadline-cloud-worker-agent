@@ -86,6 +86,7 @@ jobs:
       # Tag must be made before building so the generated _version.py files have the correct version
       - name: Build
         run: |
+          pip install --upgrade hatch
           hatch -v build
 
       - name: Configure AWS credentials
