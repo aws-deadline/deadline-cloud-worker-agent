@@ -1,3 +1,11 @@
+## 0.26.1 (2024-04-03)
+
+
+
+### Bug Fixes
+* provide region in queue AWS configuration (#289) ([`efeecfe`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/efeecfe354cdfe321fe96718ed51704e67ab847a))
+* stop the running Windows service before re-installation. (#288) ([`0587b60`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/0587b6026622424584e46717561d6ee61879bbba))
+
 ## 0.26.0 (2024-04-02)
 
 ### BREAKING CHANGES
