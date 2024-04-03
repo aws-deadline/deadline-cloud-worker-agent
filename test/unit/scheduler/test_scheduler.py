@@ -1031,7 +1031,11 @@ class TestQueueAwsCredentialsManagement:
         # THEN
         assert result is creds
 
-    def test_creates_new_credentials(self, scheduler: WorkerScheduler) -> None:
+    def test_creates_new_credentials(
+        self,
+        scheduler: WorkerScheduler,
+        boto_session: MagicMock,
+    ) -> None:
         """Test that we create a new set of Queue credentials in _get_queue_aws_credentials
         when we don't already have one cached for the queue.
         """
@@ -1066,6 +1070,7 @@ class TestQueueAwsCredentialsManagement:
                 os_user=None,
                 interrupt_event=scheduler._shutdown,
                 worker_persistence_dir=Path("/var/lib/deadline"),
+                region=boto_session.region_name,
             )
             mock_cred_refresh_cls.assert_called_once_with(
                 resource={"resource": queue_id, "role_arn": role_arn},

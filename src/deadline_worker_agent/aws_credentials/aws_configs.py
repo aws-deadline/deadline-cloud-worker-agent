@@ -107,7 +107,11 @@ class _AWSConfigBase(ABC):
         # finally, read the config
         self._config_parser.read(self.path)
 
-    def install_credential_process(self, profile_name: str, script_path: Path) -> None:
+    def install_credential_process(
+        self,
+        profile_name: str,
+        script_path: Path,
+    ) -> None:
         """
         Installs a credential process given the profile name and script path
 
@@ -116,7 +120,7 @@ class _AWSConfigBase(ABC):
             script_path (Path): The script to call in the process
         """
         self._config_parser[self._get_profile_name(profile_name)] = {
-            "credential_process": str(script_path.absolute())
+            "credential_process": str(script_path.absolute()),
         }
         self._write()
 
@@ -173,12 +177,56 @@ class AWSConfig(_AWSConfigBase):
     Implementation of _AWSConfigBase to represent the ~/.aws/config file
     """
 
+    _region: str
+
+    def __init__(
+        self,
+        *,
+        os_user: Optional[SessionUser],
+        parent_dir: Path,
+        region: str,
+    ) -> None:
+        """
+        Constructor for the AWSConfigBase class
+
+        Args:
+            os_user (Optional[SessionUser]): If non-None, then this is the os user to add read
+                permissions for. If None, then the only the process user will be able to read
+                the credentials files.
+            parent_dir (Path): The directory where the AWS config and credentials files will be
+                written to.
+            region (str): The target region where the credentials are for
+        """
+        super(AWSConfig, self).__init__(
+            os_user=os_user,
+            parent_dir=parent_dir,
+        )
+        self._region = region
+
     def _get_profile_name(self, profile_name: str) -> str:
         return f"profile {profile_name}"
 
     @property
     def path(self) -> Path:
         return self._parent_dir / "config"
+
+    def install_credential_process(
+        self,
+        profile_name: str,
+        script_path: Path,
+    ) -> None:
+        """
+        Installs a credential process given the profile name and script path
+
+        Args:
+            profile_name (str): The profile name to install under
+            script_path (Path): The script to call in the process
+        """
+        self._config_parser[self._get_profile_name(profile_name)] = {
+            "credential_process": str(script_path.absolute()),
+            "region": self._region,
+        }
+        self._write()
 
 
 class AWSCredentials(_AWSConfigBase):

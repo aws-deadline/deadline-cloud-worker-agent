@@ -64,6 +64,11 @@ def os_user() -> Optional[SessionUser]:
         return WindowsSessionUser(user="user", password="fakepassword")
 
 
+@pytest.fixture
+def region() -> str:
+    return "us-west-2"
+
+
 class TestInit:
     def test_construction(
         self,
@@ -73,6 +78,7 @@ class TestInit:
         worker_id: str,
         queue_id: str,
         os_user: Optional[SessionUser],
+        region: str,
     ) -> None:
         # Just testing basic construction.
         # Make sure that the required instance methods are called and that we
@@ -98,6 +104,7 @@ class TestInit:
                 os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
+                region=region,
             )
 
             # THEN
@@ -123,6 +130,7 @@ class TestInit:
         worker_id: str,
         queue_id: str,
         os_user: Optional[SessionUser],
+        region: str,
     ) -> None:
         # Make sure that we cleanup when the refresh_credentials() method raises an exception
 
@@ -149,6 +157,7 @@ class TestInit:
                     os_user=os_user,
                     interrupt_event=event,
                     worker_persistence_dir=Path("/var/lib/deadline"),
+                    region=region,
                 )
 
             # THEN
@@ -165,6 +174,7 @@ class TestCleanup:
         fleet_id: str,
         worker_id: str,
         queue_id: str,
+        region: str,
     ) -> None:
         # Regression test to make sure that cleanup always:
         # 1. Uninstalls the credential process from the user's AWS configuration
@@ -191,6 +201,7 @@ class TestCleanup:
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
+                region=region,
             )
 
             # WHEN
@@ -211,6 +222,7 @@ class TestHasCredentials:
         worker_id: str,
         queue_id: str,
         expired: bool,
+        region: str,
     ) -> None:
         # GIVEN
         event = Event()
@@ -236,6 +248,7 @@ class TestHasCredentials:
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
+                region=region,
             )
 
             # WHEN
@@ -265,6 +278,7 @@ class TestRefreshCredentials:
         file_cache_cls_mock: MagicMock,
         temporary_credentials_cls_mock: MagicMock,
         os_user: SessionUser,
+        region: str,
     ) -> None:
         # Test that if the Session contains credentials that ARE expired,
         # then it will use the given bootstrap_session credentials to do the refresh.
@@ -287,6 +301,7 @@ class TestRefreshCredentials:
                 os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
+                region=region,
             )
         with (
             # Relevant mocks for the test
@@ -376,6 +391,7 @@ class TestRefreshCredentials:
         worker_id: str,
         queue_id: str,
         exception: Exception,
+        region: str,
     ) -> None:
         # Test that if the assume-role raises an exception that we re-raise it..
 
@@ -397,6 +413,7 @@ class TestRefreshCredentials:
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
+                region=region,
             )
         with (
             # Relevant mocks for the test
@@ -428,6 +445,7 @@ class TestRefreshCredentials:
         queue_id: str,
         temporary_credentials_cls_mock: MagicMock,
         exception: Exception,
+        region: str,
     ) -> None:
         # Test that if the parsing of the API response fails then we raise an exception.
 
@@ -449,6 +467,7 @@ class TestRefreshCredentials:
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
+                region=region,
             )
         with (
             # Relevant mocks for the test
@@ -479,6 +498,7 @@ class TestCreateCredentialsDirectory:
         worker_id: str,
         queue_id: str,
         os_user: Optional[SessionUser],
+        region: str,
     ) -> None:
         # Test that the directory is created securely.
 
@@ -507,6 +527,7 @@ class TestCreateCredentialsDirectory:
                 os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=worker_persistence_dir,
+                region=region,
             )
 
         # THEN
@@ -556,6 +577,7 @@ class TestCreateCredentialsDirectory:
         fleet_id: str,
         worker_id: str,
         queue_id: str,
+        region: str,
     ) -> None:
         # Test that a failure to create the directory is re-raised.
 
@@ -580,6 +602,7 @@ class TestCreateCredentialsDirectory:
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=mock_path,
+                region=region,
             )
 
         mock_path.mkdir.side_effect = OSError("Boom!")
@@ -601,6 +624,7 @@ class TestDeleteCredentialsDirectory:
         worker_id: str,
         queue_id: str,
         exists: bool,
+        region: str,
     ) -> None:
         # Test that the directory is created securely.
 
@@ -624,6 +648,7 @@ class TestDeleteCredentialsDirectory:
                 os_user=None,
                 interrupt_event=event,
                 worker_persistence_dir=Path(tmpdir),
+                region=region,
             )
 
             if exists:
@@ -651,6 +676,7 @@ class TestInstallCredentialProcess:
         os_user: Optional[SessionUser],
         aws_config_cls_mock: MagicMock,
         aws_credentials_cls_mock: MagicMock,
+        region: str,
     ) -> None:
         # Test that the directory is created securely.
 
@@ -674,6 +700,7 @@ class TestInstallCredentialProcess:
                 os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=Path(tmpdir),
+                region=region,
             )
 
         aws_config_mock = aws_config_cls_mock.return_value
@@ -749,6 +776,7 @@ class TestUninstallCredentialProcess:
         os_user: Optional[SessionUser],
         aws_config_cls_mock: MagicMock,
         aws_credentials_cls_mock: MagicMock,
+        region: str,
     ) -> None:
         # Test that we call the correct methods to see the credentials process removed from
         # the user's AWS configuration.
@@ -776,6 +804,7 @@ class TestUninstallCredentialProcess:
                 os_user=os_user,
                 interrupt_event=event,
                 worker_persistence_dir=Path("/var/lib/deadline"),
+                region=region,
             )
 
         aws_config_mock = aws_config_cls_mock.return_value
