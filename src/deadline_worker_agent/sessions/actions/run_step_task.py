@@ -31,7 +31,6 @@ class RunStepTaskAction(OpenjdAction):
         The task parameter values
     """
 
-    step_id: str
     task_id: str
     _details: StepDetails
     _task_parameter_values: TaskParameterSet
@@ -40,16 +39,14 @@ class RunStepTaskAction(OpenjdAction):
         self,
         *,
         id: str,
-        step_id: str,
         details: StepDetails,
         task_id: str,
         task_parameter_values: TaskParameterSet,
     ) -> None:
         super(RunStepTaskAction, self).__init__(
-            id=id, action_log_kind=SessionActionLogKind.TASK_RUN
+            id=id, action_log_kind=SessionActionLogKind.TASK_RUN, step_id=details.step_id
         )
         self._details = details
-        self.step_id = step_id
         self.task_id = task_id
         self._task_parameter_values = task_parameter_values
 

@@ -48,11 +48,11 @@ if test "${OVERRIDE_JOB_USER}" == "True" && test "${USE_LDAP}" == "True"; then
     exit 1
 fi
 
-if ! test -d ${HOME}/.aws/models/deadline
-then
-    echo "ERROR: AWS Deadline Cloud service model must be installed to ~/.aws/models/deadline"
-    exit 1
-fi
+# if ! test -d ${HOME}/.aws/models/deadline
+# then
+#     echo "ERROR: AWS Deadline Cloud service model must be installed to ~/.aws/models/deadline"
+#     exit 1
+# fi
 
 ARGS=""
 
@@ -110,7 +110,7 @@ do
     printenv ${var} >> $TMP_ENV_FILE
 done
 
-if test "${PIP_INDEX_URL}" != ""; then
+if test "${PIP_INDEX_URL:-}" != ""; then
     echo "PIP_INDEX_URL=${PIP_INDEX_URL}" >> $TMP_ENV_FILE
 fi
 

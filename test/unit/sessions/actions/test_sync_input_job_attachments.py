@@ -104,8 +104,7 @@ class TestStart:
             id=action_id,
             session_id="session-1234",
             step_details=StepDetails(
-                step_template=step_template,
-                dependencies=step_dependencies,
+                step_template=step_template, dependencies=step_dependencies, step_id="step-1234"
             ),
         )
         action.start(session=session, executor=executor)

@@ -58,7 +58,13 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
         step_details: Optional[StepDetails] = None,
     ) -> None:
         super(SyncInputJobAttachmentsAction, self).__init__(
-            id=id, action_log_kind=SessionActionLogKind.JA_SYNC
+            id=id,
+            action_log_kind=(
+                SessionActionLogKind.JA_SYNC
+                if step_details is None
+                else SessionActionLogKind.JA_DEP_SYNC
+            ),
+            step_id=step_details.step_id if step_details is not None else None,
         )
         self._cancel = Event()
         self._job_attachment_details = job_attachment_details
