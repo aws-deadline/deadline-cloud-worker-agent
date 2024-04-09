@@ -487,6 +487,7 @@ class TestDetails:
                 name="Placeholder",
                 script=StepScript(actions=StepActions(onRun=Action(command="test.exe"))),
             ),
+            step_id=step_id,
             dependencies=[dependency],
         )
         deadline_client.batch_get_job_entity.return_value = response
@@ -539,6 +540,7 @@ class TestDetails:
                 name="Test",
                 script=StepScript(actions=StepActions(onRun=Action(command="test.exe"))),
             ),
+            step_id=step_id,
             dependencies=[dependency],
         )
         deadline_client.batch_get_job_entity.return_value = response

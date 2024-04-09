@@ -411,14 +411,25 @@ class SessionActionQueue:
                 action_queue_entry = cast(TaskRunQueueEntry, action_queue_entry)
                 action_definition = action_queue_entry.definition
                 step_id = action_definition["stepId"]
+                task_id = action_definition["taskId"]
                 try:
                     step_details = self._job_entities.step_details(step_id=step_id)
                 except UnsupportedSchema as e:
                     raise JobEntityUnsupportedSchemaError(
-                        action_id, SessionActionLogKind.TASK_RUN, e._version
+                        action_id,
+                        SessionActionLogKind.TASK_RUN,
+                        e._version,
+                        step_id=step_id,
+                        task_id=task_id,
                     ) from e
                 except (ValueError, RuntimeError) as e:
-                    raise StepDetailsError(action_id, SessionActionLogKind.TASK_RUN, str(e)) from e
+                    raise StepDetailsError(
+                        action_id,
+                        SessionActionLogKind.TASK_RUN,
+                        str(e),
+                        step_id=step_id,
+                        task_id=task_id,
+                    ) from e
                 task_parameters_data: dict = action_definition.get("parameters", {})
                 task_parameters = parameters_from_api_response(task_parameters_data)
 
@@ -426,7 +437,6 @@ class SessionActionQueue:
                     id=action_id,
                     details=step_details,
                     task_parameter_values=task_parameters,
-                    step_id=step_id,
                     task_id=action_definition["taskId"],
                 )
             elif action_type == "SYNC_INPUT_JOB_ATTACHMENTS":
@@ -460,11 +470,17 @@ class SessionActionQueue:
                         )
                     except UnsupportedSchema as e:
                         raise JobEntityUnsupportedSchemaError(
-                            action_id, SessionActionLogKind.JA_SYNC, e._version
+                            action_id,
+                            SessionActionLogKind.JA_DEP_SYNC,
+                            e._version,
+                            step_id=action_definition["stepId"],
                         ) from e
                     except ValueError as e:
                         raise StepDetailsError(
-                            action_id, SessionActionLogKind.JA_SYNC, str(e)
+                            action_id,
+                            SessionActionLogKind.JA_DEP_SYNC,
+                            str(e),
+                            step_id=action_definition["stepId"],
                         ) from e
                     next_action = SyncInputJobAttachmentsAction(
                         id=action_id,

@@ -29,6 +29,10 @@ class StepDetails:
     """The step's Open Job Description step template.
     """
 
+    step_id: str
+    """The AWS Deadline Cloud resource ID for the Step.
+    """
+
     dependencies: list[str] = field(default_factory=list)
     """The dependencies (a list of IDs) that the step depends on"""
 
@@ -73,6 +77,7 @@ class StepDetails:
 
         return StepDetails(
             step_template=step_template,
+            step_id=step_details_data["stepId"],
             dependencies=step_details_data["dependencies"],
         )
 

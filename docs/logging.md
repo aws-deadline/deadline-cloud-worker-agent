@@ -47,9 +47,9 @@ Log events may also contain a `type`, `subtype`, icon (`ti`), and additional fie
 | type | subtype | ti | fields | purpose |
 | --- | --- | --- | --- | --- |
 | None | None | None | message | A simple status message or update and its log level. These messages may change at any time and must not be relied upon for automation. |
-| Action | Start | 🟢 | session_id; queue_id; job_id; action_id; kind; message | A SessionAction has started running. |
-| Action | Cancel/Interrupt | 🟨 | session_id; queue_id; job_id; action_id; kind; message | A cancel/interrupt of a SessionAction has been initiated. |
-| Action | End | 🟣 | session_id; queue_id; job_id; action_id; kind; status; message | A SessionAction has completed running. |
+| Action | Start | 🟢 | session_id; queue_id; job_id; action_id; kind; message; step_id (optional); task_id (optional) | A SessionAction has started running. |
+| Action | Cancel/Interrupt | 🟨 | session_id; queue_id; job_id; action_id; kind; message; step_id (optional); task_id (optional) | A cancel/interrupt of a SessionAction has been initiated. |
+| Action | End | 🟣 | session_id; queue_id; job_id; action_id; kind; status; message; step_id (optional); task_id (optional) | A SessionAction has completed running. |
 | AgentInfo | None | None | platform; python[interpreter,version]; agent[version,installedAt,runningAs]; depenencies | Information about the running Agent software. |
 | API | Req | 📤 | operation; request_url; params; resource (optional) | A request to an AWS API. Only requests to AWS Deadline Cloud APIs contain a resource field. |
 | API | Resp | 📥 | operation; params; status_code, request_id; error (optional) | A response from an AWS API request. |

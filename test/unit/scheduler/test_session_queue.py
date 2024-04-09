@@ -153,9 +153,8 @@ class TestSessionActionQueueDequeue:
                 ),
                 RunStepTaskAction(
                     id="id",
-                    step_id="stepId",
                     task_id="taskId",
-                    details=StepDetails(step_template=_TEST_STEP_TEMPLATE),
+                    details=StepDetails(step_template=_TEST_STEP_TEMPLATE, step_id="stepId"),
                     task_parameter_values={
                         "strP": ParameterValue(type=ParameterValueType.STRING, value="stringValue"),
                         "pathP": ParameterValue(type=ParameterValueType.PATH, value="/tmp"),
@@ -196,7 +195,9 @@ class TestSessionActionQueueDequeue:
                     id="id",
                     session_id="session-1234",
                     step_details=StepDetails(
-                        step_template=_TEST_STEP_TEMPLATE, dependencies=["step-1"]
+                        step_template=_TEST_STEP_TEMPLATE,
+                        dependencies=["step-1"],
+                        step_id="step-1234",
                     ),
                 ),
                 id="sync input job attachments with step Id",
