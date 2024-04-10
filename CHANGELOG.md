@@ -1,3 +1,12 @@
+## 0.27.0 (2024-04-10)
+
+### BREAKING CHANGES
+* differentiate step actions from non-step actions in logs (#292) ([`a6d55e3`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/a6d55e3849cd4c374e91d184ed3ad40bd88d491f))
+
+
+### Bug Fixes
+* handle case where BatchGetJobEntity returns no jobRunAsUser (#293) ([`616e16c`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/616e16c293ae544fe948528b485a6892c36bf0a6))
+
 ## 0.26.1 (2024-04-03)
 
 
