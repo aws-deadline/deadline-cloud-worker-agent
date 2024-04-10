@@ -591,6 +591,7 @@ class TestCaching:
             "logGroupName": "/aws/service/loggroup",
             "schemaVersion": "jobtemplate-2023-09",
             "jobRunAsUser": {
+                "runAs": "QUEUE_CONFIGURED_USER",
                 "posix": {
                     "user": "job-user",
                     "group": "job-group",

@@ -253,6 +253,7 @@ class DeadlineClient:
                             },
                             "logGroupName": "/aws/deadline/queue-abc",
                             "jobRunAsUser": {
+                                "runAs": "QUEUE_CONFIGURED_USER",
                                 "posix": {
                                     "user": "job-user",
                                     "group": "job-group",

@@ -756,7 +756,7 @@ class WorkerScheduler:
                     job_id=job_id,
                     session_id=session_id,
                     user=user_to_log,
-                    message="Running as the Worker Agent's user.",
+                    message="Running as the Worker Agent's user. This configuration is not recommended; please see the Security chapter of the User Guide.",
                 )
             )
         return os_user

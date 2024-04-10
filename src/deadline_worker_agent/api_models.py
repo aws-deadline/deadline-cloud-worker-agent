@@ -253,7 +253,7 @@ class WindowsUser(TypedDict):
 class JobRunAsUser(TypedDict):
     posix: NotRequired[PosixUser]
     windows: NotRequired[WindowsUser]
-    runAs: NotRequired[Literal["QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"]]
+    runAs: Literal["QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"]
 
 
 class JobDetailsData(JobDetailsIdentifierFields):
