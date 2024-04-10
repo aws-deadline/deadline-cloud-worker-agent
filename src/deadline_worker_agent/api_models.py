@@ -253,14 +253,14 @@ class WindowsUser(TypedDict):
 class JobRunAsUser(TypedDict):
     posix: NotRequired[PosixUser]
     windows: NotRequired[WindowsUser]
-    runAs: NotRequired[Literal["QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"]]
+    runAs: Literal["QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"]
 
 
 class JobDetailsData(JobDetailsIdentifierFields):
     jobAttachmentSettings: NotRequired[JobAttachmentQueueSettings]
     """The queue's job attachment settings"""
 
-    jobRunAsUser: JobRunAsUser
+    jobRunAsUser: NotRequired[JobRunAsUser]
     """The queue's info on how to run the job processes (ie. posix or windows user/group)"""
 
     logGroupName: str

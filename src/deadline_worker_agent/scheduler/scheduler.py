@@ -37,6 +37,7 @@ from ..sessions.log_config import (
     LogProvisioningError,
     SessionLogConfigurationParameters,
 )
+from ..sessions.job_entities.job_details import JobRunAsUser
 from ..api_models import (
     AssignedSession,
     UpdateWorkerScheduleResponse,
@@ -668,6 +669,98 @@ class WorkerScheduler:
         )
         self._wakeup.set()
 
+    @staticmethod
+    def _determine_user_for_session(
+        *,
+        host_is_posix: bool,
+        job_run_as_user: Optional[JobRunAsUser],
+        job_run_as_user_override: JobsRunAsUserOverride,
+        queue_id: str,
+        job_id: str,
+        session_id: str,
+    ) -> Optional[SessionUser]:
+        # Called only in self._create_new_sessions() to determine what os_user the Session should
+        # run as.
+        # Raises a ValueError if an impossible situation arises and we need to fail the Session.
+        os_user: Optional[SessionUser] = None
+        if not job_run_as_user_override.run_as_agent:
+            if job_run_as_user_override.job_user is not None:
+                os_user = job_run_as_user_override.job_user
+                logger.info(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.USER,
+                        queue_id=queue_id,
+                        job_id=job_id,
+                        session_id=session_id,
+                        user=os_user.user,
+                        message="Running as host-configured override user.",
+                    )
+                )
+            elif job_run_as_user is None:
+                # Terminal error. We need to fail the Session.
+                # This should *never* happen; it occuring would mean that a service invariant has
+                # been violated.
+                message = (
+                    "FATAL: Queue does not have a jobRunAsUser. This should not be possible. "
+                    "Please report this to the service team."
+                )
+                raise ValueError(message)
+            elif not job_run_as_user.is_worker_agent_user:
+                # If we do not have a job-user override & we're not explicitly running
+                # as the agent's user, then we *MUST* have a jobRunAsUser from the JobDetails.
+                # Reasons:
+                #  1) The service always allows service-managed Fleets to associate with
+                #     a Queue. The SMF Worker Agent is *always* run with a local user override.
+                #  2) The service only allows a customer-managed Fleet to associate with a
+                #     Queue if either:
+                #       a) The jobRunAsUser is explicitly set to WORKER_AGENT_USER; or
+                #       b) The jobRunAsUser is explicitly set to QUEUE_CONFIGURED_USER and
+                #          a user has been defined for the CMF's OS Platform (Linux/MacOS Fleets must
+                #          have a "posix" user; and Windows Fleets must have a "windows" user)
+                #  3) The service does not allow a Queue's jobRunAsUser to be updated if the constraint
+                #     imposed by (2) above would be violated for one or more of that Queue's current QFAs.
+                if host_is_posix:
+                    os_user = job_run_as_user.posix
+                else:
+                    os_user = job_run_as_user.windows
+                if os_user is None:
+                    # Terminal error. We need to fail the Session.
+                    # This should *never* happen; it occuring would mean that a service invariant has
+                    # been violated.
+                    message = (
+                        "FATAL: Queue's jobRunAsUser does not define a QUEUE_CONFIGURED_USER for this platform. "
+                        "Please report this to the service team."
+                    )
+                    raise ValueError(message)
+                else:
+                    logger.info(
+                        SessionLogEvent(
+                            subtype=SessionLogEventSubtype.USER,
+                            queue_id=queue_id,
+                            job_id=job_id,
+                            session_id=session_id,
+                            user=os_user.user,
+                            message="Running as Queue's jobRunAsUser.",
+                        )
+                    )
+        if os_user is None:
+            try:
+                user_to_log = getpass.getuser()
+            except Exception:
+                # This is best-effort. If we cannot determine the user we will not log
+                user_to_log = "UNKNOWN"
+            logger.warning(
+                SessionLogEvent(
+                    subtype=SessionLogEventSubtype.USER,
+                    queue_id=queue_id,
+                    job_id=job_id,
+                    session_id=session_id,
+                    user=user_to_log,
+                    message="Running as the Worker Agent's user. This configuration is not recommended; please see the Security chapter of the User Guide.",
+                )
+            )
+        return os_user
+
     def _create_new_sessions(
         self,
         *,
@@ -842,52 +935,28 @@ class WorkerScheduler:
             queue.replace(actions=session_spec["sessionActions"])
 
             os_user: Optional[SessionUser] = None
-            if not self._job_run_as_user_override.run_as_agent:
-                if self._job_run_as_user_override.job_user is not None:
-                    os_user = self._job_run_as_user_override.job_user
-                    logger.info(
-                        SessionLogEvent(
-                            subtype=SessionLogEventSubtype.USER,
-                            queue_id=queue_id,
-                            job_id=job_id,
-                            session_id=new_session_id,
-                            user=os_user.user,
-                            message="Running as host-configured override user.",
-                        )
-                    )
-                elif job_details.job_run_as_user:
-                    if os.name == "posix":
-                        os_user = job_details.job_run_as_user.posix
-                    else:
-                        os_user = job_details.job_run_as_user.windows
-                    if os_user is not None:
-                        logger.info(
-                            SessionLogEvent(
-                                subtype=SessionLogEventSubtype.USER,
-                                queue_id=queue_id,
-                                job_id=job_id,
-                                session_id=new_session_id,
-                                user=os_user.user,
-                                message="Running as Queue's jobRunAsUser.",
-                            )
-                        )
-
-            if os_user is None:
-                try:
-                    user_to_log = getpass.getuser()
-                except Exception:
-                    # This is best-effort. If we cannot determine the user we will not log
-                    user_to_log = "UNKNOWN"
-                logger.warning(
+            try:
+                os_user = self._determine_user_for_session(
+                    host_is_posix=os.name == "posix",
+                    job_run_as_user=job_details.job_run_as_user,
+                    job_run_as_user_override=self._job_run_as_user_override,
+                    queue_id=queue_id,
+                    job_id=job_id,
+                    session_id=new_session_id,
+                )
+            except ValueError as e:
+                message = str(e)
+                self._fail_all_actions(session_spec, message)
+                logger.error(
                     SessionLogEvent(
                         subtype=SessionLogEventSubtype.USER,
                         queue_id=queue_id,
                         job_id=job_id,
                         session_id=new_session_id,
-                        user=user_to_log,
-                        message="Running as the Worker Agent's user.",
+                        message=message,
                     )
                 )
+                continue
 
             queue_credentials: QueueAwsCredentials | None = None
             asset_sync: AssetSync | None = None

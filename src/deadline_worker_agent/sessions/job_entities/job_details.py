@@ -91,33 +91,39 @@ def job_run_as_user_api_model_to_worker_agent(
     """Converts the 'JobRunAsUser' api model to the 'JobRunAsUser' dataclass
     expected by the Worker Agent.
     """
-    if "runAs" in job_run_as_user_data and job_run_as_user_data["runAs"] == "WORKER_AGENT_USER":
+    # Only two options for "runAs": WORKER_AGENT_USER & QUEUE_CONFIGURED_USER
+    if job_run_as_user_data["runAs"] == "WORKER_AGENT_USER":
         job_run_as_user = JobRunAsUser(is_worker_agent_user=True)
         return job_run_as_user
 
+    # We have a QUEUE_CONFIGURED_USER, so extract the data for this platform.
     if os.name == "posix":
-        user = ""
-        group = ""
-        if job_run_as_user_posix := job_run_as_user_data.get("posix", None):
-            user = job_run_as_user_posix["user"]
-            group = job_run_as_user_posix["group"]
-        else:
+        job_run_as_user_posix = job_run_as_user_data.get("posix", None)
+        if job_run_as_user_posix is None:
+            # Note: This may happen in an SMF case as follows:
+            #  Customer has a Windows-based CMF, and configures the QUEUE_CONFIGURED_USER
+            # for Windows, but also connects the Queue to a posix-based SMF.
+            #  So, this would mean that we're in a posix-based SMF. Return None; the agent
+            # must have been started with a jobRunAsUser override.
             return None
 
-        if "runAs" not in job_run_as_user_data and not group and not user:
-            return None
         job_run_as_user = JobRunAsUser(
             posix=PosixSessionUser(
-                user=user,
-                group=group,
+                user=job_run_as_user_posix["user"],
+                group=job_run_as_user_posix["group"],
             ),
         )
     else:
-        job_run_as_user_windows = job_run_as_user_data.get("windows", {})
-        user = job_run_as_user_windows.get("user", "")
-        passwordArn = job_run_as_user_windows.get("passwordArn", "")
-        if not (user and passwordArn):
+        job_run_as_user_windows = job_run_as_user_data.get("windows", None)
+        if job_run_as_user_windows is None:
+            # Note: This may happen in an SMF case as follows:
+            #  Customer has a posix-based CMF, and configures the QUEUE_CONFIGURED_USER
+            # for posix, but also connects the Queue to a Windows-based SMF.
+            #  So, this would mean that we're in a Windows-based SMF. Return None; the agent
+            # must have been started with a jobRunAsUser override.
             return None
+        user = job_run_as_user_windows["user"]
+        passwordArn = job_run_as_user_windows["passwordArn"]
         job_run_as_user = JobRunAsUser(
             windows_settings=JobRunAsWindowsUser(user=user, passwordArn=passwordArn),
         )
@@ -238,9 +244,11 @@ class JobDetails:
         if job_attachment_settings_boto := job_details_data.get("jobAttachmentSettings", None):
             job_attachment_settings = JobAttachmentSettings.from_boto(job_attachment_settings_boto)
 
-        job_run_as_user_data = job_details_data["jobRunAsUser"]
-        job_run_as_user: JobRunAsUser | None = job_run_as_user_api_model_to_worker_agent(
-            job_run_as_user_data
+        job_run_as_user_data = job_details_data.get("jobRunAsUser", None)
+        job_run_as_user: JobRunAsUser | None = (
+            job_run_as_user_api_model_to_worker_agent(job_run_as_user_data)
+            if job_run_as_user_data is not None
+            else None
         )
 
         # Note: Record the empty string as a None as well.
@@ -290,7 +298,6 @@ class JobDetails:
                 Field(key="jobId", expected_type=str, required=True),
                 Field(key="logGroupName", expected_type=str, required=True),
                 Field(key="schemaVersion", expected_type=str, required=True),
-                Field(key="osUser", expected_type=str, required=False),
                 Field(
                     key="parameters",
                     expected_type=dict,
@@ -304,7 +311,7 @@ class JobDetails:
                 Field(
                     key="jobRunAsUser",
                     expected_type=dict,
-                    required=True,
+                    required=False,
                     fields=(
                         Field(
                             key="posix",
@@ -318,7 +325,7 @@ class JobDetails:
                         Field(
                             key="runAs",
                             expected_type=str,
-                            required=False,
+                            required=True,
                         ),
                         Field(
                             key="windows",
@@ -367,7 +374,7 @@ class JobDetails:
                 )
 
         # Validate jobRunAsUser -> runAs is one of ("QUEUE_CONFIGURED_USER" / "WORKER_AGENT_USER")
-        if run_as_value := entity_data["jobRunAsUser"].get("runAs", None):
+        if run_as_value := entity_data.get("jobRunAsUser", dict()).get("runAs", None):
             if run_as_value not in ("QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"):
                 raise ValueError(
                     f'Expected "jobRunAs" -> "runAs" to be one of "QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER" but got "{run_as_value}"'
