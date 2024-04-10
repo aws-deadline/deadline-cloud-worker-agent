@@ -260,7 +260,7 @@ class JobDetailsData(JobDetailsIdentifierFields):
     jobAttachmentSettings: NotRequired[JobAttachmentQueueSettings]
     """The queue's job attachment settings"""
 
-    jobRunAsUser: JobRunAsUser
+    jobRunAsUser: NotRequired[JobRunAsUser]
     """The queue's info on how to run the job processes (ie. posix or windows user/group)"""
 
     logGroupName: str

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Optional
 from unittest.mock import ANY, MagicMock, Mock, call, patch
 
-from openjd.sessions import ActionState, ActionStatus
+from openjd.sessions import ActionState, ActionStatus, SessionUser
 from botocore.exceptions import ClientError
 import pytest
 import os
@@ -952,6 +952,144 @@ class TestCreateNewSessions:
                 assert action_update.completed_status == "NEVER_ATTEMPTED"
                 assert action_update.start_time is None
                 assert action_update.end_time is None
+
+    class MockSessionUser(SessionUser):
+        user: str
+
+        def __init__(self, user) -> None:
+            self.user = user
+
+        def __eq__(self, other) -> bool:
+            return self.user == other.user
+
+        @staticmethod
+        def _get_process_user() -> str:
+            return "user"
+
+    @pytest.mark.parametrize(
+        "host_is_posix,job_run_as_user,job_run_as_user_override,expected_result,expected_exception",
+        [
+            pytest.param(
+                True,
+                JobRunAsUser(
+                    posix=MockSessionUser("posix"),  # type: ignore[arg-type]
+                    windows=MockSessionUser("windows"),  # type: ignore[arg-type]
+                    windows_settings=None,
+                    is_worker_agent_user=False,
+                ),
+                JobsRunAsUserOverride(run_as_agent=True, job_user=None),
+                None,
+                None,
+                id="Run as agent override",
+            ),
+            pytest.param(
+                True,
+                JobRunAsUser(
+                    posix=MockSessionUser("posix"),  # type: ignore[arg-type]
+                    windows=MockSessionUser("windows"),  # type: ignore[arg-type]
+                    windows_settings=None,
+                    is_worker_agent_user=False,
+                ),
+                JobsRunAsUserOverride(run_as_agent=False, job_user=MockSessionUser("override")),
+                MockSessionUser("override"),
+                None,
+                id="Override job user",
+            ),
+            pytest.param(
+                True,
+                None,
+                JobsRunAsUserOverride(run_as_agent=False, job_user=None),
+                None,
+                r"^FATAL: Queue does not have a jobRunAsUser\. .*",
+                id="Invariant violated: No override or queue user",
+            ),
+            pytest.param(
+                True,
+                JobRunAsUser(
+                    posix=MockSessionUser("posix"),  # type: ignore[arg-type]
+                    windows=MockSessionUser("windows"),  # type: ignore[arg-type]
+                    windows_settings=None,
+                    is_worker_agent_user=True,
+                ),
+                JobsRunAsUserOverride(run_as_agent=False, job_user=None),
+                None,
+                None,
+                id="Selects agent user",
+            ),
+            pytest.param(
+                True,
+                JobRunAsUser(
+                    posix=MockSessionUser("posix"),  # type: ignore[arg-type]
+                    windows=MockSessionUser("windows"),  # type: ignore[arg-type]
+                    windows_settings=None,
+                    is_worker_agent_user=False,
+                ),
+                JobsRunAsUserOverride(run_as_agent=False, job_user=None),
+                MockSessionUser("posix"),
+                None,
+                id="Selects posix user",
+            ),
+            pytest.param(
+                False,
+                JobRunAsUser(
+                    posix=MockSessionUser("posix"),  # type: ignore[arg-type]
+                    windows=MockSessionUser("windows"),  # type: ignore[arg-type]
+                    windows_settings=None,
+                    is_worker_agent_user=False,
+                ),
+                JobsRunAsUserOverride(run_as_agent=False, job_user=None),
+                MockSessionUser("windows"),
+                None,
+                id="Selects windows user",
+            ),
+            pytest.param(
+                True,
+                JobRunAsUser(
+                    posix=None,
+                    windows=None,
+                    windows_settings=None,
+                    is_worker_agent_user=False,
+                ),
+                JobsRunAsUserOverride(run_as_agent=False, job_user=None),
+                None,
+                r"^FATAL: Queue's jobRunAsUser does not define a QUEUE_CONFIGURED_USER for this platform\. .*",
+                id="Invariant violated: Missing platform-specific queue user",
+            ),
+        ],
+    )
+    def test_determine_user_for_session(
+        self,
+        host_is_posix: bool,
+        job_run_as_user: Optional[JobRunAsUser],
+        job_run_as_user_override: JobsRunAsUserOverride,
+        expected_result: Optional[SessionUser],
+        expected_exception: Optional[str],
+    ) -> None:
+
+        # WHEN
+        if expected_exception is not None:
+            with pytest.raises(ValueError, match=expected_exception):
+                WorkerScheduler._determine_user_for_session(
+                    host_is_posix=host_is_posix,
+                    job_run_as_user=job_run_as_user,
+                    job_run_as_user_override=job_run_as_user_override,
+                    queue_id="queue-1234",
+                    job_id="job-1234",
+                    session_id="session-1234",
+                )
+            return
+
+        result = WorkerScheduler._determine_user_for_session(
+            host_is_posix=host_is_posix,
+            job_run_as_user=job_run_as_user,
+            job_run_as_user_override=job_run_as_user_override,
+            queue_id="queue-1234",
+            job_id="job-1234",
+            session_id="session-1234",
+        )
+
+        # THEN
+        assert result == expected_result
 
 
 class TestQueueAwsCredentialsManagement:

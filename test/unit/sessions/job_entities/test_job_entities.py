@@ -209,16 +209,6 @@ class TestJobEntity:
                 "jobId": job_id,
                 "schemaVersion": "jobtemplate-2023-09",
                 "logGroupName": "fake-name",
-                "jobRunAsUser": {
-                    "posix": {
-                        "user": "job-user",
-                        "group": "job-group",
-                    },
-                    "windows": {
-                        "user": "job-user",
-                        "passwordArn": "job-password-arn",
-                    },
-                },
             },
         )
         response: BatchGetJobEntityResponse = {
@@ -261,6 +251,7 @@ class TestJobEntity:
         api_response: dict = {
             "jobId": "job-123",
             "jobRunAsUser": {
+                "runAs": "QUEUE_CONFIGURED_USER",
                 "posix": {
                     "user": expected_user,
                     "group": expected_group,
@@ -306,6 +297,7 @@ class TestDetails:
                 "schemaVersion": "jobtemplate-2023-09",
                 "logGroupName": "/aws/deadline/queue-0000",
                 "jobRunAsUser": {
+                    "runAs": "QUEUE_CONFIGURED_USER",
                     "posix": {
                         "user": "user",
                         "group": "group",
