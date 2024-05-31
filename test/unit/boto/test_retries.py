@@ -66,7 +66,7 @@ class TestNoOverflowExponentialBackoff:
             random_between=random_between,
         )
         if is_exponential:
-            expected = min(max_backoff, random_value * base ** (attempt_number - 1))
+            expected = random_value * min(max_backoff, base ** (attempt_number - 1))
         else:
             expected = random_value
 

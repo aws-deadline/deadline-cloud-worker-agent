@@ -1,3 +1,9 @@
+## 0.27.1 (2024-05-01)
+
+### Dependencies
+* update deadline requirement from ==0.47.* to ==0.48.* (#306) ([`01326f7`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/01326f78a93f76386b4a0ef8253909127726c66f))
+
+
 ## 0.27.0 (2024-04-10)
 
 ### BREAKING CHANGES

@@ -3,9 +3,20 @@ name: Code Quality
 on:
   pull_request:
     branches: [ mainline, feature_windows ]
+  workflow_call:
+    inputs:
+      branch:
+        required: false
+        type: string
 
 jobs:
   Test:
-    name: Code Quality
-    uses: ./.github/workflows/reuse_python_build.yml
-    secrets: inherit
+    name: Python
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.9', '3.10', '3.11']
+    uses: aws-deadline/.github/.github/workflows/reusable_python_build.yml@mainline
+    with:
+      os: ${{ matrix.os }}
+      python-version: ${{ matrix.python-version }}

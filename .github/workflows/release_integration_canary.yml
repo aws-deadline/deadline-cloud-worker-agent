@@ -10,7 +10,6 @@ jobs:
     name: Windows Integration Tests
     runs-on: windows-latest
     permissions:
-      id-token: write
       contents: read
     strategy:
       matrix:
@@ -26,24 +25,13 @@ jobs:
       run: hatch run integ-windows
       
   ReleaseIntegrationCanary:
-    runs-on: ubuntu-latest
-    environment: canary
+    name: Release Canary
     permissions:
       id-token: write
       contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: release
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_CODEBUILD_RELEASE_CANARY_ROLE }}
-          aws-region: us-west-2
-          mask-aws-account-id: true
-      - name: Run CodeBuild
-        uses: aws-actions/aws-codebuild-run-build@v1
-        with:
-          project-name: deadline-cloud-worker-agent-Canary
-          source-version-override: release
-          hide-cloudwatch-logs: true
+    uses: aws-deadline/.github/.github/workflows/reusable_canary.yml@mainline
+    secrets: inherit
+    with:
+      repository: ${{ github.event.repository.name }}
+      branch: release
+      environment: canary
