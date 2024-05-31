@@ -14,8 +14,8 @@ The default locations for worker logs are:
 
 | Platform | Default worker log path |
 | --- | --- |
-| Linux | `/var/log/amazon/deadline/logs` |
-| MacOS | `/var/log/amazon/deadline/logs` |
+| Linux | `/var/log/amazon/deadline` |
+| MacOS | `/var/log/amazon/deadline` |
 | Windows | `C:\ProgramData\Amazon\Deadline\Logs` |
 
 The worker agent maintains two sets of rotating log files:
