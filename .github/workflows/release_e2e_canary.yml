@@ -1,10 +1,9 @@
-name: Mainline Integration Test
+name: Release Canary
 
 on:
+  schedule:
+    - cron: '0 */4 * * *'
   workflow_dispatch:
-  push:
-    branches:
-      - 'mainline'
 
 jobs:
   WindowsIntegrationTests:
@@ -25,14 +24,15 @@ jobs:
     - name: Run Windows Integration Tests
       run: hatch run integ-windows
       
-  MainlineIntegrationTest:
-    name: Integration Test
+  ReleaseLinuxE2ECanary:
+    name: Release Linux Canary
     permissions:
       id-token: write
       contents: read
-    uses: aws-deadline/.github/.github/workflows/reusable_integration_test.yml@mainline
+    uses: aws-deadline/.github/.github/workflows/reusable_canary.yml@mainline
     secrets: inherit
     with:
       repository: ${{ github.event.repository.name }}
-      branch: mainline
-      environment: mainline
+      branch: release
+      environment: canary
+      os: linux

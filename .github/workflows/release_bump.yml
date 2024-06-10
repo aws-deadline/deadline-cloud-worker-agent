@@ -42,21 +42,22 @@ jobs:
     - name: Run Windows Integration Tests
       run: hatch run integ-windows
 
-  IntegrationTests:
+  LinuxE2ETests:
     needs: UnitTests
-    name: Integration Test
+    name: Linux E2E Test
     permissions:
       id-token: write
       contents: read
-    uses: aws-deadline/.github/.github/workflows/reusable_integration_test.yml@mainline
+    uses: aws-deadline/.github/.github/workflows/reusable_e2e_test.yml@mainline
     secrets: inherit
     with:
       repository: ${{ github.event.repository.name }}
       branch: mainline
       environment: mainline
+      os: linux
 
   Bump:
-    needs: IntegrationTests
+    needs: LinuxE2ETests
     name: Version Bump
     uses: aws-deadline/.github/.github/workflows/reusable_bump.yml@mainline
     secrets: inherit
