@@ -7,16 +7,17 @@ attacker position in a supposed different security boundary.
 """
 
 import logging
+import pytest
 
-from deadline_test_fixtures import CommandResult
+from deadline_test_fixtures import CommandResult, DeadlineWorkerConfiguration, EC2InstanceWorker
 
 
+@pytest.mark.parametrize("operating_system", ["linux"], indirect=True)
 def test_access_worker_credential_file_from_job(
-    worker,
-    worker_config,
+    worker: EC2InstanceWorker,
+    worker_config: DeadlineWorkerConfiguration,
 ) -> None:
     """Tests that the worker agent credentials file cannot be read by a job user"""
-
     # GIVEN
     job_users = worker_config.job_users
     assert len(job_users) >= 1

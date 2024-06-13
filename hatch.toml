@@ -9,8 +9,11 @@ test = "pytest test/unit --numprocesses=auto {args}"
 # Don't pass --numprocesses here so that tests run sequentially.
 # pytest-xdist does not allow live output of stdout, meaning integ tests only show output after the test is done
 # See: https://pytest-xdist.readthedocs.io/en/stable/known-limitations.html#output-stdout-and-stderr-from-workers
-integ-test = "pytest test/integ {args}"
-integ-windows = "pytest --no-cov test/integ/installer {args:}"
+version = "hatch version"
+metadata = "hatch project metadata {args:}"
+linux-e2e-test = "pytest test/e2e/linux {args}"
+windows-e2e-test= "pytest --no-cov test/e2e/windows {args:}"
+windows-integ-test = "pytest --no-cov test/integ/installer {args:}"
 typing = "mypy {args:src test}"
 style = [
   "ruff check {args:.}",
@@ -38,12 +41,6 @@ python = ["3.9", "3.10", "3.11"]
 
 [envs.default.env-vars]
 RUN_AS_ADMIN="true"
-
-[envs.codebuild.scripts]
-build = "hatch build {args:}"
-version = "hatch version"
-metadata = "hatch project metadata {args:}"
-integ-test = "pytest --no-cov test/integ {args:}"
 
 [envs.release]
 detached = true
