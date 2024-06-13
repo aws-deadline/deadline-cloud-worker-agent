@@ -18,16 +18,16 @@ from deadline_test_fixtures import (
     DockerContainerWorker,
     Farm,
     Fleet,
-    PosixSessionUser,
     Queue,
     PipInstall,
     EC2InstanceWorker,
     BootstrapResources,
+    PosixSessionUser,
+    OperatingSystem,
 )
-
+import pytest
 
 LOG = logging.getLogger(__name__)
-
 
 pytest_plugins = ["deadline_test_fixtures.pytest_hooks"]
 
@@ -109,6 +109,7 @@ def worker_config(
     codeartifact,
     service_model,
     region,
+    operating_system,
 ) -> Generator[DeadlineWorkerConfiguration, None, None]:
     """
     Builds the configuration for a DeadlineWorker.
@@ -145,7 +146,12 @@ def worker_config(
         ), f"Expected exactly one Worker agent whl path, but got {resolved_whl_paths} (from pattern {worker_agent_whl_path})"
         resolved_whl_path = resolved_whl_paths[0]
 
-        dest_path = posixpath.join("/tmp", os.path.basename(resolved_whl_path))
+        if operating_system.name == "AL2023":
+            dest_path = posixpath.join("/tmp", os.path.basename(resolved_whl_path))
+        else:
+            dest_path = posixpath.join(
+                "%USERPROFILE%\\AppData\\Local\\Temp", os.path.basename(resolved_whl_path)
+            )
         file_mappings = [(resolved_whl_path, dest_path)]
 
         LOG.info(f"The whl file will be copied to {dest_path} on the Worker environment")
@@ -165,7 +171,10 @@ def worker_config(
         with src_path.open(mode="w") as f:
             json.dump(service_model.model, f)
 
-        dst_path = posixpath.join("/tmp", src_path.name)
+        if operating_system.name == "AL2023":
+            dst_path = posixpath.join("/tmp", src_path.name)
+        else:
+            dst_path = posixpath.join("%USERPROFILE%\\AppData\\Local\\Temp", src_path.name)
         LOG.info(f"The service model will be copied to {dst_path} on the Worker environment")
         file_mappings.append((str(src_path), dst_path))
 
@@ -182,6 +191,7 @@ def worker_config(
             ),
             service_model_path=dst_path,
             file_mappings=file_mappings or None,
+            operating_system=operating_system,
         )
 
 
@@ -279,3 +289,11 @@ def job_run_as_user() -> PosixSessionUser:
         user="jobuser",
         group="shared-group",
     )
+
+
+@pytest.fixture(scope="session")
+def operating_system(request) -> OperatingSystem:
+    if request.param == "linux":
+        return OperatingSystem(name="AL2023")
+    else:
+        return OperatingSystem(name="WIN2022")
