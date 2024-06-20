@@ -21,4 +21,4 @@ else
   OP=update-stack
 fi
 
-aws cloudformation $OP --stack-name DeadlineCloudAgentE2EInfrastructure --template-body file://$(dirname $0)/e2e_testing_infrastructure.yaml --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation $OP --stack-name DeadlineCloudAgentE2EInfrastructure --template-body file://"$(dirname "$0")"/e2e_testing_infrastructure.yaml --capabilities CAPABILITY_NAMED_IAM
