@@ -549,6 +549,12 @@ class WorkerScheduler:
     ) -> UpdatedSessionActionInfo:
         updated_action = UpdatedSessionActionInfo()
 
+        def _exit_code_to_32bit_signed(exitcode: int) -> int:
+            # Workaround to ensure that the process exit code is returned in range of
+            # a 32-bit signed integer as expected by the UpdateWorkerSchedule API.
+            as_uint32_bytes = (exitcode & 0xFFFFFFFF).to_bytes(4, "big", signed=False)
+            return int.from_bytes(as_uint32_bytes, "big", signed=True)
+
         # Optional fields
         if action_updated.start_time:
             updated_action["startedAt"] = action_updated.start_time
@@ -558,7 +564,9 @@ class WorkerScheduler:
             updated_action["updatedAt"] = action_updated.update_time
         if action_updated.status:
             if action_updated.status.exit_code is not None:
-                updated_action["processExitCode"] = action_updated.status.exit_code
+                updated_action["processExitCode"] = _exit_code_to_32bit_signed(
+                    action_updated.status.exit_code
+                )
             if action_updated.completed_status:
                 if action_updated.status.fail_message:
                     updated_action["progressMessage"] = action_updated.status.fail_message

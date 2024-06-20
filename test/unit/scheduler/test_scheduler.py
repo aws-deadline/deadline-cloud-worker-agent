@@ -533,6 +533,35 @@ class TestSchedulerSync:
                 assert action_status.end_time is not None
                 assert action_status.start_time <= action_status.end_time
 
+    @pytest.mark.parametrize(
+        "exitcode, expected_result",
+        [
+            pytest.param(None, None, id="None"),
+            pytest.param(0, 0, id="Zero"),
+            pytest.param(0x7FFFFFFF, 0x7FFFFFFF, id="maxint"),
+            pytest.param(-2147483648, -2147483648, id="minint_decimal"),
+            pytest.param(0x80000000, -2147483648, id="minint_hex"),
+            pytest.param(0xFFFD0000, -196608, id="out-of-range-32bit"),
+            pytest.param(0xFFFFFFFD0000, -196608, id="out-of-range-big"),
+        ],
+    )
+    def test_updated_action_to_boto_exitcode(
+        self, scheduler: WorkerScheduler, exitcode: Optional[int], expected_result: Optional[int]
+    ) -> None:
+        # GIVEN
+        action_status = SessionActionStatus(
+            id="1234", status=ActionStatus(state=ActionState.FAILED, exit_code=exitcode)
+        )
+
+        # WHEN
+        status_as_boto = scheduler._updated_action_to_boto(action_status)
+
+        # THEN
+        if expected_result is None:
+            assert status_as_boto.get("processExitCode", "ABSENT") == "ABSENT"
+        else:
+            assert status_as_boto.get("processExitCode", "FAIL") == expected_result
+
 
 class TestCreateNewSessions:
     """Tests for WorkerScheduler._create_new_sessions"""
