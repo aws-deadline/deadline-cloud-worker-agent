@@ -32,8 +32,8 @@ SCRIPT_DIR=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 # Defaults
 default_wa_user=deadline-worker
 default_job_group=deadline-job-users
-farm_id=unset
-fleet_id=unset
+farm_id="unset"
+fleet_id="unset"
 wa_user=$default_wa_user
 confirm=""
 region="unset"
@@ -297,7 +297,7 @@ if ! group_exists "${job_group}"; then
     groupadd "${job_group}"
     echo "Done creating job group (${job_group})"
 else
-    echo "Job group "${job_group}" already exists"
+    echo "Job group ${job_group} already exists"
 fi
 
 if [[ "$(id -g --name "${wa_user}")" == "${job_group}" ]]; then
@@ -425,7 +425,7 @@ echo "Done configuring allow ec2 instance profile"
 if ! [[ "${no_install_service}" == "yes" ]]; then
     # Set up the service
     echo "Installing systemd service to /etc/systemd/system/deadline-worker.service"
-    worker_agent_homedir=$(eval echo ~$wa_user)
+    worker_agent_homedir=$(eval echo ~"$wa_user")
     cat > /etc/systemd/system/deadline-worker.service <<EOF
 [Unit]
 Description=AWS Deadline Cloud Worker Agent
@@ -475,7 +475,7 @@ fi
 if [[ "${telemetry_opt_out}" == "yes" ]]; then
     # Set the Deadline Client Lib configuration setting
     echo "Opting out of telemetry collection"
-    sudo -u $wa_user $client_library_program config set telemetry.opt_out true
+    sudo -u "$wa_user" "$client_library_program" config set telemetry.opt_out true
 fi
 
 echo "Done"
@@ -485,7 +485,7 @@ if [ ${#warning_lines[@]} -gt 0 ]; then
     echo
     echo "!!!! WARNING !!!"
     echo
-    for i in ${!warning_lines[@]}; do
+    for i in "${!warning_lines[@]}"; do
         echo "${warning_lines[i]}"
     done
     echo
