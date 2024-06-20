@@ -6,9 +6,6 @@ ENV AGENT_USER=agentuser
 ENV JOB_USER=jobuser
 ENV SHARED_GROUP=sharedgroup
 
-# Use a docker volume to mount the root of the repo to this directory
-VOLUME /code /aws
-
 WORKDIR /config
 
 COPY changePassword.ldif /config
@@ -27,7 +24,8 @@ COPY term_agent.sh /config
 # These accounts belong to the following groups:
 #   agentuser: agentuser, sharedgroup
 #   jobuser: jobuser, sharedgroup
-RUN chmod 777 /code /aws && \
+RUN mkdir /code /aws && \
+    chmod 777 /code /aws && \
     echo $(grep $(hostname) /etc/hosts | cut -f1) ldap.environment.internal >> /etc/hosts && \
     apt-get update && export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y vim screen slapd ldap-utils && \
@@ -65,6 +63,8 @@ RUN chmod 777 /code /aws && \
     apt-get install sudo-ldap && \
     echo "${AGENT_USER} ALL=(${JOB_USER},${AGENT_USER}) NOPASSWD: ALL" > /etc/sudoers.d/${AGENT_USER}
 
+# Use a docker volume to mount the root of the repo to this directory
+VOLUME /code /aws
 
 WORKDIR /home/agentuser
 

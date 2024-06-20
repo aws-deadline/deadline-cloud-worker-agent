@@ -177,7 +177,7 @@ then
     "configuration": {
         "customerManaged": {
             "mode": "NO_SCALING", 
-            "workerRequirements": {
+            "workerCapabilities": {
                 "vCpuCount": {
                     "min": 1
                 },

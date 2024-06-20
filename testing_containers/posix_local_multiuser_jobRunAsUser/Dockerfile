@@ -6,9 +6,6 @@ ENV AGENT_USER=agentuser
 ENV JOB_USER=jobuser
 ENV SHARED_GROUP=sharedgroup
 
-# Use a docker volume to mount the root of the repo to this directory
-VOLUME /code /aws
-
 # We set up two users:
 #  1) agentuser -- the user that will be running the Worker Agent.
 #  2) jobuser -- the user that we'll be running Jobs as.
@@ -17,7 +14,8 @@ VOLUME /code /aws
 #   agentuser: agentuser, sharedgroup
 #   jobuser: jobuser, sharedgroup
 
-RUN chmod 777 /code /aws && \
+RUN mkdir /code /aws && \
+    chmod 777 /code /aws && \
     apt-get update && apt-get install sudo && \
     rm -rf /var/lib/apt/lists/* && \
     addgroup ${SHARED_GROUP} &&  \
@@ -36,6 +34,9 @@ RUN chmod 777 /code /aws && \
     mkdir -p /var/lib/deadline/queues && \
     chown ${AGENT_USER}:${SHARED_GROUP} /var/lib/deadline /var/lib/deadline/queues && \
     chmod 750 /var/lib/deadline /var/lib/deadline/queues
+
+# Use a docker volume to mount the root of the repo to this directory
+VOLUME /code /aws
 
 WORKDIR /home/agentuser
 
