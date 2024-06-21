@@ -10,6 +10,6 @@ rich == 13.7.*
 types-python-dateutil ~= 2.9
 mypy ~= 1.10
 types-requests ~= 2.31
-ruff ~= 0.4.8
+ruff ~= 0.4.10
 twine ~= 5.1
 types-psutil ~= 5.9
