@@ -171,7 +171,7 @@ def worker_config(
 
         yield DeadlineWorkerConfiguration(
             farm_id=deadline_resources.farm.id,
-            fleet_id=deadline_resources.scaling_fleet.id,
+            fleet_id=deadline_resources.fleet.id,
             region=region,
             user=os.getenv("WORKER_POSIX_USER", "deadline-worker"),
             group=os.getenv("WORKER_POSIX_SHARED_GROUP", "shared-group"),
