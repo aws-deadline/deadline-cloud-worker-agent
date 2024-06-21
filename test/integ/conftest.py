@@ -1,87 +1,281 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-import dataclasses
+import boto3
+import glob
+import json
+import logging
+import os
+import pathlib
+import posixpath
+import pytest
+import tempfile
+from dataclasses import dataclass, field, InitVar
 from typing import Generator
 
 from deadline_test_fixtures import (
-    DeadlineClient,
-    DeadlineResources,
+    DeadlineWorker,
     DeadlineWorkerConfiguration,
+    DockerContainerWorker,
     Farm,
     Fleet,
-    JobRunAsUser,
     PosixSessionUser,
     Queue,
-    QueueFleetAssociation,
+    PipInstall,
+    EC2InstanceWorker,
+    BootstrapResources,
 )
-import pytest
+
+
+LOG = logging.getLogger(__name__)
 
 
 pytest_plugins = ["deadline_test_fixtures.pytest_hooks"]
 
 
-@pytest.fixture(scope="session")
-def farm(deadline_resources: DeadlineResources) -> Farm:
-    return deadline_resources.farm
+@dataclass(frozen=True)
+class DeadlineResources:
+    farm: Farm = field(init=False)
+    queue_a: Queue = field(init=False)
+    queue_b: Queue = field(init=False)
+    fleet: Fleet = field(init=False)
+    scaling_queue: Queue = field(init=False)
+    scaling_fleet: Fleet = field(init=False)
+
+    farm_id: InitVar[str]
+    queue_a_id: InitVar[str]
+    queue_b_id: InitVar[str]
+    fleet_id: InitVar[str]
+    scaling_queue_id: InitVar[str]
+    scaling_fleet_id: InitVar[str]
+
+    def __post_init__(
+        self,
+        farm_id: str,
+        queue_a_id: str,
+        queue_b_id: str,
+        fleet_id: str,
+        scaling_queue_id: str,
+        scaling_fleet_id: str,
+    ) -> None:
+        object.__setattr__(self, "farm", Farm(id=farm_id))
+        object.__setattr__(self, "queue_a", Queue(id=queue_a_id, farm=self.farm))
+        object.__setattr__(self, "queue_b", Queue(id=queue_b_id, farm=self.farm))
+        object.__setattr__(self, "fleet", Fleet(id=fleet_id, farm=self.farm))
+        object.__setattr__(self, "scaling_queue", Queue(id=scaling_queue_id, farm=self.farm))
+        object.__setattr__(self, "scaling_fleet", Fleet(id=scaling_fleet_id, farm=self.farm))
 
 
 @pytest.fixture(scope="session")
-def queue(deadline_resources: DeadlineResources) -> Queue:
-    return deadline_resources.queue
+def deadline_resources() -> Generator[DeadlineResources, None, None]:
+    """
+    Gets Deadline resources required for running tests.
 
+    Environment Variables:
+        FARM_ID: ID of the Deadline farm to use.
+        QUEUE_A_ID: ID of a non scaling Deadline queue to use for tests.
+        QUEUE_B_ID: ID of a non scaling Deadline queue to use for tests.
+        FLEET_ID: ID of a non scaling Deadline fleet to use for tests.
+        SCALING_QUEUE_ID: ID of the Deadline scaling queue to use.
+        SCALING_FLEET_ID: ID of the Deadline scaling fleet to use.
 
-@pytest.fixture(scope="session")
-def fleet(deadline_resources: DeadlineResources) -> Fleet:
-    return deadline_resources.fleet
+    Returns:
+        DeadlineResources: The Deadline resources used for tests
+    """
+    farm_id = os.environ["FARM_ID"]
+    queue_a_id = os.environ["QUEUE_A_ID"]
+    queue_b_id = os.environ["QUEUE_B_ID"]
+    fleet_id = os.environ["FLEET_ID"]
 
+    scaling_queue_id = os.environ["SCALING_QUEUE_ID"]
+    scaling_fleet_id = os.environ["SCALING_FLEET_ID"]
 
-@pytest.fixture(scope="session")
-def job_run_as_user() -> PosixSessionUser:
-    return PosixSessionUser(
-        user="job-run-as-user",
-        group="job-run-as-user-group",
+    LOG.info(
+        f"Configured Deadline Cloud Resources, farm: {farm_id}, scaling_fleet: {scaling_fleet_id}, scaling_queue: {scaling_queue_id} ,queue_a: {queue_a_id}, queue_b: {queue_b_id}, fleet: {fleet_id}"
+    )
+
+    yield DeadlineResources(
+        farm_id=farm_id,
+        queue_a_id=queue_a_id,
+        queue_b_id=queue_b_id,
+        fleet_id=fleet_id,
+        scaling_queue_id=scaling_queue_id,
+        scaling_fleet_id=scaling_fleet_id,
     )
 
 
 @pytest.fixture(scope="session")
 def worker_config(
-    worker_config: DeadlineWorkerConfiguration,
-    job_run_as_user: PosixSessionUser,
-) -> DeadlineWorkerConfiguration:
-    return dataclasses.replace(
-        worker_config,
-        job_users=[
-            *worker_config.job_users,
-            job_run_as_user,
-        ],
-    )
+    deadline_resources,
+    codeartifact,
+    service_model,
+    region,
+) -> Generator[DeadlineWorkerConfiguration, None, None]:
+    """
+    Builds the configuration for a DeadlineWorker.
+
+    Environment Variables:
+        WORKER_POSIX_USER: The POSIX user to configure the worker for
+            Defaults to "deadline-worker"
+        WORKER_POSIX_SHARED_GROUP: The shared POSIX group to configure the worker user and job user with
+            Defaults to "shared-group"
+        WORKER_AGENT_WHL_PATH: Path to the Worker agent wheel file to use.
+        WORKER_AGENT_REQUIREMENT_SPECIFIER: PEP 508 requirement specifier for the Worker agent package.
+            If WORKER_AGENT_WHL_PATH is provided, this option is ignored.
+        LOCAL_MODEL_PATH: Path to a local Deadline model file to use for API calls.
+            If DEADLINE_SERVICE_MODEL_S3_URI was provided, this option is ignored.
+
+    Returns:
+        DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
+    """
+    file_mappings: list[tuple[str, str]] = []
+
+    # Deprecated environment variable
+    if os.getenv("WORKER_REGION") is not None:
+        raise Exception(
+            "The environment variable WORKER_REGION is no longer supported. Please use REGION instead."
+        )
+
+    # Prepare the Worker agent Python package
+    worker_agent_whl_path = os.getenv("WORKER_AGENT_WHL_PATH")
+    if worker_agent_whl_path:
+        LOG.info(f"Using Worker agent whl file: {worker_agent_whl_path}")
+        resolved_whl_paths = glob.glob(worker_agent_whl_path)
+        assert (
+            len(resolved_whl_paths) == 1
+        ), f"Expected exactly one Worker agent whl path, but got {resolved_whl_paths} (from pattern {worker_agent_whl_path})"
+        resolved_whl_path = resolved_whl_paths[0]
+
+        dest_path = posixpath.join("/tmp", os.path.basename(resolved_whl_path))
+        file_mappings = [(resolved_whl_path, dest_path)]
+
+        LOG.info(f"The whl file will be copied to {dest_path} on the Worker environment")
+        worker_agent_requirement_specifier = dest_path
+    else:
+        worker_agent_requirement_specifier = os.getenv(
+            "WORKER_AGENT_REQUIREMENT_SPECIFIER",
+            "deadline-cloud-worker-agent",
+        )
+        LOG.info(f"Using Worker agent package {worker_agent_requirement_specifier}")
+
+    # Path map the service model
+    with tempfile.TemporaryDirectory() as tmpdir:
+        src_path = pathlib.Path(tmpdir) / f"{service_model.service_name}-service-2.json"
+
+        LOG.info(f"Staging service model to {src_path} for uploading to S3")
+        with src_path.open(mode="w") as f:
+            json.dump(service_model.model, f)
+
+        dst_path = posixpath.join("/tmp", src_path.name)
+        LOG.info(f"The service model will be copied to {dst_path} on the Worker environment")
+        file_mappings.append((str(src_path), dst_path))
+
+        yield DeadlineWorkerConfiguration(
+            farm_id=deadline_resources.farm.id,
+            fleet_id=deadline_resources.scaling_fleet.id,
+            region=region,
+            user=os.getenv("WORKER_POSIX_USER", "deadline-worker"),
+            group=os.getenv("WORKER_POSIX_SHARED_GROUP", "shared-group"),
+            allow_shutdown=True,
+            worker_agent_install=PipInstall(
+                requirement_specifiers=[worker_agent_requirement_specifier],
+                codeartifact=codeartifact,
+            ),
+            service_model_path=dst_path,
+            file_mappings=file_mappings or None,
+        )
 
 
 @pytest.fixture(scope="session")
-def queue_with_job_run_as_user(
-    farm: Farm,
-    fleet: Fleet,
-    deadline_client: DeadlineClient,
-    job_run_as_user: PosixSessionUser,
-) -> Generator[Queue, None, None]:
-    queue = Queue.create(
-        client=deadline_client,
-        display_name=f"Queue with jobsRunAsUser {job_run_as_user.user}",
-        farm=farm,
-        job_run_as_user=JobRunAsUser(posix=job_run_as_user, runAs="QUEUE_CONFIGURED_USER"),
-    )
+def worker(request: pytest.FixtureRequest, worker_config) -> Generator[DeadlineWorker, None, None]:
+    """
+    Gets a DeadlineWorker for use in tests.
 
-    qfa = QueueFleetAssociation.create(
-        client=deadline_client,
-        farm=farm,
-        queue=queue,
-        fleet=fleet,
-    )
+    Environment Variables:
+        SUBNET_ID: The subnet ID to deploy the EC2 worker into.
+            This is required for EC2 workers. Does not apply if USE_DOCKER_WORKER is true.
+        SECURITY_GROUP_ID: The security group ID to deploy the EC2 worker into.
+            This is required for EC2 workers. Does not apply if USE_DOCKER_WORKER is true.
+        AMI_ID: The AMI ID to use for the Worker agent.
+            Defaults to the latest AL2023 AMI.
+            Does not apply if USE_DOCKER_WORKER is true.
+        USE_DOCKER_WORKER: If set to "true", this fixture will create a Worker that runs in a local Docker container instead of an EC2 instance.
+        KEEP_WORKER_AFTER_FAILURE: If set to "true", will not destroy the Worker when it fails. Useful for debugging. Default is "false"
 
-    yield queue
+    Returns:
+        DeadlineWorker: Instance of the DeadlineWorker class that can be used to interact with the Worker.
+    """
 
-    qfa.delete(
-        client=deadline_client,
-        stop_mode="STOP_SCHEDULING_AND_CANCEL_TASKS",
+    worker: DeadlineWorker
+    if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
+        LOG.info("Creating Docker worker")
+        worker = DockerContainerWorker(
+            configuration=worker_config,
+        )
+    else:
+        LOG.info("Creating EC2 worker")
+        ami_id = os.getenv("AMI_ID")
+        subnet_id = os.getenv("SUBNET_ID")
+        security_group_id = os.getenv("SECURITY_GROUP_ID")
+        assert subnet_id, "SUBNET_ID is required when deploying an EC2 worker"
+        assert security_group_id, "SECURITY_GROUP_ID is required when deploying an EC2 worker"
+
+        bootstrap_resources: BootstrapResources = request.getfixturevalue("bootstrap_resources")
+        assert (
+            bootstrap_resources.worker_instance_profile_name
+        ), "Worker instance profile is required when deploying an EC2 worker"
+
+        ec2_client = boto3.client("ec2")
+        s3_client = boto3.client("s3")
+        ssm_client = boto3.client("ssm")
+
+        worker = EC2InstanceWorker(
+            ec2_client=ec2_client,
+            s3_client=s3_client,
+            bootstrap_bucket_name=bootstrap_resources.bootstrap_bucket_name,
+            ssm_client=ssm_client,
+            override_ami_id=ami_id,
+            subnet_id=subnet_id,
+            security_group_id=security_group_id,
+            instance_profile_name=bootstrap_resources.worker_instance_profile_name,
+            configuration=worker_config,
+        )
+
+    def stop_worker():
+        if request.session.testsfailed > 0:
+            if os.getenv("KEEP_WORKER_AFTER_FAILURE", "false").lower() == "true":
+                LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
+                return
+
+        try:
+            worker.stop()
+        except Exception as e:
+            LOG.exception(f"Error while stopping worker: {e}")
+            LOG.error(
+                "Failed to stop worker. Resources may be left over that need to be cleaned up manually."
+            )
+            raise
+
+    try:
+        worker.start()
+    except Exception as e:
+        LOG.exception(f"Failed to start worker: {e}")
+        LOG.info("Stopping worker because it failed to start")
+        stop_worker()
+        raise
+
+    yield worker
+
+    stop_worker()
+
+
+@pytest.fixture(scope="session")
+def region() -> str:
+    return os.getenv("REGION", os.getenv("AWS_DEFAULT_REGION", "us-west-2"))
+
+
+@pytest.fixture(scope="session")
+def job_run_as_user() -> PosixSessionUser:
+    return PosixSessionUser(
+        user="jobuser",
+        group="shared-group",
     )
-    queue.delete(client=deadline_client)

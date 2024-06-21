@@ -13,11 +13,7 @@ import pytest
 import logging
 
 from deadline_test_fixtures import (
-    DeadlineClient,
-    Farm,
     Job,
-    PosixSessionUser,
-    Queue,
     TaskStatus,
 )
 
@@ -28,15 +24,14 @@ LOG = logging.getLogger(__name__)
 class TestJobSubmission:
     def test_success(
         self,
-        deadline_client: DeadlineClient,
-        farm: Farm,
-        queue: Queue,
+        deadline_client,
+        deadline_resources,
     ) -> None:
         # WHEN
         job = Job.submit(
             client=deadline_client,
-            farm=farm,
-            queue=queue,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
             priority=98,
             template={
                 "specificationVersion": "jobtemplate-2023-09",
@@ -59,16 +54,15 @@ class TestJobSubmission:
 
     def test_job_run_as_user(
         self,
-        deadline_client: DeadlineClient,
-        farm: Farm,
-        queue_with_job_run_as_user: Queue,
-        job_run_as_user: PosixSessionUser,
+        deadline_client,
+        deadline_resources,
+        job_run_as_user,
     ) -> None:
         # WHEN
         job = Job.submit(
             client=deadline_client,
-            farm=farm,
-            queue=queue_with_job_run_as_user,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
             priority=98,
             template={
                 "specificationVersion": "jobtemplate-2023-09",

@@ -8,12 +8,12 @@ attacker position in a supposed different security boundary.
 
 import logging
 
-from deadline_test_fixtures import CommandResult, DeadlineWorker, DeadlineWorkerConfiguration
+from deadline_test_fixtures import CommandResult
 
 
 def test_access_worker_credential_file_from_job(
-    worker: DeadlineWorker,
-    worker_config: DeadlineWorkerConfiguration,
+    worker,
+    worker_config,
 ) -> None:
     """Tests that the worker agent credentials file cannot be read by a job user"""
 
