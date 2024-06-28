@@ -21,6 +21,7 @@ LOG = logging.getLogger(__name__)
 
 
 @pytest.mark.usefixtures("worker")
+@pytest.mark.parametrize("operating_system", ["linux"], indirect=True)
 class TestJobSubmission:
     def test_success(
         self,
