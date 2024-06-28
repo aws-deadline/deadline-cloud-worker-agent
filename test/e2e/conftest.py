@@ -60,7 +60,7 @@ class DeadlineResources:
         object.__setattr__(self, "farm", Farm(id=farm_id))
         object.__setattr__(self, "queue_a", Queue(id=queue_a_id, farm=self.farm))
         object.__setattr__(self, "queue_b", Queue(id=queue_b_id, farm=self.farm))
-        object.__setattr__(self, "fleet", Fleet(id=fleet_id, farm=self.farm))
+        object.__setattr__(self, "fleet", Fleet(id=fleet_id, farm=self.farm, autoscaling=False))
         object.__setattr__(self, "scaling_queue", Queue(id=scaling_queue_id, farm=self.farm))
         object.__setattr__(self, "scaling_fleet", Fleet(id=scaling_fleet_id, farm=self.farm))
 
@@ -180,7 +180,7 @@ def worker_config(
 
         yield DeadlineWorkerConfiguration(
             farm_id=deadline_resources.farm.id,
-            fleet_id=deadline_resources.fleet.id,
+            fleet=deadline_resources.fleet,
             region=region,
             user=os.getenv("WORKER_POSIX_USER", "deadline-worker"),
             group=os.getenv("WORKER_POSIX_SHARED_GROUP", "shared-group"),
@@ -237,10 +237,12 @@ def worker(request: pytest.FixtureRequest, worker_config) -> Generator[DeadlineW
         ec2_client = boto3.client("ec2")
         s3_client = boto3.client("s3")
         ssm_client = boto3.client("ssm")
+        deadline_client = boto3.client("deadline")
 
         worker = EC2InstanceWorker(
             ec2_client=ec2_client,
             s3_client=s3_client,
+            deadline_client=deadline_client,
             bootstrap_bucket_name=bootstrap_resources.bootstrap_bucket_name,
             ssm_client=ssm_client,
             override_ami_id=ami_id,
