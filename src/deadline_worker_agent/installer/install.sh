@@ -216,6 +216,9 @@ if [[ ! -z "${wa_user}" ]] && [[ ! "${wa_user}" =~ ^[a-z_]([a-z0-9_-]{0,31}|[a-z
     echo "ERROR: Not a valid value for --user: ${wa_user}"
     usage
 fi
+# Set wa_group as the primary group that the wa_user belongs to
+wa_group=$(id -gn "${wa_user}")
+
 # Default the group to wa_user if it wasn't defined via the --group option.
 job_group=${job_group:-${default_job_group}}
 if [[ ! -z "${job_group}" ]] && [[ ! "${job_group}" =~ ^[a-z_]([a-z0-9_-]{0,31}|[a-z0-9_-]{0,30}\$)$ ]]; then
@@ -255,6 +258,7 @@ echo "Farm ID: ${farm_id}"
 echo "Fleet ID: ${fleet_id}"
 echo "Region: ${region}"
 echo "Worker agent user: ${wa_user}"
+echo "Worker agent group: ${wa_group}"
 echo "Worker job group: ${job_group}"
 echo "Scripts path: ${scripts_path}"
 echo "Worker agent program path: ${worker_agent_program}"
@@ -340,7 +344,7 @@ fi
 echo "Provisioning log directory (/var/log/amazon/deadline)"
 mkdir -p /var/log/amazon/deadline
 chmod 755 /var/log/amazon
-chown -R "${wa_user}:${wa_user}" /var/log/amazon/deadline
+chown -R "${wa_user}:${wa_group}" /var/log/amazon/deadline
 chmod -R 750 /var/log/amazon/deadline
 echo "Done provisioning log directory (/var/log/amazon/deadline)"
 
@@ -358,7 +362,7 @@ chmod 750 \
 chmod 700 \
     /var/lib/deadline/credentials
 if [ -f /var/lib/deadline/worker.json ]; then
-    chown "${wa_user}:${wa_user}" /var/lib/deadline/worker.json
+    chown "${wa_user}:${wa_group}" /var/lib/deadline/worker.json
     chmod 600 /var/lib/deadline/worker.json
 fi
 echo "Done provisioning persistence directory (/var/lib/deadline)"
@@ -377,7 +381,7 @@ if [ ! -f /etc/amazon/deadline/worker.toml ]; then
     cp "${SCRIPT_DIR}/worker.toml.example" /etc/amazon/deadline/worker.toml
 fi
 # Ensure the config file has secure permissions
-chown -R "root:${wa_user}" /etc/amazon/deadline
+chown -R "root:${wa_group}" /etc/amazon/deadline
 chmod 640 /etc/amazon/deadline/worker.toml
 echo "Done provisioning configuration directory"
 
