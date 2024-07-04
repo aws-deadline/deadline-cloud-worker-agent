@@ -44,6 +44,7 @@ from deadline_worker_agent.api_models import (
     StepDetailsData,
     StepDetailsIdentifier,
 )
+from deadline_worker_agent.startup.config import JobsRunAsUserOverride
 from deadline_worker_agent.sessions.job_entities import (
     EnvironmentDetails,
     JobAttachmentDetails,
@@ -153,6 +154,7 @@ def job_entities(
         job_id=job_id,
         deadline_client=deadline_client,
         windows_credentials_resolver=windows_credentials_resolver,
+        job_run_as_user_override=None,
     )
 
     yield job_entities
@@ -225,6 +227,7 @@ class TestJobEntity:
             job_id=job_id,
             deadline_client=deadline_client,
             windows_credentials_resolver=windows_credentials_resolver,
+            job_run_as_user_override=None,
         )
 
         # WHEN
@@ -266,7 +269,7 @@ class TestJobEntity:
         }
 
         # WHEN
-        job_details_data = JobDetails.validate_entity_data(api_response)
+        job_details_data = JobDetails.validate_entity_data(api_response, job_user_override=None)
         entity_obj = JobDetails.from_boto(job_details_data)
 
         # THEN
@@ -279,6 +282,57 @@ class TestJobEntity:
             assert isinstance(entity_obj.job_run_as_user.windows_settings, JobRunAsWindowsUser)
             assert entity_obj.job_run_as_user.windows_settings.user == expected_user
             assert entity_obj.job_run_as_user.windows_settings.passwordArn == expected_password_arn
+
+    @pytest.mark.parametrize(
+        "job_run_as_user",
+        [
+            dict([key_val for key_val in (runAs, posix, windows) if key_val is not None])
+            for runAs in (("runAs", "QUEUE_CONFIGURED_USER"), ("runAs", "WORKER_AGENT_USER"))
+            for posix in (
+                (
+                    "posix",
+                    {
+                        "user": "job-user",
+                        "group": "job-group",
+                    },
+                ),
+                None,
+            )
+            for windows in (
+                (
+                    "windows",
+                    {
+                        "user": "job-user",
+                        "passwordArn": "job-password-arn",
+                    },
+                ),
+                None,
+            )
+        ],
+    )
+    def test_job_run_as_user_with_override(
+        self, job_run_as_user: dict, job_run_as_user_overrides: JobsRunAsUserOverride
+    ) -> None:
+        """Ensures that if we receive a job_run_as_user field in the response,
+        that the created entity has a SessionUser created with the
+        proper values"""
+        # GIVEN
+        api_response: dict = {
+            "jobId": "job-123",
+            "jobRunAsUser": job_run_as_user,
+            "logGroupName": "TEST",
+            "schemaVersion": TemplateSpecificationVersion.JOBTEMPLATE_v2023_09.value,
+        }
+
+        # WHEN
+        job_details_data = JobDetails.validate_entity_data(
+            api_response, job_user_override=job_run_as_user_overrides
+        )
+        entity_obj = JobDetails.from_boto(job_details_data)
+
+        # THEN
+        assert "jobRunAsUser" not in job_details_data
+        assert entity_obj.job_run_as_user is None
 
 
 class TestDetails:
@@ -333,6 +387,7 @@ class TestDetails:
             job_id=job_id,
             deadline_client=deadline_client,
             windows_credentials_resolver=windows_credentials_resolver,
+            job_run_as_user_override=None,
         )
 
         # WHEN
@@ -404,6 +459,7 @@ class TestDetails:
             job_id=job_id,
             deadline_client=deadline_client,
             windows_credentials_resolver=windows_credentials_resolver,
+            job_run_as_user_override=None,
         )
 
         # WHEN
@@ -437,6 +493,7 @@ class TestDetails:
             job_id=job_id,
             deadline_client=deadline_client,
             windows_credentials_resolver=windows_credentials_resolver,
+            job_run_as_user_override=None,
         )
 
         # WHEN
@@ -490,6 +547,7 @@ class TestDetails:
             job_id=job_id,
             deadline_client=deadline_client,
             windows_credentials_resolver=windows_credentials_resolver,
+            job_run_as_user_override=None,
         )
 
         # WHEN
@@ -543,6 +601,7 @@ class TestDetails:
             job_id=job_id,
             deadline_client=deadline_client,
             windows_credentials_resolver=windows_credentials_resolver,
+            job_run_as_user_override=None,
         )
 
         # WHEN
