@@ -269,7 +269,9 @@ class TestJobEntity:
         }
 
         # WHEN
-        job_details_data = JobDetails.validate_entity_data(api_response, job_user_override=None)
+        job_details_data = JobDetails.validate_entity_data(
+            api_response, job_user_override=JobsRunAsUserOverride(run_as_agent=False, job_user=None)
+        )
         entity_obj = JobDetails.from_boto(job_details_data)
 
         # THEN

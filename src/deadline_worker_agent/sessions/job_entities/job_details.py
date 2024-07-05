@@ -376,7 +376,9 @@ class JobDetails:
                     ),
                 )
 
-        if job_user_override is not None:
+        if job_user_override is not None and (
+            job_user_override.run_as_agent or job_user_override.job_user
+        ):
             # If there is an override, we don't care about the job details jobRunAsUser
             entity_data.pop("jobRunAsUser", None)
         elif run_as_value := entity_data.get("jobRunAsUser", dict()).get("runAs", None):
