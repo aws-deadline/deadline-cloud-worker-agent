@@ -2,9 +2,11 @@
 
 
 from unittest.mock import patch, MagicMock
+import pytest
 
 import deadline_worker_agent.aws.deadline as deadline_mod
 from deadline_worker_agent.aws.deadline import (
+    record_success_fail_telemetry_event,
     record_worker_start_telemetry_event,
     record_sync_inputs_telemetry_event,
     record_sync_outputs_telemetry_event,
@@ -148,3 +150,52 @@ def test_record_uncaught_exception_telemetry_event():
         exception_type="<class 'ValueError'>",
         event_details={"exception_scope": "uncaught"},
     )
+
+
+def test_record_decorator_success():
+    """Tests that recording a decorator successful metric"""
+    mock_telemetry_client = MagicMock()
+
+    with patch.object(deadline_mod, "_get_deadline_telemetry_client") as mock_get_telemetry_client:
+        mock_get_telemetry_client.return_value = mock_telemetry_client
+
+        # GIVEN
+        @record_success_fail_telemetry_event()
+        def successful():
+            return
+
+        # WHEN
+        successful()  # type: ignore
+
+        # THEN
+        mock_telemetry_client.record_event.assert_called_with(
+            event_type="com.amazon.rum.deadline.worker_agent.successful",
+            event_details={
+                "is_success": True,
+            },
+        )
+
+
+def test_record_decorator_fails():
+    """Tests that recording a decorator failed metric"""
+    mock_telemetry_client = MagicMock()
+
+    with patch.object(deadline_mod, "_get_deadline_telemetry_client") as mock_get_telemetry_client:
+        mock_get_telemetry_client.return_value = mock_telemetry_client
+
+        # GIVEN
+        @record_success_fail_telemetry_event()
+        def fails():
+            raise RuntimeError("foobar")
+
+        # WHEN
+        with pytest.raises(RuntimeError):
+            fails()  # type: ignore
+
+        # THEN
+        mock_telemetry_client.record_event.assert_called_with(
+            event_type="com.amazon.rum.deadline.worker_agent.fails",
+            event_details={
+                "is_success": False,
+            },
+        )

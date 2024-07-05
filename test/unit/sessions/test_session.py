@@ -649,7 +649,7 @@ class TestSessionSyncAssetInputs:
         cancel = Event()
 
         # WHEN
-        session.sync_asset_inputs(
+        session.sync_asset_inputs(  # type: ignore
             cancel=cancel,
             job_attachment_details=job_attachment_details,
         )
@@ -712,7 +712,7 @@ class TestSessionSyncAssetInputs:
             )
 
         # WHEN
-        session.sync_asset_inputs(
+        session.sync_asset_inputs(  # type: ignore
             cancel=cancel,
             job_attachment_details=job_attachment_details,
         )
@@ -792,7 +792,7 @@ class TestSessionSyncAssetInputs:
             # WHEN
             with pytest.raises(RuntimeError) as raise_ctx:
                 for args in sync_asset_inputs_args_sequence:
-                    session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
+                    session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore
             # THEN
             assert (
                 raise_ctx.value.args[0]
@@ -801,7 +801,7 @@ class TestSessionSyncAssetInputs:
         else:
             # WHEN
             for args in sync_asset_inputs_args_sequence:
-                session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore[arg-type]
+                session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore
             # THEN
             for call in mock_telemetry_event_for_sync_inputs.call_args_list:
                 assert call[0] == (
@@ -843,7 +843,7 @@ class TestSessionSyncAssetInputs:
                 session_mod, "record_sync_inputs_fail_telemetry_event"
             ) as mock_record_sync_inputs_fail_telemetry_event,
         ):
-            session.sync_asset_inputs(
+            session.sync_asset_inputs(  # type: ignore
                 cancel=mock_cancel,
                 job_attachment_details=JobAttachmentDetails(
                     manifests=[],
@@ -937,7 +937,7 @@ class TestSessionSyncAssetOutputs:
         session._job_attachment_details = job_attachment_details
 
         # WHEN
-        session._sync_asset_outputs(current_action=current_action)
+        session._sync_asset_outputs(current_action=current_action)  # type: ignore
 
         # THEN
         mock_ja_sync_outputs.assert_called_once_with(
