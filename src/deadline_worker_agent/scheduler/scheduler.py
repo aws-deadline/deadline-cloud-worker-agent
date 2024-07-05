@@ -890,6 +890,7 @@ class WorkerScheduler:
                 job_id=job_id,
                 deadline_client=self._deadline,
                 windows_credentials_resolver=self._windows_credentials_resolver,
+                job_run_as_user_override=self._job_run_as_user_override,
             )
             # TODO: Would be great to merge Session + SessionActionQueue
             # and move all job entities calls within the Session thread.
