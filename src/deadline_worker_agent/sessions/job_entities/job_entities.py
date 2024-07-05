@@ -35,7 +35,6 @@ from .job_details import JobDetails
 from .job_entity_type import JobEntityType
 from .step_details import StepDetails
 from .environment_details import EnvironmentDetails
-from ...startup.config import JobsRunAsUserOverride
 
 if TYPE_CHECKING:
     from ...api_models import (
@@ -110,7 +109,6 @@ class JobEntities:
         job_id: str,
         deadline_client: DeadlineClient,
         windows_credentials_resolver: Optional[WindowsCredentialsResolver],
-        job_run_as_user_override: Optional[JobsRunAsUserOverride],
     ) -> None:
         self._job_id = job_id
         self._farm_id = farm_id
@@ -119,7 +117,6 @@ class JobEntities:
         self._deadline_client = deadline_client
         self._windows_credentials_resolver = windows_credentials_resolver
         self._entity_record_map = {}
-        self._job_run_as_user_override = job_run_as_user_override
 
     def request(self, *, identifier: EntityIdentifier) -> dict[str, Any]:
         """Given an identifier, grab the associated data from the
@@ -325,7 +322,7 @@ class JobEntities:
         )
 
         result = self.request(identifier=identifier)
-        job_details_data = JobDetails.validate_entity_data(result, self._job_run_as_user_override)
+        job_details_data = JobDetails.validate_entity_data(result)
         job_details = JobDetails.from_boto(job_details_data)
 
         # if JobRunAsUser specifies a windows user resolve the credentials here

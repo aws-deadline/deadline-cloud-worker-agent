@@ -230,7 +230,7 @@ def job_details_only_run_as_worker_agent_user() -> JobDetails:
 )
 def test_input_validation_success(data: dict[str, Any]) -> None:
     """Test that validate_entity_data() can successfully handle valid input data."""
-    JobDetails.validate_entity_data(entity_data=data, job_user_override=None)
+    JobDetails.validate_entity_data(entity_data=data)
 
 
 @pytest.mark.parametrize(
@@ -665,4 +665,4 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
 def test_input_validation_failure(data: dict[str, Any]) -> None:
     """Test that validate_entity_data() raises a ValueError when nonvalid input data is provided."""
     with pytest.raises(ValueError):
-        JobDetails.validate_entity_data(entity_data=data, job_user_override=None)
+        JobDetails.validate_entity_data(entity_data=data)

@@ -5,7 +5,7 @@ pre-install-commands = [
 
 [envs.default.scripts]
 sync = "pip install -r requirements-testing.txt"
-test = "pytest test/unit --numprocesses=auto {args}"
+test = "pytest {args:test/unit --numprocesses=auto}"
 # Don't pass --numprocesses here so that tests run sequentially.
 # pytest-xdist does not allow live output of stdout, meaning integ tests only show output after the test is done
 # See: https://pytest-xdist.readthedocs.io/en/stable/known-limitations.html#output-stdout-and-stderr-from-workers

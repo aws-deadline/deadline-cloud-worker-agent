@@ -33,7 +33,6 @@ from ...api_models import (
 )
 from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
-from ...startup.config import JobsRunAsUserOverride
 
 
 def parameters_from_api_response(
@@ -273,9 +272,7 @@ class JobDetails:
         )
 
     @classmethod
-    def validate_entity_data(
-        cls, entity_data: dict[str, Any], job_user_override: JobsRunAsUserOverride | None
-    ) -> JobDetailsData:
+    def validate_entity_data(cls, entity_data: dict[str, Any]) -> JobDetailsData:
         """Performs input validation on a response element received from boto3's call to
         the BatchGetJobEntity AWS Deadline Cloud API.
 
@@ -376,11 +373,8 @@ class JobDetails:
                     ),
                 )
 
-        if job_user_override is not None:
-            # If there is an override, we don't care about the job details jobRunAsUser
-            entity_data.pop("jobRunAsUser", None)
-        elif run_as_value := entity_data.get("jobRunAsUser", dict()).get("runAs", None):
-            # Validate jobRunAsUser -> runAs is one of ("QUEUE_CONFIGURED_USER" / "WORKER_AGENT_USER")
+        # Validate jobRunAsUser -> runAs is one of ("QUEUE_CONFIGURED_USER" / "WORKER_AGENT_USER")
+        if run_as_value := entity_data.get("jobRunAsUser", dict()).get("runAs", None):
             if run_as_value not in ("QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER"):
                 raise ValueError(
                     f'Expected "jobRunAs" -> "runAs" to be one of "QUEUE_CONFIGURED_USER", "WORKER_AGENT_USER" but got "{run_as_value}"'
