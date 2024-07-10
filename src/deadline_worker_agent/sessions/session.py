@@ -68,6 +68,7 @@ from deadline.job_attachments.os_file_permission import (
 from deadline.job_attachments.progress_tracker import ProgressReportMetadata, SummaryStatistics
 
 from ..aws.deadline import (
+    record_success_fail_telemetry_event,
     record_sync_inputs_fail_telemetry_event,
     record_sync_inputs_telemetry_event,
     record_sync_outputs_telemetry_event,
@@ -816,6 +817,7 @@ class Session:
         progress and status message are passed in by Job Attachments."""
         return True
 
+    @record_success_fail_telemetry_event()  # type: ignore
     def sync_asset_inputs(
         self,
         *,
@@ -1084,7 +1086,7 @@ class Session:
             self.logger.info("----------------------------------------------")
             self.logger.info("Uploading output files to Job Attachments")
             self.logger.info("----------------------------------------------")
-            future = self._executor.submit(
+            future: Future = self._executor.submit(
                 self._sync_asset_outputs,
                 current_action=current_action,
             )
@@ -1203,6 +1205,7 @@ class Session:
             )
         )
 
+    @record_success_fail_telemetry_event(metric_name="sync_asset_outputs")  # type: ignore
     def _sync_asset_outputs(
         self,
         *,

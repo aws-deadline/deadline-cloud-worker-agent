@@ -2,7 +2,7 @@
 
 import logging
 from time import sleep, monotonic
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, TypeVar, cast
 from threading import Event
 from dataclasses import asdict, dataclass
 import random
@@ -11,6 +11,7 @@ from botocore.retries.standard import RetryContext
 from botocore.exceptions import ClientError
 
 from deadline.client.api import get_telemetry_client, TelemetryClient
+from deadline.client import version as deadline_client_lib_version
 from deadline.job_attachments.progress_tracker import SummaryStatistics
 from openjd.model import version as openjd_model_version
 from openjd.sessions import version as openjd_sessions_version
@@ -40,6 +41,9 @@ from ...log_sync.cloudwatch import (
 __cached_telemetry_client: Optional[TelemetryClient] = None
 
 _logger = logging.getLogger(__name__)
+
+# Generic function return type.
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 class DeadlineRequestError(Exception):
@@ -799,6 +803,9 @@ def _get_deadline_telemetry_client() -> TelemetryClient:
         __cached_telemetry_client.update_common_details(
             {"openjd-model-version": ".".join(openjd_model_version.split(".")[:3])}
         )
+        __cached_telemetry_client.update_common_details(
+            {"deadline-cloud": ".".join(deadline_client_lib_version.split(".")[:3])}
+        )
     return __cached_telemetry_client
 
 
@@ -849,3 +856,34 @@ def record_sync_inputs_fail_telemetry_event(
         event_type="com.amazon.rum.deadline.worker_agent.sync_inputs_failure",
         event_details=details,
     )
+
+
+def record_success_fail_telemetry_event(**decorator_kwargs: Dict[str, Any]) -> Callable[..., F]:
+    """
+    Decorator to try catch a function. Sends a success / fail telemetry event.
+    :param ** Python variable arguments. See https://docs.python.org/3/glossary.html#term-parameter
+    """
+
+    def inner(function: F) -> F:
+        def wrapper(*args: List[Any], **kwargs: Dict[str, Any]) -> Any:
+            """
+            Wrapper to actually try-catch
+            :param * Python variable argument. See https://docs.python.org/3/glossary.html#term-parameter
+            :param ** Python variable argument. See https://docs.python.org/3/glossary.html#term-parameter
+            """
+            success: bool = True
+            try:
+                return function(*args, **kwargs)
+            except Exception as e:
+                success = False
+                raise e
+            finally:
+                event_name = decorator_kwargs.get("metric_name", function.__name__)
+                _get_deadline_telemetry_client().record_event(
+                    event_type=f"com.amazon.rum.deadline.worker_agent.{event_name}",
+                    event_details={"is_success": success},
+                )
+
+        return cast(F, wrapper)
+
+    return inner
