@@ -159,7 +159,7 @@ if sys.platform == "win32":
             password_arn = "new_password_arn"
 
             with patch(
-                "deadline_worker_agent.windows.win_credentials_resolver.WindowsSessionUser",
+                "deadline_worker_agent.windows.win_logon.WindowsSessionUser",
                 side_effect=BadCredentialsException("Invalid credentials"),
             ):
                 # WHEN

@@ -11,6 +11,7 @@ import pytest
 import tempfile
 from dataclasses import dataclass, field, InitVar
 from typing import Generator, Type
+from contextlib import contextmanager
 
 from deadline_test_fixtures import (
     DeadlineWorker,
@@ -110,6 +111,7 @@ def worker_config(
     service_model,
     region,
     operating_system,
+    windows_job_users,
 ) -> Generator[DeadlineWorkerConfiguration, None, None]:
     """
     Builds the configuration for a DeadlineWorker.
@@ -189,15 +191,44 @@ def worker_config(
             ),
             service_model_path=dst_path,
             file_mappings=file_mappings or None,
+            windows_job_users=windows_job_users,
         )
 
 
 @pytest.fixture(scope="session")
-def worker(
+def session_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
+    with create_worker(worker_config, ec2_worker_type, request) as worker:
+        yield worker
+
+
+@pytest.fixture(scope="class")
+def class_worker(
+    request: pytest.FixtureRequest,
+    worker_config: DeadlineWorkerConfiguration,
+    ec2_worker_type: Type[EC2InstanceWorker],
+) -> Generator[DeadlineWorker, None, None]:
+    with create_worker(worker_config, ec2_worker_type, request) as worker:
+        yield worker
+
+
+def create_worker(
+    worker_config: DeadlineWorkerConfiguration,
+    ec2_worker_type: Type[EC2InstanceWorker],
+    request: pytest.FixtureRequest,
+):
+    def __init__(self):
+        pass
+
+    def __enter_(self):
+        print("Entering the context")
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        print("Exiting the context")
+
     """
     Gets a DeadlineWorker for use in tests.
 
@@ -273,17 +304,19 @@ def worker(
             )
             raise
 
-    try:
-        worker.start()
-    except Exception as e:
-        LOG.exception(f"Failed to start worker: {e}")
-        LOG.info("Stopping worker because it failed to start")
+    @contextmanager
+    def _context_for_fixture():
+        try:
+            worker.start()
+        except Exception as e:
+            LOG.exception(f"Failed to start worker: {e}")
+            LOG.info("Stopping worker because it failed to start")
+            stop_worker()
+            raise
+        yield worker
         stop_worker()
-        raise
 
-    yield worker
-
-    stop_worker()
+    return _context_for_fixture()
 
 
 @pytest.fixture(scope="session")
@@ -297,6 +330,17 @@ def job_run_as_user() -> PosixSessionUser:
         user="job-user",
         group="job-user",
     )
+
+
+@pytest.fixture(scope="session")
+def windows_job_users() -> list:
+    return [
+        "job-user",
+        "cli-override",
+        "config-override",
+        "install-override",
+        "env-override",
+    ]
 
 
 @pytest.fixture(scope="session", params=["linux", "windows"])

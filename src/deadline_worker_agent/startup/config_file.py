@@ -6,7 +6,7 @@ from typing import Any, Optional
 import sys
 import os
 
-from pydantic import BaseModel, BaseSettings, Field, ValidationError, root_validator
+from pydantic import BaseModel, BaseSettings, Field, ValidationError, root_validator, StrictStr
 
 try:
     from tomllib import load as load_toml, TOMLDecodeError
@@ -53,6 +53,7 @@ class OsConfigSection(BaseModel):
     )
     shutdown_on_stop: Optional[bool] = None
     retain_session_dir: Optional[bool] = None
+    windows_job_user: Optional[StrictStr] = Field(regex=r"^.{1,512}$")  # defer validation to OS.
 
     @root_validator(pre=True)
     def _disallow_impersonation(cls, values: dict[str, Any]) -> dict[str, Any]:
@@ -142,6 +143,8 @@ class ConfigFile(BaseModel):
             output_settings["run_jobs_as_agent_user"] = self.os.run_jobs_as_agent_user
         if self.os.posix_job_user is not None:
             output_settings["posix_job_user"] = self.os.posix_job_user
+        if self.os.windows_job_user is not None:
+            output_settings["windows_job_user"] = self.os.windows_job_user
         if self.os.retain_session_dir is not None:
             output_settings["retain_session_dir"] = self.os.retain_session_dir
         if self.capabilities is not None:

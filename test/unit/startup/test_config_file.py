@@ -126,6 +126,11 @@ def posix_job_user(request: pytest.FixtureRequest) -> str | None:
     return request.param
 
 
+@pytest.fixture(params=("a-job-user", None))
+def windows_job_user(request: pytest.FixtureRequest) -> str | None:
+    return request.param
+
+
 @pytest.fixture(
     params=(True, False),
 )
@@ -144,12 +149,14 @@ def retain_session_dir(request: pytest.FixtureRequest) -> bool:
 def os_config_section_data(
     run_jobs_as_agent_user: bool,
     posix_job_user: str,
+    windows_job_user: str,
     shutdown_on_stop: bool | None,
     retain_session_dir: bool | None,
 ) -> dict[str, Any]:
     return {
         "run_jobs_as_agent_user": run_jobs_as_agent_user,
         "posix_job_user": posix_job_user,
+        "windows_job_user": windows_job_user,
         "shutdown_on_stop": shutdown_on_stop,
         "retain_session_dir": retain_session_dir,
     }
@@ -400,6 +407,7 @@ class TestOsConfigSection:
         # THEN
         assert os_config.run_jobs_as_agent_user == os_config_section_data["run_jobs_as_agent_user"]
         assert os_config.posix_job_user == os_config_section_data["posix_job_user"]
+        assert os_config.windows_job_user == os_config_section_data["windows_job_user"]
         assert os_config.shutdown_on_stop == os_config_section_data["shutdown_on_stop"]
         assert os_config.retain_session_dir == os_config_section_data["retain_session_dir"]
 
@@ -474,6 +482,40 @@ class TestOsConfigSection:
 
         # THEN
         assert os_config.posix_job_user is None
+
+    @pytest.mark.parametrize(
+        argnames="windows_job_user",
+        argvalues=[
+            pytest.param(True, id="bad-type-bool"),
+            pytest.param([1], id="bad-type-list"),
+            pytest.param("a" * 513, id="too long"),
+        ],
+    )
+    def test_nonvalid_windows_job_user(self, os_config_section_data: dict[str, Any]) -> None:
+        """Asserts that AwsConfigSections raises ValidationErrors for not valid windows job user values"""
+
+        # WHEN
+        def when() -> OsConfigSection:
+            return OsConfigSection.parse_obj(os_config_section_data)
+
+        # THEN
+        with pytest.raises(ValidationError):
+            when()
+
+    def test_absent_windows_job_user(
+        self,
+        os_config_section_data: dict[str, Any],
+    ) -> None:
+        """Asserts that absent a "windows_job_user" value in the input to OsConfigSection, it should
+        have a corresponding attribute value of None"""
+        # GIVEN
+        del os_config_section_data["windows_job_user"]
+
+        # WHEN
+        os_config = OsConfigSection.parse_obj(os_config_section_data)
+
+        # THEN
+        assert os_config.windows_job_user is None
 
     @pytest.mark.parametrize(
         argnames="retain_session_dir",

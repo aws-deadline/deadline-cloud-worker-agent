@@ -134,7 +134,7 @@ ignore = [
 # We need to use a platform assertion to short-circuit mypy type checking on non-Windows platforms
 # https://mypy.readthedocs.io/en/stable/common_issues.html#python-version-and-system-platform-checks
 # This causes imports to come after regular Python statements causing flake8 rule E402 to be flagged
-"src/deadline_worker_agent/**/*windows*.py" = ["E402"]
+"src/deadline_worker_agent/**/*win*.py" = ["E402"]
 "test/**/*windows*.py" = ["E402"]
 
 [tool.ruff.lint.isort]

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import sys
 import os
+import getpass
 import logging as _logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Sequence, Tuple, cast
+from typing import Any, Optional, Sequence, Tuple, cast, TYPE_CHECKING
 
 from pydantic import ValidationError
 
@@ -16,6 +18,12 @@ from ..errors import ConfigurationError
 from .capabilities import Capabilities
 from .cli_args import ParsedCommandLineArguments, get_argument_parser
 from .settings import WorkerSettings
+
+if sys.platform == "win32":
+    from ..windows.win_logon import reset_user_password, PasswordResetException, users_equal
+
+if TYPE_CHECKING:
+    from _win32typing import PyHKEY, PyHANDLE
 
 _logger = _logging.getLogger(__name__)
 
@@ -27,6 +35,11 @@ class JobsRunAsUserOverride:
 
     job_user: Optional[SessionUser] = None
     """If provided and run_as_agent is False, then all Jobs run by this agent will run as this user."""
+
+    if sys.platform == "win32":
+        # we need to keep this handle referenced to avoid it being garbage collected.
+        logon_token: Optional[PyHANDLE] = None
+        user_profile: Optional[PyHKEY] = None
 
 
 # Default paths for the Worker persistence directory subdirectories.
@@ -121,6 +134,8 @@ class Configuration:
             settings_kwargs["run_jobs_as_agent_user"] = parsed_cli_args.run_jobs_as_agent_user
         if parsed_cli_args.posix_job_user is not None:
             settings_kwargs["posix_job_user"] = parsed_cli_args.posix_job_user
+        if parsed_cli_args.windows_job_user is not None:
+            settings_kwargs["windows_job_user"] = parsed_cli_args.windows_job_user
         if parsed_cli_args.disallow_instance_profile is not None:
             settings_kwargs["allow_instance_profile"] = (
                 not parsed_cli_args.disallow_instance_profile
@@ -149,6 +164,24 @@ class Configuration:
             self.job_run_as_user_overrides = JobsRunAsUserOverride(
                 run_as_agent=settings.run_jobs_as_agent_user,
                 job_user=PosixSessionUser(user=user, group=group),
+            )
+        elif sys.platform == "win32" and settings.windows_job_user is not None:
+            if users_equal(settings.windows_job_user, getpass.getuser()):
+                raise ConfigurationError(
+                    f"Windows job user override must not be the user running the worker agent: {getpass.getuser()}."
+                    " If you wish to run jobs as the agent user, set run_jobs_as_agent_user = true in the agent configuration file."
+                )
+            try:
+                cache_entry = reset_user_password(settings.windows_job_user)
+            except PasswordResetException as e:
+                raise ConfigurationError(
+                    f"Failed to reset password for user {settings.windows_job_user}: {e}"
+                ) from e
+            self.job_run_as_user_overrides = JobsRunAsUserOverride(
+                run_as_agent=settings.run_jobs_as_agent_user,
+                job_user=cache_entry.windows_session_user,
+                logon_token=cache_entry.logon_token,
+                user_profile=cache_entry.user_profile,
             )
         else:
             self.job_run_as_user_overrides = JobsRunAsUserOverride(
@@ -197,7 +230,7 @@ class Configuration:
             and self.job_run_as_user_overrides.job_user is not None
         ):
             raise ConfigurationError(
-                "Cannot specify a POSIX job user when the option to running Jobs as the agent user is enabled."
+                f"Cannot specify a {'windows' if os.name == 'nt' else 'posix'} job user when the option to run jobs as the agent user is enabled."
             )
 
         if self.host_metrics_logging_interval_seconds <= 0:
