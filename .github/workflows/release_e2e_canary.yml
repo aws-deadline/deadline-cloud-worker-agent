@@ -22,7 +22,7 @@ jobs:
         pip install --upgrade hatch
 
     - name: Run Windows Integration Tests
-      run: hatch run integ-windows
+      run: hatch run windows-integ-test
       
   ReleaseLinuxE2ECanary:
     name: Release Linux Canary

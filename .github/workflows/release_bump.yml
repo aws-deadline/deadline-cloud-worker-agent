@@ -40,7 +40,7 @@ jobs:
         pip install --upgrade hatch
 
     - name: Run Windows Integration Tests
-      run: hatch run integ-windows
+      run: hatch run windows-integ-test
 
   LinuxE2ETests:
     needs: UnitTests
