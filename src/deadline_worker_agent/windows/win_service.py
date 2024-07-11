@@ -40,6 +40,10 @@ class WorkerAgentWindowsService(win32serviceutil.ServiceFramework):
         logger.info("Windows Service is being stopped")
         self._stop_event.set()
 
+    def SvcShutdown(self):
+        """Invoked when the system is shutdown"""
+        self.SvcStop()
+
     def SvcDoRun(self):
         """The main entrypoint called after the service is started"""
         servicemanager.LogMsg(

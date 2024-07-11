@@ -15,17 +15,21 @@ import logging
 from deadline_test_fixtures import (
     Job,
     TaskStatus,
+    DeadlineClient,
+    PosixSessionUser,
 )
+
 
 LOG = logging.getLogger(__name__)
 
 
 @pytest.mark.usefixtures("worker")
+@pytest.mark.parametrize("operating_system", ["linux"], indirect=True)
 class TestJobSubmission:
     def test_success(
         self,
-        deadline_client,
         deadline_resources,
+        deadline_client: DeadlineClient,
     ) -> None:
         # WHEN
         job = Job.submit(
@@ -54,9 +58,9 @@ class TestJobSubmission:
 
     def test_job_run_as_user(
         self,
-        deadline_client,
         deadline_resources,
-        job_run_as_user,
+        deadline_client: DeadlineClient,
+        job_run_as_user: PosixSessionUser,
     ) -> None:
         # WHEN
         job = Job.submit(

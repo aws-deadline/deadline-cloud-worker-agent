@@ -18,16 +18,16 @@ from deadline_test_fixtures import (
     DockerContainerWorker,
     Farm,
     Fleet,
-    PosixSessionUser,
     Queue,
     PipInstall,
     EC2InstanceWorker,
     BootstrapResources,
+    PosixSessionUser,
+    OperatingSystem,
 )
-
+import pytest
 
 LOG = logging.getLogger(__name__)
-
 
 pytest_plugins = ["deadline_test_fixtures.pytest_hooks"]
 
@@ -60,7 +60,7 @@ class DeadlineResources:
         object.__setattr__(self, "farm", Farm(id=farm_id))
         object.__setattr__(self, "queue_a", Queue(id=queue_a_id, farm=self.farm))
         object.__setattr__(self, "queue_b", Queue(id=queue_b_id, farm=self.farm))
-        object.__setattr__(self, "fleet", Fleet(id=fleet_id, farm=self.farm))
+        object.__setattr__(self, "fleet", Fleet(id=fleet_id, farm=self.farm, autoscaling=False))
         object.__setattr__(self, "scaling_queue", Queue(id=scaling_queue_id, farm=self.farm))
         object.__setattr__(self, "scaling_fleet", Fleet(id=scaling_fleet_id, farm=self.farm))
 
@@ -109,6 +109,7 @@ def worker_config(
     codeartifact,
     service_model,
     region,
+    operating_system,
 ) -> Generator[DeadlineWorkerConfiguration, None, None]:
     """
     Builds the configuration for a DeadlineWorker.
@@ -145,7 +146,12 @@ def worker_config(
         ), f"Expected exactly one Worker agent whl path, but got {resolved_whl_paths} (from pattern {worker_agent_whl_path})"
         resolved_whl_path = resolved_whl_paths[0]
 
-        dest_path = posixpath.join("/tmp", os.path.basename(resolved_whl_path))
+        if operating_system.name == "AL2023":
+            dest_path = posixpath.join("/tmp", os.path.basename(resolved_whl_path))
+        else:
+            dest_path = posixpath.join(
+                "%USERPROFILE%\\AppData\\Local\\Temp", os.path.basename(resolved_whl_path)
+            )
         file_mappings = [(resolved_whl_path, dest_path)]
 
         LOG.info(f"The whl file will be copied to {dest_path} on the Worker environment")
@@ -165,13 +171,16 @@ def worker_config(
         with src_path.open(mode="w") as f:
             json.dump(service_model.model, f)
 
-        dst_path = posixpath.join("/tmp", src_path.name)
+        if operating_system.name == "AL2023":
+            dst_path = posixpath.join("/tmp", src_path.name)
+        else:
+            dst_path = posixpath.join("%USERPROFILE%\\AppData\\Local\\Temp", src_path.name)
         LOG.info(f"The service model will be copied to {dst_path} on the Worker environment")
         file_mappings.append((str(src_path), dst_path))
 
         yield DeadlineWorkerConfiguration(
             farm_id=deadline_resources.farm.id,
-            fleet_id=deadline_resources.fleet.id,
+            fleet=deadline_resources.fleet,
             region=region,
             user=os.getenv("WORKER_POSIX_USER", "deadline-worker"),
             group=os.getenv("WORKER_POSIX_SHARED_GROUP", "shared-group"),
@@ -182,6 +191,7 @@ def worker_config(
             ),
             service_model_path=dst_path,
             file_mappings=file_mappings or None,
+            operating_system=operating_system,
         )
 
 
@@ -227,10 +237,12 @@ def worker(request: pytest.FixtureRequest, worker_config) -> Generator[DeadlineW
         ec2_client = boto3.client("ec2")
         s3_client = boto3.client("s3")
         ssm_client = boto3.client("ssm")
+        deadline_client = boto3.client("deadline")
 
         worker = EC2InstanceWorker(
             ec2_client=ec2_client,
             s3_client=s3_client,
+            deadline_client=deadline_client,
             bootstrap_bucket_name=bootstrap_resources.bootstrap_bucket_name,
             ssm_client=ssm_client,
             override_ami_id=ami_id,
@@ -279,3 +291,11 @@ def job_run_as_user() -> PosixSessionUser:
         user="jobuser",
         group="shared-group",
     )
+
+
+@pytest.fixture(scope="session", params=["linux", "windows"])
+def operating_system(request) -> OperatingSystem:
+    if request.param == "linux":
+        return OperatingSystem(name="AL2023")
+    else:
+        return OperatingSystem(name="WIN2022")
