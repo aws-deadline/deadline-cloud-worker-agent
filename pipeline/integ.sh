@@ -10,6 +10,7 @@ then
   if [ "$TEST_TYPE" = "WHEEL" ]
   then
     hatch build
+    hatch env create
     export WORKER_AGENT_WHL_PATH=dist/`hatch run metadata name | sed 's/-/_/g'`-`hatch run version`-py3-none-any.whl
     echo "Set WORKER_AGENT_WHL_PATH to $WORKER_AGENT_WHL_PATH"
   fi
