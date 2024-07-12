@@ -11,7 +11,7 @@ test = "pytest test/unit --numprocesses=auto {args}"
 # See: https://pytest-xdist.readthedocs.io/en/stable/known-limitations.html#output-stdout-and-stderr-from-workers
 version = "hatch version"
 metadata = "hatch project metadata {args:}"
-linux-e2e-test = "pytest test/e2e/linux {args}"
+linux-e2e-test = "pytest --no-cov test/e2e/linux {args}"
 windows-e2e-test= "pytest --no-cov test/e2e/windows {args:}"
 windows-integ-test = "pytest --no-cov test/integ/installer {args:}"
 typing = "mypy {args:src test}"
