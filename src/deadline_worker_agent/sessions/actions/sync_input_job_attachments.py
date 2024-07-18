@@ -73,7 +73,7 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
 
     def __eq__(self, other: Any) -> bool:
         return (
-            type(self) == type(other)
+            type(self) is type(other)
             and self._id == other._id
             and self._job_attachment_details == other._job_attachment_details
             and self._step_details == other._step_details

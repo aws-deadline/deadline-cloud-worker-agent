@@ -48,7 +48,7 @@ class EnterEnvironmentAction(OpenjdAction):
 
     def __eq__(self, other: Any) -> bool:
         return (
-            type(self) == type(other)
+            type(self) is type(other)
             and self._id == other._id
             and self._job_env_id == other._job_env_id
             and self._session_env_id == other._session_env_id

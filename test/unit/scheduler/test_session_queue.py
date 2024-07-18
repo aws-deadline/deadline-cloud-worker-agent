@@ -218,7 +218,7 @@ class TestSessionActionQueueDequeue:
         result = session_queue.dequeue()
 
         # THEN
-        assert type(result) == type(expected)
+        assert type(result) is type(expected)
         assert result.id == expected.id  # type: ignore
         assert len(session_queue._actions) == 0
         assert len(session_queue._actions_by_id) == 0

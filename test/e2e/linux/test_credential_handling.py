@@ -29,7 +29,7 @@ def test_access_worker_credential_file_from_job(
     ########################################################################################
     # WHEN
     result = worker.send_command(
-        f'sudo -u "{worker_config.user}" cat /var/lib/deadline/credentials/{worker.worker_id}.json > /dev/null'
+        f'sudo -u "{worker_config.agent_user}" cat /var/lib/deadline/credentials/{worker.worker_id}.json > /dev/null'
     )
 
     # THEN
