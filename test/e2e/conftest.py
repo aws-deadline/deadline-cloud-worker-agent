@@ -10,7 +10,7 @@ import posixpath
 import pytest
 import tempfile
 from dataclasses import dataclass, field, InitVar
-from typing import Generator
+from typing import Generator, Type
 
 from deadline_test_fixtures import (
     DeadlineWorker,
@@ -182,8 +182,6 @@ def worker_config(
             farm_id=deadline_resources.farm.id,
             fleet=deadline_resources.fleet,
             region=region,
-            user=os.getenv("WORKER_POSIX_USER", "deadline-worker"),
-            group=os.getenv("WORKER_POSIX_SHARED_GROUP", "shared-group"),
             allow_shutdown=True,
             worker_agent_install=PipInstall(
                 requirement_specifiers=[worker_agent_requirement_specifier],
@@ -191,12 +189,15 @@ def worker_config(
             ),
             service_model_path=dst_path,
             file_mappings=file_mappings or None,
-            operating_system=operating_system,
         )
 
 
 @pytest.fixture(scope="session")
-def worker(request: pytest.FixtureRequest, worker_config) -> Generator[DeadlineWorker, None, None]:
+def worker(
+    request: pytest.FixtureRequest,
+    worker_config: DeadlineWorkerConfiguration,
+    ec2_worker_type: Type[EC2InstanceWorker],
+) -> Generator[DeadlineWorker, None, None]:
     """
     Gets a DeadlineWorker for use in tests.
 
@@ -226,6 +227,9 @@ def worker(request: pytest.FixtureRequest, worker_config) -> Generator[DeadlineW
         ami_id = os.getenv("AMI_ID")
         subnet_id = os.getenv("SUBNET_ID")
         security_group_id = os.getenv("SECURITY_GROUP_ID")
+        instance_type = os.getenv("WORKER_INSTANCE_TYPE", default="t3.micro")
+        instance_shutdown_behavior = os.getenv("WORKER_INSTANCE_SHUTDOWN_BEHAVIOR", default="stop")
+
         assert subnet_id, "SUBNET_ID is required when deploying an EC2 worker"
         assert security_group_id, "SECURITY_GROUP_ID is required when deploying an EC2 worker"
 
@@ -239,7 +243,7 @@ def worker(request: pytest.FixtureRequest, worker_config) -> Generator[DeadlineW
         ssm_client = boto3.client("ssm")
         deadline_client = boto3.client("deadline")
 
-        worker = EC2InstanceWorker(
+        worker = ec2_worker_type(
             ec2_client=ec2_client,
             s3_client=s3_client,
             deadline_client=deadline_client,
@@ -250,6 +254,8 @@ def worker(request: pytest.FixtureRequest, worker_config) -> Generator[DeadlineW
             security_group_id=security_group_id,
             instance_profile_name=bootstrap_resources.worker_instance_profile_name,
             configuration=worker_config,
+            instance_type=instance_type,
+            instance_shutdown_behavior=instance_shutdown_behavior,
         )
 
     def stop_worker():
@@ -288,8 +294,8 @@ def region() -> str:
 @pytest.fixture(scope="session")
 def job_run_as_user() -> PosixSessionUser:
     return PosixSessionUser(
-        user="jobuser",
-        group="shared-group",
+        user="job-user",
+        group="job-user",
     )
 
 

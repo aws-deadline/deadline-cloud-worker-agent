@@ -37,7 +37,7 @@ class ExitEnvironmentAction(OpenjdAction):
 
     def __eq__(self, other: Any) -> bool:
         return (
-            type(self) == type(other)
+            type(self) is type(other)
             and self._id == other._id
             and self._environment_id == other._environment_id
         )

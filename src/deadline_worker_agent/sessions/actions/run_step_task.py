@@ -52,7 +52,7 @@ class RunStepTaskAction(OpenjdAction):
 
     def __eq__(self, other: Any) -> bool:
         return (
-            type(self) == type(other)
+            type(self) is type(other)
             and self._id == other._id
             and self.step_id == other.step_id
             and self.task_id == other.task_id
