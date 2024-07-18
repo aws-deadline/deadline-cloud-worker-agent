@@ -56,6 +56,20 @@ jobs:
       environment: mainline
       os: linux
 
+  WindowsE2ETest:
+    needs: UnitTests
+    name: Windows E2E Test
+    permissions:
+      id-token: write
+      contents: read
+    uses: aws-deadline/.github/.github/workflows/reusable_e2e_test.yml@mainline
+    secrets: inherit
+    with:
+      repository: ${{ github.event.repository.name }}
+      branch: mainline
+      environment: mainline
+      os: windows
+
   Bump:
     needs: LinuxE2ETests
     name: Version Bump
