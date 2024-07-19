@@ -52,6 +52,7 @@ The steps to take are:
     and then retry indefinitely.
     * Response: ConflictException(409) ->
         * `reason` is `STATUS_CONFLICT`:
+            * `context["status"]` is `ASSOCIATED` -> Perform exponential backoff, and then retry.
             * `context["status"]` is `STOPPING` or `NOT_COMPATIBLE` -> Worker cannot transition to `STARTED` from its
             current status. Invoke `UpdateWorker` API with (farmId, fleetId, workerId, status=STOPPED)
             successfully, and then retry this call.
