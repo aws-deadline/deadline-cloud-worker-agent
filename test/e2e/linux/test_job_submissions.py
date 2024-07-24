@@ -4,21 +4,15 @@ This test module contains tests that verify the Worker agent's behavior by submi
 Deadline Cloud service and checking that the result/output of the jobs is as we expect it.
 """
 
+from typing import Any, Dict
 import boto3
 import botocore.client
 import botocore.config
 import botocore.exceptions
 import pytest
-
 import logging
 
-from deadline_test_fixtures import (
-    Job,
-    TaskStatus,
-    DeadlineClient,
-    PosixSessionUser,
-)
-
+from deadline_test_fixtures import Job, TaskStatus, PosixSessionUser, DeadlineClient
 
 LOG = logging.getLogger(__name__)
 
@@ -117,3 +111,108 @@ class TestJobSubmission:
             f"I am: {job_run_as_user.user}" in full_log
         ), f"Expected message not found in Job logs. Logs are in CloudWatch log group: {job_logs.log_group_name}"
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+    @pytest.mark.parametrize(
+        "run_actions,environment_actions, expected_failed_action",
+        [
+            (
+                {
+                    "onRun": {
+                        "command": "/bin/false",
+                        "args": ["1"],
+                    },
+                },
+                {
+                    "onEnter": {
+                        "command": "/bin/true",
+                    },
+                },
+                "taskRun",
+            ),
+            (
+                {
+                    "onRun": {
+                        "command": "/bin/sleep",
+                        "args": ["1"],
+                    },
+                },
+                {
+                    "onEnter": {
+                        "command": "/bin/false",
+                    },
+                },
+                "envEnter",
+            ),
+            (
+                {
+                    "onRun": {
+                        "command": "/bin/sleep",
+                        "args": ["1"],
+                    },
+                },
+                {
+                    "onEnter": {
+                        "command": "/bin/true",
+                    },
+                    "onExit": {
+                        "command": "/bin/false",
+                    },
+                },
+                "envExit",
+            ),
+        ],
+    )
+    def test_job_reports_failed_session_action(
+        self,
+        deadline_resources,
+        deadline_client: DeadlineClient,
+        run_actions: Dict[str, Any],
+        environment_actions: Dict[str, Any],
+        expected_failed_action: str,
+    ) -> None:
+
+        job = Job.submit(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            priority=98,
+            template={
+                "specificationVersion": "jobtemplate-2023-09",
+                "name": "environmentactionfail",
+                "steps": [
+                    {
+                        "name": "Step0",
+                        "script": {"actions": run_actions},
+                    },
+                ],
+                "jobEnvironments": [
+                    {"name": "badenvironment", "script": {"actions": environment_actions}}
+                ],
+            },
+        )
+        # THEN
+        job.wait_until_complete(client=deadline_client)
+
+        # Retrieve job output and verify that the expected session action has failed
+
+        sessions = deadline_client.list_sessions(
+            farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
+        ).get("sessions")
+        found_failed_session_action: bool = False
+        for session in sessions:
+            session_actions = deadline_client.list_session_actions(
+                farmId=job.farm.id,
+                queueId=job.queue.id,
+                jobId=job.id,
+                sessionId=session["sessionId"],
+            ).get("sessionActions")
+
+            for session_action in session_actions:
+
+                # Session action should be failed IFF it's the expected action to fail
+                if expected_failed_action in session_action["definition"]:
+                    found_failed_session_action = True
+                    assert session_action["status"] == "FAILED"
+                else:
+                    assert session_action["status"] != "FAILED"
+        assert found_failed_session_action
