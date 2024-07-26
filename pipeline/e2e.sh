@@ -25,3 +25,5 @@ if [ "$OPERATING_SYSTEM" = "windows" ]
   then
     hatch run windows-e2e-test
 fi
+
+hatch run cross-os-e2e-test
