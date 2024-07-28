@@ -6,9 +6,13 @@ Deadline Cloud service and checking that the result/output of the jobs is as we 
 from typing import Any, Dict, List
 import pytest
 import logging
-from deadline_test_fixtures import Job, DeadlineClient
+from deadline_test_fixtures import Job, DeadlineClient, TaskStatus
 from utils import get_operating_system_name
 import backoff
+import boto3
+import botocore.client
+import botocore.config
+import botocore.exceptions
 
 LOG = logging.getLogger(__name__)
 
@@ -266,3 +270,103 @@ class TestJobSubmission:
             farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
         ).get("sessions")
         assert is_expected_session_action_canceled(sessions)
+
+    @pytest.mark.parametrize(
+        "job_environments",
+        [
+            ([]),
+            (
+                [
+                    {
+                        "name": "environment_1",
+                        "script": {
+                            "actions": {
+                                "onEnter": {"command": "echo", "args": ["Hello!"]},
+                            },
+                        },
+                    },
+                ]
+            ),
+            (
+                [
+                    {
+                        "name": "environment_1",
+                        "script": {
+                            "actions": {
+                                "onEnter": {"command": "echo", "args": ["Hello!"]},
+                            }
+                        },
+                    },
+                    {
+                        "name": "environment_2",
+                        "script": {
+                            "actions": {
+                                "onEnter": {"command": "echo", "args": ["Hello!"]},
+                            }
+                        },
+                    },
+                    {
+                        "name": "environment_3",
+                        "script": {
+                            "actions": {
+                                "onEnter": {"command": "echo", "args": ["Hello!"]},
+                            }
+                        },
+                    },
+                ]
+            ),
+        ],
+    )
+    def test_worker_run_with_number_of_environments(
+        self,
+        deadline_resources,
+        deadline_client: DeadlineClient,
+        job_environments: List[Dict[str, Any]],
+    ) -> None:
+        job_template = {
+            "specificationVersion": "jobtemplate-2023-09",
+            "name": f"jobWithNumberOfEnvironments-{len(job_environments)}",
+            "steps": [
+                {
+                    "name": "Step0",
+                    "script": {
+                        "actions": {
+                            "onRun": {
+                                "command": "whoami",
+                            },
+                        },
+                    },
+                },
+            ],
+        }
+
+        if len(job_environments) > 0:
+            job_template["jobEnvironments"] = job_environments
+        job = Job.submit(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            priority=98,
+            template=job_template,
+        )
+
+        job.wait_until_complete(client=deadline_client)
+
+        # Retrieve job output and verify whoami printed the queue's jobsRunAsUser
+        job_logs = job.get_logs(
+            deadline_client=deadline_client,
+            logs_client=boto3.client(
+                "logs",
+                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+            ),
+        )
+
+        full_log = "\n".join(
+            [le.message for _, log_events in job_logs.logs.items() for le in log_events]
+        )
+
+        assert full_log.count("Hello!") == len(
+            job_environments
+        ), "Expected number of Hello statements not found in job logs."
+
+        assert job.task_run_status == TaskStatus.SUCCEEDED
