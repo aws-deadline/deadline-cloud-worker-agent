@@ -13,6 +13,7 @@ version = "hatch version"
 metadata = "hatch project metadata {args:}"
 linux-e2e-test = "pytest --no-cov test/e2e/linux {args}"
 windows-e2e-test= "pytest --no-cov test/e2e/windows {args:}"
+cross-os-e2e-test = "pytest --no-cov test/e2e/cross_os {args}"
 windows-integ-test = "pytest --no-cov test/integ/installer {args:}"
 typing = "mypy {args:src test}"
 style = [
