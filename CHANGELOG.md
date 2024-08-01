@@ -1,3 +1,16 @@
+## 0.27.2 (2024-08-01)
+
+
+### Features
+* add success or fail metric on Job Attachment calls (#352) ([`ac1e5e0`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/ac1e5e0d4b7ba8c85ec868c84ee5cabf4980f091))
+* add deadline client lib, OpenJD Sessions to boto3 header (#351) ([`51fc0f1`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/51fc0f10b02fde81904b4688e20c91adb83c3c8e))
+
+### Bug Fixes
+* jobRunAsUser always removed in BatchGetJobEntity JobDetails (#349) ([`b6a64de`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/b6a64ded6b725822d097ac9fad8f12c4e63e9388))
+* fail on BatchGetJobEntity jobRunAsUser validation with a job user override  (#346) ([`c0dd3b3`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/c0dd3b35db2faef3296277cbf66e3dc42adeb80f))
+* install-deadline-worker on Linux assumes agent os group matches username (#345) ([`4ed1136`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/4ed1136e1ed6e5d7cdfcbd9cb5d0848ff4bd316e))
+* error due to out-of-range process exit code (#339) ([`7d4ec30`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/7d4ec30f15af952cdcf03d3c28d9ce9608d861ab))
+
 ## 0.27.1 (2024-05-01)
 
 ### Dependencies
