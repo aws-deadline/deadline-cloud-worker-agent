@@ -10,7 +10,7 @@ import posixpath
 import pytest
 import tempfile
 from dataclasses import dataclass, field, InitVar
-from typing import Generator, Type
+from typing import Generator, Type, List, Callable
 
 from deadline_test_fixtures import (
     DeadlineWorker,
@@ -197,7 +197,7 @@ def worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
-) -> Generator[DeadlineWorker, None, None]:
+) -> Generator[Callable[[], DeadlineWorker], None, None]:
     """
     Gets a DeadlineWorker for use in tests.
 
@@ -213,77 +213,96 @@ def worker(
         KEEP_WORKER_AFTER_FAILURE: If set to "true", will not destroy the Worker when it fails. Useful for debugging. Default is "false"
 
     Returns:
-        DeadlineWorker: Instance of the DeadlineWorker class that can be used to interact with the Worker.
+        DeadlineWorker Callable: Callable that returns an instance of the DeadlineWorker class that can be used to interact with the Worker.
     """
+    all_created_workers: List[DeadlineWorker] = []
 
-    worker: DeadlineWorker
-    if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
-        LOG.info("Creating Docker worker")
-        worker = DockerContainerWorker(
-            configuration=worker_config,
-        )
-    else:
-        LOG.info("Creating EC2 worker")
-        ami_id = os.getenv("AMI_ID")
-        subnet_id = os.getenv("SUBNET_ID")
-        security_group_id = os.getenv("SECURITY_GROUP_ID")
-        instance_type = os.getenv("WORKER_INSTANCE_TYPE", default="t3.micro")
-        instance_shutdown_behavior = os.getenv("WORKER_INSTANCE_SHUTDOWN_BEHAVIOR", default="stop")
+    def generate_worker() -> DeadlineWorker:
+        worker: DeadlineWorker
+        if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
+            LOG.info("Creating Docker worker")
+            worker = DockerContainerWorker(
+                configuration=worker_config,
+            )
+        else:
+            LOG.info("Creating EC2 worker")
+            ami_id = os.getenv("AMI_ID")
+            subnet_id = os.getenv("SUBNET_ID")
+            security_group_id = os.getenv("SECURITY_GROUP_ID")
+            instance_type = os.getenv("WORKER_INSTANCE_TYPE", default="t3.micro")
+            instance_shutdown_behavior = os.getenv(
+                "WORKER_INSTANCE_SHUTDOWN_BEHAVIOR", default="stop"
+            )
 
-        assert subnet_id, "SUBNET_ID is required when deploying an EC2 worker"
-        assert security_group_id, "SECURITY_GROUP_ID is required when deploying an EC2 worker"
+            assert subnet_id, "SUBNET_ID is required when deploying an EC2 worker"
+            assert security_group_id, "SECURITY_GROUP_ID is required when deploying an EC2 worker"
 
-        bootstrap_resources: BootstrapResources = request.getfixturevalue("bootstrap_resources")
-        assert (
-            bootstrap_resources.worker_instance_profile_name
-        ), "Worker instance profile is required when deploying an EC2 worker"
+            bootstrap_resources: BootstrapResources = request.getfixturevalue("bootstrap_resources")
+            assert (
+                bootstrap_resources.worker_instance_profile_name
+            ), "Worker instance profile is required when deploying an EC2 worker"
 
-        ec2_client = boto3.client("ec2")
-        s3_client = boto3.client("s3")
-        ssm_client = boto3.client("ssm")
-        deadline_client = boto3.client("deadline")
+            ec2_client = boto3.client("ec2")
+            s3_client = boto3.client("s3")
+            ssm_client = boto3.client("ssm")
+            deadline_client = boto3.client("deadline")
 
-        worker = ec2_worker_type(
-            ec2_client=ec2_client,
-            s3_client=s3_client,
-            deadline_client=deadline_client,
-            bootstrap_bucket_name=bootstrap_resources.bootstrap_bucket_name,
-            ssm_client=ssm_client,
-            override_ami_id=ami_id,
-            subnet_id=subnet_id,
-            security_group_id=security_group_id,
-            instance_profile_name=bootstrap_resources.worker_instance_profile_name,
-            configuration=worker_config,
-            instance_type=instance_type,
-            instance_shutdown_behavior=instance_shutdown_behavior,
-        )
-
-    def stop_worker():
-        if request.session.testsfailed > 0:
-            if os.getenv("KEEP_WORKER_AFTER_FAILURE", "false").lower() == "true":
-                LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
-                return
+            worker = ec2_worker_type(
+                ec2_client=ec2_client,
+                s3_client=s3_client,
+                deadline_client=deadline_client,
+                bootstrap_bucket_name=bootstrap_resources.bootstrap_bucket_name,
+                ssm_client=ssm_client,
+                override_ami_id=ami_id,
+                subnet_id=subnet_id,
+                security_group_id=security_group_id,
+                instance_profile_name=bootstrap_resources.worker_instance_profile_name,
+                configuration=worker_config,
+                instance_type=instance_type,
+                instance_shutdown_behavior=instance_shutdown_behavior,
+            )
 
         try:
-            worker.stop()
+            worker.start()
         except Exception as e:
-            LOG.exception(f"Error while stopping worker: {e}")
-            LOG.error(
-                "Failed to stop worker. Resources may be left over that need to be cleaned up manually."
-            )
+            LOG.exception(f"Failed to start worker: {e}")
+            LOG.info("Stopping worker because it failed to start")
+            stop_worker(request, worker)
             raise
 
+        all_created_workers.append(worker)
+        return worker
+
+    yield generate_worker
+
+    for worker in all_created_workers:
+        stop_worker(request, worker)
+
+
+@pytest.fixture(scope="session")
+def session_worker(worker: Callable[[], DeadlineWorker]) -> Generator[DeadlineWorker, None, None]:
+    yield worker()
+
+
+@pytest.fixture(scope="function")
+def function_worker(worker: Callable[[], DeadlineWorker]) -> Generator[DeadlineWorker, None, None]:
+    yield worker()
+
+
+def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
+    if request.session.testsfailed > 0:
+        if os.getenv("KEEP_WORKER_AFTER_FAILURE", "false").lower() == "true":
+            LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
+            return
+
     try:
-        worker.start()
+        worker.stop()
     except Exception as e:
-        LOG.exception(f"Failed to start worker: {e}")
-        LOG.info("Stopping worker because it failed to start")
-        stop_worker()
+        LOG.exception(f"Error while stopping worker: {e}")
+        LOG.error(
+            "Failed to stop worker. Resources may be left over that need to be cleaned up manually."
+        )
         raise
-
-    yield worker
-
-    stop_worker()
 
 
 @pytest.fixture(scope="session")

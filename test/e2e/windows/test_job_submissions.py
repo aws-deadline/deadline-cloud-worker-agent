@@ -13,7 +13,7 @@ from deadline_test_fixtures import Job, TaskStatus, DeadlineClient
 LOG = logging.getLogger(__name__)
 
 
-@pytest.mark.usefixtures("worker")
+@pytest.mark.usefixtures("session_worker")
 @pytest.mark.parametrize("operating_system", ["windows"], indirect=True)
 class TestJobSubmission:
     def test_success(

@@ -14,7 +14,7 @@ from deadline_test_fixtures import CommandResult, DeadlineWorkerConfiguration, E
 
 @pytest.mark.parametrize("operating_system", ["linux"], indirect=True)
 def test_access_worker_credential_file_from_job(
-    worker: EC2InstanceWorker,
+    session_worker: EC2InstanceWorker,
     worker_config: DeadlineWorkerConfiguration,
 ) -> None:
     """Tests that the worker agent credentials file cannot be read by a job user"""
@@ -28,8 +28,8 @@ def test_access_worker_credential_file_from_job(
     # to ensure that the file exists and our test is valid
     ########################################################################################
     # WHEN
-    result = worker.send_command(
-        f'sudo -u "{worker_config.agent_user}" cat /var/lib/deadline/credentials/{worker.worker_id}.json > /dev/null'
+    result = session_worker.send_command(
+        f'sudo -u "{worker_config.agent_user}" cat /var/lib/deadline/credentials/{session_worker.worker_id}.json > /dev/null'
     )
 
     # THEN
@@ -43,8 +43,8 @@ def test_access_worker_credential_file_from_job(
     # command fails.
     ########################################################################################
     # WHEN
-    result = worker.send_command(
-        f'sudo -u "{job_user.user}" cat /var/lib/deadline/credentials/{worker.worker_id}.json > /dev/null'
+    result = session_worker.send_command(
+        f'sudo -u "{job_user.user}" cat /var/lib/deadline/credentials/{session_worker.worker_id}.json > /dev/null'
     )
 
     # THEN

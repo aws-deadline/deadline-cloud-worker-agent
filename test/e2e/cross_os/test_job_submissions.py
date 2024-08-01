@@ -17,7 +17,7 @@ import botocore.exceptions
 LOG = logging.getLogger(__name__)
 
 
-@pytest.mark.usefixtures("worker")
+@pytest.mark.usefixtures("session_worker")
 @pytest.mark.parametrize("operating_system", [get_operating_system_name()], indirect=True)
 class TestJobSubmission:
     @pytest.mark.parametrize(
