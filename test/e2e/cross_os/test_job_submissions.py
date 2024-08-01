@@ -6,13 +6,15 @@ Deadline Cloud service and checking that the result/output of the jobs is as we 
 from typing import Any, Dict, List
 import pytest
 import logging
-from deadline_test_fixtures import Job, DeadlineClient, TaskStatus
+from deadline_test_fixtures import Job, DeadlineClient, TaskStatus, EC2InstanceWorker
+from e2e.conftest import DeadlineResources
 from utils import get_operating_system_name
 import backoff
 import boto3
 import botocore.client
 import botocore.config
 import botocore.exceptions
+import time
 
 LOG = logging.getLogger(__name__)
 
@@ -69,7 +71,7 @@ class TestJobSubmission:
     )
     def test_job_reports_failed_session_action(
         self,
-        deadline_resources,
+        deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         run_actions: Dict[str, Any],
         environment_actions: Dict[str, Any],
@@ -168,7 +170,7 @@ class TestJobSubmission:
     )
     def test_job_reports_canceled_session_action(
         self,
-        deadline_resources,
+        deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         run_actions: Dict[str, Any],
         environment_actions: Dict[str, Any],
@@ -319,7 +321,7 @@ class TestJobSubmission:
     )
     def test_worker_run_with_number_of_environments(
         self,
-        deadline_resources,
+        deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         job_environments: List[Dict[str, Any]],
     ) -> None:
@@ -342,6 +344,7 @@ class TestJobSubmission:
 
         if len(job_environments) > 0:
             job_template["jobEnvironments"] = job_environments
+
         job = Job.submit(
             client=deadline_client,
             farm=deadline_resources.farm,
@@ -370,3 +373,60 @@ class TestJobSubmission:
         ), "Expected number of Hello statements not found in job logs."
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+    def test_worker_streams_logs_to_cloudwatch(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        worker: EC2InstanceWorker,
+    ) -> None:
+
+        job_start_time_seconds: float = time.time()
+        job = Job.submit(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            priority=98,
+            template={
+                "specificationVersion": "jobtemplate-2023-09",
+                "name": "Hello World Job",
+                "steps": [
+                    {
+                        "name": "Step0",
+                        "script": {
+                            "actions": {"onRun": {"command": "echo", "args": ["HelloWorld"]}}
+                        },
+                    },
+                ],
+            },
+        )
+
+        job.wait_until_complete(client=deadline_client)
+        logs_client: boto3.client = boto3.client(
+            "logs",
+            config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+        )
+
+        # Retrieve job output and verify the echo is printed
+        job_logs = job.get_logs(deadline_client=deadline_client, logs_client=logs_client)
+        full_log: str = "\n".join(
+            [le.message for _, log_events in job_logs.logs.items() for le in log_events]
+        )
+
+        assert (
+            full_log.count("HelloWorld") == 1
+        ), "Expected number of HelloWorld statements not found in job logs."
+
+        # Retrieve worker logs and verify that it's not empty
+        worker_log_group_name: str = (
+            f"/aws/deadline/{deadline_resources.farm.id}/{deadline_resources.fleet.id}"
+        )
+        worker_id = worker.worker_id
+
+        worker_logs = logs_client.get_log_events(
+            logGroupName=worker_log_group_name,
+            logStreamName=worker_id,
+            startTime=int(job_start_time_seconds * 1000),
+        )
+
+        assert len(worker_logs["events"]) > 0
