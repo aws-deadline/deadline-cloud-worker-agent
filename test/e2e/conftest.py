@@ -10,7 +10,7 @@ import posixpath
 import pytest
 import tempfile
 from dataclasses import dataclass, field, InitVar
-from typing import Generator, Type, List, Callable
+from typing import Generator, Type, Callable
 
 from deadline_test_fixtures import (
     DeadlineWorker,
@@ -215,7 +215,6 @@ def worker(
     Returns:
         DeadlineWorker Callable: Callable that returns an instance of the DeadlineWorker class that can be used to interact with the Worker.
     """
-    all_created_workers: List[DeadlineWorker] = []
 
     def generate_worker() -> DeadlineWorker:
         worker: DeadlineWorker
@@ -261,7 +260,6 @@ def worker(
                 instance_type=instance_type,
                 instance_shutdown_behavior=instance_shutdown_behavior,
             )
-
         try:
             worker.start()
         except Exception as e:
@@ -270,23 +268,29 @@ def worker(
             stop_worker(request, worker)
             raise
 
-        all_created_workers.append(worker)
         return worker
 
     yield generate_worker
 
-    for worker in all_created_workers:
-        stop_worker(request, worker)
-
 
 @pytest.fixture(scope="session")
-def session_worker(worker: Callable[[], DeadlineWorker]) -> Generator[DeadlineWorker, None, None]:
-    yield worker()
+def session_worker(
+    request: pytest.FixtureRequest, worker: Callable[[], DeadlineWorker]
+) -> Generator[DeadlineWorker, None, None]:
+    session_worker: DeadlineWorker = worker()
+    yield session_worker
+
+    stop_worker(request, session_worker)
 
 
 @pytest.fixture(scope="function")
-def function_worker(worker: Callable[[], DeadlineWorker]) -> Generator[DeadlineWorker, None, None]:
-    yield worker()
+def function_worker(
+    request: pytest.FixtureRequest, worker: Callable[[], DeadlineWorker]
+) -> Generator[DeadlineWorker, None, None]:
+    function_worker: DeadlineWorker = worker()
+    yield function_worker
+
+    stop_worker(request, function_worker)
 
 
 def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
