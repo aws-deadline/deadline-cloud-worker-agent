@@ -194,10 +194,9 @@ def worker_config(
 
 @pytest.fixture(scope="session")
 def worker(
-    request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
-) -> Generator[Callable[[], DeadlineWorker], None, None]:
+) -> Generator[Callable[[pytest.FixtureRequest], DeadlineWorker], None, None]:
     """
     Gets a DeadlineWorker for use in tests.
 
@@ -216,7 +215,7 @@ def worker(
         DeadlineWorker Callable: Callable that returns an instance of the DeadlineWorker class that can be used to interact with the Worker.
     """
 
-    def generate_worker() -> DeadlineWorker:
+    def generate_worker(request: pytest.FixtureRequest) -> DeadlineWorker:
         worker: DeadlineWorker
         if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
             LOG.info("Creating Docker worker")
@@ -275,9 +274,9 @@ def worker(
 
 @pytest.fixture(scope="session")
 def session_worker(
-    request: pytest.FixtureRequest, worker: Callable[[], DeadlineWorker]
+    request: pytest.FixtureRequest, worker: Callable[[pytest.FixtureRequest], DeadlineWorker]
 ) -> Generator[DeadlineWorker, None, None]:
-    session_worker: DeadlineWorker = worker()
+    session_worker: DeadlineWorker = worker(request)
     yield session_worker
 
     stop_worker(request, session_worker)
@@ -285,9 +284,9 @@ def session_worker(
 
 @pytest.fixture(scope="function")
 def function_worker(
-    request: pytest.FixtureRequest, worker: Callable[[], DeadlineWorker]
+    request: pytest.FixtureRequest, worker: Callable[[pytest.FixtureRequest], DeadlineWorker]
 ) -> Generator[DeadlineWorker, None, None]:
-    function_worker: DeadlineWorker = worker()
+    function_worker: DeadlineWorker = worker(request)
     yield function_worker
 
     stop_worker(request, function_worker)
