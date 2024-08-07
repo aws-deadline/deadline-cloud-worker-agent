@@ -97,6 +97,8 @@ def install() -> None:
             installer_args.update(password=args.password)
         if args.telemetry_opt_out:
             installer_args.update(telemetry_opt_out=args.telemetry_opt_out)
+        if args.windows_job_user:
+            installer_args.update(windows_job_user=args.windows_job_user)
 
         start_windows_installer(**installer_args)
     else:
@@ -157,6 +159,7 @@ class ParsedCommandLineArguments(Namespace):
     vfs_install_path: str
     grant_required_access: bool
     disallow_instance_profile: bool
+    windows_job_user: Optional[str] = None
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
@@ -268,6 +271,14 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
             action="store_true",
             required=False,
             default=False,
+        )
+        parser.add_argument(
+            "--windows-job-user",
+            help=(
+                "The username of the Windows user that jobs run as. The password for this user account is reset during worker startup."
+            ),
+            required=False,
+            default=None,
         )
 
     return parser

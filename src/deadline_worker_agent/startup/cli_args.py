@@ -17,6 +17,7 @@ class ParsedCommandLineArguments(Namespace):
     no_shutdown: bool | None = None
     run_jobs_as_agent_user: bool | None = None
     posix_job_user: str | None = None
+    windows_job_user: str | None = None
     disallow_instance_profile: bool | None = None
     logs_dir: Path | None = None
     local_session_logs: bool | None = None
@@ -75,6 +76,13 @@ def get_argument_parser() -> ArgumentParser:
             "--posix-job-user",
             help="Overrides the posix user that the Worker Agent impersonates. Format: 'user:group'. "
             "If not set, defaults to what the service sets.",
+            default=None,
+        )
+    elif os.name == "nt":
+        parser.add_argument(
+            "--windows-job-user",
+            help="Overrides the windows user that the Worker Agent impersonates. In doing so, resets the specified user's password to a cryptographically random, unstored value during worker startup. "
+            "If not set, impersonation behavior defers to what the service sets.",
             default=None,
         )
 
