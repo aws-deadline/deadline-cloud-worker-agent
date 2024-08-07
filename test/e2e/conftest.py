@@ -204,6 +204,8 @@ def session_worker(
     with create_worker(worker_config, ec2_worker_type, request) as worker:
         yield worker
 
+    stop_worker(request, worker)
+
 
 @pytest.fixture(scope="class")
 def class_worker(
@@ -213,6 +215,20 @@ def class_worker(
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(worker_config, ec2_worker_type, request) as worker:
         yield worker
+
+    stop_worker(request, worker)
+
+
+@pytest.fixture(scope="function")
+def function_worker(
+    request: pytest.FixtureRequest,
+    worker_config: DeadlineWorkerConfiguration,
+    ec2_worker_type: Type[EC2InstanceWorker],
+) -> Generator[DeadlineWorker, None, None]:
+    with create_worker(worker_config, ec2_worker_type, request) as worker:
+        yield worker
+
+    stop_worker(request, worker)
 
 
 def create_worker(
@@ -289,21 +305,6 @@ def create_worker(
             instance_shutdown_behavior=instance_shutdown_behavior,
         )
 
-    def stop_worker():
-        if request.session.testsfailed > 0:
-            if os.getenv("KEEP_WORKER_AFTER_FAILURE", "false").lower() == "true":
-                LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
-                return
-
-        try:
-            worker.stop()
-        except Exception as e:
-            LOG.exception(f"Error while stopping worker: {e}")
-            LOG.error(
-                "Failed to stop worker. Resources may be left over that need to be cleaned up manually."
-            )
-            raise
-
     @contextmanager
     def _context_for_fixture():
         try:
@@ -311,12 +312,27 @@ def create_worker(
         except Exception as e:
             LOG.exception(f"Failed to start worker: {e}")
             LOG.info("Stopping worker because it failed to start")
-            stop_worker()
+            stop_worker(request, worker)
             raise
         yield worker
-        stop_worker()
 
     return _context_for_fixture()
+
+
+def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
+    if request.session.testsfailed > 0:
+        if os.getenv("KEEP_WORKER_AFTER_FAILURE", "false").lower() == "true":
+            LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
+            return
+
+    try:
+        worker.stop()
+    except Exception as e:
+        LOG.exception(f"Error while stopping worker: {e}")
+        LOG.error(
+            "Failed to stop worker. Resources may be left over that need to be cleaned up manually."
+        )
+        raise
 
 
 @pytest.fixture(scope="session")

@@ -19,7 +19,7 @@ import time
 LOG = logging.getLogger(__name__)
 
 
-@pytest.mark.usefixtures("worker")
+@pytest.mark.usefixtures("session_worker")
 @pytest.mark.parametrize("operating_system", [get_operating_system_name()], indirect=True)
 class TestJobSubmission:
     @pytest.mark.parametrize(
@@ -378,7 +378,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        worker: EC2InstanceWorker,
+        session_worker: EC2InstanceWorker,
     ) -> None:
 
         job_start_time_seconds: float = time.time()
@@ -421,7 +421,7 @@ class TestJobSubmission:
         worker_log_group_name: str = (
             f"/aws/deadline/{deadline_resources.farm.id}/{deadline_resources.fleet.id}"
         )
-        worker_id = worker.worker_id
+        worker_id = session_worker.worker_id
 
         worker_logs = logs_client.get_log_events(
             logGroupName=worker_log_group_name,
