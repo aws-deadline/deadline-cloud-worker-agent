@@ -1,13 +1,14 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# This assertion short-circuits mypy from type checking this module on platforms other than Windows
+# https://mypy.readthedocs.io/en/stable/common_issues.html#python-version-and-system-platform-checks
+import sys
 
+assert sys.platform == "win32"
 import dataclasses
 import logging
 import os
 import re
-import secrets
 import shutil
-import string
-import sys
 import time
 from argparse import ArgumentParser
 from getpass import getpass
@@ -33,11 +34,11 @@ from ..file_system_operations import (
     FileSystemPermissionEnum,
 )
 from ..windows.win_service import WorkerAgentWindowsService
+from ..windows.win_logon import generate_password, users_equal
 
 # Defaults
 DEFAULT_WA_USER = "deadline-worker"
 DEFAULT_JOB_GROUP = "deadline-job-users"
-DEFAULT_PASSWORD_LENGTH = 32
 
 # Environment variable that overrides the config path used by the Deadline client
 DEADLINE_CLIENT_CONFIG_PATH_OVERRIDE_ENV_VAR = "DEADLINE_CONFIG_FILE_PATH"
@@ -55,20 +56,6 @@ class WorkerAgentDirectories:
     deadline_log_subdir: Path
     deadline_persistence_subdir: Path
     deadline_config_subdir: Path
-
-
-def generate_password() -> str:
-    """
-    Generate password of given length.
-
-    Returns
-        str: password
-    """
-    alphabet = string.ascii_letters + string.digits + string.punctuation
-    # Use secrets.choice to ensure a secure random selection of characters
-    # https://docs.python.org/3/library/secrets.html#recipes-and-best-practices
-    password = "".join(secrets.choice(alphabet) for _ in range(DEFAULT_PASSWORD_LENGTH))
-    return password
 
 
 def print_banner():
@@ -308,6 +295,7 @@ def update_config_file(
     fleet_id: str,
     shutdown_on_stop: Optional[bool] = None,
     allow_ec2_instance_profile: Optional[bool] = None,
+    windows_job_user: Optional[str] = None,
 ) -> None:
     """
     Updates the worker configuration file, creating it from the example if it does not exist.
@@ -406,6 +394,26 @@ def update_config_file(
             )
         else:
             updated_keys.append("allow_ec2_instance_profile")
+
+    if windows_job_user is not None:
+        escaped_username = windows_job_user.replace("\\", "\\\\\\\\")
+        content = re.sub(
+            r'^#*\s*windows_job_user\s*=\s*".{1,512}"$',  # defer validation to OS
+            f'windows_job_user = "{escaped_username}"',
+            content,
+            flags=re.MULTILINE,
+        )
+        search_username = windows_job_user.replace("\\", "\\\\")
+        if not re.search(
+            rf'^windows_job_user = "{re.escape(search_username)}"$',
+            content,
+            flags=re.MULTILINE,
+        ):
+            raise InstallerFailedException(
+                f"Failed to configure windows_job_user in {worker_config_file}"
+            )
+        else:
+            updated_keys.append("windows_job_user")
 
     # Write the updated content back to the worker configuration file
     with open(worker_config_file, "w") as file:
@@ -556,7 +564,6 @@ def _install_service(
         agent_user_name(str): Worker Agent's account username
         password(str): The Worker Agent's user account password
     """
-
     # If the username does not contain the domain, then assume the local domain
     # https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats
     if "\\" not in agent_user_name and "@" not in agent_user_name:
@@ -805,6 +812,7 @@ def start_windows_installer(
     user_name: str = DEFAULT_WA_USER,
     password: Optional[str] = None,
     group_name: str = DEFAULT_JOB_GROUP,
+    windows_job_user: Optional[str] = None,
     install_service: bool = False,
     start_service: bool = False,
     confirm: bool = False,
@@ -837,6 +845,18 @@ def start_windows_installer(
         logging.error(f"User does not have Administrator privileges: {os.environ['USERNAME']}")
         print_helping_info_and_exit()
 
+    if windows_job_user is not None and not check_account_existence(windows_job_user):
+        raise InstallerFailedException(
+            f"Account {windows_job_user} provided for argument windows-job-user does not exist. "
+            "Please create the account before proceeding."
+        )
+    elif windows_job_user is not None and users_equal(windows_job_user, user_name):
+        raise InstallerFailedException(
+            f"Argument for windows-job-user cannot be the same as the worker agent user: {user_name}. "
+            "If you wish to run jobs as the agent user, set run_jobs_as_agent_user = true in the agent "
+            "configuration file."
+        )
+
     # Print configuration
     print_banner()
 
@@ -849,7 +869,8 @@ def start_windows_installer(
                 print("ERROR: Password incorrect")
                 sys.exit(1)
         else:
-            password = generate_password()
+            password = generate_password(user_name, length=200)
+    assert password
 
     print(
         f"Farm ID: {farm_id}\n"
@@ -861,7 +882,8 @@ def start_windows_installer(
         f"Install Windows service: {install_service}\n"
         f"Start service: {start_service}\n"
         f"Telemetry opt-out: {telemetry_opt_out}\n"
-        f"Disallow EC2 instance profile: {not allow_ec2_instance_profile}"
+        f"Disallow EC2 instance profile: {not allow_ec2_instance_profile}\n"
+        f"Windows Job User: {windows_job_user}"
     )
     print()
 
@@ -960,6 +982,7 @@ def start_windows_installer(
         # any "shutdown" option to be consistent with POSIX installer
         shutdown_on_stop=allow_shutdown,
         allow_ec2_instance_profile=allow_ec2_instance_profile,
+        windows_job_user=windows_job_user,
     )
 
     if telemetry_opt_out:

@@ -5,31 +5,16 @@
 import sys
 
 assert sys.platform == "win32"
-
-
 import json
 import os
-from ctypes.wintypes import HANDLE as cHANDLE
 from datetime import datetime, timedelta, timezone
 from logging import getLogger
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Dict
 
 from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 from botocore.retries.standard import RetryContext
 from openjd.sessions import WindowsSessionUser, BadCredentialsException
-from pywintypes import HANDLE as PyHANDLE
-from win32security import (
-    LogonUser,
-    LOGON32_LOGON_INTERACTIVE,
-    LOGON32_PROVIDER_DEFAULT,
-)
-from win32profile import LoadUserProfile, PI_NOUI, UnloadUserProfile
-
-if TYPE_CHECKING:
-    from _win32typing import PyHKEY
-else:
-    PyHKEY = Any
 
 from ..boto import (
     OTHER_BOTOCORE_CONFIG,
@@ -37,24 +22,13 @@ from ..boto import (
     Session as BotoSession,
 )
 from . import win_service
+from .win_logon import (
+    get_windows_credentials,
+    _WindowsCredentialsCacheEntry,
+    unload_and_close,
+)
 
 logger = getLogger(__name__)
-
-
-class _WindowsCredentialsCacheEntry:
-    def __init__(
-        self,
-        windows_session_user: Optional[WindowsSessionUser],
-        last_fetched_at: datetime,
-        last_accessed: datetime,
-        user_profile: Optional[PyHKEY] = None,
-        logon_token: Optional[PyHANDLE] = None,
-    ):
-        self.windows_session_user = windows_session_user
-        self.last_fetched_at = last_fetched_at
-        self.last_accessed = last_accessed
-        self.user_profile = user_profile
-        self.logon_token = logon_token
 
 
 class WindowsCredentialsResolver:
@@ -141,11 +115,8 @@ class WindowsCredentialsResolver:
                     logger.info(
                         f"Removing user {user.windows_session_user.user} from the windows credentials resolver cache"
                     )
-                    if user.user_profile:
-                        # https://timgolden.me.uk/pywin32-docs/win32profile__UnloadUserProfile_meth.html
-                        UnloadUserProfile(user.logon_token, user.user_profile)
-                    assert user.logon_token is not None
-                    user.logon_token.Close()
+                    if user.logon_token is not None:
+                        unload_and_close(user.user_profile, user.logon_token)
         self._user_cache.clear()
 
     @staticmethod
@@ -174,9 +145,7 @@ class WindowsCredentialsResolver:
         # Create a composite key using user and arn
         should_fetch = True
         user_key = self._user_cache_key(user_name=user, password_arn=passwordArn)
-        windows_session_user: Optional[WindowsSessionUser] = None
-        logon_token: Optional[PyHANDLE] = None
-        user_profile: Optional[PyHKEY] = None
+        cache_entry = None
 
         # Prune the cache before fetching or returning the user
         self.prune_cache()
@@ -213,68 +182,30 @@ class WindowsCredentialsResolver:
                         f'Contents of secret {passwordArn} did not match the expected format: {"password":"value"}'
                     )
                 else:
-                    if win_service.is_windows_session_zero():
-                        try:
-                            # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
-                            logon_token = LogonUser(
-                                Username=user,
-                                LogonType=LOGON32_LOGON_INTERACTIVE,
-                                LogonProvider=LOGON32_PROVIDER_DEFAULT,
-                                Password=password,
-                                Domain=None,
+                    try:
+                        cache_entry = get_windows_credentials(user, password)
+                    except BadCredentialsException:
+                        logger.error(
+                            f"Username and/or password within {passwordArn} were not correct"
+                        )
+                    except OSError as e:
+                        logger.error(
+                            (
+                                f'Error loading profile for "{user}": {e}\n'
+                                "Please ensure that the Worker Agent is running as a user that is an Administrator, and"
+                                " has user rights to both backup and restore files and directories."
                             )
-                        except OSError as e:
-                            logger.error(
-                                f'Error logging on as "{user}", please check that your password within {passwordArn} is correct: {e}'
-                            )
-                        else:
-                            try:
-                                # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
-                                user_profile = LoadUserProfile(
-                                    logon_token,
-                                    {
-                                        "UserName": user,
-                                        "Flags": PI_NOUI,
-                                        "ProfilePath": None,
-                                    },
-                                )
-                            except OSError as e:
-                                logger.error(
-                                    (
-                                        f'Error loading profile for "{user}": {e}\n'
-                                        "Please ensure that the Worker Agent is running as a user that is an Administrator, and has user rights to both backup and restore files and directories."
-                                    )
-                                )
-                            else:
-                                try:
-                                    windows_session_user = WindowsSessionUser(
-                                        user=user,
-                                        logon_token=cHANDLE(int(logon_token)),
-                                    )
-                                except OSError as e:
-                                    logger.error(f'Error logging on as "{user}": {e}')
-                    else:
-                        try:
-                            # OpenJD will test the ultimate validity of the credentials when creating a WindowsSessionUser
-                            windows_session_user = WindowsSessionUser(user=user, password=password)
-                        except BadCredentialsException:
-                            logger.error(
-                                f"Username and/or password within {passwordArn} were not correct"
-                            )
+                        )
 
-        # Cache the WindowsSessionUser object, last fetched at, and last accessed time for future use
-        # If the credentials were not valid cache that too to prevent repeated calls to SecretsManager
-        self._user_cache[user_key] = _WindowsCredentialsCacheEntry(
-            windows_session_user=windows_session_user,
-            last_fetched_at=datetime.now(tz=timezone.utc),
-            last_accessed=datetime.now(tz=timezone.utc),
-            logon_token=logon_token,
-            user_profile=user_profile,
-        )
-
-        if not windows_session_user:
+        if not cache_entry:
+            # If the credentials were not valid cache that too to prevent repeated calls to SecretsManager
+            self._user_cache[user_key] = _WindowsCredentialsCacheEntry(windows_session_user=None)
+            # Raise a ValueError so that the scheduler can fail the associated jobs
             raise ValueError(
                 f"No valid credentials for {user} available. Credentials will be fetched again {self.RETRY_AFTER.total_seconds()//60} minutes after last fetch"
             )
-
-        return windows_session_user
+        else:
+            # Cache the _WindowsCredentialsCacheEntry object
+            self._user_cache[user_key] = cache_entry
+            assert cache_entry.windows_session_user
+            return cache_entry.windows_session_user

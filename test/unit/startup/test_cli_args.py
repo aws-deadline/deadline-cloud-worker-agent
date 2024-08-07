@@ -6,6 +6,7 @@ from __future__ import annotations
 from argparse import ArgumentParser
 
 import pytest
+import os
 
 from deadline_worker_agent.startup import cli_args as cli_args_mod
 
@@ -40,6 +41,8 @@ class TestArgumentParser:
         assert result.retain_session_dir is None
         assert result.structured_logs is None
         assert result.verbose is None
+        assert result.posix_job_user is None
+        assert result.windows_job_user is None
 
     @pytest.mark.parametrize(
         ["farm_id"],
@@ -153,3 +156,22 @@ class TestArgumentParser:
 
         # THEN
         assert result.cleanup_session_user_processes == expected_cleanup_session_user_processes
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows only test")
+    @pytest.mark.parametrize(
+        ["windows_job_user"],
+        (
+            ("job user a",),
+            ("job user b",),
+        ),
+    )
+    def test_windows_job_user(self, arg_parser: ArgumentParser, windows_job_user: str) -> None:
+        """Asserts that the --windows-job-user command-line argument is parsed"""
+        # GIVEN
+        args = ["--windows-job-user", windows_job_user]
+
+        # WHEN
+        result = arg_parser.parse_args(args, namespace=cli_args_mod.ParsedCommandLineArguments())
+
+        # THEN
+        assert result.windows_job_user == windows_job_user

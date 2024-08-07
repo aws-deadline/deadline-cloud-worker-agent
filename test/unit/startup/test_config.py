@@ -6,12 +6,13 @@ from __future__ import annotations
 from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from typing import Any, Generator, List, Optional
+from typing import Any, Generator, List, Optional, cast
 import logging
 import pytest
 import os
+import sys
 
-from openjd.sessions import SessionUser, PosixSessionUser
+from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
 
 from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
 from deadline_worker_agent.startup import config as config_mod
@@ -31,6 +32,7 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "no_shutdown": None,
         "run_jobs_as_agent_user": None,
         "posix_job_user": None,
+        "windows_job_user": None,
         "allow_instance_profile": None,
         "capabilities": None,
         "worker_logs_dir": Path("/var/log/amazon/deadline"),
@@ -79,11 +81,22 @@ def arg_parser(
 
 
 @pytest.fixture
-def os_user() -> Optional[SessionUser]:
+def expected_session_user() -> Optional[SessionUser]:
     if os.name == "posix":
         return PosixSessionUser(user="user", group="group")
     else:
-        return None
+        return WindowsSessionUser(user="windows-user", password="SUP3R_secure_P4$$W0RD")
+
+
+@pytest.fixture(autouse=os.name == "nt")
+def reset_user_password(expected_session_user) -> Generator[Optional[MagicMock], None, None]:
+    if sys.platform == "win32":
+        with patch.object(config_mod, "reset_user_password") as reset_user_password:
+            reset_user_password.return_value = MagicMock()
+            reset_user_password.return_value.windows_session_user = expected_session_user
+            yield reset_user_password
+    else:
+        yield None
 
 
 class TestLoad:
@@ -678,6 +691,63 @@ class TestInit:
         else:
             assert "posix_job_user" not in call.kwargs
 
+    @pytest.mark.skipif(os.name != "nt", reason="windows-only test.")
+    @pytest.mark.parametrize(
+        argnames="windows_job_user",
+        argvalues=("windows-user", None),
+    )
+    def test_windows_job_user_passed_to_settings_initializer(
+        self,
+        windows_job_user: str | None,
+        parsed_args: ParsedCommandLineArguments,
+        mock_worker_settings_cls: MagicMock,
+    ) -> None:
+        # GIVEN
+        parsed_args.run_jobs_as_agent_user = False
+        parsed_args.windows_job_user = windows_job_user
+
+        # WHEN
+        config_mod.Configuration(parsed_cli_args=parsed_args)
+
+        # THEN
+        mock_worker_settings_cls.assert_called_once()
+        call = mock_worker_settings_cls.call_args_list[0]
+        if windows_job_user is not None:
+            assert call.kwargs.get("windows_job_user") == windows_job_user
+        else:
+            assert "windows_job_user" not in call.kwargs
+
+    @pytest.mark.skipif(os.name != "nt", reason="windows-only test.")
+    @pytest.mark.parametrize(
+        argnames="windows_job_user",
+        argvalues=("windows-user",),
+    )
+    @patch.object(config_mod, "users_equal", return_value=True)
+    @patch.object(config_mod.getpass, "getuser")
+    def test_windows_job_user_is_agent_user_fails(
+        self,
+        getuser: MagicMock,
+        users_equal: MagicMock,
+        windows_job_user: str | None,
+        parsed_args: ParsedCommandLineArguments,
+        mock_worker_settings_cls: MagicMock,
+    ) -> None:
+        # GIVEN
+        getuser.return_value = "windows-user"
+        parsed_args.run_jobs_as_agent_user = False
+        parsed_args.windows_job_user = windows_job_user
+
+        # WHEN
+        with pytest.raises(config_mod.ConfigurationError) as exc_info:
+            config_mod.Configuration(parsed_cli_args=parsed_args)
+
+        # THEN
+        assert (
+            str(exc_info.value) == "Windows job user override must not be the user running the "
+            f"worker agent: {windows_job_user}. If you wish to run jobs as the agent user, set "
+            "run_jobs_as_agent_user = true in the agent configuration file."
+        )
+
     @pytest.mark.parametrize(
         argnames="disallow_instance_profile",
         argvalues=(
@@ -856,25 +926,35 @@ class TestInit:
             assert "retain_session_dir" not in call.kwargs
 
     @pytest.mark.parametrize(
-        argnames=("posix_job_user_setting", "expected_config_posix_job_user"),
+        argnames=("posix_job_user_setting", "windows_job_user_setting"),
         argvalues=(
             pytest.param(
                 "user:group",
-                "os_user",
-                id="has-posix-job-user-setting",
-                marks=pytest.mark.skipif(os.name != "posix", reason="Posix-only test."),
+                None,
+                id="only-has-posix-job-user-setting",
+            ),
+            pytest.param(
+                None,
+                "windows-user",
+                id="only-has-windows-job-user-setting",
+            ),
+            pytest.param(
+                "user:group",
+                "windows-user",
+                id="has-posix-and-windows-job-user-setting",
             ),
             pytest.param(
                 None,
                 None,
-                id="no-posix-job-user-setting",
+                id="no-posix-or-windows-job-user-setting",
             ),
         ),
     )
     def test_uses_worker_settings(
         self,
         posix_job_user_setting: str | None,
-        expected_config_posix_job_user: PosixSessionUser | None,
+        windows_job_user_setting: str | None,
+        expected_session_user: SessionUser,
         parsed_args: ParsedCommandLineArguments,
         mock_worker_settings_cls: MagicMock,
         request,
@@ -888,6 +968,7 @@ class TestInit:
         mock_worker_settings_cls.side_effect = None
         mock_worker_settings: MagicMock = mock_worker_settings_cls.return_value
         mock_worker_settings.posix_job_user = posix_job_user_setting
+        mock_worker_settings.windows_job_user = windows_job_user_setting
         mock_worker_settings.run_jobs_as_agent_user = None
 
         # Needed because MagicMock does not support gt/lt comparison
@@ -913,15 +994,24 @@ class TestInit:
             config.job_run_as_user_overrides.run_as_agent
             == mock_worker_settings.run_jobs_as_agent_user
         )
-        if expected_config_posix_job_user:
-            # TODO: This is needed because we are using a fixture with a parameterized call
-            # but let's revisit whether this can be simplified when Windows impersonation is added
-            posix_user: PosixSessionUser = request.getfixturevalue(expected_config_posix_job_user)
-            assert isinstance(config.job_run_as_user_overrides.job_user, PosixSessionUser)
-            assert config.job_run_as_user_overrides.job_user.group == posix_user.group
-            assert config.job_run_as_user_overrides.job_user.user == posix_user.user
+        if sys.platform != "win32":
+            if posix_job_user_setting is None:
+                assert config.job_run_as_user_overrides.job_user is None
+            else:
+                assert isinstance(config.job_run_as_user_overrides.job_user, PosixSessionUser)
+                assert (
+                    config.job_run_as_user_overrides.job_user.group == expected_session_user.group  # type: ignore
+                )
+                assert config.job_run_as_user_overrides.job_user.user == expected_session_user.user
         else:
-            assert config.job_run_as_user_overrides.job_user is None
+            if windows_job_user_setting is None:
+                assert config.job_run_as_user_overrides.job_user is None
+            else:
+                assert isinstance(config.job_run_as_user_overrides.job_user, WindowsSessionUser)
+                job_user = cast(WindowsSessionUser, config.job_run_as_user_overrides.job_user)
+                expected_session_user = cast(WindowsSessionUser, expected_session_user)
+                assert job_user.user == expected_session_user.user
+                assert job_user.password == expected_session_user.password
         assert config.worker_logs_dir is mock_worker_settings.worker_logs_dir
         assert config.local_session_logs is mock_worker_settings.local_session_logs
         assert config.worker_persistence_dir is mock_worker_settings.worker_persistence_dir
