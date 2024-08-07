@@ -1,8 +1,8 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-import string
 import sys
 import typing
+from typing import Generator
 from unittest.mock import Mock, call, patch, MagicMock, ANY
 
 import pytest
@@ -25,64 +25,100 @@ from win32service import error as win_service_error
 from win32serviceutil import GetServiceClassString
 
 
-def test_start_windows_installer(
-    parsed_args: ParsedCommandLineArguments,
-) -> None:
-    # GIVEN
+@pytest.fixture
+def parsed_kwargs(parsed_args: ParsedCommandLineArguments) -> Generator[dict, None, None]:
+    assert parsed_args.region is not None, "Region is required"
     with patch.object(installer_mod, "get_argument_parser") as mock_get_arg_parser:
-        with patch.object(installer_mod, "start_windows_installer") as mock_start_windows_installer:
-            arg_parser: MagicMock = mock_get_arg_parser.return_value
-            arg_parser.parse_args.return_value = parsed_args
+        arg_parser: MagicMock = mock_get_arg_parser.return_value
+        arg_parser.parse_args.return_value = parsed_args
+        yield {
+            "farm_id": parsed_args.farm_id,
+            "fleet_id": parsed_args.fleet_id,
+            "region": parsed_args.region,
+            "install_service": parsed_args.install_service,
+            "start_service": parsed_args.service_start,
+            "confirm": parsed_args.confirmed,
+            "parser": mock_get_arg_parser(),
+            "user_name": parsed_args.user,
+            "group_name": str(parsed_args.group),
+            "password": parsed_args.password,
+            "allow_shutdown": parsed_args.allow_shutdown,
+            "telemetry_opt_out": parsed_args.telemetry_opt_out,
+            "grant_required_access": parsed_args.grant_required_access,
+            "allow_ec2_instance_profile": not parsed_args.disallow_instance_profile,
+            "windows_job_user": parsed_args.windows_job_user,
+        }
 
-            # WHEN
-            install()
 
-            # Then
-            mock_start_windows_installer.assert_called_once_with(
-                farm_id=parsed_args.farm_id,
-                fleet_id=parsed_args.fleet_id,
-                region=parsed_args.region,
-                install_service=parsed_args.install_service,
-                start_service=parsed_args.service_start,
-                confirm=parsed_args.confirmed,
-                parser=mock_get_arg_parser(),
-                user_name=parsed_args.user,
-                group_name=parsed_args.group,
-                password=parsed_args.password,
-                allow_shutdown=parsed_args.allow_shutdown,
-                telemetry_opt_out=parsed_args.telemetry_opt_out,
-                grant_required_access=parsed_args.grant_required_access,
-                allow_ec2_instance_profile=not parsed_args.disallow_instance_profile,
-            )
+def test_start_windows_installer(parsed_kwargs: dict) -> None:
+    # GIVEN
+    with patch.object(installer_mod, "start_windows_installer") as mock_start_windows_installer:
+        # WHEN
+        install()
+
+        # Then
+        mock_start_windows_installer.assert_called_once_with(
+            **parsed_kwargs,
+        )
 
 
 @patch.object(shell, "IsUserAnAdmin")
 def test_start_windows_installer_fails_when_run_as_non_admin_user(
-    is_user_an_admin, parsed_args: ParsedCommandLineArguments
+    is_user_an_admin, parsed_kwargs: dict
 ) -> None:
     # GIVEN
     is_user_an_admin.return_value = False
-    assert parsed_args.region is not None, "Region is required"
+    with pytest.raises(SystemExit):
+        # WHEN
+        win_installer.start_windows_installer(**parsed_kwargs)
 
-    with (patch.object(installer_mod, "get_argument_parser") as mock_get_arg_parser,):
-        with pytest.raises(SystemExit):
-            # WHEN
-            win_installer.start_windows_installer(
-                farm_id=parsed_args.farm_id,
-                fleet_id=parsed_args.fleet_id,
-                region=parsed_args.region,
-                install_service=parsed_args.install_service,
-                start_service=parsed_args.service_start,
-                confirm=parsed_args.confirmed,
-                parser=mock_get_arg_parser(),
-                user_name=parsed_args.user,
-                group_name=str(parsed_args.group),
-                password=parsed_args.password,
-                allow_shutdown=parsed_args.allow_shutdown,
-            )
+        # THEN
+        is_user_an_admin.assert_called_once()
 
-            # THEN
-            is_user_an_admin.assert_called_once()
+
+@patch("deadline_worker_agent.installer.win_installer.check_account_existence", return_value=False)
+@patch.object(shell, "IsUserAnAdmin", return_value=True)
+def test_start_windows_installer_fails_when_windows_job_user_not_exists(
+    is_user_and_admin: MagicMock,
+    check_account_existence: MagicMock,
+    parsed_kwargs: dict,
+) -> None:
+    # GIVEN
+    with pytest.raises(win_installer.InstallerFailedException) as exc_info:
+        # WHEN
+        win_installer.start_windows_installer(**parsed_kwargs)
+
+    # THEN
+    assert (
+        str(exc_info.value)
+        == f"Account {parsed_kwargs['windows_job_user']} provided for argument windows-job-user does not exist. "
+        "Please create the account before proceeding."
+    )
+
+
+@patch("deadline_worker_agent.installer.win_installer.users_equal", return_value=True)
+@patch("deadline_worker_agent.installer.win_installer.check_account_existence", return_value=True)
+@patch.object(shell, "IsUserAnAdmin", return_value=True)
+def test_start_windows_installer_fails_when_windows_job_user_is_agent_user(
+    users_equal: MagicMock,
+    is_user_and_admin: MagicMock,
+    check_account_existence: MagicMock,
+    parsed_kwargs: dict,
+) -> None:
+    # GIVEN
+    with pytest.raises(win_installer.InstallerFailedException) as exc_info:
+        # WHEN
+        win_installer.start_windows_installer(**parsed_kwargs)
+
+    # THEN
+    assert (
+        str(exc_info.value)
+        == f"Argument for windows-job-user cannot be the same as the worker agent user: {parsed_kwargs['user_name']}. "
+        "If you wish to run jobs as the agent user, set run_jobs_as_agent_user = true in the agent configuration file."
+    )
+    assert users_equal.called_once_with(
+        parsed_kwargs["user_name"], parsed_kwargs["windows_job_user"]
+    )
 
 
 class TestCreateLocalQueueUserGroup:
@@ -303,23 +339,6 @@ class TestEnsureUserProfileExists:
         assert f"Failed to load user profile for '{username}'" in caplog.text
         mock_UnloadUserProfile.assert_not_called()
         mock_CloseHandle.assert_called_once_with(mock_LogonUser.return_value)
-
-
-@patch("deadline_worker_agent.installer.win_installer.secrets.choice")
-def test_generate_password(mock_choice):
-    # Given
-    password_length = 32
-    characters = string.ascii_letters[:password_length]
-    mock_choice.side_effect = characters
-
-    # When
-    password = win_installer.generate_password()
-
-    # Then
-    assert win_installer.DEFAULT_PASSWORD_LENGTH == password_length
-    expected_password = "".join(characters)
-    assert password == expected_password
-    assert len(password) == password_length
 
 
 def test_validate_deadline_id():

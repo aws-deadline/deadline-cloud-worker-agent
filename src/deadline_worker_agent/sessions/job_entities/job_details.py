@@ -392,7 +392,7 @@ class JobDetails:
                 run_as_windows = entity_data["jobRunAsUser"].get("windows", None)
                 if os.name == "nt" and not run_as_windows:
                     raise ValueError(
-                        'Expected ""jobRunAs" -> "windows" to exist when "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER" but it was not present'
+                        'Expected "jobRunAs" -> "windows" to exist when "jobRunAs" -> "runAs" is "QUEUE_CONFIGURED_USER" but it was not present'
                     )
                 if os.name == "posix" and not run_as_posix:
                     raise ValueError(

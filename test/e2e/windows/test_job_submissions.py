@@ -8,7 +8,13 @@ import pytest
 
 import logging
 
-from deadline_test_fixtures import Job, TaskStatus, DeadlineClient
+from deadline_test_fixtures import (
+    Job,
+    TaskStatus,
+    DeadlineClient,
+    EC2InstanceWorker,
+)
+
 
 LOG = logging.getLogger(__name__)
 
@@ -18,6 +24,7 @@ class TestJobSubmission:
     def test_success(
         self,
         deadline_resources,
+        class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
     ) -> None:
         # WHEN

@@ -1,4 +1,9 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# This assertion short-circuits mypy from type checking this module on platforms other than Windows
+# https://mypy.readthedocs.io/en/stable/common_issues.html#python-version-and-system-platform-checks
+import sys
+
+assert sys.platform == "win32"
 
 import pathlib
 import os
@@ -10,11 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-
-try:
-    import win32api
-except ImportError:
-    pytest.skip("win32api not available", allow_module_level=True)
+import win32api
 import win32con
 import win32net
 import win32security
@@ -76,8 +77,17 @@ def check_admin_privilege_and_skip_test():
 
 
 @pytest.fixture
-def windows_user_password():
-    return generate_password()
+def net_user_get_info():
+    # Mock the return value of win32net.NetUserGetInfo
+    with patch(
+        "win32net.NetUserGetInfo", return_value={"name": "test_user", "full_name": "Test User"}
+    ):
+        yield
+
+
+@pytest.fixture
+def windows_user_password(net_user_get_info):
+    return generate_password("test_user")
 
 
 @pytest.fixture

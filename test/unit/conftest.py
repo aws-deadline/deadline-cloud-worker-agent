@@ -110,6 +110,11 @@ def disallow_instance_profile() -> bool:
 
 
 @pytest.fixture
+def windows_job_user() -> str:
+    return "job-user"
+
+
+@pytest.fixture
 def parsed_args(
     farm_id: str,
     fleet_id: str,
@@ -125,6 +130,7 @@ def parsed_args(
     vfs_install_path: str,
     grant_required_access: bool,
     disallow_instance_profile: bool,
+    windows_job_user: str,
 ) -> ParsedCommandLineArguments:
     parsed_args = ParsedCommandLineArguments()
     parsed_args.farm_id = farm_id
@@ -141,6 +147,7 @@ def parsed_args(
     parsed_args.vfs_install_path = vfs_install_path
     parsed_args.grant_required_access = grant_required_access
     parsed_args.disallow_instance_profile = disallow_instance_profile
+    parsed_args.windows_job_user = windows_job_user
     return parsed_args
 
 
@@ -173,23 +180,16 @@ def patch_windows_session_user_validate():
 
 
 @pytest.fixture()
-def job_user() -> Optional[SessionUser]:
+def job_user() -> SessionUser:
     if os.name == "posix":
         return PosixSessionUser(user="some-user", group="some-group")
     else:
-        return None
+        return WindowsSessionUser(user="some-user", password="some-password")
 
 
-@pytest.fixture(params=[(os.name == "posix",)])
-def job_run_as_user_overrides(
-    request: pytest.FixtureRequest, job_user: Optional[SessionUser]
-) -> JobsRunAsUserOverride:
-    (posix_os,) = request.param
-
-    if posix_os:
-        return JobsRunAsUserOverride(run_as_agent=False, job_user=job_user)
-    else:
-        return JobsRunAsUserOverride(run_as_agent=True)
+@pytest.fixture()
+def job_run_as_user_overrides(job_user: SessionUser) -> JobsRunAsUserOverride:
+    return JobsRunAsUserOverride(run_as_agent=False, job_user=job_user)
 
 
 @pytest.fixture

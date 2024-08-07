@@ -203,7 +203,7 @@ def session_worker(
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(worker_config, ec2_worker_type, request) as worker:
         yield worker
-    
+        
     stop_worker(request, worker)
 
 
@@ -215,7 +215,7 @@ def class_worker(
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(worker_config, ec2_worker_type, request) as worker:
         yield worker
-    
+        
     stop_worker(request, worker)
 
 
@@ -227,7 +227,7 @@ def function_worker(
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(worker_config, ec2_worker_type, request) as worker:
         yield worker
-    
+        
     stop_worker(request, worker)
 
 

@@ -74,6 +74,7 @@ from ..log_messages import (
 
 if sys.platform == "win32":
     from ..windows.win_credentials_resolver import WindowsCredentialsResolver
+    from ..windows.win_logon import unload_and_close
 else:
     WindowsCredentialsResolver = Any
 
@@ -238,7 +239,9 @@ class WorkerScheduler:
         self._retain_session_dir = retain_session_dir
         self._windows_credentials_resolver: Optional[WindowsCredentialsResolver]
 
-        if os.name == "nt":
+        if os.name == "nt" and not (
+            self._job_run_as_user_override.job_user or self._job_run_as_user_override.run_as_agent
+        ):
             self._windows_credentials_resolver = WindowsCredentialsResolver(self._boto_session)
         else:
             self._windows_credentials_resolver = None
@@ -307,9 +310,17 @@ class WorkerScheduler:
             finally:
                 logger.info("Main event loop exited.")
                 self._drain_scheduler()
-                if os.name == "nt":
-                    assert self._windows_credentials_resolver is not None
-                    self._windows_credentials_resolver.clear()
+                if sys.platform == "win32":
+                    if (
+                        self._job_run_as_user_override is not None
+                        and self._job_run_as_user_override.logon_token is not None
+                    ):
+                        unload_and_close(
+                            self._job_run_as_user_override.user_profile,
+                            self._job_run_as_user_override.logon_token,
+                        )
+                    elif self._windows_credentials_resolver is not None:
+                        self._windows_credentials_resolver.clear()
 
     def _drain_scheduler(self) -> None:
         # Called only from self.run() during shutdown.
@@ -901,6 +912,8 @@ class WorkerScheduler:
                 # For Windows the WA runs as Administrator so fail jobs that were configured to runAs - WORKER_AGENT_USER as that would provide Admin privileges to the job
                 if (
                     os.name == "nt"
+                    and self._job_run_as_user_override.job_user is None
+                    and not self._job_run_as_user_override.run_as_agent
                     and job_details.job_run_as_user
                     and job_details.job_run_as_user.is_worker_agent_user
                 ):

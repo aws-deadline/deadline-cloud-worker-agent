@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Generator, Optional
 from unittest.mock import ANY, MagicMock, Mock, call, patch
 
-from openjd.sessions import ActionState, ActionStatus, SessionUser
+from openjd.sessions import ActionState, ActionStatus, SessionUser, PosixSessionUser
 from botocore.exceptions import ClientError
 import pytest
 import os
+import sys
 
 from deadline_worker_agent.api_models import (
     AssignedSession,
@@ -24,7 +25,11 @@ from deadline_worker_agent.scheduler.scheduler import (
     UPDATE_WORKER_SCHEDULE_MAX_MESSAGE_CHARS,
 )
 from deadline_worker_agent.scheduler.session_action_status import SessionActionStatus
-from deadline_worker_agent.sessions.job_entities.job_details import JobDetails, JobRunAsUser
+from deadline_worker_agent.sessions.job_entities.job_details import (
+    JobDetails,
+    JobRunAsUser,
+    JobRunAsWindowsUser,
+)
 from deadline_worker_agent.startup.config import JobsRunAsUserOverride
 from deadline_worker_agent.errors import ServiceShutdown
 import deadline_worker_agent.scheduler.scheduler as scheduler_mod
@@ -87,6 +92,23 @@ def mock_session_map_callbacks() -> Generator[None, None, None]:
         patch.object(scheduler_mod.SessionMap, "setitem_callback"),
         patch.object(scheduler_mod.SessionMap, "delitem_callback"),
     ):
+        yield
+
+
+class MockSession(MagicMock):
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ):
+        super().__init__()
+        for key, val in kwargs.items():
+            setattr(self, key, val)
+
+
+@pytest.fixture()
+def mock_session() -> Generator[None, None, None]:
+    with patch.object(scheduler_mod, "Session", new=MockSession):
         yield
 
 
@@ -191,6 +213,107 @@ class TestSchedulerRun:
         # THEN
         assert raise_ctx.value is exception
         drain_mock.assert_called_once()
+
+    if sys.platform == "win32":
+
+        @pytest.mark.skipif(sys.platform != "win32", reason="Windows Only Test")
+        @pytest.mark.parametrize(
+            "job_run_as_user_override",
+            (
+                JobsRunAsUserOverride(run_as_agent=False),
+                JobsRunAsUserOverride(
+                    run_as_agent=False,
+                    job_user=MagicMock(),
+                    logon_token=MagicMock(),
+                    user_profile=MagicMock(),
+                ),
+            ),
+        )
+        @patch.object(scheduler_mod, "unload_and_close")
+        def test_win_cleanup_when_worker_shutdown(
+            self,
+            unload_and_close: MagicMock,
+            scheduler: WorkerScheduler,
+            job_run_as_user_override: JobsRunAsUserOverride,
+        ) -> None:
+            """Tests that when the Scheduler is shutdown via a local signal that it unloads the user profile and closes the session token handle"""
+            # GIVEN
+            scheduler._job_run_as_user_override = job_run_as_user_override
+
+            with (
+                patch.object(
+                    scheduler._shutdown,
+                    "is_set",
+                    side_effect=[
+                        True,
+                    ],
+                ),
+                patch.object(scheduler, "_drain_scheduler"),
+                patch.object(scheduler, "_windows_credentials_resolver") as _cred_resolver_mock,
+            ):
+                # WHEN
+                scheduler.run()
+
+            # THEN
+            if job_run_as_user_override.job_user:
+                unload_and_close.assert_called_once_with(
+                    job_run_as_user_override.user_profile, job_run_as_user_override.logon_token
+                )
+                _cred_resolver_mock.clear.assert_not_called()
+            else:
+                unload_and_close.assert_not_called()
+                _cred_resolver_mock.clear.assert_called_once()
+
+        @pytest.mark.skipif(sys.platform != "win32", reason="Windows Only Test")
+        @pytest.mark.parametrize(
+            "job_run_as_user_override",
+            (
+                JobsRunAsUserOverride(run_as_agent=False),
+                JobsRunAsUserOverride(
+                    run_as_agent=False,
+                    job_user=MagicMock(),
+                    logon_token=MagicMock(),
+                    user_profile=MagicMock(),
+                ),
+            ),
+        )
+        @patch.object(scheduler_mod, "unload_and_close")
+        def test_win_cleanup_when_service_shutdown(
+            self,
+            unload_and_close: MagicMock,
+            scheduler: WorkerScheduler,
+            job_run_as_user_override: JobsRunAsUserOverride,
+        ) -> None:
+            """Tests that when the Worker is shutdown by the service that it unloads the user profile and closes the session token handle"""
+
+            # GIVEN
+            shutdown = ServiceShutdown()
+            scheduler._job_run_as_user_override = job_run_as_user_override
+            with (
+                patch.object(scheduler, "_sync", side_effect=shutdown),
+                patch.object(
+                    scheduler._shutdown,
+                    "is_set",
+                    side_effect=[
+                        False,
+                    ],
+                ),
+                patch.object(scheduler, "_drain_scheduler"),
+                patch.object(scheduler, "_windows_credentials_resolver") as _cred_resolver_mock,
+                pytest.raises(ServiceShutdown),
+            ):
+                # WHEN
+                scheduler.run()
+
+            # THEN
+            if job_run_as_user_override.job_user:
+                unload_and_close.assert_called_once_with(
+                    job_run_as_user_override.user_profile, job_run_as_user_override.logon_token
+                )
+                _cred_resolver_mock.clear.assert_not_called()
+            else:
+                unload_and_close.assert_not_called()
+                _cred_resolver_mock.clear.assert_called_once()
 
 
 class TestSchedulerDrain:
@@ -906,7 +1029,7 @@ class TestCreateNewSessions:
                 assert action_update.start_time is None
                 assert action_update.end_time is None
 
-    @pytest.mark.skipif(os.name != "nt", reason="Windows-only test.")
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only test.")
     def test_job_details_run_as_worker_agent_user_windows(
         self,
         scheduler: WorkerScheduler,
@@ -919,6 +1042,7 @@ class TestCreateNewSessions:
         # GIVEN
         queue_id = "queue-abcdef0123456789abcdef0123456789"
         session_id = "session-abcdef0123456789abcdef0123456789"
+        scheduler._job_run_as_user_override = JobsRunAsUserOverride(run_as_agent=False)
         assigned_sessions: dict[str, AssignedSession] = {
             session_id: AssignedSession(
                 queueId=queue_id,
@@ -981,6 +1105,103 @@ class TestCreateNewSessions:
                 assert action_update.completed_status == "NEVER_ATTEMPTED"
                 assert action_update.start_time is None
                 assert action_update.end_time is None
+
+    @pytest.mark.parametrize(
+        "job_details_run_as",
+        (
+            pytest.param(
+                JobRunAsUser(
+                    posix=(
+                        PosixSessionUser(user="username", group="group")
+                        if sys.platform != "win32"
+                        else None
+                    )
+                ),
+                marks=pytest.mark.skipif(sys.platform != "win32", reason="POSIX-only test."),
+            ),
+            pytest.param(
+                JobRunAsUser(
+                    windows_settings=JobRunAsWindowsUser(user="username", passwordArn="passwordArn")
+                ),
+                marks=pytest.mark.skipif(sys.platform == "win32", reason="Windows-only test."),
+            ),
+            JobRunAsUser(is_worker_agent_user=True),
+        ),
+    )
+    @pytest.mark.parametrize("scheduler_run_as_agent", (True, False))
+    def test_job_details_run_as_with_run_as_agent_override(
+        self,
+        scheduler: WorkerScheduler,
+        job_details_run_as: JobRunAsUser,
+        scheduler_run_as_agent: bool,
+        job_user: SessionUser,
+        mock_session: MockSession,
+    ) -> None:
+        """Tests that when a session encounters a runAs: WORKER_AGENT_USER,
+        and the agent is configured with a JobsRunAsUserOverride, that the session is not
+        marked as FAILED
+        """
+        # GIVEN
+        queue_id = "queue-abcdef0123456789abcdef0123456789"
+        session_id = "session-abcdef0123456789abcdef0123456789"
+        if scheduler_run_as_agent:
+            scheduler._job_run_as_user_override = JobsRunAsUserOverride(run_as_agent=True)
+        else:
+            scheduler._job_run_as_user_override = JobsRunAsUserOverride(
+                run_as_agent=False, job_user=job_user
+            )
+        assigned_sessions: dict[str, AssignedSession] = {
+            session_id: AssignedSession(
+                queueId=queue_id,
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs",
+                    options={
+                        "logGroupName": "logGroup",
+                        "logStreamName": "logStreamName",
+                    },
+                    parameters={
+                        "interval": "15",
+                    },
+                ),
+                sessionActions=[
+                    EnvironmentAction(
+                        actionType="ENV_ENTER",
+                        environmentId="env-1",
+                        sessionActionId="action-1",
+                    ),
+                    TaskRunAction(
+                        actionType="TASK_RUN",
+                        parameters={},
+                        sessionActionId="action-2",
+                        stepId="step-1",
+                        taskId="task-1",
+                    ),
+                ],
+            ),
+        }
+
+        job_entity_mock = MagicMock()
+        job_entity_mock.job_details.return_value = JobDetails(
+            log_group_name="/aws/deadline/queue-0000",
+            schema_version=SpecificationRevision.v2023_09,
+            job_run_as_user=job_details_run_as,
+        )
+
+        # WHEN
+        with (patch.object(scheduler_mod, "JobEntities") as job_entities_mock,):
+            job_entities_mock.return_value = job_entity_mock
+            scheduler._create_new_sessions(assigned_sessions=assigned_sessions)
+
+        # THEN
+        if session_id not in scheduler._sessions:
+            assert session_id in list(scheduler._sessions.keys())
+        assert session_id in scheduler._sessions
+
+        if scheduler_run_as_agent:
+            assert scheduler._sessions[session_id].session.os_user is None
+        else:
+            assert scheduler._sessions[session_id].session.os_user is job_user
 
     class MockSessionUser(SessionUser):
         user: str

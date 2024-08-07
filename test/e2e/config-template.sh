@@ -86,10 +86,13 @@ export KEEP_WORKER_AFTER_FAILURE
 export BYO_DEADLINE
 # Required - The ID of the farm to use
 export FARM_ID
-# Required - The ID of the queue to use
-export QUEUE_ID
-# Required - The ID of the fleet to use
+# Required - The ID of the queues to use
+export QUEUE_A_ID
+export QUEUE_B_ID
+export SCALING_QUEUE_ID
+# Required - The ID of the fleets to use
 export FLEET_ID
+export SCALING_FLEET_ID
 # Optional - The ID of the KMS key association with your farm
 # If you use this option, then you must BYO_BOOTSTRAP because the default IAM role created for
 # the Worker will not have sufficient permissions to access this key

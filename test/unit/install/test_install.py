@@ -79,6 +79,8 @@ def expected_cmd(
         expected_cmd.append("--telemetry-opt-out")
     if parsed_args.disallow_instance_profile:
         expected_cmd.append("--disallow-instance-profile")
+    if not parsed_args.install_service:
+        expected_cmd.append("--no-install-service")
     return expected_cmd
 
 
@@ -120,58 +122,44 @@ class TestInstallRunsCommand:
     """Test cases for install()"""
 
     @pytest.fixture(
-        params=("farm-1", "farm-2"),
-    )
-    def farm_id(self, request: pytest.FixtureRequest) -> str:
-        return request.param
-
-    @pytest.fixture(
-        params=("fleet-1", "fleet-2"),
-    )
-    def fleet_id(self, request: pytest.FixtureRequest) -> str:
-        return request.param
-
-    @pytest.fixture(
-        params=("us-west-2", "us-west-1"),
-    )
-    def region(self, request: pytest.FixtureRequest) -> str:
-        return request.param
-
-    @pytest.fixture(
-        params=(True, False),
-    )
-    def service_start(self, request: pytest.FixtureRequest) -> bool:
-        return request.param
-
-    @pytest.fixture(
-        params=("wa_user", "another_wa_user"),
-    )
-    def user(self, request: pytest.FixtureRequest) -> str:
-        return request.param
-
-    @pytest.fixture(
-        params=(True, False),
-    )
-    def allow_shutdown(self, request: pytest.FixtureRequest) -> bool:
-        return request.param
-
-    @pytest.fixture(
-        params=(True, False),
-    )
-    def telemetry_opt_out(self, request: pytest.FixtureRequest) -> bool:
-        return request.param
-
-    @pytest.fixture(
         params=(
-            True,
-            False,
-        ),
-        ids=(
-            "confirmed-true",
-            "confirmed-false",
-        ),
+            ParsedCommandLineArguments(
+                farm_id="farm-1",
+                fleet_id="fleet-1",
+                region="us-west-2",
+                user="wa-user",
+                password="wa-password",
+                group="group1",
+                service_start=True,
+                confirmed=True,
+                allow_shutdown=True,
+                install_service=True,
+                telemetry_opt_out=True,
+                vfs_install_path="/install/path",
+                grant_required_access=True,
+                disallow_instance_profile=True,
+                windows_job_user="job-user",
+            ),
+            ParsedCommandLineArguments(
+                farm_id="farm-2",
+                fleet_id="fleet-2",
+                region="us-east-2",
+                user="another-wa-user",
+                password="another-wa-password",
+                group="group2",
+                service_start=False,
+                confirmed=False,
+                allow_shutdown=False,
+                install_service=False,
+                telemetry_opt_out=False,
+                vfs_install_path="/another/install/path",
+                grant_required_access=False,
+                disallow_instance_profile=False,
+                windows_job_user="another-job-user",
+            ),
+        )
     )
-    def confirmed(self, request: pytest.FixtureRequest) -> bool:
+    def parsed_args(self, request: pytest.FixtureRequest) -> ParsedCommandLineArguments:
         return request.param
 
     def test_runs_expected_subprocess(

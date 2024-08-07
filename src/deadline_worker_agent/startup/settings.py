@@ -54,6 +54,8 @@ class WorkerSettings(BaseSettings):
         If true, then all jobs run as the same user as the agent.
     posix_job_user : str
         Which 'user:group' to use instead of the Queue user when turned on.
+    windows_job_user : str
+        Which username to use instead of the Queue user when turned on.
     windows_job_user_password_arn : str
         The ARN of an AWS Secrets Manager secret containing the password of the job user for Windows.
     allow_instance_profile : bool
@@ -93,9 +95,7 @@ class WorkerSettings(BaseSettings):
     posix_job_user: Optional[str] = Field(
         regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
     )
-    windows_job_user: Optional[str] = Field(
-        regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
-    )
+    windows_job_user: Optional[str] = Field(regex=r"^.{1,512}$")
     windows_job_user_password_arn: Optional[str] = Field(
         regex=r"^arn:aws:secretsmanager:[a-z0-9\-]+:\d{12}:secret\/[a-zA-Z0-9/_+=.@-]+$"
     )
