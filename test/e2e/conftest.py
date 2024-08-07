@@ -10,7 +10,8 @@ import posixpath
 import pytest
 import tempfile
 from dataclasses import dataclass, field, InitVar
-from typing import Generator, Type, Callable
+from typing import Generator, Type
+from contextlib import contextmanager
 
 from deadline_test_fixtures import (
     DeadlineWorker,
@@ -110,6 +111,7 @@ def worker_config(
     service_model,
     region,
     operating_system,
+    windows_job_users,
 ) -> Generator[DeadlineWorkerConfiguration, None, None]:
     """
     Builds the configuration for a DeadlineWorker.
@@ -189,14 +191,60 @@ def worker_config(
             ),
             service_model_path=dst_path,
             file_mappings=file_mappings or None,
+            windows_job_users=windows_job_users,
         )
 
 
 @pytest.fixture(scope="session")
-def worker(
+def session_worker(
+    request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
-) -> Generator[Callable[[pytest.FixtureRequest], DeadlineWorker], None, None]:
+) -> Generator[DeadlineWorker, None, None]:
+    with create_worker(worker_config, ec2_worker_type, request) as worker:
+        yield worker
+    
+    stop_worker(request, worker)
+
+
+@pytest.fixture(scope="class")
+def class_worker(
+    request: pytest.FixtureRequest,
+    worker_config: DeadlineWorkerConfiguration,
+    ec2_worker_type: Type[EC2InstanceWorker],
+) -> Generator[DeadlineWorker, None, None]:
+    with create_worker(worker_config, ec2_worker_type, request) as worker:
+        yield worker
+    
+    stop_worker(request, worker)
+
+
+@pytest.fixture(scope="function")
+def function_worker(
+    request: pytest.FixtureRequest,
+    worker_config: DeadlineWorkerConfiguration,
+    ec2_worker_type: Type[EC2InstanceWorker],
+) -> Generator[DeadlineWorker, None, None]:
+    with create_worker(worker_config, ec2_worker_type, request) as worker:
+        yield worker
+    
+    stop_worker(request, worker)
+
+
+def create_worker(
+    worker_config: DeadlineWorkerConfiguration,
+    ec2_worker_type: Type[EC2InstanceWorker],
+    request: pytest.FixtureRequest,
+):
+    def __init__(self):
+        pass
+
+    def __enter_(self):
+        print("Entering the context")
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        print("Exiting the context")
+
     """
     Gets a DeadlineWorker for use in tests.
 
@@ -212,53 +260,53 @@ def worker(
         KEEP_WORKER_AFTER_FAILURE: If set to "true", will not destroy the Worker when it fails. Useful for debugging. Default is "false"
 
     Returns:
-        DeadlineWorker Callable: Callable that returns an instance of the DeadlineWorker class that can be used to interact with the Worker.
+        DeadlineWorker: Instance of the DeadlineWorker class that can be used to interact with the Worker.
     """
 
-    def generate_worker(request: pytest.FixtureRequest) -> DeadlineWorker:
-        worker: DeadlineWorker
-        if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
-            LOG.info("Creating Docker worker")
-            worker = DockerContainerWorker(
-                configuration=worker_config,
-            )
-        else:
-            LOG.info("Creating EC2 worker")
-            ami_id = os.getenv("AMI_ID")
-            subnet_id = os.getenv("SUBNET_ID")
-            security_group_id = os.getenv("SECURITY_GROUP_ID")
-            instance_type = os.getenv("WORKER_INSTANCE_TYPE", default="t3.micro")
-            instance_shutdown_behavior = os.getenv(
-                "WORKER_INSTANCE_SHUTDOWN_BEHAVIOR", default="stop"
-            )
+    worker: DeadlineWorker
+    if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
+        LOG.info("Creating Docker worker")
+        worker = DockerContainerWorker(
+            configuration=worker_config,
+        )
+    else:
+        LOG.info("Creating EC2 worker")
+        ami_id = os.getenv("AMI_ID")
+        subnet_id = os.getenv("SUBNET_ID")
+        security_group_id = os.getenv("SECURITY_GROUP_ID")
+        instance_type = os.getenv("WORKER_INSTANCE_TYPE", default="t3.micro")
+        instance_shutdown_behavior = os.getenv("WORKER_INSTANCE_SHUTDOWN_BEHAVIOR", default="stop")
 
-            assert subnet_id, "SUBNET_ID is required when deploying an EC2 worker"
-            assert security_group_id, "SECURITY_GROUP_ID is required when deploying an EC2 worker"
+        assert subnet_id, "SUBNET_ID is required when deploying an EC2 worker"
+        assert security_group_id, "SECURITY_GROUP_ID is required when deploying an EC2 worker"
 
-            bootstrap_resources: BootstrapResources = request.getfixturevalue("bootstrap_resources")
-            assert (
-                bootstrap_resources.worker_instance_profile_name
-            ), "Worker instance profile is required when deploying an EC2 worker"
+        bootstrap_resources: BootstrapResources = request.getfixturevalue("bootstrap_resources")
+        assert (
+            bootstrap_resources.worker_instance_profile_name
+        ), "Worker instance profile is required when deploying an EC2 worker"
 
-            ec2_client = boto3.client("ec2")
-            s3_client = boto3.client("s3")
-            ssm_client = boto3.client("ssm")
-            deadline_client = boto3.client("deadline")
+        ec2_client = boto3.client("ec2")
+        s3_client = boto3.client("s3")
+        ssm_client = boto3.client("ssm")
+        deadline_client = boto3.client("deadline")
 
-            worker = ec2_worker_type(
-                ec2_client=ec2_client,
-                s3_client=s3_client,
-                deadline_client=deadline_client,
-                bootstrap_bucket_name=bootstrap_resources.bootstrap_bucket_name,
-                ssm_client=ssm_client,
-                override_ami_id=ami_id,
-                subnet_id=subnet_id,
-                security_group_id=security_group_id,
-                instance_profile_name=bootstrap_resources.worker_instance_profile_name,
-                configuration=worker_config,
-                instance_type=instance_type,
-                instance_shutdown_behavior=instance_shutdown_behavior,
-            )
+        worker = ec2_worker_type(
+            ec2_client=ec2_client,
+            s3_client=s3_client,
+            deadline_client=deadline_client,
+            bootstrap_bucket_name=bootstrap_resources.bootstrap_bucket_name,
+            ssm_client=ssm_client,
+            override_ami_id=ami_id,
+            subnet_id=subnet_id,
+            security_group_id=security_group_id,
+            instance_profile_name=bootstrap_resources.worker_instance_profile_name,
+            configuration=worker_config,
+            instance_type=instance_type,
+            instance_shutdown_behavior=instance_shutdown_behavior,
+        )
+
+    @contextmanager
+    def _context_for_fixture():
         try:
             worker.start()
         except Exception as e:
@@ -266,30 +314,9 @@ def worker(
             LOG.info("Stopping worker because it failed to start")
             stop_worker(request, worker)
             raise
+        yield worker
 
-        return worker
-
-    yield generate_worker
-
-
-@pytest.fixture(scope="session")
-def session_worker(
-    request: pytest.FixtureRequest, worker: Callable[[pytest.FixtureRequest], DeadlineWorker]
-) -> Generator[DeadlineWorker, None, None]:
-    session_worker: DeadlineWorker = worker(request)
-    yield session_worker
-
-    stop_worker(request, session_worker)
-
-
-@pytest.fixture(scope="function")
-def function_worker(
-    request: pytest.FixtureRequest, worker: Callable[[pytest.FixtureRequest], DeadlineWorker]
-) -> Generator[DeadlineWorker, None, None]:
-    function_worker: DeadlineWorker = worker(request)
-    yield function_worker
-
-    stop_worker(request, function_worker)
+    return _context_for_fixture()
 
 
 def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
@@ -319,6 +346,17 @@ def job_run_as_user() -> PosixSessionUser:
         user="job-user",
         group="job-user",
     )
+
+
+@pytest.fixture(scope="session")
+def windows_job_users() -> list:
+    return [
+        "job-user",
+        "cli-override",
+        "config-override",
+        "install-override",
+        "env-override",
+    ]
 
 
 @pytest.fixture(scope="session", params=["linux", "windows"])
