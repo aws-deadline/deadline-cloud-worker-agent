@@ -151,16 +151,16 @@ The following commands demonstrate how to manually control the operating system 
 
 ```sh
 # Start the worker agent
-systemctl start dealine-worker
+systemctl start deadline-worker
 
 # Stop the worker agent
-systemctl stop dealine-worker
+systemctl stop deadline-worker
 
 # Configure the worker agent to start on boot
-systemctl enable dealine-worker
+systemctl enable deadline-worker
 
 # Configure the worker agent to NOT start on boot
-systemctl disable dealine-worker
+systemctl disable deadline-worker
 ```
 
 **On Windows:**
