@@ -370,7 +370,7 @@ if sys.platform == "win32":
 
             # THEN
             assert secrets_choice.call_count >= 256
-            assert secrets_choice.has_calls(
+            secrets_choice.assert_has_calls(
                 [call(alphabet) for _ in range(secrets_choice.call_count)]
             )
 
