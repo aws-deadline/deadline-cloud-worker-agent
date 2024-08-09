@@ -216,8 +216,15 @@ if [[ ! -z "${wa_user}" ]] && [[ ! "${wa_user}" =~ ^[a-z_]([a-z0-9_-]{0,31}|[a-z
     echo "ERROR: Not a valid value for --user: ${wa_user}"
     usage
 fi
+
 # Set wa_group as the primary group that the wa_user belongs to
-wa_group=$(id -gn "${wa_user}")
+if user_exists "${wa_user}"; then
+    wa_group=$(id -gn "${wa_user}")
+else
+    # We'll be creating a new user.
+    # The primary group of a newly created user has the same name as that user.
+    wa_group="${wa_user}"
+fi
 
 # Default the group to wa_user if it wasn't defined via the --group option.
 job_group=${job_group:-${default_job_group}}
