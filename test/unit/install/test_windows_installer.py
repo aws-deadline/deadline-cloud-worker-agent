@@ -1,5 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+import os
 import sys
 import typing
 from typing import Generator
@@ -96,17 +97,16 @@ def test_start_windows_installer_fails_when_windows_job_user_not_exists(
     )
 
 
-@patch("deadline_worker_agent.installer.win_installer.users_equal", return_value=True)
-@patch("deadline_worker_agent.installer.win_installer.check_account_existence", return_value=True)
-@patch.object(shell, "IsUserAnAdmin", return_value=True)
 def test_start_windows_installer_fails_when_windows_job_user_is_agent_user(
-    users_equal: MagicMock,
-    is_user_and_admin: MagicMock,
-    check_account_existence: MagicMock,
     parsed_kwargs: dict,
 ) -> None:
     # GIVEN
-    with pytest.raises(win_installer.InstallerFailedException) as exc_info:
+    with (
+        patch.object(win_installer, "users_equal", return_value=True) as mock_users_equal,
+        patch.object(win_installer, "check_account_existence", return_value=True),
+        patch.object(shell, "IsUserAnAdmin", return_value=True),
+        pytest.raises(win_installer.InstallerFailedException) as exc_info,
+    ):
         # WHEN
         win_installer.start_windows_installer(**parsed_kwargs)
 
@@ -116,8 +116,8 @@ def test_start_windows_installer_fails_when_windows_job_user_is_agent_user(
         == f"Argument for windows-job-user cannot be the same as the worker agent user: {parsed_kwargs['user_name']}. "
         "If you wish to run jobs as the agent user, set run_jobs_as_agent_user = true in the agent configuration file."
     )
-    assert users_equal.called_once_with(
-        parsed_kwargs["user_name"], parsed_kwargs["windows_job_user"]
+    mock_users_equal.assert_called_once_with(
+        parsed_kwargs["windows_job_user"], parsed_kwargs["user_name"]
     )
 
 
@@ -889,3 +889,39 @@ class TestSetRegistryKeyValue:
         # THEN
         assert raised_exc.value is mock_RegSetValueEx.side_effect
         mock_CloseHandle.assert_called_once_with(mock_RegOpenKeyEx.return_value)
+
+
+class TestProvisionDirectories:
+    """Tests for the provision_directories function"""
+
+    @pytest.fixture(autouse=True)
+    def mock_os_makedirs(self) -> Generator[MagicMock, None, None]:
+        with patch.object(win_installer.os, "makedirs") as mock_os_makedirs:
+            yield mock_os_makedirs
+
+    @pytest.fixture(autouse=True)
+    def mock_set_windows_permissions(self) -> Generator[MagicMock, None, None]:
+        with patch.object(
+            win_installer, "_set_windows_permissions"
+        ) as mock_set_windows_permissions:
+            yield mock_set_windows_permissions
+
+    @pytest.fixture
+    def agent_username(self) -> str:
+        return "deadline-worker"
+
+    def test_creates_queue_persistence_dir(
+        self,
+        mock_os_makedirs: MagicMock,
+        agent_username: str,
+    ) -> None:
+        """Tests that provision_directories creates the queue persistence directory"""
+
+        # WHEN
+        win_installer.provision_directories(agent_username)
+
+        # THEN
+        mock_os_makedirs.assert_any_call(
+            os.path.join(os.environ["PROGRAMDATA"], "Amazon", "Deadline", "Cache", "queues"),
+            exist_ok=True,
+        )

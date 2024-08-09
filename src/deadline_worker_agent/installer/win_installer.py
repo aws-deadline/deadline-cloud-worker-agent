@@ -429,6 +429,7 @@ def provision_directories(agent_username: str) -> WorkerAgentDirectories:
     - %PROGRAMDATA%/Amazon/Deadline
     - %PROGRAMDATA%/Amazon/Deadline/Logs
     - %PROGRAMDATA%/Amazon/Deadline/Cache
+    - %PROGRAMDATA%/Amazon/Deadline/Cache/queues
     - %PROGRAMDATA%/Amazon/Deadline/Config
 
     Parameters
@@ -461,6 +462,11 @@ def provision_directories(agent_username: str) -> WorkerAgentDirectories:
     logging.info(f"Provisioning persistence directory ({deadline_persistence_subdir})")
     os.makedirs(deadline_persistence_subdir, exist_ok=True)
     logging.info(f"Done provisioning persistence directory ({deadline_persistence_subdir})")
+
+    deadline_persistence_queues_subdir = os.path.join(deadline_persistence_subdir, "queues")
+    logging.info(f"Provisioning persistence directory ({deadline_persistence_queues_subdir})")
+    os.makedirs(deadline_persistence_queues_subdir, exist_ok=True)
+    logging.info(f"Done provisioning persistence directory ({deadline_persistence_queues_subdir})")
 
     deadline_config_subdir = os.path.join(deadline_dir, "Config")
     logging.info(f"Provisioning config directory ({deadline_config_subdir})")
