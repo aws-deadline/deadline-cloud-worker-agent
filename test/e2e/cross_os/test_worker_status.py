@@ -3,6 +3,7 @@
 This test module contains tests that verify the Worker agent's behavior by starting/stopping the Worker,
 and making sure that the status of the Worker is that of what we expect.
 """
+import os
 import pytest
 from typing import Any, Dict
 from deadline_worker_agent.api_models import (
@@ -10,11 +11,10 @@ from deadline_worker_agent.api_models import (
 )
 import backoff
 from deadline_test_fixtures import DeadlineClient, EC2InstanceWorker
-from utils import get_operating_system_name
 import pytest
 
 
-@pytest.mark.parametrize("operating_system", [get_operating_system_name()], indirect=True)
+@pytest.mark.parametrize("operating_system", [os.environ["OPERATING_SYSTEM"]], indirect=True)
 class TestWorkerStatus:
     @pytest.mark.usefixtures("function_worker")
     def test_worker_lifecycle_status_is_expected(

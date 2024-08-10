@@ -130,6 +130,9 @@ export SUBNET_ID
 # Security group to deploy the EC2 instance into
 export SECURITY_GROUP_ID
 
+# Required - Worker operating system that we want the tests to be ran against. Currently supports "windows" and "linux" 
+export OPERATING_SYSTEM
+
 # --- OPTIONAL --- #
 
 # AMI ID to use for the EC2 instance
