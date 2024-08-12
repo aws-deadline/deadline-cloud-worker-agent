@@ -18,11 +18,13 @@ fi
 
 if [ "$OPERATING_SYSTEM" = "linux" ]
   then
+    export OPERATING_SYSTEM=linux
     hatch run linux-e2e-test 
 fi
 
 if [ "$OPERATING_SYSTEM" = "windows" ]
   then
+    export OPERATING_SYSTEM=windows
     hatch run windows-e2e-test
 fi
 
