@@ -94,6 +94,10 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         f"Configured Deadline Cloud Resources, farm: {farm_id}, scaling_fleet: {scaling_fleet_id}, scaling_queue: {scaling_queue_id} ,queue_a: {queue_a_id}, queue_b: {queue_b_id}, fleet: {fleet_id}"
     )
 
+    sts_client = boto3.client("sts")
+    response = sts_client.get_caller_identity()
+    LOG.info("Running tests with credentials from: %s" % response.get("Arn"))
+
     yield DeadlineResources(
         farm_id=farm_id,
         queue_a_id=queue_a_id,
