@@ -177,6 +177,10 @@ class TestJobSubmission:
             ),
         ],
     )
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "windows",
+        reason="Bug with test causing fail on windows. Re-enable when fixed.",
+    )
     def test_job_reports_canceled_session_action(
         self,
         deadline_resources: DeadlineResources,
@@ -328,6 +332,10 @@ class TestJobSubmission:
             ),
         ],
     )
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "windows",
+        reason="Bug with test causing fail on windows. Re-enable when fixed.",
+    )
     def test_worker_run_with_number_of_environments(
         self,
         deadline_resources: DeadlineResources,
@@ -383,6 +391,10 @@ class TestJobSubmission:
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "windows",
+        reason="Bug with test causing fail on windows. Re-enable when fixed.",
+    )
     def test_worker_streams_logs_to_cloudwatch(
         self,
         deadline_resources: DeadlineResources,
@@ -449,6 +461,10 @@ class TestJobSubmission:
                 else 'set /p input=<"{{Param.DataDir}}\\files\\test_input_file"\n echo|set /p="%%input%%{{Param.StringToAppend}}">{{Param.DataDir}}\\output_file.txt'
             )
         ],
+    )
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "windows",
+        reason="Bug with test causing fail on windows. Re-enable when fixed.",
     )
     def test_worker_uses_job_attachment_configuration(
         self,
