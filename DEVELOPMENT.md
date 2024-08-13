@@ -75,7 +75,7 @@ hatch run fmt
 hatch run all:test
 ```
 
-### Testing the agent with the live service
+## Testing the agent with the live service
 
 ### Setup
 
@@ -126,4 +126,33 @@ scripts/run_posix_docker.sh --build
 To stop the agent, simply run:
 ```
 docker exec test_worker_agent /home/agentuser/term_agent.sh
+```
+
+### Running Worker Agent E2E Tests
+
+The worker agent has end-to-end tests that run the agent on ec2 instances with the live Deadline Cloud service. These tests
+are located under `test/e2e` in this repository. To run these tests:
+
+1. Configure your AWS credentials profile & region to test within. (e.g. Set the env vars `AWS_PROFILE` and `AWS_DEFAULT_REGION`)
+2. Deploy the testing infrastructure: Run `scripts/deploy_e2e_testing_infrastructure.sh`
+3. Gather the environment variable exports that you will need for each OS:
+```bash
+./scripts/get_e2e_test_ids_from_cfn.sh --os Linux > .e2e_linux_infra.sh
+./scripts/get_e2e_test_ids_from_cfn.sh --os Windows > .e2e_windows_infra.sh
+```
+4. Run the tests:
+```
+rm -f dist/*
+hatch build
+export WORKER_AGENT_WHL_PATH=$(pwd)/$(ls dist/*.whl)
+
+# Linux
+source .e2e_linux_infra.sh
+hatch run linux-e2e-test
+hatch run cross-os-e2e-test
+
+# Windows
+source .e2e_windows_infra.sh
+hatch run windows-e2e-test
+hatch run cross-os-e2e-test
 ```
