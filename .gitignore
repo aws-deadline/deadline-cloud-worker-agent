@@ -18,3 +18,4 @@ __pycache__/
 *_version.py
 tmp.*
 .deployed_resources.sh
+.e2e_*.sh
