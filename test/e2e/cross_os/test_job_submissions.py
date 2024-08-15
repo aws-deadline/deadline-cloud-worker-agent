@@ -97,6 +97,14 @@ class TestJobSubmission:
                 "name": f"jobactionfail-{expected_failed_action}",
                 "steps": [
                     {
+                        "hostRequirements": {
+                            "attributes": [
+                                {
+                                    "name": "attr.worker.os.family",
+                                    "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                }
+                            ]
+                        },
                         "name": "Step0",
                         "script": {"actions": run_actions},
                     },
@@ -139,9 +147,15 @@ class TestJobSubmission:
                 {
                     "onRun": {
                         "command": (
-                            "/bin/sleep" if os.environ["OPERATING_SYSTEM"] == "linux" else "timeout"
+                            "/bin/sleep"
+                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            else "powershell"
                         ),
-                        "args": ["40"],
+                        "args": (
+                            ["40"]
+                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            else ["ping", "localhost", "-n", "40"]
+                        ),
                         "cancelation": {
                             "mode": "NOTIFY_THEN_TERMINATE",
                             "notifyPeriodInSeconds": 1,
@@ -164,9 +178,15 @@ class TestJobSubmission:
                 {
                     "onEnter": {
                         "command": (
-                            "/bin/sleep" if os.environ["OPERATING_SYSTEM"] == "linux" else "timeout"
+                            "/bin/sleep"
+                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            else "powershell"
                         ),
-                        "args": ["40"],
+                        "args": (
+                            ["40"]
+                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            else ["ping", "localhost", "-n", "40"]
+                        ),
                         "cancelation": {
                             "mode": "NOTIFY_THEN_TERMINATE",
                             "notifyPeriodInSeconds": 1,
@@ -176,10 +196,6 @@ class TestJobSubmission:
                 "envEnter",
             ),
         ],
-    )
-    @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Bug with test causing fail on windows. Re-enable when fixed.",
     )
     def test_job_reports_canceled_session_action(
         self,
@@ -200,6 +216,14 @@ class TestJobSubmission:
                 "steps": [
                     {
                         "name": "Step0",
+                        "hostRequirements": {
+                            "attributes": [
+                                {
+                                    "name": "attr.worker.os.family",
+                                    "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                }
+                            ]
+                        },
                         "script": {
                             "actions": run_actions,
                         },
@@ -296,7 +320,14 @@ class TestJobSubmission:
                         "name": "environment_1",
                         "script": {
                             "actions": {
-                                "onEnter": {"command": "echo", "args": ["Hello!"]},
+                                "onEnter": (
+                                    {"command": "echo", "args": ["Hello!"]}
+                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    else {
+                                        "command": "powershell",
+                                        "args": ['"Hello"', "+", '"!"'],
+                                    }  # Separating the string is needed to prevent the expected string appearing in output logs more times than expected, as windows worker logs print the command
+                                ),
                             },
                         },
                     },
@@ -308,7 +339,14 @@ class TestJobSubmission:
                         "name": "environment_1",
                         "script": {
                             "actions": {
-                                "onEnter": {"command": "echo", "args": ["Hello!"]},
+                                "onEnter": (
+                                    {"command": "echo", "args": ["Hello!"]}
+                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    else {
+                                        "command": "powershell",
+                                        "args": ['"Hello"', "+", '"!"'],
+                                    }  # Separating the string is needed to prevent the expected string appearing in output logs more times than expected, as windows worker logs print the command
+                                ),
                             }
                         },
                     },
@@ -316,7 +354,14 @@ class TestJobSubmission:
                         "name": "environment_2",
                         "script": {
                             "actions": {
-                                "onEnter": {"command": "echo", "args": ["Hello!"]},
+                                "onEnter": (
+                                    {"command": "echo", "args": ["Hello!"]}
+                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    else {
+                                        "command": "powershell",
+                                        "args": ['"Hello"', "+", '"!"'],
+                                    }  # Separating the string is needed to prevent the expected string appearing in output logs more times than expected, as windows worker logs print the command
+                                ),
                             }
                         },
                     },
@@ -324,17 +369,20 @@ class TestJobSubmission:
                         "name": "environment_3",
                         "script": {
                             "actions": {
-                                "onEnter": {"command": "echo", "args": ["Hello!"]},
+                                "onEnter": (
+                                    {"command": "echo", "args": ["Hello!"]}
+                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    else {
+                                        "command": "powershell",
+                                        "args": ['"Hello"', "+", '"!"'],
+                                    }  # Separating the string is needed to prevent the expected string appearing in output logs more times than expected, as windows worker logs print the command
+                                ),
                             }
                         },
                     },
                 ]
             ),
         ],
-    )
-    @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Bug with test causing fail on windows. Re-enable when fixed.",
     )
     def test_worker_run_with_number_of_environments(
         self,
@@ -348,6 +396,14 @@ class TestJobSubmission:
             "steps": [
                 {
                     "name": "Step0",
+                    "hostRequirements": {
+                        "attributes": [
+                            {
+                                "name": "attr.worker.os.family",
+                                "allOf": [os.environ["OPERATING_SYSTEM"]],
+                            }
+                        ]
+                    },
                     "script": {
                         "actions": {
                             "onRun": {
@@ -391,10 +447,6 @@ class TestJobSubmission:
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
-    @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Bug with test causing fail on windows. Re-enable when fixed.",
-    )
     def test_worker_streams_logs_to_cloudwatch(
         self,
         deadline_resources: DeadlineResources,
@@ -414,8 +466,25 @@ class TestJobSubmission:
                 "steps": [
                     {
                         "name": "Step0",
+                        "hostRequirements": {
+                            "attributes": [
+                                {
+                                    "name": "attr.worker.os.family",
+                                    "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                }
+                            ]
+                        },
                         "script": {
-                            "actions": {"onRun": {"command": "echo", "args": ["HelloWorld"]}}
+                            "actions": {
+                                "onRun": (
+                                    {"command": "echo", "args": ["HelloWorld"]}
+                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    else {
+                                        "command": "powershell",
+                                        "args": ['"Hello"', "+", '"World"'],
+                                    }  # Separating the string is needed to prevent the expected string appearing in output logs more times than expected, as windows worker logs print the command
+                                ),
+                            }
                         },
                     },
                 ],
@@ -456,15 +525,11 @@ class TestJobSubmission:
         "append_string_script",
         [
             (
-                "#!/usr/bin/env bash\n\n  echo -n $(cat {{Param.DataDir}}/files/test_input_file){{Param.StringToAppend}} > {{Param.DataDir}}/output_file.txt\n"
+                "#!/usr/bin/env bash\n\n  echo -n $(cat {{Param.DataDir}}/files/test_input_file){{Param.StringToAppend}} > {{Param.DataDir}}/output_file\n"
                 if os.environ["OPERATING_SYSTEM"] == "linux"
-                else 'set /p input=<"{{Param.DataDir}}\\files\\test_input_file"\n echo|set /p="%%input%%{{Param.StringToAppend}}">{{Param.DataDir}}\\output_file.txt'
+                else '''set /p input=<"{{Param.DataDir}}\\files\\test_input_file"\n powershell -Command "echo ($env:input+\'{{Param.StringToAppend}}\') | Out-File -encoding utf8 {{Param.DataDir}}\\output_file -NoNewLine"'''
             )
         ],
-    )
-    @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Bug with test causing fail on windows. Re-enable when fixed.",
     )
     def test_worker_uses_job_attachment_configuration(
         self,
@@ -490,7 +555,7 @@ class TestJobSubmission:
                     json.dumps(
                         {
                             "specificationVersion": "jobtemplate-2023-09",
-                            "name": "AssetsExample",
+                            "name": "AppendStringJob",
                             "parameterDefinitions": [
                                 {
                                     "name": "DataDir",
@@ -506,6 +571,14 @@ class TestJobSubmission:
                             "steps": [
                                 {
                                     "name": "AppendString",
+                                    "hostRequirements": {
+                                        "attributes": [
+                                            {
+                                                "name": "attr.worker.os.family",
+                                                "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                            }
+                                        ]
+                                    },
                                     "script": {
                                         "actions": {
                                             "onRun": {"command": "{{ Task.File.runScript }}"}
@@ -516,6 +589,11 @@ class TestJobSubmission:
                                                 "type": "TEXT",
                                                 "runnable": True,
                                                 "data": append_string_script,
+                                                **(
+                                                    {"filename": "stringappendscript.bat"}
+                                                    if os.environ["OPERATING_SYSTEM"] == "windows"
+                                                    else {}
+                                                ),
                                             }
                                         ],
                                     },
@@ -584,7 +662,14 @@ class TestJobSubmission:
 
             with (
                 open(os.path.join(job_bundle_path, "files", "test_input_file"), "r") as input_file,
-                open(os.path.join(tmp_dir_name, "output_file.txt"), "r") as output_file,
+                open(
+                    os.path.join(
+                        tmp_dir_name,
+                        "output_file",
+                    ),
+                    "r",
+                    encoding="utf-8-sig",
+                ) as output_file,
             ):
                 input_file_content: str = input_file.read()
                 output_file_content = output_file.read()

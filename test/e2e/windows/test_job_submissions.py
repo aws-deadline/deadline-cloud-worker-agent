@@ -38,6 +38,14 @@ class TestJobSubmission:
                 "name": "Sleep Job",
                 "steps": [
                     {
+                        "hostRequirements": {
+                            "attributes": [
+                                {
+                                    "name": "attr.worker.os.family",
+                                    "allOf": ["windows"],
+                                }
+                            ]
+                        },
                         "name": "Step0",
                         "script": {
                             "actions": {

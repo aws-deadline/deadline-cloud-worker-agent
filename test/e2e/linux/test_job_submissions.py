@@ -34,6 +34,9 @@ class TestJobSubmission:
                 "name": "Sleep Job",
                 "steps": [
                     {
+                        "hostRequirements": {
+                            "attributes": [{"name": "attr.worker.os.family", "allOf": ["linux"]}]
+                        },
                         "name": "Step0",
                         "script": {"actions": {"onRun": {"command": "/bin/sleep", "args": ["5"]}}},
                     },
@@ -66,6 +69,9 @@ class TestJobSubmission:
                 "steps": [
                     {
                         "name": "Step0",
+                        "hostRequirements": {
+                            "attributes": [{"name": "attr.worker.os.family", "allOf": ["linux"]}]
+                        },
                         "script": {
                             "embeddedFiles": [
                                 {

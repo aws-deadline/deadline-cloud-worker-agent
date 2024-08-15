@@ -16,7 +16,6 @@ import pytest
 
 @pytest.mark.parametrize("operating_system", [os.environ["OPERATING_SYSTEM"]], indirect=True)
 class TestWorkerStatus:
-    @pytest.mark.usefixtures("function_worker")
     def test_worker_lifecycle_status_is_expected(
         self,
         deadline_resources,
