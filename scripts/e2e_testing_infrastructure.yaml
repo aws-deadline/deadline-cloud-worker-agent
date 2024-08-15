@@ -653,7 +653,7 @@ Resources:
     Properties:
       DisplayName: NonScalingLinuxFleet_x86
       FarmId: !GetAtt DeadlineFarm.FarmId
-      MaxWorkerCount: 2
+      MaxWorkerCount: 10
       MinWorkerCount: 0
       RoleArn: !GetAtt LinuxFleetRole.Arn
       Configuration:
@@ -674,7 +674,7 @@ Resources:
     Properties:
       DisplayName: AutoScalingLinuxFleet_x86
       FarmId: !GetAtt DeadlineFarm.FarmId
-      MaxWorkerCount: 2
+      MaxWorkerCount: 10
       MinWorkerCount: 0
       RoleArn: !GetAtt LinuxFleetRole.Arn
       Configuration:
@@ -695,7 +695,7 @@ Resources:
     Properties:
       DisplayName: NonScalingWindowsFleet_x86
       FarmId: !GetAtt DeadlineFarm.FarmId
-      MaxWorkerCount: 2
+      MaxWorkerCount: 10
       MinWorkerCount: 0
       RoleArn: !GetAtt WindowsFleetRole.Arn
       Configuration:
@@ -716,7 +716,7 @@ Resources:
     Properties:
       DisplayName: AutoScalingWindowsFleet_x86
       FarmId: !GetAtt DeadlineFarm.FarmId
-      MaxWorkerCount: 2
+      MaxWorkerCount: 10
       MinWorkerCount: 0
       RoleArn: !GetAtt WindowsFleetRole.Arn
       Configuration:
