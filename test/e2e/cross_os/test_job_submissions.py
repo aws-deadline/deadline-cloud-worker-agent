@@ -92,6 +92,7 @@ class TestJobSubmission:
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             priority=98,
+            max_retries_per_task=0,
             template={
                 "specificationVersion": "jobtemplate-2023-09",
                 "name": f"jobactionfail-{expected_failed_action}",
@@ -210,6 +211,7 @@ class TestJobSubmission:
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             priority=98,
+            max_retries_per_task=0,
             template={
                 "specificationVersion": "jobtemplate-2023-09",
                 "name": f"jobactioncancel-{expected_canceled_action}",
@@ -612,6 +614,7 @@ class TestJobSubmission:
                 job_bundle_path,
                 job_parameters,
                 priority=99,
+                max_retries_per_task=0,
                 config=config,
                 queue_parameter_definitions=[],
             )
