@@ -637,22 +637,24 @@ class TestJobSubmission:
             job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
         )
 
-        with (
-            open(os.path.join(job_bundle_path, "files", "test_input_file"), "r") as input_file,
-            open(
-                os.path.join(
-                    list(output_path.keys())[0],
-                    "output_file",
-                ),
-                "r",
-                encoding="utf-8-sig",
-            ) as output_file,
-        ):
-            input_file_content: str = input_file.read()
-            output_file_content = output_file.read()
+        try:
+            with (
+                open(os.path.join(job_bundle_path, "files", "test_input_file"), "r") as input_file,
+                open(
+                    os.path.join(
+                        list(output_path.keys())[0],
+                        "output_file",
+                    ),
+                    "r",
+                    encoding="utf-8-sig",
+                ) as output_file,
+            ):
+                input_file_content: str = input_file.read()
+                output_file_content = output_file.read()
 
-            # Verify that the output file content is the input file content plus the uuid we appended in the job
-            assert output_file_content == (input_file_content + test_run_uuid)
+                # Verify that the output file content is the input file content plus the uuid we appended in the job
+                assert output_file_content == (input_file_content + test_run_uuid)
+        finally:
             os.remove(os.path.join(list(output_path.keys())[0], "output_file"))
 
     @pytest.mark.parametrize(
@@ -791,48 +793,53 @@ class TestJobSubmission:
             template={},
             **job_details,
         )
+        try:
+            # Query the session to check for progress percentage
+            complete_percentage: float = 0
 
-        # Query the session to check for progress percentage
-        complete_percentage: float = 0
+            @backoff.on_predicate(
+                wait_gen=backoff.constant,
+                max_time=60,
+                interval=2,
+            )
+            def check_percentage(complete_percentage):
+                sessions = deadline_client.list_sessions(
+                    farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
+                ).get("sessions")
 
-        @backoff.on_predicate(
-            wait_gen=backoff.constant,
-            max_time=30,
-            interval=2,
-        )
-        def check_percentage(complete_percentage):
-            sessions = deadline_client.list_sessions(
-                farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
-            ).get("sessions")
+                if sessions:
+                    session_actions = deadline_client.list_session_actions(
+                        farmId=job.farm.id,
+                        queueId=job.queue.id,
+                        jobId=job.id,
+                        sessionId=sessions[0]["sessionId"],
+                    ).get("sessionActions")
 
-            if sessions:
-                session_actions = deadline_client.list_session_actions(
-                    farmId=job.farm.id,
-                    queueId=job.queue.id,
-                    jobId=job.id,
-                    sessionId=sessions[0]["sessionId"],
-                ).get("sessionActions")
+                    for session_action in session_actions:
+                        if "syncInputJobAttachments" in session_action["definition"]:
+                            assert complete_percentage <= session_action["progressPercent"]
+                            complete_percentage = session_action["progressPercent"]
+                            return complete_percentage == 100
 
-                for session_action in session_actions:
-                    if "syncInputJobAttachments" in session_action["definition"]:
-                        assert complete_percentage <= session_action["progressPercent"]
-                        complete_percentage = session_action["progressPercent"]
-                        return complete_percentage == 100
+                else:
+                    return False
 
-        assert check_percentage(complete_percentage)
-
-        shutil.rmtree(job_bundle_path)
+            assert check_percentage(complete_percentage)
+        finally:
+            shutil.rmtree(job_bundle_path)
 
         output_path: dict[str, list[str]] = get_job_output(
             job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
         )
-
-        with (
-            open(os.path.join(list(output_path.keys())[0], "output_file.txt"), "r") as output_file,
-        ):
-            output_file_content = output_file.read()
-            # Verify that the hash is the same
-            assert output_file_content == combined_hash
-
-        # Clean up the output file
-        os.remove(os.path.join(list(output_path.keys())[0], "output_file.txt"))
+        try:
+            with (
+                open(
+                    os.path.join(list(output_path.keys())[0], "output_file.txt"), "r"
+                ) as output_file,
+            ):
+                output_file_content = output_file.read()
+                # Verify that the hash is the same
+                assert output_file_content == combined_hash
+        finally:
+            # Clean up the output file
+            shutil.rmtree(job_bundle_path)
