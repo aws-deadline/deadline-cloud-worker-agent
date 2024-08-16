@@ -1,3 +1,5 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
 from deadline.job_attachments._aws.deadline import get_queue
 from deadline.job_attachments import download
 from deadline_test_fixtures import (

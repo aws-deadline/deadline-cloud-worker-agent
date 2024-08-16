@@ -794,7 +794,13 @@ class TestJobSubmission:
 
         # Query the session to check for progress percentage
         complete_percentage: float = 0
-        while complete_percentage < 100:
+
+        @backoff.on_predicate(
+            wait_gen=backoff.constant,
+            max_time=30,
+            interval=2,
+        )
+        def check_percentage(complete_percentage):
             sessions = deadline_client.list_sessions(
                 farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
             ).get("sessions")
@@ -811,6 +817,11 @@ class TestJobSubmission:
                     if "syncInputJobAttachments" in session_action["definition"]:
                         assert complete_percentage <= session_action["progressPercent"]
                         complete_percentage = session_action["progressPercent"]
+                        return complete_percentage == 100
+
+        assert check_percentage(complete_percentage)
+
+        shutil.rmtree(job_bundle_path)
 
         output_path: dict[str, list[str]] = get_job_output(
             job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
@@ -822,5 +833,6 @@ class TestJobSubmission:
             output_file_content = output_file.read()
             # Verify that the hash is the same
             assert output_file_content == combined_hash
-
-        shutil.rmtree(job_bundle_path)
+            
+        # Clean up the output file
+        os.remove(os.path.join(list(output_path.keys())[0], "output_file.txt"))
