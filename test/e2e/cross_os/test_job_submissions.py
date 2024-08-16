@@ -10,21 +10,17 @@ from typing import Any, Dict, List, Optional
 import pytest
 import logging
 from deadline_test_fixtures import Job, DeadlineClient, TaskStatus, EC2InstanceWorker
-from e2e.conftest import DeadlineResources
+from e2e.conftest import DeadlineResources, get_job_output
 import backoff
 import boto3
 import botocore.client
 import botocore.config
 import botocore.exceptions
 import time
-from deadline.job_attachments._aws.deadline import get_queue
-from deadline.job_attachments import download
-from e2e.conftest import DeadlineResources
 from deadline.client.config import set_setting
 from deadline.client import api
 import uuid
 import os
-import tempfile
 import configparser
 
 LOG = logging.getLogger(__name__)
@@ -634,50 +630,28 @@ class TestJobSubmission:
             template={},
             **job_details,
         )
-        job.wait_until_complete(client=deadline_client, max_retries=20)
 
-        job_attachment_settings = get_queue(
-            farm_id=deadline_resources.farm.id,
-            queue_id=deadline_resources.queue_a.id,
-        ).jobAttachmentSettings
-
-        assert job_attachment_settings is not None
-
-        job_output_downloader = download.OutputDownloader(
-            s3_settings=job_attachment_settings,
-            farm_id=deadline_resources.farm.id,
-            queue_id=deadline_resources.queue_a.id,
-            job_id=job.id,
-            step_id=None,
-            task_id=None,
+        output_path: dict[str, list[str]] = get_job_output(
+            job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
         )
 
-        output_paths_by_root = job_output_downloader.get_output_paths_by_root()
-        with tempfile.TemporaryDirectory() as tmp_dir_name:
+        with (
+            open(os.path.join(job_bundle_path, "files", "test_input_file"), "r") as input_file,
+            open(
+                os.path.join(
+                    list(output_path.keys())[0],
+                    "output_file",
+                ),
+                "r",
+                encoding="utf-8-sig",
+            ) as output_file,
+        ):
+            input_file_content: str = input_file.read()
+            output_file_content = output_file.read()
 
-            # Set root path output will be downloaded to to output_root_path. Assumes there is only one root path.
-            job_output_downloader.set_root_path(
-                list(output_paths_by_root.keys())[0],
-                tmp_dir_name,
-            )
-            job_output_downloader.download_job_output()
-
-            with (
-                open(os.path.join(job_bundle_path, "files", "test_input_file"), "r") as input_file,
-                open(
-                    os.path.join(
-                        tmp_dir_name,
-                        "output_file",
-                    ),
-                    "r",
-                    encoding="utf-8-sig",
-                ) as output_file,
-            ):
-                input_file_content: str = input_file.read()
-                output_file_content = output_file.read()
-
-                # Verify that the output file content is the input file content plus the uuid we appended in the job
-                assert output_file_content == (input_file_content + test_run_uuid)
+            # Verify that the output file content is the input file content plus the uuid we appended in the job
+            assert output_file_content == (input_file_content + test_run_uuid)
+            os.remove(os.path.join(list(output_path.keys())[0], "output_file"))
 
     @pytest.mark.parametrize(
         "hash_string_script",
@@ -836,37 +810,15 @@ class TestJobSubmission:
                         assert complete_percentage <= session_action["progressPercent"]
                         complete_percentage = session_action["progressPercent"]
 
-        job.wait_until_complete(client=deadline_client, max_retries=20)
-
-        job_attachment_settings = get_queue(
-            farm_id=deadline_resources.farm.id,
-            queue_id=deadline_resources.queue_a.id,
-        ).jobAttachmentSettings
-
-        assert job_attachment_settings is not None
-
-        job_output_downloader = download.OutputDownloader(
-            s3_settings=job_attachment_settings,
-            farm_id=deadline_resources.farm.id,
-            queue_id=deadline_resources.queue_a.id,
-            job_id=job.id,
-            step_id=None,
-            task_id=None,
+        output_path: dict[str, list[str]] = get_job_output(
+            job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
         )
 
-        output_paths_by_root = job_output_downloader.get_output_paths_by_root()
-        with tempfile.TemporaryDirectory() as tmp_dir_name:
-
-            # Set root path output will be downloaded to to output_root_path. Assumes there is only one root path.
-            job_output_downloader.set_root_path(
-                list(output_paths_by_root.keys())[0],
-                tmp_dir_name,
-            )
-            job_output_downloader.download_job_output()
-
-            with (open(os.path.join(tmp_dir_name, "output_file.txt"), "r") as output_file,):
-                output_file_content = output_file.read()
-                # Verify that the hash is the same
-                assert output_file_content == combined_hash
+        with (
+            open(os.path.join(list(output_path.keys())[0], "output_file.txt"), "r") as output_file,
+        ):
+            output_file_content = output_file.read()
+            # Verify that the hash is the same
+            assert output_file_content == combined_hash
 
         shutil.rmtree(job_bundle_path)
