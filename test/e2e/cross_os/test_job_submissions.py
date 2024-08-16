@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 import logging
 from deadline_test_fixtures import Job, DeadlineClient, TaskStatus, EC2InstanceWorker
-from e2e.conftest import DeadlineResources, get_job_output
+from e2e.conftest import DeadlineResources
 import backoff
 import boto3
 import botocore.client
@@ -22,6 +22,8 @@ from deadline.client import api
 import uuid
 import os
 import configparser
+
+from e2e.utils import get_job_output
 
 LOG = logging.getLogger(__name__)
 
