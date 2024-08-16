@@ -38,14 +38,16 @@ class DeadlineResources:
     farm: Farm = field(init=False)
     queue_a: Queue = field(init=False)
     queue_b: Queue = field(init=False)
-    fleet: Fleet = field(init=False)
+    session_fleet: Fleet = field(init=False)
+    function_fleet: Fleet = field(init=False)
     scaling_queue: Queue = field(init=False)
     scaling_fleet: Fleet = field(init=False)
 
     farm_id: InitVar[str]
     queue_a_id: InitVar[str]
     queue_b_id: InitVar[str]
-    fleet_id: InitVar[str]
+    session_fleet_id: InitVar[str]
+    function_fleet_id: InitVar[str]
     scaling_queue_id: InitVar[str]
     scaling_fleet_id: InitVar[str]
 
@@ -54,14 +56,20 @@ class DeadlineResources:
         farm_id: str,
         queue_a_id: str,
         queue_b_id: str,
-        fleet_id: str,
+        session_fleet_id: str,
+        function_fleet_id: str,
         scaling_queue_id: str,
         scaling_fleet_id: str,
     ) -> None:
         object.__setattr__(self, "farm", Farm(id=farm_id))
         object.__setattr__(self, "queue_a", Queue(id=queue_a_id, farm=self.farm))
         object.__setattr__(self, "queue_b", Queue(id=queue_b_id, farm=self.farm))
-        object.__setattr__(self, "fleet", Fleet(id=fleet_id, farm=self.farm, autoscaling=False))
+        object.__setattr__(
+            self, "session_fleet", Fleet(id=session_fleet_id, farm=self.farm, autoscaling=False)
+        )
+        object.__setattr__(
+            self, "function_fleet", Fleet(id=function_fleet_id, farm=self.farm, autoscaling=False)
+        )
         object.__setattr__(self, "scaling_queue", Queue(id=scaling_queue_id, farm=self.farm))
         object.__setattr__(self, "scaling_fleet", Fleet(id=scaling_fleet_id, farm=self.farm))
 
@@ -85,13 +93,14 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
     farm_id = os.environ["FARM_ID"]
     queue_a_id = os.environ["QUEUE_A_ID"]
     queue_b_id = os.environ["QUEUE_B_ID"]
-    fleet_id = os.environ["FLEET_ID"]
+    session_fleet_id = os.environ["SESSION_FLEET_ID"]
+    function_fleet_id = os.environ["FUNCTION_FLEET_ID"]
 
     scaling_queue_id = os.environ["SCALING_QUEUE_ID"]
     scaling_fleet_id = os.environ["SCALING_FLEET_ID"]
 
     LOG.info(
-        f"Configured Deadline Cloud Resources, farm: {farm_id}, scaling_fleet: {scaling_fleet_id}, scaling_queue: {scaling_queue_id} ,queue_a: {queue_a_id}, queue_b: {queue_b_id}, fleet: {fleet_id}"
+        f"Configured Deadline Cloud Resources, farm: {farm_id}, scaling_fleet: {scaling_fleet_id}, scaling_queue: {scaling_queue_id} ,queue_a: {queue_a_id}, queue_b: {queue_b_id}, session fleet: {session_fleet_id}, function fleet: {function_fleet_id}"
     )
 
     sts_client = boto3.client("sts")
@@ -102,14 +111,15 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         farm_id=farm_id,
         queue_a_id=queue_a_id,
         queue_b_id=queue_b_id,
-        fleet_id=fleet_id,
+        session_fleet_id=session_fleet_id,
+        function_fleet_id=function_fleet_id,
         scaling_queue_id=scaling_queue_id,
         scaling_fleet_id=scaling_fleet_id,
     )
 
 
 @pytest.fixture(scope="session")
-def worker_config(
+def worker_config_session(
     deadline_resources,
     codeartifact,
     service_model,
@@ -117,6 +127,51 @@ def worker_config(
     operating_system,
     windows_job_users,
 ) -> Generator[DeadlineWorkerConfiguration, None, None]:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield worker_config(
+            deadline_resources,
+            codeartifact,
+            service_model,
+            region,
+            operating_system,
+            windows_job_users,
+            deadline_resources.session_fleet,
+            tmpdir,
+        )
+
+
+@pytest.fixture(scope="function")
+def worker_config_function(
+    deadline_resources,
+    codeartifact,
+    service_model,
+    region,
+    operating_system,
+    windows_job_users,
+) -> Generator[DeadlineWorkerConfiguration, None, None]:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield worker_config(
+            deadline_resources,
+            codeartifact,
+            service_model,
+            region,
+            operating_system,
+            windows_job_users,
+            deadline_resources.function_fleet,
+            tmpdir,
+        )
+
+
+def worker_config(
+    deadline_resources,
+    codeartifact,
+    service_model,
+    region,
+    operating_system,
+    windows_job_users,
+    fleet_id,
+    tmpdir,
+):
     """
     Builds the configuration for a DeadlineWorker.
 
@@ -170,42 +225,42 @@ def worker_config(
         LOG.info(f"Using Worker agent package {worker_agent_requirement_specifier}")
 
     # Path map the service model
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src_path = pathlib.Path(tmpdir) / f"{service_model.service_name}-service-2.json"
+    src_path = pathlib.Path(tmpdir) / f"{service_model.service_name}-service-2.json"
 
-        LOG.info(f"Staging service model to {src_path} for uploading to S3")
-        with src_path.open(mode="w") as f:
-            json.dump(service_model.model, f)
+    LOG.info(f"Staging service model to {src_path} for uploading to S3")
+    with src_path.open(mode="w") as f:
+        json.dump(service_model.model, f)
 
-        if operating_system.name == "AL2023":
-            dst_path = posixpath.join("/tmp", src_path.name)
-        else:
-            dst_path = posixpath.join("%USERPROFILE%\\AppData\\Local\\Temp", src_path.name)
-        LOG.info(f"The service model will be copied to {dst_path} on the Worker environment")
-        file_mappings.append((str(src_path), dst_path))
+    if operating_system.name == "AL2023":
+        dst_path = posixpath.join("/tmp", src_path.name)
+    else:
+        dst_path = posixpath.join("%USERPROFILE%\\AppData\\Local\\Temp", src_path.name)
+    LOG.info(f"The service model will be copied to {dst_path} on the Worker environment")
+    file_mappings.append((str(src_path), dst_path))
 
-        yield DeadlineWorkerConfiguration(
-            farm_id=deadline_resources.farm.id,
-            fleet=deadline_resources.fleet,
-            region=region,
-            allow_shutdown=True,
-            worker_agent_install=PipInstall(
-                requirement_specifiers=[worker_agent_requirement_specifier],
-                codeartifact=codeartifact,
-            ),
-            service_model_path=dst_path,
-            file_mappings=file_mappings or None,
-            windows_job_users=windows_job_users,
-        )
+    return DeadlineWorkerConfiguration(
+        farm_id=deadline_resources.farm.id,
+        fleet=fleet_id,
+        region=region,
+        allow_shutdown=True,
+        worker_agent_install=PipInstall(
+            requirement_specifiers=[worker_agent_requirement_specifier],
+            codeartifact=codeartifact,
+        ),
+        service_model_path=dst_path,
+        file_mappings=file_mappings or None,
+        windows_job_users=windows_job_users,
+        start_service=True,
+    )
 
 
 @pytest.fixture(scope="session")
 def session_worker(
     request: pytest.FixtureRequest,
-    worker_config: DeadlineWorkerConfiguration,
+    worker_config_session: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config_session, ec2_worker_type, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -214,10 +269,10 @@ def session_worker(
 @pytest.fixture(scope="class")
 def class_worker(
     request: pytest.FixtureRequest,
-    worker_config: DeadlineWorkerConfiguration,
+    worker_config_session: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config_session, ec2_worker_type, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -226,10 +281,10 @@ def class_worker(
 @pytest.fixture(scope="function")
 def function_worker(
     request: pytest.FixtureRequest,
-    worker_config: DeadlineWorkerConfiguration,
+    worker_config_function: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config_function, ec2_worker_type, request) as worker:
         yield worker
 
     stop_worker(request, worker)

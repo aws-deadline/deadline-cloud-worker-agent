@@ -8,35 +8,35 @@ Description: Infrastructure for running the Deadline Cloud Worker Agent end-to-e
 
 Outputs:
   Account:
-    Value: !Sub '${AWS::AccountId}'
+    Value: !Sub ${AWS::AccountId}
 
   Region:
-    Value: !Sub '${AWS::Region}'
-    
+    Value: !Sub ${AWS::Region}
+
   SubnetId:
-    Value: !GetAtt [PublicSubnet, SubnetId]
-  
+    Value: !GetAtt PublicSubnet.SubnetId
+
   SecurityGroupId:
-    Value: !GetAtt [SecurityGroup, GroupId]
-  
+    Value: !GetAtt SecurityGroup.GroupId
+
   FixturesBucketName:
     Value: !Ref FixturesBootstrapBucket
-  
+
   JobAttachmentsBucket:
     Value: !Ref JobAttachmentsBucket
 
   LinuxWorkerRoleArn:
-    Value: !GetAtt [LinuxFleetRole, Arn]
+    Value: !GetAtt LinuxFleetRole.Arn
 
   WindowsWorkerRoleArn:
-    Value: !GetAtt [WindowsFleetRole, Arn]
+    Value: !GetAtt WindowsFleetRole.Arn
 
   LinuxHostRoleArn:
-    Value: !GetAtt [LinuxHostRole, Arn]
+    Value: !GetAtt LinuxHostRole.Arn
 
   WindowsHostRoleArn:
-    Value: !GetAtt [WindowsHostRole, Arn]
-  
+    Value: !GetAtt WindowsHostRole.Arn
+
   LinuxWorkerInstanceProfileName:
     Value: !Sub DeadlineCloudAgent-E2E-LinuxHostRole-${AWS::Region}-InstanceProfile
 
@@ -44,38 +44,43 @@ Outputs:
     Value: !Sub DeadlineCloudAgent-E2E-WindowsHostRole-${AWS::Region}-InstanceProfile
 
   CodeArtifactDomainName:
-    Value: !GetAtt [CodeArtifactPyPIMirrorRepo, DomainName]
-  
+    Value: !GetAtt CodeArtifactPyPIMirrorRepo.DomainName
+
   CodeArtifactRepositoryName:
-    Value: !GetAtt [CodeArtifactPyPIMirrorRepo, Name]
+    Value: !GetAtt CodeArtifactPyPIMirrorRepo.Name
 
   FarmId:
-    Value: !GetAtt [DeadlineFarm, FarmId]
+    Value: !GetAtt DeadlineFarm.FarmId
 
   QueueAId:
-    Value: !GetAtt [MainQueue, QueueId]
-  
+    Value: !GetAtt MainQueue.QueueId
+
   QueueBId:
-    Value: !GetAtt [SecondaryQueue, QueueId]
-  
+    Value: !GetAtt SecondaryQueue.QueueId
+
   ScalingQueueId:
-    Value: !GetAtt [AutoscalingQueue, QueueId]
+    Value: !GetAtt AutoscalingQueue.QueueId
 
   QueueRoleArn:
-    Value: !GetAtt [QueueRole, Arn]
+    Value: !GetAtt QueueRole.Arn
 
-  LinuxManualFleetX86Id:
-    Value: !GetAtt [LinuxManualScalingFleetx86, FleetId]
+  LinuxManualFunctionFleetX86Id:
+    Value: !GetAtt LinuxManualScalingFunctionFleetx86.FleetId
 
-  WindowsManualFleetX86Id:
-    Value: !GetAtt [WindowsManualScalingFleetx86, FleetId]
+  LinuxManualSessionFleetX86Id:
+    Value: !GetAtt LinuxManualScalingSessionFleetx86.FleetId
+
+  WindowsManualSessionFleetX86Id:
+    Value: !GetAtt WindowsManualScalingSessionFleetx86.FleetId
+
+  WindowsManualFunctionFleetX86Id:
+    Value: !GetAtt WindowsManualScalingFunctionFleetx86.FleetId
 
   LinuxAutoFleetX86Id:
-    Value: !GetAtt [LinuxAutoScalingFleetx86, FleetId]
+    Value: !GetAtt LinuxAutoScalingFleetx86.FleetId
 
   WindowsAutoFleetX86Id:
-    Value: !GetAtt [WindowsAutoScalingFleetx86, FleetId]
-
+    Value: !GetAtt WindowsAutoScalingFleetx86.FleetId
 
 Resources:
 
@@ -648,10 +653,10 @@ Resources:
         RunAs: QUEUE_CONFIGURED_USER
       RoleArn: !GetAtt QueueRole.Arn
 
-  LinuxManualScalingFleetx86:
+  LinuxManualScalingSessionFleetx86:
     Type: AWS::Deadline::Fleet
     Properties:
-      DisplayName: NonScalingLinuxFleet_x86
+      DisplayName: NonScalingSessionLinuxFleet_x86
       FarmId: !GetAtt DeadlineFarm.FarmId
       MaxWorkerCount: 10
       MinWorkerCount: 0
@@ -661,6 +666,35 @@ Resources:
           Mode: NO_SCALING
           WorkerCapabilities:
             CpuArchitectureType: x86_64
+            CustomAttributes:
+              - Name: attr.TestFleetType
+                Values:
+                  - FleetforSession
+            MemoryMiB:
+              Min: 1024
+              Max: 4096
+            OsFamily: LINUX
+            VCpuCount:
+              Min: 2
+              Max: 4
+
+  LinuxManualScalingFunctionFleetx86:
+    Type: AWS::Deadline::Fleet
+    Properties:
+      DisplayName: NonScalingFunctionLinuxFleet_x86
+      FarmId: !GetAtt DeadlineFarm.FarmId
+      MaxWorkerCount: 10
+      MinWorkerCount: 0
+      RoleArn: !GetAtt LinuxFleetRole.Arn
+      Configuration:
+        CustomerManaged:
+          Mode: NO_SCALING
+          WorkerCapabilities:
+            CpuArchitectureType: x86_64
+            CustomAttributes:
+              - Name: attr.TestFleetType
+                Values:
+                  - FleetforFunction
             MemoryMiB:
               Min: 1024
               Max: 4096
@@ -690,10 +724,10 @@ Resources:
               Min: 2
               Max: 4
 
-  WindowsManualScalingFleetx86:
+  WindowsManualScalingSessionFleetx86:
     Type: AWS::Deadline::Fleet
     Properties:
-      DisplayName: NonScalingWindowsFleet_x86
+      DisplayName: NonScalingSessionWindowsFleet_x86
       FarmId: !GetAtt DeadlineFarm.FarmId
       MaxWorkerCount: 10
       MinWorkerCount: 0
@@ -703,6 +737,35 @@ Resources:
           Mode: NO_SCALING
           WorkerCapabilities:
             CpuArchitectureType: x86_64
+            CustomAttributes:
+              - Name: attr.TestFleetType
+                Values:
+                  - FleetforSession
+            MemoryMiB:
+              Min: 1024
+              Max: 4096
+            OsFamily: WINDOWS
+            VCpuCount:
+              Min: 2
+              Max: 4
+
+  WindowsManualScalingFunctionFleetx86:
+    Type: AWS::Deadline::Fleet
+    Properties:
+      DisplayName: NonScalingFunctionWindowsFleet_x86
+      FarmId: !GetAtt DeadlineFarm.FarmId
+      MaxWorkerCount: 10
+      MinWorkerCount: 0
+      RoleArn: !GetAtt WindowsFleetRole.Arn
+      Configuration:
+        CustomerManaged:
+          Mode: NO_SCALING
+          WorkerCapabilities:
+            CpuArchitectureType: x86_64
+            CustomAttributes:
+              - Name: attr.TestFleetType
+                Values:
+                  - FleetforFunction
             MemoryMiB:
               Min: 1024
               Max: 4096
@@ -732,18 +795,25 @@ Resources:
               Min: 2
               Max: 4
 
-  LinuxManualFleetMainQueueQFA:
+  LinuxManualFunctionFleetMainQueueQFA:
     Type: AWS::Deadline::QueueFleetAssociation
     Properties:
       FarmId: !GetAtt DeadlineFarm.FarmId
-      FleetId: !GetAtt LinuxManualScalingFleetx86.FleetId
+      FleetId: !GetAtt LinuxManualScalingFunctionFleetx86.FleetId
       QueueId: !GetAtt MainQueue.QueueId
 
-  LinuxManualFleetSecondaryQueueQFA:
+  LinuxManualSessionFleetMainQueueQFA:
     Type: AWS::Deadline::QueueFleetAssociation
     Properties:
       FarmId: !GetAtt DeadlineFarm.FarmId
-      FleetId: !GetAtt LinuxManualScalingFleetx86.FleetId
+      FleetId: !GetAtt LinuxManualScalingSessionFleetx86.FleetId
+      QueueId: !GetAtt MainQueue.QueueId
+
+  LinuxManualSessionFleetSecondaryQueueQFA:
+    Type: AWS::Deadline::QueueFleetAssociation
+    Properties:
+      FarmId: !GetAtt DeadlineFarm.FarmId
+      FleetId: !GetAtt LinuxManualScalingSessionFleetx86.FleetId
       QueueId: !GetAtt SecondaryQueue.QueueId
 
   LinuxAutoScalingFleetMainQueueQFA:
@@ -753,18 +823,25 @@ Resources:
       FleetId: !GetAtt LinuxAutoScalingFleetx86.FleetId
       QueueId: !GetAtt AutoscalingQueue.QueueId
 
-  WindowsManualFleetMainQueueQFA:
+  WindowsManualSessionFleetMainQueueQFA:
     Type: AWS::Deadline::QueueFleetAssociation
     Properties:
       FarmId: !GetAtt DeadlineFarm.FarmId
-      FleetId: !GetAtt WindowsManualScalingFleetx86.FleetId
+      FleetId: !GetAtt WindowsManualScalingSessionFleetx86.FleetId
+      QueueId: !GetAtt MainQueue.QueueId
+
+  WindowsManualFunctionFleetMainQueueQFA:
+    Type: AWS::Deadline::QueueFleetAssociation
+    Properties:
+      FarmId: !GetAtt DeadlineFarm.FarmId
+      FleetId: !GetAtt WindowsManualScalingFunctionFleetx86.FleetId
       QueueId: !GetAtt MainQueue.QueueId
 
   WindowsManualFleetSecondaryQueueQFA:
     Type: AWS::Deadline::QueueFleetAssociation
     Properties:
       FarmId: !GetAtt DeadlineFarm.FarmId
-      FleetId: !GetAtt WindowsManualScalingFleetx86.FleetId
+      FleetId: !GetAtt WindowsManualScalingSessionFleetx86.FleetId
       QueueId: !GetAtt SecondaryQueue.QueueId
 
   WindowsAutoScalingFleetMainQueueQFA:

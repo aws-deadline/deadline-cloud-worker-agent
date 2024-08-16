@@ -86,12 +86,12 @@ class TestJobSubmission:
         environment_actions: Dict[str, Any],
         expected_failed_action: str,
     ) -> None:
-
         job = Job.submit(
             client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             priority=98,
+            max_retries_per_task=0,
             template={
                 "specificationVersion": "jobtemplate-2023-09",
                 "name": f"jobactionfail-{expected_failed_action}",
@@ -102,7 +102,11 @@ class TestJobSubmission:
                                 {
                                     "name": "attr.worker.os.family",
                                     "allOf": [os.environ["OPERATING_SYSTEM"]],
-                                }
+                                },
+                                {
+                                    "name": "attr.TestFleetType",
+                                    "anyOf": ["FleetforSession"],
+                                },
                             ]
                         },
                         "name": "Step0",
@@ -210,6 +214,7 @@ class TestJobSubmission:
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             priority=98,
+            max_retries_per_task=0,
             template={
                 "specificationVersion": "jobtemplate-2023-09",
                 "name": f"jobactioncancel-{expected_canceled_action}",
@@ -221,7 +226,11 @@ class TestJobSubmission:
                                 {
                                     "name": "attr.worker.os.family",
                                     "allOf": [os.environ["OPERATING_SYSTEM"]],
-                                }
+                                },
+                                {
+                                    "name": "attr.TestFleetType",
+                                    "anyOf": ["FleetforSession"],
+                                },
                             ]
                         },
                         "script": {
@@ -401,7 +410,11 @@ class TestJobSubmission:
                             {
                                 "name": "attr.worker.os.family",
                                 "allOf": [os.environ["OPERATING_SYSTEM"]],
-                            }
+                            },
+                            {
+                                "name": "attr.TestFleetType",
+                                "anyOf": ["FleetforSession"],
+                            },
                         ]
                     },
                     "script": {
@@ -471,7 +484,11 @@ class TestJobSubmission:
                                 {
                                     "name": "attr.worker.os.family",
                                     "allOf": [os.environ["OPERATING_SYSTEM"]],
-                                }
+                                },
+                                {
+                                    "name": "attr.TestFleetType",
+                                    "anyOf": ["FleetforSession"],
+                                },
                             ]
                         },
                         "script": {
@@ -509,7 +526,7 @@ class TestJobSubmission:
 
         # Retrieve worker logs and verify that it's not empty
         worker_log_group_name: str = (
-            f"/aws/deadline/{deadline_resources.farm.id}/{deadline_resources.fleet.id}"
+            f"/aws/deadline/{deadline_resources.farm.id}/{deadline_resources.session_fleet.id}"
         )
         worker_id = session_worker.worker_id
 
@@ -576,7 +593,11 @@ class TestJobSubmission:
                                             {
                                                 "name": "attr.worker.os.family",
                                                 "allOf": [os.environ["OPERATING_SYSTEM"]],
-                                            }
+                                            },
+                                            {
+                                                "name": "attr.TestFleetType",
+                                                "anyOf": ["FleetforSession"],
+                                            },
                                         ]
                                     },
                                     "script": {

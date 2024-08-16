@@ -10,7 +10,12 @@ import botocore.exceptions
 import pytest
 import logging
 
-from deadline_test_fixtures import Job, TaskStatus, PosixSessionUser, DeadlineClient
+from deadline_test_fixtures import (
+    Job,
+    TaskStatus,
+    PosixSessionUser,
+    DeadlineClient,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -35,7 +40,16 @@ class TestJobSubmission:
                 "steps": [
                     {
                         "hostRequirements": {
-                            "attributes": [{"name": "attr.worker.os.family", "allOf": ["linux"]}]
+                            "attributes": [
+                                {
+                                    "name": "attr.worker.os.family",
+                                    "allOf": ["linux"],
+                                },
+                                {
+                                    "name": "attr.TestFleetType",
+                                    "anyOf": ["FleetforSession"],
+                                },
+                            ]
                         },
                         "name": "Step0",
                         "script": {"actions": {"onRun": {"command": "/bin/sleep", "args": ["5"]}}},
@@ -70,7 +84,16 @@ class TestJobSubmission:
                     {
                         "name": "Step0",
                         "hostRequirements": {
-                            "attributes": [{"name": "attr.worker.os.family", "allOf": ["linux"]}]
+                            "attributes": [
+                                {
+                                    "name": "attr.worker.os.family",
+                                    "allOf": ["linux"],
+                                },
+                                {
+                                    "name": "attr.TestFleetType",
+                                    "anyOf": ["FleetforSession"],
+                                },
+                            ]
                         },
                         "script": {
                             "embeddedFiles": [

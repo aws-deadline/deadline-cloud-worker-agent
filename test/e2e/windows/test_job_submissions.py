@@ -43,7 +43,11 @@ class TestJobSubmission:
                                 {
                                     "name": "attr.worker.os.family",
                                     "allOf": ["windows"],
-                                }
+                                },
+                                {
+                                    "name": "attr.TestFleetType",
+                                    "anyOf": ["FleetforSession"],
+                                },
                             ]
                         },
                         "name": "Step0",

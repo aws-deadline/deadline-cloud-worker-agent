@@ -49,7 +49,11 @@ def get_log_from_job(job: Job, deadline_client: DeadlineClient) -> tuple[str, Jo
 class TestJobUserOverride:
     @staticmethod
     def submit_whoami_job(
-        test_name: str, deadline_client: DeadlineClient, farm: Farm, queue: Queue
+        test_name: str,
+        deadline_client: DeadlineClient,
+        farm: Farm,
+        queue: Queue,
+        class_worker: EC2InstanceWorker,
     ) -> Job:
         job = Job.submit(
             client=deadline_client,
@@ -66,7 +70,11 @@ class TestJobUserOverride:
                                 {
                                     "name": "attr.worker.os.family",
                                     "allOf": ["windows"],
-                                }
+                                },
+                                {
+                                    "name": "attr.TestFleetType",
+                                    "anyOf": ["FleetforSession"],
+                                },
                             ]
                         },
                         "name": "Step0",
@@ -92,7 +100,11 @@ class TestJobUserOverride:
     ) -> None:
 
         job = self.submit_whoami_job(
-            "no user override", deadline_client, deadline_resources.farm, deadline_resources.queue_a
+            "no user override",
+            deadline_client,
+            deadline_resources.farm,
+            deadline_resources.queue_a,
+            class_worker,
         )
 
         full_log, job_logs = get_log_from_job(job, deadline_client)
@@ -125,6 +137,7 @@ class TestJobUserOverride:
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
+            class_worker,
         )
 
         full_log, job_logs = get_log_from_job(job, deadline_client)
@@ -153,7 +166,7 @@ class TestJobUserOverride:
             "install-deadline-worker "
             + "-y "
             + f"--farm-id {deadline_resources.farm.id} "
-            + f"--fleet-id {deadline_resources.fleet.id} "
+            + f"--fleet-id {deadline_resources.session_fleet.id} "
             + "--user ssm-user "
             + "--windows-job-user install-override"
         )
@@ -169,6 +182,7 @@ class TestJobUserOverride:
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
+            class_worker,
         )
 
         full_log, job_logs = get_log_from_job(job, deadline_client)
@@ -208,6 +222,7 @@ class TestJobUserOverride:
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
+            class_worker,
         )
 
         full_log, job_logs = get_log_from_job(job, deadline_client)
