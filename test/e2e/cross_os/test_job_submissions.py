@@ -833,6 +833,6 @@ class TestJobSubmission:
             output_file_content = output_file.read()
             # Verify that the hash is the same
             assert output_file_content == combined_hash
-            
+
         # Clean up the output file
         os.remove(os.path.join(list(output_path.keys())[0], "output_file.txt"))
