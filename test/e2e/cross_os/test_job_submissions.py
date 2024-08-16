@@ -614,7 +614,6 @@ class TestJobSubmission:
                 job_bundle_path,
                 job_parameters,
                 priority=99,
-                max_retries_per_task=0,
                 config=config,
                 queue_parameter_definitions=[],
             )
