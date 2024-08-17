@@ -196,6 +196,7 @@ def worker_config(
             service_model_path=dst_path,
             file_mappings=file_mappings or None,
             windows_job_users=windows_job_users,
+            start_service=True,
         )
 
 
