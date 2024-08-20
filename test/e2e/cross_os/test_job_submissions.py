@@ -5,7 +5,7 @@ Deadline Cloud service and checking that the result/output of the jobs is as we 
 """
 import hashlib
 import json
-import shutil
+import pathlib
 from typing import Any, Dict, List, Optional
 import pytest
 import logging
@@ -23,7 +23,7 @@ import uuid
 import os
 import configparser
 
-from e2e.utils import get_job_output
+from e2e.utils import wait_for_job_output
 
 LOG = logging.getLogger(__name__)
 
@@ -635,7 +635,7 @@ class TestJobSubmission:
             **job_details,
         )
 
-        output_path: dict[str, list[str]] = get_job_output(
+        output_path: dict[str, list[str]] = wait_for_job_output(
             job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
         )
 
@@ -663,9 +663,27 @@ class TestJobSubmission:
         "hash_string_script",
         [
             (
-                '#!/usr/bin/env bash\n\nfolder_path={{Param.DataDir}}/files\ncombined_contents=""\nfor file in "$folder_path"/*; do\n   if [ -f "$file" ]; then\n      combined_contents+="$(cat "$file" | tr -d \'\\n\')"\n   fi\ndone\nsha256_hash=$(echo -n "$combined_contents" | sha256sum | awk \'{ print $1 }\')\necho -n "$sha256_hash" > {{Param.DataDir}}/output_file.txt'
+                "#!/usr/bin/env bash\n\n"
+                "folder_path={{Param.DataDir}}/files\n"
+                'combined_contents=""\n'
+                'for file in "$folder_path"/*; do\n'
+                '   if [ -f "$file" ]; then\n'
+                '   combined_contents+="$(cat "$file" | tr -d \'\\n\')"\n'
+                "   fi\n"
+                "done\n"
+                "sha256_hash=$(echo -n \"$combined_contents\" | sha256sum | awk '{ print $1 }')\n"
+                'echo -n "$sha256_hash" > {{Param.DataDir}}/output_file.txt'
                 if os.environ["OPERATING_SYSTEM"] == "linux"
-                else '$InputFolder = "{{Param.DataDir}}\\files"\n$OutputFile = "{{Param.DataDir}}\\output_file.txt"\n$combinedContent = ""\n$files = Get-ChildItem -Path $InputFolder -File\nforeach ($file in $files) {\n    $combinedContent += [IO.File]::ReadAllText($file.FullName)\n}\n$sha256 = [System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($combinedContent))\n$hashString = [System.BitConverter]::ToString($sha256).Replace("-", "").ToLower()\nSet-Content -Path $OutputFile -Value $hashString -NoNewLine'
+                else '$InputFolder = "{{Param.DataDir}}\\files"\n'
+                '$OutputFile = "{{Param.DataDir}}\\output_file.txt"\n'
+                '$combinedContent = ""\n'
+                "$files = Get-ChildItem -Path $InputFolder -File\n"
+                "foreach ($file in $files) {\n"
+                "   $combinedContent += [IO.File]::ReadAllText($file.FullName)\n"
+                "}\n"
+                "$sha256 = [System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($combinedContent))\n"
+                '$hashString = [System.BitConverter]::ToString($sha256).Replace("-", "").ToLower()\n'
+                "Set-Content -Path $OutputFile -Value $hashString -NoNewLine"
             )
         ],
     )
@@ -674,11 +692,12 @@ class TestJobSubmission:
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         hash_string_script: str,
+        tmp_path: pathlib.Path,
     ) -> None:
         # Verify that the worker sync job attachment correctly and report the progress correctly as well
 
         job_bundle_path: str = os.path.join(
-            os.path.dirname(__file__),
+            tmp_path,
             "job_attachment_bundle_large",
         )
         file_path: str = os.path.join(job_bundle_path, "files")
@@ -688,7 +707,7 @@ class TestJobSubmission:
 
         # Create 2500 very small files to transfer
         for i in range(2500):
-            file_name: str = os.path.join(job_bundle_path, "files", f"file_{i+1}.txt")
+            file_name: str = os.path.join(file_path, f"file_{i+1}.txt")
             with open(file_name, "w") as file_to_write:
                 file_to_write.write(str(i))
 
@@ -795,53 +814,45 @@ class TestJobSubmission:
             template={},
             **job_details,
         )
-        try:
-            # Query the session to check for progress percentage
-            complete_percentage: float = 0
 
-            @backoff.on_predicate(
-                wait_gen=backoff.constant,
-                max_time=60,
-                interval=2,
-            )
-            def check_percentage(complete_percentage):
-                sessions = deadline_client.list_sessions(
-                    farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
-                ).get("sessions")
+        # Query the session to check for progress percentage
+        complete_percentage: float = 0
 
-                if sessions:
-                    session_actions = deadline_client.list_session_actions(
-                        farmId=job.farm.id,
-                        queueId=job.queue.id,
-                        jobId=job.id,
-                        sessionId=sessions[0]["sessionId"],
-                    ).get("sessionActions")
+        @backoff.on_predicate(
+            wait_gen=backoff.constant,
+            max_time=60,
+            interval=2,
+        )
+        def check_percentage(complete_percentage):
+            sessions = deadline_client.list_sessions(
+                farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
+            ).get("sessions")
 
-                    for session_action in session_actions:
-                        if "syncInputJobAttachments" in session_action["definition"]:
-                            assert complete_percentage <= session_action["progressPercent"]
-                            complete_percentage = session_action["progressPercent"]
-                            return complete_percentage == 100
+            if sessions:
+                session_actions = deadline_client.list_session_actions(
+                    farmId=job.farm.id,
+                    queueId=job.queue.id,
+                    jobId=job.id,
+                    sessionId=sessions[0]["sessionId"],
+                ).get("sessionActions")
 
-                else:
-                    return False
+                for session_action in session_actions:
+                    if "syncInputJobAttachments" in session_action["definition"]:
+                        assert complete_percentage <= session_action["progressPercent"]
+                        complete_percentage = session_action["progressPercent"]
+                        return complete_percentage == 100
 
-            assert check_percentage(complete_percentage)
-        finally:
-            shutil.rmtree(job_bundle_path)
+            else:
+                return False
 
-        output_path: dict[str, list[str]] = get_job_output(
+        assert check_percentage(complete_percentage)
+
+        output_path: dict[str, list[str]] = wait_for_job_output(
             job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
         )
-        try:
-            with (
-                open(
-                    os.path.join(list(output_path.keys())[0], "output_file.txt"), "r"
-                ) as output_file,
-            ):
-                output_file_content = output_file.read()
-                # Verify that the hash is the same
-                assert output_file_content == combined_hash
-        finally:
-            # Clean up the output file
-            shutil.rmtree(job_bundle_path)
+        with (
+            open(os.path.join(list(output_path.keys())[0], "output_file.txt"), "r") as output_file,
+        ):
+            output_file_content = output_file.read()
+            # Verify that the hash is the same
+            assert output_file_content == combined_hash

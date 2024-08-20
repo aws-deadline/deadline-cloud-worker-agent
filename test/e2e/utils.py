@@ -10,7 +10,7 @@ from deadline_test_fixtures import (
 from e2e.conftest import DeadlineResources
 
 
-def get_job_output(
+def wait_for_job_output(
     job: Job, deadline_client: DeadlineClient, deadline_resources: DeadlineResources
 ) -> dict[str, list[str]]:
     job.wait_until_complete(client=deadline_client, max_retries=20)
@@ -31,6 +31,7 @@ def get_job_output(
         task_id=None,
     )
     output_paths_by_root = job_output_downloader.get_output_paths_by_root()
+    # Download file and place it into the output_paths_by_root
     job_output_downloader.download_job_output()
 
     return output_paths_by_root
