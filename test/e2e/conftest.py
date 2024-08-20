@@ -252,6 +252,7 @@ def worker_config(
         start_service=True,
     )
 
+
 @pytest.fixture(scope="session")
 def session_worker(
     request: pytest.FixtureRequest,
