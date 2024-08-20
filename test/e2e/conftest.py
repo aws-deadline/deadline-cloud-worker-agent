@@ -230,7 +230,6 @@ def worker_config(
     LOG.info(f"Staging service model to {src_path} for uploading to S3")
     with src_path.open(mode="w") as f:
         json.dump(service_model.model, f)
-
     if operating_system.name == "AL2023":
         dst_path = posixpath.join("/tmp", src_path.name)
     else:
@@ -252,7 +251,6 @@ def worker_config(
         windows_job_users=windows_job_users,
         start_service=True,
     )
-
 
 @pytest.fixture(scope="session")
 def session_worker(
