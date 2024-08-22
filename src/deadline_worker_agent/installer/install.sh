@@ -459,6 +459,8 @@ EOF
     cat >> /etc/systemd/system/deadline-worker.service <<EOF   
 ExecStart=$worker_agent_program
 Restart=on-failure
+StandardOutput=null
+StandardError=null
 
 [Install]
 WantedBy=multi-user.target
