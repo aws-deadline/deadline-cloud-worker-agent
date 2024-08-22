@@ -384,7 +384,6 @@ class QueueBoto3Session(BaseBoto3Session):
             else:
                 set_permissions(
                     file_path=credentials_file_path,
-                    permitted_user=self._os_user,
                     agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
                 )
             credentials_object = cast(SettableCredentials, self.get_credentials())
@@ -536,7 +535,7 @@ class QueueBoto3Session(BaseBoto3Session):
                 # not be used.
                 set_permissions(
                     file_path=self._credentials_process_script_path,
-                    user_permission=FileSystemPermissionEnum.EXECUTE,
+                    agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
                 )
 
             f.write(self._generate_credential_process_script())
