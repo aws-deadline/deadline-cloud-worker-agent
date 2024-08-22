@@ -6,6 +6,8 @@ on:
     branches:
       - 'mainline'
 
+  
+
 jobs:
   WindowsIntegrationTests:
     name: Windows Integration Tests
@@ -37,6 +39,8 @@ jobs:
       branch: mainline
       environment: mainline
       os: linux
+    concurrency:
+      group: linuxe2e
 
   MainlineWindowsE2ETest:
     name: Windows E2E Test
@@ -50,3 +54,5 @@ jobs:
       branch: mainline
       environment: mainline
       os: windows
+    concurrency:
+      group: windowse2e
