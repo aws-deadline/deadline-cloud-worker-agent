@@ -132,13 +132,18 @@ class TestJobSubmission:
                 sessionId=session["sessionId"],
             ).get("sessionActions")
 
+            logging.info(f"Session actions: {session_actions}")
             for session_action in session_actions:
                 # Session action should be failed IFF it's the expected action to fail
                 if expected_failed_action in session_action["definition"]:
                     found_failed_session_action = True
-                    assert session_action["status"] == "FAILED"
+                    assert (
+                        session_action["status"] == "FAILED"
+                    ), f"Session action that should have failed is not in FAILED status. {session_action}"
                 else:
-                    assert session_action["status"] != "FAILED"
+                    assert (
+                        session_action["status"] != "FAILED"
+                    ), f"Session action that should not have failed is in FAILED status. {session_action}"
         assert found_failed_session_action
 
     @pytest.mark.parametrize(
