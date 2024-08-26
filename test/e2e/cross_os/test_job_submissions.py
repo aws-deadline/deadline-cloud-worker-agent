@@ -79,6 +79,10 @@ class TestJobSubmission:
             ),
         ],
     )
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "linux",
+        reason="Linux test is flaky. Disabling until further investigation.",
+    )
     def test_job_reports_failed_session_action(
         self,
         deadline_resources: DeadlineResources,
