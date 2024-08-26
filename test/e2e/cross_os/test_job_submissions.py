@@ -32,6 +32,7 @@ LOG = logging.getLogger(__name__)
 @pytest.mark.usefixtures("session_worker")
 @pytest.mark.parametrize("operating_system", [os.environ["OPERATING_SYSTEM"]], indirect=True)
 class TestJobSubmission:
+
     @pytest.mark.parametrize(
         "run_actions,environment_actions, expected_failed_action",
         [
@@ -149,6 +150,97 @@ class TestJobSubmission:
                         session_action["status"] != "FAILED"
                     ), f"Session action that should not have failed is in FAILED status. {session_action}"
         assert found_failed_session_action
+
+    def test_worker_fails_session_action_timeout(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+    ) -> None:
+        # Test that if a task takes longer than the timeout defined, the session action goes to FAILED status
+        job = Job.submit(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            priority=98,
+            max_retries_per_task=1,
+            template={
+                "specificationVersion": "jobtemplate-2023-09",
+                "name": "JobSessionActionTimeoutFail",
+                "steps": [
+                    {
+                        "hostRequirements": {
+                            "attributes": [
+                                {
+                                    "name": "attr.worker.os.family",
+                                    "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                }
+                            ]
+                        },
+                        "name": "Step0",
+                        "script": {
+                            "actions": {
+                                "onRun": {
+                                    "command": (
+                                        "/bin/sleep"
+                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        else "powershell"
+                                    ),
+                                    "args": (
+                                        ["40"]
+                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        else ["ping", "localhost", "-n", "40"]
+                                    ),
+                                    "timeout": 1,  # Times out in 1 second
+                                    "cancelation": {
+                                        "mode": "NOTIFY_THEN_TERMINATE",
+                                        "notifyPeriodInSeconds": 1,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
+            },
+        )
+
+        # THEN
+
+        # Wait until the job is completed
+        job.wait_until_complete(client=deadline_client)
+
+        found_task_run_action: bool = False
+        sessions: List[Dict[str, Any]] = deadline_client.list_sessions(
+            farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
+        ).get("sessions")
+        for session in sessions:
+            session_actions: List[Dict[str, Any]] = deadline_client.list_session_actions(
+                farmId=job.farm.id,
+                queueId=job.queue.id,
+                jobId=job.id,
+                sessionId=session["sessionId"],
+            ).get("sessionActions")
+
+            logging.info(f"Session Actions: {session_actions}")
+            for session_action in session_actions:
+                # taskRun session action should be failed
+                if "taskRun" in session_action["definition"]:
+                    found_task_run_action = True
+                    session_action_id: str = session_action["sessionActionId"]
+                    get_session_action_response: Dict[str, Any] = (
+                        deadline_client.get_session_action(
+                            farmId=job.farm.id,
+                            queueId=job.queue.id,
+                            jobId=job.id,
+                            sessionActionId=session_action_id,
+                        )
+                    )
+                    assert get_session_action_response[
+                        "status"
+                    ] == "FAILED" and "TIMEOUT" in get_session_action_response.get(
+                        "progressMessage", ""
+                    ), f"taskRun action should have FAILED {get_session_action_response} with 'TIMEOUT' in the progressMessage"
+
+        assert found_task_run_action
 
     @pytest.mark.parametrize(
         "run_actions,environment_actions,expected_canceled_action",
@@ -333,7 +425,7 @@ class TestJobSubmission:
             if os.environ["OPERATING_SYSTEM"] == "linux"
             else """try
                 {
-                    Start-Sleep -Seconds 300 
+                    Start-Sleep -Seconds 300
                 }
                 finally
                 {
@@ -1310,10 +1402,10 @@ class TestJobSubmission:
 
         @backoff.on_predicate(
             wait_gen=backoff.constant,
-            max_time=60,
+            max_time=120,
             interval=2,
         )
-        def check_percentage(complete_percentage):
+        def check_percentage(complete_percentage) -> bool:
             sessions = deadline_client.list_sessions(
                 farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
             ).get("sessions")
@@ -1332,8 +1424,7 @@ class TestJobSubmission:
                         complete_percentage = session_action["progressPercent"]
                         return complete_percentage == 100
 
-            else:
-                return False
+            return False
 
         assert check_percentage(complete_percentage)
 
@@ -1343,6 +1434,6 @@ class TestJobSubmission:
         with (
             open(os.path.join(list(output_path.keys())[0], "output_file.txt"), "r") as output_file,
         ):
-            output_file_content = output_file.read()
+            output_file_content: str = output_file.read()
             # Verify that the hash is the same
             assert output_file_content == combined_hash
