@@ -93,7 +93,7 @@ class TestJobSubmission:
         expected_failed_action: str,
     ) -> None:
 
-        job = Job.submit(
+        job: Job = Job.submit(
             client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
@@ -125,12 +125,12 @@ class TestJobSubmission:
 
         # Retrieve job output and verify that the expected session action has failed
 
-        sessions = deadline_client.list_sessions(
+        sessions: list[dict[str, Any]] = deadline_client.list_sessions(
             farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
         ).get("sessions")
         found_failed_session_action: bool = False
         for session in sessions:
-            session_actions = deadline_client.list_session_actions(
+            session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
                 farmId=job.farm.id,
                 queueId=job.queue.id,
                 jobId=job.id,
@@ -157,7 +157,7 @@ class TestJobSubmission:
         deadline_client: DeadlineClient,
     ) -> None:
         # Test that if a task takes longer than the timeout defined, the session action goes to FAILED status
-        job = Job.submit(
+        job: Job = Job.submit(
             client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
@@ -307,7 +307,7 @@ class TestJobSubmission:
         environment_actions: Dict[str, Any],
         expected_canceled_action: str,
     ) -> None:
-        job = Job.submit(
+        job: Job = Job.submit(
             client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
@@ -360,7 +360,7 @@ class TestJobSubmission:
             interval=10,
         )
         def sessions_exist(current_job: Job) -> bool:
-            sessions = deadline_client.list_sessions(
+            sessions: list[dict[str, Any]] = deadline_client.list_sessions(
                 farmId=current_job.farm.id, queueId=current_job.queue.id, jobId=current_job.id
             ).get("sessions")
 
@@ -387,7 +387,7 @@ class TestJobSubmission:
         def is_expected_session_action_canceled(sessions: List[Dict[str, Any]]) -> bool:
             found_canceled_session_action: bool = False
             for session in sessions:
-                session_actions = deadline_client.list_session_actions(
+                session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
                     farmId=job.farm.id,
                     queueId=job.queue.id,
                     jobId=job.id,
@@ -407,7 +407,7 @@ class TestJobSubmission:
                         )  # This should not happen at all, so we fast exit
             return found_canceled_session_action
 
-        sessions = deadline_client.list_sessions(
+        sessions: list[dict[str, Any]] = deadline_client.list_sessions(
             farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
         ).get("sessions")
         assert is_expected_session_action_canceled(sessions)
@@ -420,7 +420,7 @@ class TestJobSubmission:
         expected_canceled_action: str,
     ) -> None:
         # Tests that when running a job session action with a trap for SIGINT, the corresponding session action is canceled almost immediately.
-        action_script = (
+        action_script: str = (
             "#!/usr/bin/env bash\n trap 'exit 0' SIGINT\n bash\n\n sleep 300\n "
             if os.environ["OPERATING_SYSTEM"] == "linux"
             else """try
@@ -435,7 +435,7 @@ class TestJobSubmission:
 
         environment_exit_id = str(uuid.uuid4())
         # Submit a job that either sleeps a long time during envEnter, or taskRun, depending on the test setting
-        job = Job.submit(
+        job: Job = Job.submit(
             client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
@@ -563,14 +563,14 @@ class TestJobSubmission:
             interval=10,
         )
         def action_to_cancel_has_started(current_job: Job) -> bool:
-            sessions = deadline_client.list_sessions(
+            sessions: list[dict[str, Any]] = deadline_client.list_sessions(
                 farmId=current_job.farm.id, queueId=current_job.queue.id, jobId=current_job.id
             ).get("sessions")
 
             if len(sessions) == 0:
                 return False
             for session in sessions:
-                session_actions = deadline_client.list_session_actions(
+                session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
                     farmId=job.farm.id,
                     queueId=job.queue.id,
                     jobId=job.id,
@@ -603,7 +603,7 @@ class TestJobSubmission:
         def is_expected_session_action_canceled(sessions) -> bool:
             found_canceled_session_action: bool = False
             for session in sessions:
-                session_actions = deadline_client.list_session_actions(
+                session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
                     farmId=job.farm.id,
                     queueId=job.queue.id,
                     jobId=job.id,
@@ -623,7 +623,7 @@ class TestJobSubmission:
                         )  # This should not happen at all, so we fast exit
             return found_canceled_session_action
 
-        sessions = deadline_client.list_sessions(
+        sessions: list[dict[str, Any]] = deadline_client.list_sessions(
             farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
         ).get("sessions")
         assert is_expected_session_action_canceled(sessions)
@@ -697,7 +697,7 @@ class TestJobSubmission:
                 )
             )
         # Create the input files to make sync inputs take a relatively long time
-        files_path = os.path.join(tmp_path, "files")
+        files_path: str = os.path.join(tmp_path, "files")
         os.mkdir(files_path)
         for i in range(2000):
             file_name: str = os.path.join(files_path, f"input_file_{i+1}.txt")
@@ -717,13 +717,13 @@ class TestJobSubmission:
         )
 
         assert job_id is not None
-        job_details = Job.get_job_details(
+        job_details: dict[str, Any] = Job.get_job_details(
             client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             job_id=job_id,
         )
-        job = Job(
+        job: Job = Job(
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             template={},
@@ -736,13 +736,13 @@ class TestJobSubmission:
             interval=2,
         )
         def sync_input_action_started(current_job: Job) -> bool:
-            sessions = deadline_client.list_sessions(
+            sessions: list[dict[str, Any]] = deadline_client.list_sessions(
                 farmId=current_job.farm.id, queueId=current_job.queue.id, jobId=current_job.id
             ).get("sessions")
             if len(sessions) == 0:
                 return False
             for session in sessions:
-                session_actions = deadline_client.list_session_actions(
+                session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
                     farmId=job.farm.id,
                     queueId=job.queue.id,
                     jobId=job.id,
@@ -774,7 +774,7 @@ class TestJobSubmission:
             interval=10,
         )
         def sync_input_actions_are_canceled(sessions: List[Dict[str, Any]]) -> bool:
-            found_canceled_sync_input_action = False
+            found_canceled_sync_input_action: bool = False
             for session in sessions:
                 session_actions = deadline_client.list_session_actions(
                     farmId=job.farm.id,
@@ -795,7 +795,7 @@ class TestJobSubmission:
                         )
             return found_canceled_sync_input_action
 
-        sessions = deadline_client.list_sessions(
+        sessions: list[dict[str, Any]] = deadline_client.list_sessions(
             farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
         ).get("sessions")
 
@@ -808,9 +808,9 @@ class TestJobSubmission:
     ) -> None:
         # Tests that whenever a envEnter on a job is attempted, the corresponding envExit is also ran despite session action failures
 
-        successful_environment_name = "SuccessfulEnvironment"
-        unsuccessful_environment_name = "UnsuccessfulEnvironment"
-        job = Job.submit(
+        successful_environment_name: str = "SuccessfulEnvironment"
+        unsuccessful_environment_name: str = "UnsuccessfulEnvironment"
+        job: Job = Job.submit(
             client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
@@ -863,19 +863,19 @@ class TestJobSubmission:
         # Wait until the job is completed
         job.wait_until_complete(client=deadline_client)
 
-        sessions = deadline_client.list_sessions(
+        sessions: list[dict[str, Any]] = deadline_client.list_sessions(
             farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
         ).get("sessions")
 
-        found_successful_env_enter = False
-        found_unsuccessful_env_enter = False
-        found_unsuccessful_env_exit = False
-        found_successful_env_exit = False
+        found_successful_env_enter: bool = False
+        found_unsuccessful_env_enter: bool = False
+        found_unsuccessful_env_exit: bool = False
+        found_successful_env_exit: bool = False
 
         # Find that the both the unsuccessful and successful environment ran, with envExit and envEnter for each.
         for session in sessions:
 
-            session_actions = deadline_client.list_session_actions(
+            session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
                 farmId=job.farm.id,
                 queueId=job.queue.id,
                 jobId=job.id,
@@ -982,7 +982,7 @@ class TestJobSubmission:
         deadline_client: DeadlineClient,
         job_environments: List[Dict[str, Any]],
     ) -> None:
-        job_template = {
+        job_template: dict[str, Any] = {
             "specificationVersion": "jobtemplate-2023-09",
             "name": f"jobWithNumberOfEnvironments-{len(job_environments)}",
             "steps": [
@@ -1010,7 +1010,7 @@ class TestJobSubmission:
         if len(job_environments) > 0:
             job_template["jobEnvironments"] = job_environments
 
-        job = Job.submit(
+        job: Job = Job.submit(
             client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
@@ -1029,7 +1029,7 @@ class TestJobSubmission:
             ),
         )
 
-        full_log = "\n".join(
+        full_log: str = "\n".join(
             [le.message for _, log_events in job_logs.logs.items() for le in log_events]
         )
 
@@ -1047,7 +1047,7 @@ class TestJobSubmission:
     ) -> None:
 
         job_start_time_seconds: float = time.time()
-        job = Job.submit(
+        job: Job = Job.submit(
             client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
@@ -1103,7 +1103,8 @@ class TestJobSubmission:
         worker_log_group_name: str = (
             f"/aws/deadline/{deadline_resources.farm.id}/{deadline_resources.fleet.id}"
         )
-        worker_id = session_worker.worker_id
+        worker_id: Optional[str] = session_worker.worker_id
+        assert worker_id is not None
 
         worker_logs = logs_client.get_log_events(
             logGroupName=worker_log_group_name,
@@ -1208,13 +1209,13 @@ class TestJobSubmission:
             # Clean up the template file
             os.remove(os.path.join(job_bundle_path, "template.json"))
 
-        job_details = Job.get_job_details(
+        job_details: dict[str, Any] = Job.get_job_details(
             client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             job_id=job_id,
         )
-        job = Job(
+        job: Job = Job(
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             template={},
