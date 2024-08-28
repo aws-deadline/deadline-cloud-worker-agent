@@ -1437,3 +1437,166 @@ class TestJobSubmission:
             output_file_content: str = output_file.read()
             # Verify that the hash is the same
             assert output_file_content == combined_hash
+
+    def test_worker_reports_task_progress_and_status_message(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+    ) -> None:
+
+        # Make sure that worker reports task progress, as well as the status message
+
+        # Submit a job with a task that sleeps for 60 seconds , which is more than the UpdateWorkerSchedule interval of 30 seconds
+
+        test_run_status_message: str = "Sleep job is running!"
+        sleep_script: str = (
+            f"""
+            #!/usr/bin/env bash
+            percent=0
+            
+            while [ $percent -le 100 ] 
+            do
+                echo "openjd_progress: $percent"
+                echo "openjd_status: {test_run_status_message}"
+                ((percent+=10))
+                sleep 6
+            done
+            """
+            if os.environ["OPERATING_SYSTEM"] == "linux"
+            else f"""
+            $percent = 0
+            while ($percent -le 100) {{
+                Write-Output "openjd_progress: $percent"
+                Write-Output "openjd_status: {test_run_status_message}"
+                $percent += 10
+                Start-Sleep -Seconds 6
+            }}
+            """
+        )
+        job: Job = Job.submit(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            max_retries_per_task=0,
+            priority=98,
+            template={
+                "specificationVersion": "jobtemplate-2023-09",
+                "name": "One Minute Sleep Job for Task Progress",
+                "steps": [
+                    {
+                        "name": "60 Second Sleep",
+                        "hostRequirements": {
+                            "attributes": [
+                                {
+                                    "name": "attr.worker.os.family",
+                                    "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                }
+                            ]
+                        },
+                        "script": {
+                            "actions": {
+                                "onRun": (
+                                    {"command": "{{ Task.File.runScript }}"}
+                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    else {
+                                        "command": "powershell",
+                                        "args": ["{{ Task.File.runScript }}"],
+                                    }
+                                ),
+                            },
+                            "embeddedFiles": [
+                                {
+                                    "name": "runScript",
+                                    "type": "TEXT",
+                                    "runnable": True,
+                                    "data": sleep_script,
+                                    **(
+                                        {"filename": "SleepScript.ps1"}
+                                        if os.environ["OPERATING_SYSTEM"] == "windows"
+                                        else {}
+                                    ),
+                                }
+                            ],
+                        },
+                    },
+                ],
+            },
+        )
+
+        @backoff.on_predicate(
+            wait_gen=backoff.constant,
+            max_time=120,
+            interval=2,
+        )
+        def is_job_started() -> bool:
+            job.refresh_job_info(client=deadline_client)
+            LOG.info(f"Waiting for job {job.id} to be created")
+            return job.lifecycle_status != "CREATE_IN_PROGRESS"
+
+        assert is_job_started()
+
+        @backoff.on_predicate(
+            wait_gen=backoff.constant,
+            max_time=180,
+            interval=4,
+        )
+        def get_session_action_id() -> Optional[str]:
+            sessions: list[dict[str, Any]] = deadline_client.list_sessions(
+                farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
+            ).get("sessions")
+
+            if sessions:
+                # There should be at most 1 session as there is only one task
+                assert len(sessions) <= 1
+                session: dict[str, Any] = sessions[0]
+                session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
+                    farmId=job.farm.id,
+                    queueId=job.queue.id,
+                    jobId=job.id,
+                    sessionId=session["sessionId"],
+                ).get("sessionActions")
+
+                # There should be at most 1 sessionAction as there is only one task
+                if session_actions:
+                    assert len(session_actions) <= 1
+                    return session_actions[0]["sessionActionId"]
+
+            return None
+
+        session_action_id: Optional[str] = get_session_action_id()
+        assert session_action_id is not None
+
+        @backoff.on_predicate(
+            wait_gen=backoff.constant,
+            max_time=180,
+            interval=4,
+        )
+        def session_action_has_expected_progress(session_action_id) -> bool:
+            session_action: dict[str, Any] = deadline_client.get_session_action(
+                farmId=job.farm.id,
+                queueId=job.queue.id,
+                jobId=job.id,
+                sessionActionId=session_action_id,
+            )
+            LOG.info(f"Session action for task progress test: {session_action}")
+            progress_percent: float = session_action["progressPercent"]
+            progress_message: str = session_action.get("progressMessage", "")
+            assert progress_percent < 100
+            assert session_action["status"] not in [
+                "SUCEEDED",
+                "FAILED",
+                "INTERRUPTED",
+                "CANCELED",
+                "NEVER_ATTEMPTED",
+                "RECLAIMING",
+                "RECLAIMED",
+            ]
+            if progress_percent > 0 and progress_message == test_run_status_message:
+                return True
+            return False
+
+        assert session_action_has_expected_progress(session_action_id)
+
+        job.wait_until_complete(client=deadline_client)
+
+        assert job.task_run_status == TaskStatus.SUCCEEDED
