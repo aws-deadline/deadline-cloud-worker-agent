@@ -246,6 +246,12 @@ class Worker:
                                 grace_time=worker_shutdown.grace_time,
                                 fail_message=worker_shutdown.fail_message,
                             )
+                        else:
+                            # If we are here, it's because self._stop.set() was set causing the monitor_ec2_shutdown thread to join.
+                            # The scheduler thread has a longer wait, so let's wake it up so it can join as well.
+                            self._scheduler.shutdown(
+                                fail_message="The Worker received a shutdown event locally from the host machine."
+                            )
                     elif future is scheduler_future:
                         logger.debug("scheduler future complete")
                         try:
