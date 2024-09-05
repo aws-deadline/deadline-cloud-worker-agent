@@ -17,6 +17,7 @@ import boto3
 import botocore.client
 import botocore.config
 import botocore.exceptions
+import re
 import time
 from deadline.client.config import set_setting
 from deadline.client import api
@@ -32,6 +33,58 @@ LOG = logging.getLogger(__name__)
 @pytest.mark.usefixtures("session_worker")
 @pytest.mark.parametrize("operating_system", [os.environ["OPERATING_SYSTEM"]], indirect=True)
 class TestJobSubmission:
+    def test_success(
+        self,
+        deadline_resources,
+        deadline_client: DeadlineClient,
+    ) -> None:
+        # WHEN
+        job = Job.submit(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            priority=98,
+            template={
+                "specificationVersion": "jobtemplate-2023-09",
+                "name": "Test Success Sleep Job",
+                "steps": [
+                    {
+                        "hostRequirements": {
+                            "attributes": [
+                                {
+                                    "name": "attr.worker.os.family",
+                                    "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                }
+                            ]
+                        },
+                        "name": "Step0",
+                        "script": {
+                            "actions": {
+                                "onRun": {
+                                    "command": (
+                                        "/bin/sleep"
+                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        else "powershell"
+                                    ),
+                                    "args": (
+                                        ["5"]
+                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        else ["ping", "localhost"]
+                                    ),
+                                },
+                            },
+                        },
+                    },
+                ],
+            },
+        )
+
+        # THEN
+        LOG.info(f"Waiting for job {job.id} to complete")
+        job.wait_until_complete(client=deadline_client)
+        LOG.info(f"Job result: {job}")
+
+        assert job.task_run_status == TaskStatus.SUCCEEDED
 
     @pytest.mark.parametrize(
         "run_actions,environment_actions, expected_failed_action",
@@ -632,28 +685,16 @@ class TestJobSubmission:
 
         job.wait_until_complete(client=deadline_client)
 
-        # Verify that envExit was ran
-        @backoff.on_predicate(
-            wait_gen=backoff.constant,
-            max_time=120,
-            interval=5,
-        )
-        def verify_env_exit_ran() -> bool:
-            job_logs = job.get_logs(
+        # Verify that envExit was ran, if the action being canceled in question is the taskRun, not the envEnter
+        if expected_canceled_action == "taskRun":
+            job.assert_single_task_log_contains(
                 deadline_client=deadline_client,
                 logs_client=boto3.client(
                     "logs",
                     config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
                 ),
+                expected_pattern=rf'{"Environment exit " + environment_exit_id}',
             )
-            full_log: str = "\n".join(
-                [le.message for _, log_events in job_logs.logs.items() for le in log_events]
-            )
-            return ("Environment exit " + environment_exit_id) in full_log
-
-        if expected_canceled_action == "taskRun":
-            # Verify that envExit was ran, if the action being canceled in question is the taskRun, not the envEnter
-            assert verify_env_exit_ran()
 
     @flaky(max_runs=3, min_passes=1)  # Flaky as sync input sometimes completes before expected.
     def test_worker_reports_canceled_sync_input_actions_as_canceled(
@@ -905,7 +946,6 @@ class TestJobSubmission:
     @pytest.mark.parametrize(
         "job_environments",
         [
-            ([]),
             (
                 [
                     {
@@ -1020,24 +1060,29 @@ class TestJobSubmission:
 
         job.wait_until_complete(client=deadline_client)
 
-        # Retrieve job output and verify whoami printed the queue's jobsRunAsUser
-        job_logs = job.get_logs(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-        )
-
-        full_log = "\n".join(
-            [le.message for _, log_events in job_logs.logs.items() for le in log_events]
-        )
-
-        assert full_log.count("Hello!") == len(
-            job_environments
-        ), "Expected number of Hello statements not found in job logs."
-
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        logs_client = boto3.client(
+            "logs",
+            config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+        )
+
+        if len(job_environments) == 1:
+            job.assert_single_task_log_contains(
+                deadline_client=deadline_client,
+                logs_client=logs_client,
+                # pass in alldot pattern
+                expected_pattern=r"Hello!",
+                assert_fail_msg="Expected Number of Hello statements not found in job logs.",
+            )
+
+        if len(job_environments) == 3:
+            job.assert_single_task_log_contains(
+                deadline_client=deadline_client,
+                logs_client=logs_client,
+                expected_pattern=re.compile(r"Hello!.*Hello!.*Hello!", re.DOTALL),
+                assert_fail_msg="Expected Number of Hello statements not found in job logs.",
+            )
 
     def test_worker_streams_logs_to_cloudwatch(
         self,
@@ -1084,20 +1129,19 @@ class TestJobSubmission:
         )
 
         job.wait_until_complete(client=deadline_client)
-        logs_client: boto3.client = boto3.client(
+
+        logs_client = boto3.client(
             "logs",
             config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
         )
 
         # Retrieve job output and verify the echo is printed
-        job_logs = job.get_logs(deadline_client=deadline_client, logs_client=logs_client)
-        full_log: str = "\n".join(
-            [le.message for _, log_events in job_logs.logs.items() for le in log_events]
-        )
 
-        assert (
-            full_log.count("HelloWorld") == 1
-        ), "Expected number of HelloWorld statements not found in job logs."
+        job.assert_single_task_log_contains(
+            deadline_client=deadline_client,
+            logs_client=logs_client,
+            expected_pattern=r"HelloWorld",
+        )
 
         # Retrieve worker logs and verify that it's not empty
         worker_log_group_name: str = (

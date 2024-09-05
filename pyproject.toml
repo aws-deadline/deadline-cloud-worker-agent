@@ -159,6 +159,7 @@ addopts = [
     "--cov-report=html:build/coverage",
     "--cov-report=xml:build/coverage/coverage.xml",
     "--cov-report=term-missing",
+    "--showlocals",
 ]
 testpaths = [ "test" ]
 looponfailroots = [ "src", "test" ]

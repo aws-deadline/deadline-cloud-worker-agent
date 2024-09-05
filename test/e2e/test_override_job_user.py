@@ -7,6 +7,7 @@ Deadline Cloud service and checking that the result/output of the jobs is as we 
 import boto3
 import botocore
 import pytest
+import os
 
 import logging
 
@@ -18,33 +19,15 @@ from deadline_test_fixtures import (
     DeadlineClient,
     EC2InstanceWorker,
 )
-from deadline_test_fixtures.deadline.resources import JobLogs
+
 
 LOG = logging.getLogger(__name__)
 
 
-def get_log_from_job(job: Job, deadline_client: DeadlineClient) -> tuple[str, JobLogs]:
-    """
-    Waits for the job to complete, then gets all the logs from the job and returns it as a string
-    """
-    LOG.info(f"Waiting for job {job.id} to complete")
-    job.wait_until_complete(client=deadline_client)
-    LOG.info(f"Job result: {job}")
-
-    # Retrieve job output and verify whoami printed the queue's jobsRunAsUser
-    job_logs = job.get_logs(
-        deadline_client=deadline_client,
-        logs_client=boto3.client(
-            "logs",
-            config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-        ),
-    )
-    full_log = "\n".join(
-        [le.message for _, log_events in job_logs.logs.items() for le in log_events]
-    )
-    return full_log, job_logs
-
-
+@pytest.mark.skipif(
+    os.environ["OPERATING_SYSTEM"] == "linux",
+    reason="Windows Specific Job User Override Tests.",
+)
 @pytest.mark.parametrize("operating_system", ["windows"], indirect=True)
 class TestJobUserOverride:
     @staticmethod
@@ -95,10 +78,17 @@ class TestJobUserOverride:
             "no user override", deadline_client, deadline_resources.farm, deadline_resources.queue_a
         )
 
-        full_log, job_logs = get_log_from_job(job, deadline_client)
-        assert (
-            "I am: job-user" in full_log
-        ), f"Expected message not found in Job logs. Logs are in CloudWatch log group: {job_logs.log_group_name}"
+        job.wait_until_complete(client=deadline_client, max_retries=20)
+
+        job.assert_single_task_log_contains(
+            deadline_client=deadline_client,
+            logs_client=boto3.client(
+                "logs",
+                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+            ),
+            expected_pattern=r"I am: job-user",
+        )
+
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
     def test_config_file_user_override(
@@ -114,11 +104,11 @@ class TestJobUserOverride:
             "(Get-Content -Path C:\ProgramData\Amazon\Deadline\Config\worker.toml -Raw) -replace '# windows_job_user = \"job-user\"', 'windows_job_user = \"config-override\"' | Set-Content -Path C:\ProgramData\Amazon\Deadline\Config\worker.toml"
         )
 
-        class_worker.start_worker_service()
-
         assert (
             cmd_result.exit_code == 0
         ), f"Setting the job user override via CLI failed: {cmd_result}"
+
+        class_worker.start_worker_service()
 
         job = self.submit_whoami_job(
             "config user override",
@@ -127,10 +117,17 @@ class TestJobUserOverride:
             deadline_resources.queue_a,
         )
 
-        full_log, job_logs = get_log_from_job(job, deadline_client)
-        assert (
-            "I am: config-override" in full_log
-        ), f"Expected message not found in Job logs. Logs are in CloudWatch log group: {job_logs.log_group_name}"
+        job.wait_until_complete(client=deadline_client, max_retries=20)
+
+        job.assert_single_task_log_contains(
+            deadline_client=deadline_client,
+            logs_client=boto3.client(
+                "logs",
+                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+            ),
+            expected_pattern=r"I am: config-override",
+        )
+
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # reset config file
@@ -171,10 +168,17 @@ class TestJobUserOverride:
             deadline_resources.queue_a,
         )
 
-        full_log, job_logs = get_log_from_job(job, deadline_client)
-        assert (
-            "I am: install-override" in full_log
-        ), f"Expected message not found in Job logs. Logs are in CloudWatch log group: {job_logs.log_group_name}"
+        job.wait_until_complete(client=deadline_client, max_retries=20)
+
+        job.assert_single_task_log_contains(
+            deadline_client=deadline_client,
+            logs_client=boto3.client(
+                "logs",
+                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+            ),
+            expected_pattern=r"I am: install-override",
+        )
+
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # reset config file
@@ -210,10 +214,17 @@ class TestJobUserOverride:
             deadline_resources.queue_a,
         )
 
-        full_log, job_logs = get_log_from_job(job, deadline_client)
-        assert (
-            "I am: env-override" in full_log
-        ), f"Expected message not found in Job logs. Logs are in CloudWatch log group: {job_logs.log_group_name}"
+        job.wait_until_complete(client=deadline_client, max_retries=20)
+
+        job.assert_single_task_log_contains(
+            deadline_client=deadline_client,
+            logs_client=boto3.client(
+                "logs",
+                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+            ),
+            expected_pattern=r"I am: env-override",
+        )
+
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
         cmd_result = class_worker.send_command(

@@ -5,11 +5,18 @@ Deadline Cloud worker and checking that the result/output of the worker agent is
 """
 import pytest
 import logging
+import os
+
 from deadline_test_fixtures import EC2InstanceWorker
+
 
 LOG = logging.getLogger(__name__)
 
 
+@pytest.mark.skipif(
+    os.environ["OPERATING_SYSTEM"] == "windows",
+    reason="Linux specific test",
+)
 @pytest.mark.parametrize("operating_system", ["linux"], indirect=True)
 class TestInstaller:
     def test_installer_shutdown_permission(
