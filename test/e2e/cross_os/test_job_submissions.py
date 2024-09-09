@@ -1600,3 +1600,101 @@ class TestJobSubmission:
         job.wait_until_complete(client=deadline_client)
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+
+def test_worker_enters_stopping_state_while_draining(
+    self,
+    deadline_resources: DeadlineResources,
+    deadline_client: DeadlineClient,
+    function_worker: EC2InstanceWorker,
+    sleep_script: str = (
+        """
+        #!/usr/bin/env bash
+        while true
+        do
+            sleep 1
+        done
+        """
+        if os.environ["OPERATING_SYSTEM"] == "linux"
+        else """
+        while ($true) {{
+            Start-Sleep -Seconds 1
+        }}
+        """
+    ),
+):
+    Job.submit(
+        client=deadline_client,
+        farm=deadline_resources.farm,
+        queue=deadline_resources.queue_a,
+        max_retries_per_task=0,
+        priority=98,
+        template={
+            "specificationVersion": "jobtemplate-2023-09",
+            "name": "Infinite Sleep Job",
+            "steps": [
+                {
+                    "name": "Sleep job",
+                    "hostRequirements": {
+                        "attributes": [
+                            {
+                                "name": "attr.worker.os.family",
+                                "allOf": [os.environ["OPERATING_SYSTEM"]],
+                            }
+                        ]
+                    },
+                    "script": {
+                        "actions": {
+                            "onRun": (
+                                {"command": "{{ Task.File.runScript }}"}
+                                if os.environ["OPERATING_SYSTEM"] == "linux"
+                                else {
+                                    "command": "powershell",
+                                    "args": ["{{ Task.File.runScript }}"],
+                                }
+                            ),
+                        },
+                        "embeddedFiles": [
+                            {
+                                "name": "runScript",
+                                "type": "TEXT",
+                                "runnable": True,
+                                "data": sleep_script,
+                                **(
+                                    {"filename": "SleepScript.ps1"}
+                                    if os.environ["OPERATING_SYSTEM"] == "windows"
+                                    else {}
+                                ),
+                            }
+                        ],
+                    },
+                },
+            ],
+        },
+    )
+
+    if os.environ["OPERATING_SYSTEM"] == "linux":
+        cmd_result = function_worker.send_command("sudo systemctl stop deadline-worker")
+    else:
+        cmd_result = function_worker.send_command("sc.exe stop DeadlineWorker")
+
+    assert cmd_result.exit_code == 0
+
+    @backoff.on_predicate(
+        wait_gen=backoff.constant,
+        max_time=120,
+        interval=10,
+    )
+    def worker_stop(worker: EC2InstanceWorker) -> bool:
+        response = function_worker.deadline_client.get_worker(
+            farmId=function_worker.configuration.farm_id,
+            fleetId=function_worker.configuration.fleet.id,
+            workerId=function_worker.worker_id,
+        )
+        LOG.info(
+            f"Waiting for {function_worker.worker_id} to transition to STOPPING/STOPPED status"
+        )
+
+        return response["status"] in ["STOPPED", "STOPPING"]
+
+    assert worker_stop(function_worker)
