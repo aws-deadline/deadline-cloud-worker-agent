@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from time import sleep
+from botocore.exceptions import NoRegionError
 from logging.handlers import TimedRotatingFileHandler
 from threading import Event
 from typing import Optional
@@ -82,7 +83,13 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
         config.log()
 
         # Register the Worker
-        worker_bootstrap = bootstrap_worker(config=config)
+        try:
+            worker_bootstrap = bootstrap_worker(config=config)
+        except NoRegionError:
+            _logger.warn(
+                "The Worker Agent was started with no AWS region specified. Refer to the Deadline Cloud Worker Agent documentation for guidance: https://github.com/aws-deadline/deadline-cloud-worker-agent/blob/release/README.md#running-outside-of-an-operating-system-service"
+            )
+            raise
         if worker_bootstrap.log_config is None:
             _logger.critical(
                 "This version of the Worker Agent does not support log configurations other than 'awslogs'"

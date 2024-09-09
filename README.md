@@ -175,6 +175,23 @@ REM stop the service
 sc.exe stop DeadlineWorker
 ```
 
+### Running Outside of an Operating System Service
+
+---
+**NOTE:**
+It is highly recommended to run the worker agent through an OS service in production environments. The OS service automatically handles:
+- Restarting the worker agent process if the agent process crashes.
+- Starting the worker agent when the host machine starts up.
+- Attempting graceful shutdown when the host machine is shutting down.
+----
+The worker agent can also be started outside of a service context if required. Run `deadline-worker-agent --help` to see a list of supported command line arguments.
+
+ **NOTE:** You must have an [AWS region](https://docs.aws.amazon.com/sdkref/latest/guide/feature-region.html) specified in order to run the worker agent from the command line. This can be configured through:
+  - The `AWS_DEFAULT_REGION` [environment variable](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html#envvars-list).
+  - The [AWS Configuration File](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-where)
+    - Configured [manually](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-format), or through the [command line](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-methods).
+
+
 ## Logging
 
 [See logging](https://github.com/aws-deadline/deadline-cloud-worker-agent/blob/release/docs/logging.md)
