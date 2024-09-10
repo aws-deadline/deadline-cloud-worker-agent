@@ -36,3 +36,16 @@ jobs:
       branch: release
       environment: canary
       os: linux
+
+  ReleaseWindowsE2ECanary:
+    name: Release Windows Canary
+    permissions:
+      id-token: write
+      contents: read
+    uses: aws-deadline/.github/.github/workflows/reusable_canary.yml@mainline
+    secrets: inherit
+    with:
+      repository: ${{ github.event.repository.name }}
+      branch: release
+      environment: canary
+      os: windows

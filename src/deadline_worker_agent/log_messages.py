@@ -1,4 +1,5 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+from __future__ import annotations
 
 import sys
 from enum import Enum
@@ -208,9 +209,9 @@ class FilesystemLogEvent(BaseLogEvent):
     msg: str
     fmt = "%(message)s [%(filepath)s]"
 
-    def __init__(self, *, op: FilesystemLogEventOp, filepath: str, message: str) -> None:
+    def __init__(self, *, op: FilesystemLogEventOp, filepath: str | Path, message: str) -> None:
         self.subtype = op.value
-        self.filepath = filepath
+        self.filepath = str(filepath)
         self.msg = message
 
     def getMessage(self) -> str:
