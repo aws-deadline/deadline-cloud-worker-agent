@@ -8,10 +8,15 @@ attacker position in a supposed different security boundary.
 
 import logging
 import pytest
+import os
 
 from deadline_test_fixtures import CommandResult, DeadlineWorkerConfiguration, EC2InstanceWorker
 
 
+@pytest.mark.skipif(
+    os.environ["OPERATING_SYSTEM"] == "windows",
+    reason="Linux specific test",
+)
 @pytest.mark.parametrize("operating_system", ["linux"], indirect=True)
 def test_access_worker_credential_file_from_job(
     session_worker: EC2InstanceWorker,

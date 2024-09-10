@@ -148,11 +148,9 @@ export WORKER_AGENT_WHL_PATH=$(pwd)/$(ls dist/*.whl)
 
 # Linux
 source .e2e_linux_infra.sh
-hatch run linux-e2e-test
-hatch run cross-os-e2e-test
+hatch run e2e-test
 
 # Windows
 source .e2e_windows_infra.sh
-hatch run windows-e2e-test
-hatch run cross-os-e2e-test
+hatch run e2e-test
 ```
