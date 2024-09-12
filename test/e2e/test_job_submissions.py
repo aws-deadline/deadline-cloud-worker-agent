@@ -133,10 +133,6 @@ class TestJobSubmission:
             ),
         ],
     )
-    @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "linux",
-        reason="Linux test is flaky. Disabling until further investigation.",
-    )
     def test_job_reports_failed_session_action(
         self,
         deadline_resources: DeadlineResources,
@@ -173,36 +169,41 @@ class TestJobSubmission:
                 ],
             },
         )
-        # THEN
+
+        # Wait until the job is completed
         job.wait_until_complete(client=deadline_client)
 
-        # Retrieve job output and verify that the expected session action has failed
+        @backoff.on_predicate(
+            wait_gen=backoff.constant,
+            max_time=60,
+            interval=10,
+        )
+        def is_expected_session_action_failed(sessions: List[Dict[str, Any]]) -> bool:
+            found_failed_session_action: bool = False
+            for session in sessions:
+                session_actions = deadline_client.list_session_actions(
+                    farmId=job.farm.id,
+                    queueId=job.queue.id,
+                    jobId=job.id,
+                    sessionId=session["sessionId"],
+                ).get("sessionActions")
+
+                logging.info(f"Session actions: {session_actions}")
+                for session_action in session_actions:
+                    # Session action should be failed IFF it's the expected action to fail
+                    if expected_failed_action in session_action["definition"]:
+                        if session_action["status"] == "FAILED":
+                            found_failed_session_action = True
+                    else:
+                        assert (
+                            session_action["status"] != "FAILED"
+                        ), f"Session action that should not have failed is in FAILED status. {session_action}"
+            return found_failed_session_action
 
         sessions: list[dict[str, Any]] = deadline_client.list_sessions(
             farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
         ).get("sessions")
-        found_failed_session_action: bool = False
-        for session in sessions:
-            session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
-                farmId=job.farm.id,
-                queueId=job.queue.id,
-                jobId=job.id,
-                sessionId=session["sessionId"],
-            ).get("sessionActions")
-
-            logging.info(f"Session actions: {session_actions}")
-            for session_action in session_actions:
-                # Session action should be failed IFF it's the expected action to fail
-                if expected_failed_action in session_action["definition"]:
-                    found_failed_session_action = True
-                    assert (
-                        session_action["status"] == "FAILED"
-                    ), f"Session action that should have failed is not in FAILED status. {session_action}"
-                else:
-                    assert (
-                        session_action["status"] != "FAILED"
-                    ), f"Session action that should not have failed is in FAILED status. {session_action}"
-        assert found_failed_session_action
+        assert is_expected_session_action_failed(sessions)
 
     def test_worker_fails_session_action_timeout(
         self,
