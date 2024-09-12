@@ -370,3 +370,14 @@ def operating_system(request) -> OperatingSystem:
         return OperatingSystem(name="AL2023")
     else:
         return OperatingSystem(name="WIN2022")
+
+
+def pytest_collection_modifyitems(items):
+    sorted_list = list(items)
+    for item in items:
+        # Run session scoped tests last to prevent Worker conflicts with class and function scoped tests.
+        if "session_worker" in item.fixturenames:
+            sorted_list.remove(item)
+            sorted_list.append(item)
+
+    items[:] = sorted_list
