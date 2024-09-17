@@ -156,7 +156,8 @@ def worker_config(
             dest_path = posixpath.join("/tmp", os.path.basename(resolved_whl_path))
         else:
             dest_path = posixpath.join(
-                "%USERPROFILE%\\AppData\\Local\\Temp", os.path.basename(resolved_whl_path)
+                "C:\\Windows\\System32\\Config\\systemprofile\\AppData\\Local\\Temp",
+                os.path.basename(resolved_whl_path),
             )
         file_mappings = [(resolved_whl_path, dest_path)]
 
@@ -180,7 +181,9 @@ def worker_config(
         if operating_system.name == "AL2023":
             dst_path = posixpath.join("/tmp", src_path.name)
         else:
-            dst_path = posixpath.join("%USERPROFILE%\\AppData\\Local\\Temp", src_path.name)
+            dst_path = posixpath.join(
+                "C:\\Windows\\System32\\Config\\systemprofile\\AppData\\Local\\Temp", src_path.name
+            )
         LOG.info(f"The service model will be copied to {dst_path} on the Worker environment")
         file_mappings.append((str(src_path), dst_path))
 
