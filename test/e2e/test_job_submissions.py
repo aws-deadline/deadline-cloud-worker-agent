@@ -1151,13 +1151,21 @@ class TestJobSubmission:
         worker_id: Optional[str] = session_worker.worker_id
         assert worker_id is not None
 
-        worker_logs = logs_client.get_log_events(
-            logGroupName=worker_log_group_name,
-            logStreamName=worker_id,
-            startTime=int(job_start_time_seconds * 1000),
+        @backoff.on_predicate(
+            wait_gen=backoff.constant,
+            max_time=120,
+            interval=2,
         )
+        def check_for_worker_log_event() -> bool:
+            worker_logs = logs_client.get_log_events(
+                logGroupName=worker_log_group_name,
+                logStreamName=worker_id,
+                startTime=int(job_start_time_seconds * 1000),
+            )
 
-        assert len(worker_logs["events"]) > 0
+            return len(worker_logs["events"]) > 0
+
+        assert check_for_worker_log_event(), f"Could not find a worker log for {worker_id}"
 
     @pytest.mark.parametrize(
         "append_string_script",
