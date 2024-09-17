@@ -1,10 +1,13 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+import os
 
 from deadline.job_attachments._aws.deadline import get_queue
 from deadline.job_attachments import download
 from deadline_test_fixtures import (
     DeadlineClient,
     Job,
+    Farm,
+    Queue,
 )
 
 from e2e.conftest import DeadlineResources
@@ -35,3 +38,49 @@ def wait_for_job_output(
     job_output_downloader.download_job_output()
 
     return output_paths_by_root
+
+
+def submit_sleep_job(
+    job_name: str, deadline_client: DeadlineClient, farm: Farm, queue: Queue
+) -> Job:
+    job = Job.submit(
+        client=deadline_client,
+        farm=farm,
+        queue=queue,
+        priority=98,
+        template={
+            "specificationVersion": "jobtemplate-2023-09",
+            "name": f"{job_name}",
+            "steps": [
+                {
+                    "hostRequirements": {
+                        "attributes": [
+                            {
+                                "name": "attr.worker.os.family",
+                                "allOf": [os.environ["OPERATING_SYSTEM"]],
+                            }
+                        ]
+                    },
+                    "name": "Step0",
+                    "script": {
+                        "actions": {
+                            "onRun": {
+                                "command": (
+                                    "/bin/sleep"
+                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    else "powershell"
+                                ),
+                                "args": (
+                                    ["5"]
+                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    else ["ping", "localhost"]
+                                ),
+                            },
+                        },
+                    },
+                },
+            ],
+        },
+    )
+
+    return job

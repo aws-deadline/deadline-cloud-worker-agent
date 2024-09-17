@@ -25,7 +25,7 @@ import uuid
 import os
 import configparser
 import tempfile
-from e2e.utils import wait_for_job_output
+from e2e.utils import wait_for_job_output, submit_sleep_job
 
 LOG = logging.getLogger(__name__)
 
@@ -39,44 +39,12 @@ class TestJobSubmission:
         deadline_client: DeadlineClient,
     ) -> None:
         # WHEN
-        job = Job.submit(
-            client=deadline_client,
-            farm=deadline_resources.farm,
-            queue=deadline_resources.queue_a,
-            priority=98,
-            template={
-                "specificationVersion": "jobtemplate-2023-09",
-                "name": "Test Success Sleep Job",
-                "steps": [
-                    {
-                        "hostRequirements": {
-                            "attributes": [
-                                {
-                                    "name": "attr.worker.os.family",
-                                    "allOf": [os.environ["OPERATING_SYSTEM"]],
-                                }
-                            ]
-                        },
-                        "name": "Step0",
-                        "script": {
-                            "actions": {
-                                "onRun": {
-                                    "command": (
-                                        "/bin/sleep"
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
-                                        else "powershell"
-                                    ),
-                                    "args": (
-                                        ["5"]
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
-                                        else ["ping", "localhost"]
-                                    ),
-                                },
-                            },
-                        },
-                    },
-                ],
-            },
+
+        job = submit_sleep_job(
+            "Test Success Sleep Job",
+            deadline_client,
+            deadline_resources.farm,
+            deadline_resources.queue_a,
         )
 
         # THEN
@@ -696,6 +664,23 @@ class TestJobSubmission:
                 ),
                 expected_pattern=rf'{"Environment exit " + environment_exit_id}',
             )
+
+        # Test that worker continues polling for work
+        job = submit_sleep_job(
+            "Test Worker after Job Canceled",
+            deadline_client,
+            deadline_resources.farm,
+            deadline_resources.queue_a,
+        )
+
+        # THEN
+        LOG.info(f"Waiting for job {job.id} to complete")
+        job.wait_until_complete(client=deadline_client)
+        LOG.info(f"Job result: {job}")
+
+        assert (
+            job.task_run_status == TaskStatus.SUCCEEDED
+        ), "Worker failed to continue polling for work after job cancelation"
 
     @flaky(max_runs=3, min_passes=1)  # Flaky as sync input sometimes completes before expected.
     def test_worker_reports_canceled_sync_input_actions_as_canceled(
