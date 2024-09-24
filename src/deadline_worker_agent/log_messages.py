@@ -5,7 +5,7 @@ import sys
 from enum import Enum
 import logging
 import json
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, TYPE_CHECKING
 from types import MethodType
 from pathlib import Path
 from getpass import getuser
@@ -13,7 +13,12 @@ from getpass import getuser
 from ._version import __version__
 from openjd.model import version as openjd_model_version
 from openjd.sessions import version as openjd_sessions_version
+from openjd.sessions import LogContent
+from openjd.sessions import LOG as openjd_logger
 from deadline.job_attachments import version as deadline_job_attach_version
+
+if TYPE_CHECKING:
+    from .scheduler.scheduler import SessionMap
 
 # ========================
 #  Generic types of log messages
@@ -386,13 +391,14 @@ class SessionLogEventSubtype(str, Enum):
     COMPLETE = "Complete"
     INFO = "Info"  # Generic information about the session
     LOGS = "Logs"  # Info on where the logs are going
+    RUNTIME = "Runtime"  # Runtime logs from the openjd.sessions module applicable to the worker log
 
 
 class SessionLogEvent(BaseLogEvent):
     ti = "🔷"
     type = "Session"
-    queue_id: str
-    job_id: str
+    queue_id: Optional[str]
+    job_id: Optional[str]
     session_id: str
     user: Optional[str]
     action_ids: Optional[list[str]]  # for Add/Cancel
@@ -403,8 +409,8 @@ class SessionLogEvent(BaseLogEvent):
         self,
         *,
         subtype: SessionLogEventSubtype,
-        queue_id: str,
-        job_id: str,
+        queue_id: Optional[str] = None,
+        job_id: Optional[str] = None,
         session_id: str,
         user: Optional[str] = None,
         message: str,
@@ -425,16 +431,24 @@ class SessionLogEvent(BaseLogEvent):
     def getMessage(self) -> str:
         dd = self.asdict()
         if self.subtype == SessionLogEventSubtype.USER.value and self.user is not None:
-            fmt_str = "[%(session_id)s] %(message)s (User: %(user)s) [%(queue_id)s/%(job_id)s]"
+            fmt_str = "[%(session_id)s] %(message)s (User: %(user)s)"
         elif self.subtype in (
             SessionLogEventSubtype.ADD.value,
             SessionLogEventSubtype.REMOVE.value,
         ):
-            fmt_str = "[%(session_id)s] %(message)s (ActionIds: %(action_ids)s) (QueuedActionCount: %(queued_action_count)s) [%(queue_id)s/%(job_id)s]"
+            fmt_str = "[%(session_id)s] %(message)s (ActionIds: %(action_ids)s) (QueuedActionCount: %(queued_action_count)s)"
         elif self.subtype == SessionLogEventSubtype.LOGS.value and self.log_dest is not None:
-            fmt_str = "[%(session_id)s] %(message)s (LogDestination: %(log_dest)s) [%(queue_id)s/%(job_id)s]"
+            fmt_str = "[%(session_id)s] %(message)s (LogDestination: %(log_dest)s)"
         else:
-            fmt_str = "[%(session_id)s] %(message)s [%(queue_id)s/%(job_id)s]"
+            fmt_str = "[%(session_id)s] %(message)s"
+
+        if self.job_id and self.queue_id:
+            fmt_str += " [%(queue_id)s/%(job_id)s]"
+        elif self.job_id:
+            fmt_str += " [%(job_id)s]"
+        elif self.queue_id:
+            fmt_str += " [%(queue_id)s]"
+
         return self.add_exception_to_message(fmt_str % dd)
 
     def asdict(self) -> dict[str, Any]:
@@ -570,12 +584,82 @@ class LogRecordStringTranslationFilter(logging.Filter):
     """
 
     formatter = logging.Formatter()
+    openjd_worker_log_content = (
+        LogContent.EXCEPTION_INFO | LogContent.PROCESS_CONTROL | LogContent.HOST_INFO
+    )
+    _session_map: "SessionMap" | None = None
+
+    @property
+    def session_map(self) -> Optional["SessionMap"]:
+        if self._session_map is None:
+            from .scheduler.scheduler import SessionMap
+
+            self._session_map = SessionMap.get_session_map()
+        return self._session_map
+
+    def _is_from_openjd(self, record: logging.LogRecord) -> bool:
+        """Returns True if the record is from openjd.sessions"""
+        return record.name == openjd_logger.name and isinstance(record.msg, str)
+
+    def _is_openjd_message_to_log(self, record: logging.LogRecord) -> bool:
+        """
+        Return True if the record is from openjd.sessions and has content that should be logged in the worker logs.
+        """
+        if not self._is_from_openjd(record):
+            return False
+        if not hasattr(record, "openjd_log_content") or not isinstance(
+            record.openjd_log_content, LogContent
+        ):
+            # Message from openjd.sessions does not have the openjd_log_content property, so we
+            # do not know what content the message contains. Do not log.
+            return False
+        elif record.openjd_log_content not in self.openjd_worker_log_content:
+            # Message contains content that does not belong in the worker logs. Do not log.
+            return False
+        else:
+            return True
+
+    def _replace_openjd_log_message(self, record: logging.LogRecord) -> None:
+        """
+        Best effort replaces the .msg attribute of a LogRecord from openjd.sessions with a SessionLogEvent.
+        If the record does not have a session_id attribute, then the .msg attribute is not replaced.
+        """
+        if not hasattr(record, "session_id") or not isinstance(record.session_id, str):
+            # This should never happen. If somehow it does, just fall back to a StringLogEvent.
+            return
+
+        session_id = record.session_id
+        queue_id = None
+        job_id = None
+
+        if self.session_map is not None and session_id in self.session_map:
+            scheduler_session = self.session_map[session_id]
+            queue_id = scheduler_session.session._queue_id
+            job_id = scheduler_session.session._job_id
+
+        record.msg = SessionLogEvent(
+            subtype=SessionLogEventSubtype.RUNTIME,
+            queue_id=queue_id,
+            job_id=job_id,
+            session_id=session_id,
+            message=record.getMessage(),
+            user=None,  # User is only used for SessionLogEventSubtype.USER
+        )
+        record.getMessageReplaced = True
+        record.getMessage = MethodType(lambda self: self.msg.getMessage(), record)  # type: ignore
 
     def filter(self, record: logging.LogRecord) -> bool:
         """Translate plain string log messages into a LogMessage instance
         based on the loglevel of the record.
         Log records don't have a str typed msg pass-through as-is.
         """
+        if self._is_from_openjd(record):
+            if self._is_openjd_message_to_log(record):
+                # Message is from openjd.sessions and only contains content we intend to log in the worker logs.
+                self._replace_openjd_log_message(record)
+            else:
+                return False
+
         if isinstance(record.msg, str):
             message = record.getMessage()
             record.msg = StringLogEvent(message)
