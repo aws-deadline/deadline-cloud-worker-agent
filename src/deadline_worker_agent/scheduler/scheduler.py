@@ -128,12 +128,18 @@ class QueueAwsCredentials:
 
 class SessionMap(MappingWithCallbacks[str, SchedulerSession]):
     """
-    Map of session IDs to sessions.
+    Singleton mapping of session IDs to sessions.
 
     This class hooks into dict operations to register session with SessionCleanupManager
     """
 
+    __session_map_instance: SessionMap | None = None
     _session_cleanup_manager: SessionUserCleanupManager
+
+    def __new__(cls, *args, **kwargs) -> SessionMap:
+        if cls.__session_map_instance is None:
+            cls.__session_map_instance = super().__new__(cls)
+        return cls.__session_map_instance
 
     def __init__(
         self,
@@ -159,6 +165,10 @@ class SessionMap(MappingWithCallbacks[str, SchedulerSession]):
             # Nothing to do, base class will raise KeyError
             return
         self._session_cleanup_manager.deregister(scheduler_session.session)
+
+    @classmethod
+    def get_session_map(cls) -> SessionMap | None:
+        return cls.__session_map_instance
 
 
 class WorkerScheduler:

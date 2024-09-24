@@ -4,8 +4,11 @@ import json
 import logging
 import pytest
 import sys
-from typing import Any, Union
 
+from unittest.mock import patch, MagicMock
+from typing import Any, Union, Generator, Optional
+
+import deadline_worker_agent as agent_module
 from deadline_worker_agent.log_messages import (
     AgentInfoLogEvent,
     ApiRequestLogEvent,
@@ -25,6 +28,11 @@ from deadline_worker_agent.log_messages import (
     WorkerLogEvent,
     WorkerLogEventOp,
     LogRecordStringTranslationFilter,
+)
+
+from openjd.sessions import (
+    LOG,
+    LogContent,
 )
 
 # List tests alphabetically by the Log class being tested.
@@ -663,3 +671,168 @@ def test_log_agent_info() -> None:
     assert hasattr(
         record, "json"
     )  # filter populated the json field (which tests AgentInfoLogEvent.asdict())
+
+
+@pytest.fixture
+def session_id() -> str:
+    return "session-1234"
+
+
+@pytest.fixture
+def queue_id() -> str:
+    return "queue-1234"
+
+
+@pytest.fixture
+def job_id() -> str:
+    return "job-1234"
+
+
+@pytest.fixture
+def scheduler_session(queue_id: str, job_id: str) -> MagicMock:
+    scheduler_session = MagicMock()
+    scheduler_session.session = MagicMock()
+    scheduler_session.session._queue_id = queue_id
+    scheduler_session.session._job_id = job_id
+    return scheduler_session
+
+
+@pytest.fixture
+def session_map(
+    session_id: str, scheduler_session: MagicMock
+) -> Generator[dict[str, MagicMock], None, None]:
+    with patch.object(
+        agent_module.scheduler.scheduler.SessionMap, "get_session_map"
+    ) as mock_get_session_map:
+        mock_get_session_map.return_value = {session_id: scheduler_session}
+        yield mock_get_session_map
+
+
+EXPECTED_LOG_CONTENT = LogContent.EXCEPTION_INFO | LogContent.PROCESS_CONTROL | LogContent.HOST_INFO
+
+
+@pytest.mark.parametrize(
+    "log_content, expected_result",
+    [
+        pytest.param(content, content in EXPECTED_LOG_CONTENT, id=content.name)
+        for content in list(LogContent)
+    ]
+    + [
+        pytest.param(LogContent(0), True, id="No Content"),
+        pytest.param(~LogContent(0), False, id="All Content"),
+        pytest.param(None, False, id="None"),
+    ],
+)
+def test_log_openjd_logs(
+    session_id: str,
+    queue_id: str,
+    job_id: str,
+    session_map: dict[str, MagicMock],
+    log_content: Optional[LogContent],
+    expected_result: bool,
+) -> None:
+    # GIVEN
+    message = "Test OpenJD Message"
+    record = logging.makeLogRecord(
+        {
+            "name": LOG.name,
+            "level": logging.INFO,
+            "levelname": "INFO",
+            "pathname": "test",
+            "lineno": 10,
+            "msg": message,
+            "args": None,
+            "exc_info": None,
+            "session_id": session_id,
+            "openjd_log_content": log_content,
+        }
+    )
+    log_filter = LogRecordStringTranslationFilter()
+
+    # WHEN
+    result = log_filter.filter(record)
+    assert result == expected_result
+    result = log_filter.filter(record)  # Twice just to make sure the filter logic is sound
+
+    # THEN
+    assert result == expected_result
+    if expected_result:
+        assert isinstance(record.msg, SessionLogEvent)
+        assert record.getMessage() == f"[{session_id}] {message} [{queue_id}/{job_id}]"
+        assert hasattr(
+            record, "json"
+        )  # filter populated the json field (which tests AgentInfoLogEvent.asdict())
+        assert record.json == json.dumps(
+            {
+                "level": "INFO",
+                "ti": "🔷",
+                "type": "Session",
+                "subtype": "Runtime",
+                "session_id": session_id,
+                "message": message,
+                "queue_id": queue_id,
+                "job_id": job_id,
+            },
+            ensure_ascii=False,
+        )
+
+
+def test_openjd_logs_no_openjd_log_content(
+    session_id: str,
+    queue_id: str,
+    job_id: str,
+    session_map: dict[str, MagicMock],
+) -> None:
+    # GIVEN
+    message = "Test OpenJD Message"
+    record = logging.makeLogRecord(
+        {
+            "name": LOG.name,
+            "level": logging.INFO,
+            "levelname": "INFO",
+            "pathname": "test",
+            "lineno": 10,
+            "msg": message,
+            "args": None,
+            "exc_info": None,
+            "session_id": session_id,
+        }
+    )
+    log_filter = LogRecordStringTranslationFilter()
+
+    # WHEN
+    result = log_filter.filter(record)
+
+    # THEN
+    assert not result
+
+
+def test_openjd_logs_openjd_log_content_wrong_type(
+    session_id: str,
+    queue_id: str,
+    job_id: str,
+    session_map: dict[str, MagicMock],
+) -> None:
+    # GIVEN
+    message = "Test OpenJD Message"
+    record = logging.makeLogRecord(
+        {
+            "name": LOG.name,
+            "level": logging.INFO,
+            "levelname": "INFO",
+            "pathname": "test",
+            "lineno": 10,
+            "msg": message,
+            "args": None,
+            "exc_info": None,
+            "session_id": session_id,
+            "openjd_log_content": True,
+        }
+    )
+    log_filter = LogRecordStringTranslationFilter()
+
+    # WHEN
+    result = log_filter.filter(record)
+
+    # THEN
+    assert not result
