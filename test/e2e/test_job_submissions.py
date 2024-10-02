@@ -1694,16 +1694,11 @@ class TestJobSubmission:
         sleep_script: str = (
             """
             #!/usr/bin/env bash
-            while true
-            do
-                sleep 1
-            done
+            sleep 600
             """
             if os.environ["OPERATING_SYSTEM"] == "linux"
             else """
-            while ($true) {{
-                Start-Sleep -Seconds 1
-            }}
+            Start-Sleep -Seconds 600
             """
         ),
     ):
