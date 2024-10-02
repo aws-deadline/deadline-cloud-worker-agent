@@ -1847,8 +1847,8 @@ class TestJobSubmission:
         ),
     ):
 
-        submit_custom_job(
-            job_name="Infinite Sleep Job",
+        job: Job = submit_custom_job(
+            job_name="10 Minutes Sleep Job",
             deadline_client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
@@ -1879,4 +1879,14 @@ class TestJobSubmission:
 
             return response["status"] in ["STOPPED", "STOPPING"]
 
-        assert worker_stop(function_worker)
+        try:
+            assert worker_stop(function_worker)
+        finally:
+            deadline_client.update_job(
+                farmId=job.farm.id,
+                queueId=job.queue.id,
+                jobId=job.id,
+                targetTaskRunStatus="CANCELED",
+            )
+
+            job.wait_until_complete(client=deadline_client)
