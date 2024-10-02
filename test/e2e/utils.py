@@ -84,3 +84,58 @@ def submit_sleep_job(
     )
 
     return job
+
+
+def submit_custom_job(
+    job_name: str, deadline_client: DeadlineClient, farm: Farm, queue: Queue, run_script: str
+) -> Job:
+    job = Job.submit(
+        client=deadline_client,
+        farm=farm,
+        queue=queue,
+        priority=98,
+        template={
+            "specificationVersion": "jobtemplate-2023-09",
+            "name": f"{job_name}",
+            "steps": [
+                {
+                    "hostRequirements": {
+                        "attributes": [
+                            {
+                                "name": "attr.worker.os.family",
+                                "allOf": [os.environ["OPERATING_SYSTEM"]],
+                            }
+                        ]
+                    },
+                    "name": "Step0",
+                    "script": {
+                        "actions": {
+                            "onRun": (
+                                {"command": "{{ Task.File.runScript }}"}
+                                if os.environ["OPERATING_SYSTEM"] == "linux"
+                                else {
+                                    "command": "powershell",
+                                    "args": ["{{ Task.File.runScript }}"],
+                                }
+                            ),
+                        },
+                        "embeddedFiles": [
+                            {
+                                "name": "runScript",
+                                "type": "TEXT",
+                                "runnable": True,
+                                "data": run_script,
+                                **(
+                                    {"filename": "runScript.ps1"}
+                                    if os.environ["OPERATING_SYSTEM"] == "windows"
+                                    else {}
+                                ),
+                            }
+                        ],
+                    },
+                },
+            ],
+        },
+    )
+
+    return job
