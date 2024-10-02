@@ -89,6 +89,7 @@ export FARM_ID
 # Required - The ID of the queues to use
 export QUEUE_A_ID
 export QUEUE_B_ID
+export NON_VALID_ROLE_QUEUE_ID
 export SCALING_QUEUE_ID
 # Required - The ID of the fleets to use
 export FLEET_ID

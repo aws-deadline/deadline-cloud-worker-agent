@@ -58,6 +58,9 @@ Outputs:
   QueueBId:
     Value: !GetAtt [SecondaryQueue, QueueId]
   
+  NonValidRoleQueueId:
+    Value: !GetAtt [NonValidRoleQueue, QueueId]
+  
   ScalingQueueId:
     Value: !GetAtt [AutoscalingQueue, QueueId]
 
@@ -561,6 +564,37 @@ Resources:
         - Key: Origin
           Value: DeadlineCloudAgentE2ETest
 
+  NonValidQueueRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - sts:AssumeRole
+            Principal:
+              Service:
+                - !Sub credentials.deadline.${AWS::URLSuffix}
+      Policies:
+        - PolicyName: NonValidJobAttachmentsPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt JobAttachmentsBucket.Arn
+                  - !Join
+                    - ''
+                    - - !GetAtt JobAttachmentsBucket.Arn
+                      - /*
+      Tags:
+        - Key: Origin
+          Value: DeadlineCloudAgentE2ETest
+
   # --------------------------
   # Testing Support - SecretsManager
   # --------------------------
@@ -627,6 +661,26 @@ Resources:
           PasswordArn: !Ref WindowsJobUserPasswordSecret
         RunAs: QUEUE_CONFIGURED_USER
       RoleArn: !GetAtt QueueRole.Arn
+
+  NonValidRoleQueue:
+    Type: AWS::Deadline::Queue
+    Properties:
+      DisplayName: NonValidRoleQueue
+      Description: Queue used when a test needs to use a queue that is missing a role.
+      FarmId: !GetAtt DeadlineFarm.FarmId
+      JobAttachmentSettings:
+        RootPrefix: Deadline
+        S3BucketName: !Ref JobAttachmentsBucket
+      JobRunAsUser:
+        Posix:
+          Group: job-user
+          User: job-user
+        Windows:
+          User: job-user
+          PasswordArn: !Ref WindowsJobUserPasswordSecret
+        RunAs: QUEUE_CONFIGURED_USER
+      RoleArn: !GetAtt NonValidQueueRole.Arn
+
 
   AutoscalingQueue:
     Type: AWS::Deadline::Queue
@@ -746,6 +800,13 @@ Resources:
       FleetId: !GetAtt LinuxManualScalingFleetx86.FleetId
       QueueId: !GetAtt SecondaryQueue.QueueId
 
+  LinuxManualFleetNonValidRoleQueueQFA:
+    Type: AWS::Deadline::QueueFleetAssociation
+    Properties:
+      FarmId: !GetAtt DeadlineFarm.FarmId
+      FleetId: !GetAtt LinuxManualScalingFleetx86.FleetId
+      QueueId: !GetAtt NonValidRoleQueue.QueueId
+
   LinuxAutoScalingFleetMainQueueQFA:
     Type: AWS::Deadline::QueueFleetAssociation
     Properties:
@@ -766,6 +827,13 @@ Resources:
       FarmId: !GetAtt DeadlineFarm.FarmId
       FleetId: !GetAtt WindowsManualScalingFleetx86.FleetId
       QueueId: !GetAtt SecondaryQueue.QueueId
+  
+  WindowsManualFleetNonValidRoleQueueQFA:
+    Type: AWS::Deadline::QueueFleetAssociation
+    Properties:
+      FarmId: !GetAtt DeadlineFarm.FarmId
+      FleetId: !GetAtt WindowsManualScalingFleetx86.FleetId
+      QueueId: !GetAtt NonValidRoleQueue.QueueId
 
   WindowsAutoScalingFleetMainQueueQFA:
     Type: AWS::Deadline::QueueFleetAssociation
