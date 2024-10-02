@@ -197,7 +197,7 @@ Resources:
   FixturesBootstrapBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub deadline-cloud-agent-e2e-test-bootstrap-${AWS::AccountId}-${AWS::Region}
+      BucketName: !Sub deadline-cloud-wa-e2e-bootstrap-${AWS::AccountId}-${AWS::Region}
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -247,7 +247,7 @@ Resources:
   JobAttachmentsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub deadline-cloud-agent-e2e-job-attachments-${AWS::AccountId}-${AWS::Region}
+      BucketName: !Sub deadline-cloud-wa-e2e-ja-${AWS::AccountId}-${AWS::Region}
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
