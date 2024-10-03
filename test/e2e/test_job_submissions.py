@@ -894,40 +894,56 @@ class TestJobSubmission:
             farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
         ).get("sessions")
 
-        found_successful_env_enter: bool = False
-        found_unsuccessful_env_enter: bool = False
-        found_unsuccessful_env_exit: bool = False
-        found_successful_env_exit: bool = False
-
         # Find that the both the unsuccessful and successful environment ran, with envExit and envEnter for each.
-        for session in sessions:
-
-            session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
-                farmId=job.farm.id,
-                queueId=job.queue.id,
-                jobId=job.id,
-                sessionId=session["sessionId"],
-            ).get("sessionActions")
-            logging.info(f"Session actions: {session_actions}")
-            for session_action in session_actions:
-                definition = session_action["definition"]
-                if "envEnter" in definition:
-                    if successful_environment_name in definition["envEnter"]["environmentId"]:
-                        found_successful_env_enter = session_action["status"] == "SUCCEEDED"
-                    elif unsuccessful_environment_name in definition["envEnter"]["environmentId"]:
-                        found_unsuccessful_env_enter = session_action["status"] == "FAILED"
-                elif "envExit" in definition:
-                    if successful_environment_name in definition["envExit"]["environmentId"]:
-                        found_successful_env_exit = session_action["status"] == "SUCCEEDED"
-                    elif unsuccessful_environment_name in definition["envExit"]["environmentId"]:
-                        found_unsuccessful_env_exit = session_action["status"] == "FAILED"
-
-        assert (
-            found_successful_env_enter
-            and found_unsuccessful_env_enter
-            and found_unsuccessful_env_exit
-            and found_successful_env_exit
+        @backoff.on_exception(
+            backoff.constant,
+            Exception,
+            max_time=60,
+            interval=2,
         )
+        def check_environment_action_statuses_are_expected() -> None:
+            found_successful_env_enter: bool = False
+            found_unsuccessful_env_enter: bool = False
+            found_unsuccessful_env_exit: bool = False
+            found_successful_env_exit: bool = False
+            for session in sessions:
+
+                session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
+                    farmId=job.farm.id,
+                    queueId=job.queue.id,
+                    jobId=job.id,
+                    sessionId=session["sessionId"],
+                ).get("sessionActions")
+                logging.info(f"Session actions: {session_actions}")
+                for session_action in session_actions:
+                    definition = session_action["definition"]
+                    if "envEnter" in definition:
+                        if successful_environment_name in definition["envEnter"]["environmentId"]:
+                            assert session_action["status"] == "SUCCEEDED"
+                            found_successful_env_enter = True
+                        elif (
+                            unsuccessful_environment_name in definition["envEnter"]["environmentId"]
+                        ):
+                            assert session_action["status"] == "FAILED"
+                            found_unsuccessful_env_enter = True
+                    elif "envExit" in definition:
+                        if successful_environment_name in definition["envExit"]["environmentId"]:
+                            assert session_action["status"] == "SUCCEEDED"
+                            found_successful_env_exit = True
+                        elif (
+                            unsuccessful_environment_name in definition["envExit"]["environmentId"]
+                        ):
+                            assert session_action["status"] == "FAILED"
+                            found_unsuccessful_env_exit = True
+
+            assert (
+                found_successful_env_enter
+                and found_unsuccessful_env_enter
+                and found_unsuccessful_env_exit
+                and found_successful_env_exit
+            )
+
+        check_environment_action_statuses_are_expected()
 
     @pytest.mark.parametrize(
         "job_environments",
@@ -1371,6 +1387,134 @@ class TestJobSubmission:
         job.wait_until_complete(client=deadline_client)
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+    def test_worker_fails_job_attachment_sync_when_no_queue_role(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+    ) -> None:
+        # Test that when submitting a job with job attachments to a queue with a role that cannot read the S3 bucket, the worker will fail the job attachments sync
+
+        job_bundle_path: str = os.path.join(
+            os.path.dirname(__file__),
+            "job_attachment_bundle",
+        )
+        job_parameters: List[Dict[str, str]] = [
+            {"name": "DataDir", "value": job_bundle_path},
+        ]
+        append_string_script = (
+            "#!/usr/bin/env bash\n\n  echo -n $(cat {{Param.DataDir}}/files/test_input_file)hi > {{Param.DataDir}}/output_file\n"
+            if os.environ["OPERATING_SYSTEM"] == "linux"
+            else '''set /p input=<"{{Param.DataDir}}\\files\\test_input_file"\n powershell -Command "echo ($env:input+\'hi\') | Out-File -encoding utf8 {{Param.DataDir}}\\output_file -NoNewLine"'''
+        )
+
+        try:
+            with open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file:
+                template_file.write(
+                    json.dumps(
+                        {
+                            "specificationVersion": "jobtemplate-2023-09",
+                            "name": "JobAttachmentToNonValidRoleQueue",
+                            "parameterDefinitions": [
+                                {
+                                    "name": "DataDir",
+                                    "type": "PATH",
+                                    "dataFlow": "INOUT",
+                                },
+                            ],
+                            "steps": [
+                                {
+                                    "name": "Step0",
+                                    "hostRequirements": {
+                                        "attributes": [
+                                            {
+                                                "name": "attr.worker.os.family",
+                                                "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                            }
+                                        ]
+                                    },
+                                    "script": {
+                                        "actions": {
+                                            "onRun": {"command": "{{ Task.File.runScript }}"}
+                                        },
+                                        "embeddedFiles": [
+                                            {
+                                                "name": "runScript",
+                                                "type": "TEXT",
+                                                "runnable": True,
+                                                "data": append_string_script,
+                                                **(
+                                                    {"filename": "stringappendscript.bat"}
+                                                    if os.environ["OPERATING_SYSTEM"] == "windows"
+                                                    else {}
+                                                ),
+                                            }
+                                        ],
+                                    },
+                                }
+                            ],
+                        }
+                    )
+                )
+
+            config = configparser.ConfigParser()
+
+            set_setting("defaults.farm_id", deadline_resources.farm.id, config)
+            set_setting("defaults.queue_id", deadline_resources.non_valid_role_queue.id, config)
+
+            job_id: Optional[str] = api.create_job_from_job_bundle(
+                job_bundle_path,
+                job_parameters,
+                priority=99,
+                config=config,
+                queue_parameter_definitions=[],
+            )
+            assert job_id is not None
+        finally:
+            # Clean up the template file
+            os.remove(os.path.join(job_bundle_path, "template.json"))
+
+        job_details = Job.get_job_details(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.non_valid_role_queue,
+            job_id=job_id,
+        )
+        job = Job(
+            farm=deadline_resources.farm,
+            queue=deadline_resources.non_valid_role_queue,
+            template={},
+            **job_details,
+        )
+
+        @backoff.on_predicate(
+            wait_gen=backoff.constant,
+            max_time=120,
+            interval=10,
+        )
+        def sync_input_job_attachments_failed(current_job: Job) -> bool:
+            sessions: list[dict[str, Any]] = deadline_client.list_sessions(
+                farmId=current_job.farm.id, queueId=current_job.queue.id, jobId=current_job.id
+            ).get("sessions")
+
+            if sessions:
+                session_actions = deadline_client.list_session_actions(
+                    farmId=job.farm.id,
+                    queueId=job.queue.id,
+                    jobId=job.id,
+                    sessionId=sessions[0]["sessionId"],
+                ).get("sessionActions")
+
+                for session_action in session_actions:
+                    if "syncInputJobAttachments" in session_action["definition"]:
+                        return session_action["status"] == "FAILED"
+            return False
+
+        # Check that the syncInputJobAttachments action failed, since the queue does not have a queue role
+
+        assert sync_input_job_attachments_failed(job)
+
+        return
 
     @pytest.mark.parametrize(
         "hash_string_script",
