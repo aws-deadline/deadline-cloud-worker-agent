@@ -30,12 +30,12 @@ from e2e.utils import wait_for_job_output, submit_sleep_job, submit_custom_job
 LOG = logging.getLogger(__name__)
 
 
-@pytest.mark.usefixtures("session_worker")
 @pytest.mark.parametrize("operating_system", [os.environ["OPERATING_SYSTEM"]], indirect=True)
 class TestJobSubmission:
     def test_success(
         self,
         deadline_resources,
+        session_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
     ) -> None:
         # WHEN
@@ -105,6 +105,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
         run_actions: Dict[str, Any],
         environment_actions: Dict[str, Any],
         expected_failed_action: str,
@@ -177,6 +178,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
     ) -> None:
         # Test that if a task takes longer than the timeout defined, the session action goes to FAILED status
         job: Job = Job.submit(
@@ -325,6 +327,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
         run_actions: Dict[str, Any],
         environment_actions: Dict[str, Any],
         expected_canceled_action: str,
@@ -439,6 +442,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
         expected_canceled_action: str,
     ) -> None:
         # Tests that when running a job session action with a trap for SIGINT, the corresponding session action is canceled almost immediately.
@@ -684,7 +688,11 @@ class TestJobSubmission:
 
     @flaky(max_runs=3, min_passes=1)  # Flaky as sync input sometimes completes before expected.
     def test_worker_reports_canceled_sync_input_actions_as_canceled(
-        self, deadline_resources: DeadlineResources, deadline_client: DeadlineClient, tmp_path
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
+        tmp_path,
     ) -> None:
         # Test that when syncing input job attachments and the user cancels the job, the syncInputJobAttachments session actions are canceled
         # Create the template file, the job won't actually do anything substantial
@@ -832,6 +840,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
     ) -> None:
         # Tests that whenever a envEnter on a job is attempted, the corresponding envExit is also ran despite session action failures
 
@@ -1006,6 +1015,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
         job_environments: List[Dict[str, Any]],
     ) -> None:
         job_template: dict[str, Any] = {
@@ -1166,6 +1176,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
         append_string_script: str,
     ) -> None:
         # Verify that the worker uses the correct job attachment configuration, and writes the output to the correct location
@@ -1285,7 +1296,10 @@ class TestJobSubmission:
             os.remove(os.path.join(list(output_path.keys())[0], "output_file"))
 
     def test_worker_job_attachments_no_outputs_does_not_fail_job(
-        self, deadline_resources: DeadlineResources, deadline_client: DeadlineClient
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
     ) -> None:
         # Tests that if a job has no job output files in the output directory, the job does not fail. This tests prevents regressions in the output code
 
@@ -1404,6 +1418,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
         hash_string_script: str,
         tmp_path: pathlib.Path,
     ) -> None:
@@ -1569,6 +1584,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
     ) -> None:
 
         # Make sure that worker reports task progress, as well as the status message

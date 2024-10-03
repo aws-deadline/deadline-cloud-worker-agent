@@ -12,13 +12,18 @@ import logging
 import os
 import re
 
-from deadline_test_fixtures import Job, TaskStatus, PosixSessionUser, DeadlineClient
+from deadline_test_fixtures import (
+    Job,
+    TaskStatus,
+    PosixSessionUser,
+    DeadlineClient,
+    EC2InstanceWorker,
+)
 
 
 LOG = logging.getLogger(__name__)
 
 
-@pytest.mark.usefixtures("session_worker")
 @pytest.mark.usefixtures("operating_system")
 @pytest.mark.skipif(
     os.environ["OPERATING_SYSTEM"] == "windows",
@@ -30,6 +35,7 @@ class TestJobUser:
         self,
         deadline_resources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
         job_run_as_user: PosixSessionUser,
     ) -> None:
         # WHEN
