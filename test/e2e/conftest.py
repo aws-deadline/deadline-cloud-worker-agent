@@ -38,6 +38,7 @@ class DeadlineResources:
     farm: Farm = field(init=False)
     queue_a: Queue = field(init=False)
     queue_b: Queue = field(init=False)
+    non_valid_role_queue: Queue = field(init=False)
     fleet: Fleet = field(init=False)
     scaling_queue: Queue = field(init=False)
     scaling_fleet: Fleet = field(init=False)
@@ -45,6 +46,7 @@ class DeadlineResources:
     farm_id: InitVar[str]
     queue_a_id: InitVar[str]
     queue_b_id: InitVar[str]
+    non_valid_role_queue_id: InitVar[str]
     fleet_id: InitVar[str]
     scaling_queue_id: InitVar[str]
     scaling_fleet_id: InitVar[str]
@@ -54,6 +56,7 @@ class DeadlineResources:
         farm_id: str,
         queue_a_id: str,
         queue_b_id: str,
+        non_valid_role_queue_id: str,
         fleet_id: str,
         scaling_queue_id: str,
         scaling_fleet_id: str,
@@ -61,6 +64,9 @@ class DeadlineResources:
         object.__setattr__(self, "farm", Farm(id=farm_id))
         object.__setattr__(self, "queue_a", Queue(id=queue_a_id, farm=self.farm))
         object.__setattr__(self, "queue_b", Queue(id=queue_b_id, farm=self.farm))
+        object.__setattr__(
+            self, "non_valid_role_queue", Queue(id=non_valid_role_queue_id, farm=self.farm)
+        )
         object.__setattr__(self, "fleet", Fleet(id=fleet_id, farm=self.farm, autoscaling=False))
         object.__setattr__(self, "scaling_queue", Queue(id=scaling_queue_id, farm=self.farm))
         object.__setattr__(self, "scaling_fleet", Fleet(id=scaling_fleet_id, farm=self.farm))
@@ -75,6 +81,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         FARM_ID: ID of the Deadline farm to use.
         QUEUE_A_ID: ID of a non scaling Deadline queue to use for tests.
         QUEUE_B_ID: ID of a non scaling Deadline queue to use for tests.
+        NON_VALID_ROLE_QUEUE_ID: ID of a non scaling Deadline queue with a role that cannot read the S3 bucket to use for tests
         FLEET_ID: ID of a non scaling Deadline fleet to use for tests.
         SCALING_QUEUE_ID: ID of the Deadline scaling queue to use.
         SCALING_FLEET_ID: ID of the Deadline scaling fleet to use.
@@ -85,6 +92,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
     farm_id = os.environ["FARM_ID"]
     queue_a_id = os.environ["QUEUE_A_ID"]
     queue_b_id = os.environ["QUEUE_B_ID"]
+    non_valid_role_queue_id = os.environ["NON_VALID_ROLE_QUEUE_ID"]
     fleet_id = os.environ["FLEET_ID"]
 
     scaling_queue_id = os.environ["SCALING_QUEUE_ID"]
@@ -102,6 +110,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         farm_id=farm_id,
         queue_a_id=queue_a_id,
         queue_b_id=queue_b_id,
+        non_valid_role_queue_id=non_valid_role_queue_id,
         fleet_id=fleet_id,
         scaling_queue_id=scaling_queue_id,
         scaling_fleet_id=scaling_fleet_id,
