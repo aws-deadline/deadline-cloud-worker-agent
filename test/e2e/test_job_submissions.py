@@ -1709,6 +1709,172 @@ class TestJobSubmission:
             # Verify that the hash is the same
             assert output_file_content == combined_hash
 
+    def test_worker_uses_step_step_dependencies(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        # Test that submits a job that has step step dependencies and confirm that the final output is as we expect
+
+        job_bundle_path: str = os.path.join(
+            tmp_path,
+            "job_attachment_bundle_step_step_dependencies",
+        )
+        file_path: str = os.path.join(job_bundle_path, "files")
+
+        os.mkdir(job_bundle_path)
+        os.mkdir(file_path)
+
+        # Create the initial input file
+        input_file_name: str = os.path.join(file_path, "test_input_file")
+        with open(input_file_name, "w") as input_file:
+            input_file.write("Hello")
+
+        job_parameters: List[Dict[str, str]] = [
+            {"name": "DataDir", "value": job_bundle_path},
+        ]
+
+        append_string_script_step_one = (
+            "#!/usr/bin/env bash\n\n  echo -n $(cat {{Param.DataDir}}/files/test_input_file)Hello > {{Param.DataDir}}/files/step_one_output\n"
+            if os.environ["OPERATING_SYSTEM"] == "linux"
+            else '''set /p input=<"{{Param.DataDir}}\\files\\test_input_file"\n powershell -Command "echo ($env:input+\'Hello\') | Out-File -encoding utf8 {{Param.DataDir}}\\files\\step_one_output -NoNewLine"'''
+        )
+
+        append_string_script_step_two = (
+            "#!/usr/bin/env bash\n\n  echo -n $(cat {{Param.DataDir}}/files/step_one_output)Hello > {{Param.DataDir}}/files/output_file\n"
+            if os.environ["OPERATING_SYSTEM"] == "linux"
+            else '''set /p input=<"{{Param.DataDir}}\\files\\step_one_output"\n powershell -Command "echo ($env:input+\'Hello\') | Out-File -encoding utf8 {{Param.DataDir}}\\files\\output_file -NoNewLine"'''
+        )
+        # Create a template that uses step-step dependencies, appending the word "Hello" to the input file once in each step
+        with open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file:
+            template_file.write(
+                json.dumps(
+                    {
+                        "specificationVersion": "jobtemplate-2023-09",
+                        "name": "StepDependencyJob",
+                        "parameterDefinitions": [
+                            {
+                                "name": "DataDir",
+                                "type": "PATH",
+                                "dataFlow": "INOUT",
+                            },
+                        ],
+                        "steps": [
+                            {
+                                "name": "StepOne",
+                                "hostRequirements": {
+                                    "attributes": [
+                                        {
+                                            "name": "attr.worker.os.family",
+                                            "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                        }
+                                    ]
+                                },
+                                "script": {
+                                    "actions": {
+                                        "onRun": ({"command": "{{ Task.File.runScript }}"}),
+                                    },
+                                    "embeddedFiles": [
+                                        {
+                                            "name": "runScript",
+                                            "type": "TEXT",
+                                            "runnable": True,
+                                            "data": append_string_script_step_one,
+                                            **(
+                                                {"filename": "appendscript.bat"}
+                                                if os.environ["OPERATING_SYSTEM"] == "windows"
+                                                else {}
+                                            ),
+                                        }
+                                    ],
+                                },
+                            },
+                            {
+                                "name": "StepTwo",
+                                "dependencies": [{"dependsOn": "StepOne"}],
+                                "hostRequirements": {
+                                    "attributes": [
+                                        {
+                                            "name": "attr.worker.os.family",
+                                            "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                        }
+                                    ]
+                                },
+                                "script": {
+                                    "actions": {
+                                        "onRun": ({"command": "{{ Task.File.runScript }}"}),
+                                    },
+                                    "embeddedFiles": [
+                                        {
+                                            "name": "runScript",
+                                            "type": "TEXT",
+                                            "runnable": True,
+                                            "data": append_string_script_step_two,
+                                            **(
+                                                {"filename": "appendscripttwo.bat"}
+                                                if os.environ["OPERATING_SYSTEM"] == "windows"
+                                                else {}
+                                            ),
+                                        }
+                                    ],
+                                },
+                            },
+                        ],
+                    }
+                )
+            )
+
+        config = configparser.ConfigParser()
+
+        set_setting("defaults.farm_id", deadline_resources.farm.id, config)
+        set_setting("defaults.queue_id", deadline_resources.queue_a.id, config)
+
+        job_id: Optional[str] = api.create_job_from_job_bundle(
+            job_bundle_path,
+            job_parameters,
+            priority=99,
+            config=config,
+            queue_parameter_definitions=[],
+        )
+        assert job_id is not None
+
+        job_details: dict[str, Any] = Job.get_job_details(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            job_id=job_id,
+        )
+        job: Job = Job(
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            template={},
+            **job_details,
+        )
+
+        output_path: dict[str, list[str]] = wait_for_job_output(
+            job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
+        )
+
+        try:
+            with (
+                open(
+                    os.path.join(
+                        list(output_path.keys())[0],
+                        "files",
+                        "output_file",
+                    ),
+                    "r",
+                    encoding="utf-8-sig",
+                ) as output_file,
+            ):
+                output_file_content = output_file.read()
+
+                # Verify that the output file content has 3 Hellos in it as expected
+                assert output_file_content.count("Hello") == 3
+        finally:
+            os.remove(os.path.join(list(output_path.keys())[0], "files", "output_file"))
+
     def test_worker_reports_task_progress_and_status_message(
         self,
         deadline_resources: DeadlineResources,
