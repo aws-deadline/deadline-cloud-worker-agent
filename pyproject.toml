@@ -204,6 +204,10 @@ fail_under = 78
   "src/deadline_worker_agent/installer/win_installer.py"
 ]
 
+"sys_platform != 'linux'" = [
+  "src/deadline_worker_agent/linux/*.py",
+]
+
 [tool.coverage.coverage_conditional_plugin.rules]
 # This cannot be empty otherwise coverage-conditional-plugin crashes with:
 # AttributeError: 'NoneType' object has no attribute 'items'

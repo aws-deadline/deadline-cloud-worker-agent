@@ -456,15 +456,28 @@ Environment=AWS_REGION=$region AWS_DEFAULT_REGION=$region
 EOF
     fi
     
+    ###############################################################
+    ###############    NOTE FOR CODE REVIEWERS    #################
+    ###############################################################
+    #    Review changes to AmbientCapabilities below carefully    #
+    ###############################################################
+
     cat >> /etc/systemd/system/deadline-worker.service <<EOF   
 ExecStart=$worker_agent_program
 Restart=on-failure
 StandardOutput=null
 StandardError=null
+AmbientCapabilities=CAP_KILL
 
 [Install]
 WantedBy=multi-user.target
 EOF
+    ###############################################################
+    ###############    NOTE FOR CODE REVIEWERS    #################
+    ###############################################################
+    #    Review changes to AmbientCapabilities above carefully    #
+    ###############################################################
+
     chown root:root /etc/systemd/system/deadline-worker.service
     chmod 600 /etc/systemd/system/deadline-worker.service
     echo "Done installing systemd service"

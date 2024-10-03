@@ -18,6 +18,7 @@ from pathlib import Path
 from ..api_models import WorkerStatus
 from ..boto import DEADLINE_BOTOCORE_CONFIG, OTHER_BOTOCORE_CONFIG, DeadlineClient
 from ..errors import ServiceShutdown
+from ..linux.capabilities import drop_kill_cap_from_inheritable
 from ..log_sync.cloudwatch import stream_cloudwatch_logs
 from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger
 from ..worker import Worker
@@ -79,6 +80,11 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
 
         # Log the configuration (logs to DEBUG by default)
         config.log()
+
+        # If we have the CAP_KILL Linux capability, we must programmatically
+        # remove it from the inheritable capability set so it is not inherited
+        # by session action subprocesses
+        drop_kill_cap_from_inheritable()
 
         # Register the Worker
         try:
