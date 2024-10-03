@@ -1405,6 +1405,7 @@ class TestJobSubmission:
     def test_worker_fails_job_attachment_sync_when_no_queue_role(
         self,
         deadline_resources: DeadlineResources,
+        session_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
     ) -> None:
         # Test that when submitting a job with job attachments to a queue with a role that cannot read the S3 bucket, the worker will fail the job attachments sync
