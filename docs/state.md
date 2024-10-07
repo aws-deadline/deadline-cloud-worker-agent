@@ -65,7 +65,7 @@ the same worker and error.
 Path: `<PERSISTENCE_DIR>/credentials/<WORKER_ID>.json`
 
 The worker agent assumes the fleet role scoped down with permissions for its specific worker. This
-is done my making an `AssumeFleetRoleForWorker` API request. This returns temporary IAM credentials
+is done by making an `AssumeFleetRoleForWorker` API request. This returns temporary IAM credentials
 for the worker assume role session.
 
 The worker agent persists these temporary credentials to disk in the event that the worker agent
