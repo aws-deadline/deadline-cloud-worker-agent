@@ -1730,6 +1730,7 @@ class TestJobSubmission:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
         tmp_path: pathlib.Path,
     ) -> None:
         # Test that submits a job that has step step dependencies and confirm that the final output is as we expect
