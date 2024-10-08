@@ -1593,6 +1593,10 @@ class TestSessionActionUpdatedImpl:
             action_status=success_action_status,
             now=action_complete_time,
         )
+        # This because the _action_update_impl submits a future to this thread pool executor
+        # The test assertion depends on this future completing and so there's a race condition
+        # if we do not wait for the thread pool to shutdown and all futures to complete.
+        session._executor.shutdown()
 
         # THEN
         mock_mod_logger.info.assert_called_once()
