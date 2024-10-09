@@ -243,7 +243,7 @@ class TestGetGPUCount:
 
         # THEN
         check_output_mock.assert_called_once_with(
-            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"]
+            ["nvidia-smi", "--query-gpu=count", "-i=0", "--format=csv,noheader"]
         )
         assert result == 2
 
@@ -274,7 +274,7 @@ class TestGetGPUCount:
 
         # THEN
         check_output_mock.assert_called_once_with(
-            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"]
+            ["nvidia-smi", "--query-gpu=count", "-i=0", "--format=csv,noheader"]
         )
 
         assert result == expected_result
@@ -300,6 +300,27 @@ class TestGetGPUMemory:
             ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
         )
         assert result == 6800
+
+    @patch.object(capabilities_mod.subprocess, "check_output")
+    def test_get_multi_gpu_memory(
+        self,
+        check_output_mock: MagicMock,
+    ) -> None:
+        """
+        Tests that the _get_gpu_memory function returns the minimum total memory among all GPUs
+        reported by nvidia-smi.
+        """
+        # GIVEN
+        check_output_mock.return_value = b"6800 MiB\n1200MiB"
+
+        # WHEN
+        result = capabilities_mod._get_gpu_memory()
+
+        # THEN
+        check_output_mock.assert_called_once_with(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
+        )
+        assert result == 1200
 
     @pytest.mark.parametrize(
         ("exception", "expected_result"),
