@@ -1,5 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 import os
+from typing import Any, Dict
 
 from deadline.job_attachments._aws.deadline import get_queue
 from deadline.job_attachments import download
@@ -9,7 +10,7 @@ from deadline_test_fixtures import (
     Farm,
     Queue,
 )
-
+import backoff
 from e2e.conftest import DeadlineResources
 
 
@@ -139,3 +140,44 @@ def submit_custom_job(
     )
 
     return job
+
+
+@backoff.on_predicate(
+    wait_gen=backoff.constant,
+    max_time=60,
+    interval=10,
+)
+def is_worker_started(
+    deadline_client: DeadlineClient, farm_id: str, fleet_id: str, worker_id: str
+) -> bool:
+    get_worker_response: Dict[str, Any] = deadline_client.get_worker(
+        farmId=farm_id,
+        fleetId=fleet_id,
+        workerId=worker_id,
+    )
+    worker_status = get_worker_response["status"]
+    if worker_status in ["STARTED", "IDLE"]:
+        # Worker should eventually be in either STARTED or IDLE.
+        return True
+    elif worker_status == "CREATED":
+        # This is an acceptable status meaning that the worker is created state has not been updated
+        return False
+    # Any other status is unexpected, so we should fail
+    raise Exception(f"Status {worker_status} is unexpected after worker has just started")
+
+
+@backoff.on_predicate(
+    wait_gen=backoff.constant,
+    max_time=180,
+    interval=10,
+)
+def is_worker_stopped(
+    deadline_client: DeadlineClient, farm_id: str, fleet_id: str, worker_id: str
+) -> bool:
+    get_worker_response: Dict[str, Any] = deadline_client.get_worker(
+        farmId=farm_id,
+        fleetId=fleet_id,
+        workerId=worker_id,
+    )
+    worker_status = get_worker_response["status"]
+    return worker_status == "STOPPED"

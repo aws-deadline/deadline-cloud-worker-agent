@@ -6,10 +6,9 @@ and making sure that the status of the Worker is that of what we expect.
 import logging
 import os
 import pytest
-from typing import Any, Dict
-import backoff
 from deadline_test_fixtures import DeadlineClient, EC2InstanceWorker
 import pytest
+from e2e.utils import is_worker_started, is_worker_stopped
 
 LOG = logging.getLogger(__name__)
 
@@ -24,44 +23,20 @@ class TestWorkerStatus:
     ) -> None:
         # Verifies that Worker Status returned by the GetWorker API is as expected when we start/stop workers
 
-        @backoff.on_predicate(
-            wait_gen=backoff.constant,
-            max_time=60,
-            interval=10,
-        )
-        def is_worker_started() -> bool:
-            get_worker_response: Dict[str, Any] = deadline_client.get_worker(
-                farmId=deadline_resources.farm.id,
-                fleetId=deadline_resources.fleet.id,
-                workerId=function_worker.worker_id,
-            )
-            worker_status = get_worker_response["status"]
-            if worker_status in ["STARTED", "IDLE"]:
-                # Worker should eventually be in either STARTED or IDLE.
-                return True
-            elif worker_status == "CREATED":
-                # This is an acceptable status meaning that the worker is created state has not been updated
-                return False
-            # Any other status is unexpected, so we should fail
-            raise Exception(f"Status {worker_status} is unexpected after worker has just started")
+        assert function_worker.worker_id is not None  # To fix linter type mismatch
 
-        assert is_worker_started()
+        assert is_worker_started(
+            deadline_client=deadline_client,
+            farm_id=deadline_resources.farm.id,
+            fleet_id=deadline_resources.fleet.id,
+            worker_id=function_worker.worker_id,
+        )
 
         function_worker.stop_worker_service()
 
-        @backoff.on_predicate(
-            wait_gen=backoff.constant,
-            max_time=180,
-            interval=10,
+        assert is_worker_stopped(
+            deadline_client=deadline_client,
+            farm_id=deadline_resources.farm.id,
+            fleet_id=deadline_resources.fleet.id,
+            worker_id=function_worker.worker_id,
         )
-        def is_worker_stopped() -> bool:
-            LOG.info(f"Checking whether {function_worker.worker_id} is stopped")
-            get_worker_response: Dict[str, Any] = deadline_client.get_worker(
-                farmId=deadline_resources.farm.id,
-                fleetId=deadline_resources.fleet.id,
-                workerId=function_worker.worker_id,
-            )
-            worker_status = get_worker_response["status"]
-            return worker_status == "STOPPED"
-
-        assert is_worker_stopped()
