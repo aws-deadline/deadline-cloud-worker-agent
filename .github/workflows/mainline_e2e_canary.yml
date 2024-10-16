@@ -1,10 +1,8 @@
-name: Release Canary
+name: Mainline Canary
 
 on:
   schedule:
-    - cron: '0 13 * * *'
-    - cron: '0 19 * * *'
-    - cron: '0 1 * * *'
+    - cron: '0 */2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -26,8 +24,8 @@ jobs:
     - name: Run Windows Integration Tests
       run: hatch run windows-integ-test
       
-  ReleaseLinuxE2ECanary:
-    name: Release Linux Canary
+  MainlineLinuxE2ECanary:
+    name: Mainline Linux Canary
     permissions:
       id-token: write
       contents: read
@@ -35,12 +33,12 @@ jobs:
     secrets: inherit
     with:
       repository: ${{ github.event.repository.name }}
-      branch: release
+      branch: mainline
       environment: canary
       os: linux
 
-  ReleaseWindowsE2ECanary:
-    name: Release Windows Canary
+  MainlineWindowsE2ECanary:
+    name: Mainline Windows Canary
     permissions:
       id-token: write
       contents: read
@@ -48,6 +46,6 @@ jobs:
     secrets: inherit
     with:
       repository: ${{ github.event.repository.name }}
-      branch: release
+      branch: mainline
       environment: canary
       os: windows
