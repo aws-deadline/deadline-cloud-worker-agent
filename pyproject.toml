@@ -154,7 +154,6 @@ line-length = 100
 xfail_strict = true
 addopts = [
     "--durations=5",
-    "--color=yes",
     "--cov=src/deadline_worker_agent",
     "--cov-report=html:build/coverage",
     "--cov-report=xml:build/coverage/coverage.xml",
