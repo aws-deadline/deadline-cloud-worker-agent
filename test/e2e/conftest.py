@@ -291,7 +291,7 @@ def create_worker(
         ami_id = os.getenv("AMI_ID")
         subnet_id = os.getenv("SUBNET_ID")
         security_group_id = os.getenv("SECURITY_GROUP_ID")
-        instance_type = os.getenv("WORKER_INSTANCE_TYPE", default="c5.xlarge")
+        instance_type = os.getenv("WORKER_INSTANCE_TYPE", default="t3.medium")
         instance_shutdown_behavior = os.getenv("WORKER_INSTANCE_SHUTDOWN_BEHAVIOR", default="stop")
 
         assert subnet_id, "SUBNET_ID is required when deploying an EC2 worker"
