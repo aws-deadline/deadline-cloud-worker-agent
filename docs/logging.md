@@ -62,7 +62,7 @@ Log events may also contain a `type`, `subtype`, icon (`ti`), and additional fie
 | Session | Add/Remove | 🔷 | queue_id; job_id; session_id; action_ids; queued_actions | Adding or removing SessionActions in a Session. |
 | Session | Logs | 🔷 | queue_id; job_id; session_id; log_dest | Information regarding where the Session logs are located. |
 | Session | User | 🔷 | queue_id; job_id; session_id; user | The user that a Session is running Actions as. |
-| Session | Runtime | 🔷 | queue_id (optional); job_id (optional); session_id | Information related to the running Session. This includes information about the host, process control, and encountered Exceptions which could contain information like filepaths. |
+| Session | Runtime | 🔷 | queue_id; job_id; session_id | Information related to the running Session. This includes information about the host, process control, and encountered Exceptions which could contain information like filepaths. |
 | Worker | Create/Load/ID/Status/Delete | 💻 | farm_id; fleet_id; worker_id (optional); message | A notification related to a Worker resource within AWS Deadline Cloud. |
 
 If you prefer structured logs to be emited on your host, then you can configure your Worker Agent to emit structured logs instead. Please see the

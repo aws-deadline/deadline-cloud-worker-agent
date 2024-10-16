@@ -25,6 +25,7 @@ from deadline_worker_agent.log_messages import (
     SessionActionLogEvent,
     SessionActionLogEventSubtype,
     SessionActionLogKind,
+    StringLogEvent,
     WorkerLogEvent,
     WorkerLogEventOp,
     LogRecordStringTranslationFilter,
@@ -836,3 +837,85 @@ def test_openjd_logs_openjd_log_content_wrong_type(
 
     # THEN
     assert not result
+
+
+def test_openjd_logs_openjd_log_content_no_session_id() -> None:
+    # GIVEN
+    message = "Test OpenJD Message."
+    expected_message = f"{message} The Worker Agent could not determine the session ID of this log originating from OpenJD. Please report this to the service team."
+    record = logging.makeLogRecord(
+        {
+            "name": LOG.name,
+            "level": logging.INFO,
+            "levelname": "INFO",
+            "pathname": "test",
+            "lineno": 10,
+            "msg": message,
+            "args": None,
+            "exc_info": None,
+            "openjd_log_content": LogContent.EXCEPTION_INFO,
+        }
+    )
+    log_filter = LogRecordStringTranslationFilter()
+
+    # WHEN
+    result = log_filter.filter(record)
+    assert result
+    result = log_filter.filter(record)  # Twice just to make sure the filter logic is sound
+
+    # THEN
+    assert result
+    assert isinstance(record.msg, StringLogEvent)
+    assert record.getMessage() == expected_message
+    assert hasattr(
+        record, "json"
+    )  # filter populated the json field (which tests AgentInfoLogEvent.asdict())
+    assert record.json == json.dumps(
+        {
+            "level": "INFO",
+            "message": expected_message,
+        },
+        ensure_ascii=False,
+    )
+
+
+def test_openjd_logs_openjd_log_content_session_not_in_map() -> None:
+    # GIVEN
+    message = "Test OpenJD Message."
+    session_id = "not exist"
+    expected_message = f"{message} The Worker Agent could not locate the job and queue ID for this log originating from session {session_id}. Please report this to the service team."
+    record = logging.makeLogRecord(
+        {
+            "name": LOG.name,
+            "level": logging.INFO,
+            "levelname": "INFO",
+            "pathname": "test",
+            "lineno": 10,
+            "msg": message,
+            "args": None,
+            "exc_info": None,
+            "session_id": session_id,
+            "openjd_log_content": LogContent.EXCEPTION_INFO,
+        }
+    )
+    log_filter = LogRecordStringTranslationFilter()
+
+    # WHEN
+    result = log_filter.filter(record)
+    assert result
+    result = log_filter.filter(record)  # Twice just to make sure the filter logic is sound
+
+    # THEN
+    assert result
+    assert isinstance(record.msg, StringLogEvent)
+    assert record.getMessage() == expected_message
+    assert hasattr(
+        record, "json"
+    )  # filter populated the json field (which tests AgentInfoLogEvent.asdict())
+    assert record.json == json.dumps(
+        {
+            "level": "INFO",
+            "message": expected_message,
+        },
+        ensure_ascii=False,
+    )

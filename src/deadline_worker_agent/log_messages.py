@@ -397,8 +397,8 @@ class SessionLogEventSubtype(str, Enum):
 class SessionLogEvent(BaseLogEvent):
     ti = "🔷"
     type = "Session"
-    queue_id: Optional[str]
-    job_id: Optional[str]
+    queue_id: str
+    job_id: str
     session_id: str
     user: Optional[str]
     action_ids: Optional[list[str]]  # for Add/Cancel
@@ -409,8 +409,8 @@ class SessionLogEvent(BaseLogEvent):
         self,
         *,
         subtype: SessionLogEventSubtype,
-        queue_id: Optional[str] = None,
-        job_id: Optional[str] = None,
+        queue_id: str,
+        job_id: str,
         session_id: str,
         user: Optional[str] = None,
         message: str,
@@ -431,23 +431,16 @@ class SessionLogEvent(BaseLogEvent):
     def getMessage(self) -> str:
         dd = self.asdict()
         if self.subtype == SessionLogEventSubtype.USER.value and self.user is not None:
-            fmt_str = "[%(session_id)s] %(message)s (User: %(user)s)"
+            fmt_str = "[%(session_id)s] %(message)s (User: %(user)s) [%(queue_id)s/%(job_id)s]"
         elif self.subtype in (
             SessionLogEventSubtype.ADD.value,
             SessionLogEventSubtype.REMOVE.value,
         ):
-            fmt_str = "[%(session_id)s] %(message)s (ActionIds: %(action_ids)s) (QueuedActionCount: %(queued_action_count)s)"
+            fmt_str = "[%(session_id)s] %(message)s (ActionIds: %(action_ids)s) (QueuedActionCount: %(queued_action_count)s) [%(queue_id)s/%(job_id)s]"
         elif self.subtype == SessionLogEventSubtype.LOGS.value and self.log_dest is not None:
-            fmt_str = "[%(session_id)s] %(message)s (LogDestination: %(log_dest)s)"
+            fmt_str = "[%(session_id)s] %(message)s (LogDestination: %(log_dest)s) [%(queue_id)s/%(job_id)s]"
         else:
-            fmt_str = "[%(session_id)s] %(message)s"
-
-        if self.job_id and self.queue_id:
-            fmt_str += " [%(queue_id)s/%(job_id)s]"
-        elif self.job_id:
-            fmt_str += " [%(job_id)s]"
-        elif self.queue_id:
-            fmt_str += " [%(queue_id)s]"
+            fmt_str = "[%(session_id)s] %(message)s [%(queue_id)s/%(job_id)s]"
 
         return self.add_exception_to_message(fmt_str % dd)
 
@@ -626,6 +619,7 @@ class LogRecordStringTranslationFilter(logging.Filter):
         """
         if not hasattr(record, "session_id") or not isinstance(record.session_id, str):
             # This should never happen. If somehow it does, just fall back to a StringLogEvent.
+            record.msg += " The Worker Agent could not determine the session ID of this log originating from OpenJD. Please report this to the service team."
             return
 
         session_id = record.session_id
@@ -636,15 +630,18 @@ class LogRecordStringTranslationFilter(logging.Filter):
             scheduler_session = self.session_map[session_id]
             queue_id = scheduler_session.session._queue_id
             job_id = scheduler_session.session._job_id
-
-        record.msg = SessionLogEvent(
-            subtype=SessionLogEventSubtype.RUNTIME,
-            queue_id=queue_id,
-            job_id=job_id,
-            session_id=session_id,
-            message=record.getMessage(),
-            user=None,  # User is only used for SessionLogEventSubtype.USER
-        )
+            record.msg = SessionLogEvent(
+                subtype=SessionLogEventSubtype.RUNTIME,
+                queue_id=queue_id,
+                job_id=job_id,
+                session_id=session_id,
+                message=record.getMessage(),
+                user=None,  # User is only used for SessionLogEventSubtype.USER
+            )
+        else:
+            # This also should never happen. Fall back to a StringLogEvent.
+            record.msg += f" The Worker Agent could not locate the job and queue ID for this log originating from session {session_id}. Please report this to the service team."
+            return
         record.getMessageReplaced = True
         record.getMessage = MethodType(lambda self: self.msg.getMessage(), record)  # type: ignore
 
