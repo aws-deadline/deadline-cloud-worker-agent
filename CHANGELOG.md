@@ -1,3 +1,15 @@
+## 0.27.3 (2024-10-17)
+
+
+
+### Bug Fixes
+* crash on startup when host has multiple NVIDIA GPUs (#435) ([`760118c`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/760118c0ab8157ecc5087fc919f6773b0cd6c376))
+* vague error message when no AWS region specified (#413) ([`0d5ccad`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/0d5ccadebab5aca5b562abf6d8032aa79ca51678))
+* WindowsPath is not JSON serializable during session cleanup (#412) ([`5d5055c`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/5d5055cf728a98769415a30a923eea057b8d9683))
+* Ensure scheduler drain and status update on Windows service shutdown (#408) ([`f269b67`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/f269b67d415e0203a49b9f85bf8b811b345f96e6))
+* Agent logs to `/var/log/messages` when running as a service on Linux (#396) ([`b2368ed`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/b2368edeaec80b6c31132195dbdf4579b5e7e225))
+* `--run-jobs-as-agent-user` crashes on windows (#395) ([`6fef296`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/6fef2969ef5cd4eb12adc76eded4587f447c0726))
+
 ## 0.27.2 (2024-08-13)
 
 
