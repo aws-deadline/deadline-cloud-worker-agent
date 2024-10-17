@@ -56,7 +56,7 @@ jobs:
       environment: mainline
       os: linux
 
-  WindowsE2ETest:
+  WindowsE2ETests:
     needs: UnitTests
     name: Windows E2E Test
     permissions:
@@ -71,7 +71,7 @@ jobs:
       os: windows
 
   Bump:
-    needs: LinuxE2ETests
+    needs: [LinuxE2ETests, WindowsE2ETests, WindowsIntegrationTests]
     name: Version Bump
     uses: aws-deadline/.github/.github/workflows/reusable_bump.yml@mainline
     secrets: inherit
