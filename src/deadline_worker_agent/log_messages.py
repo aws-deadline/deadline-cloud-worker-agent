@@ -660,6 +660,8 @@ class LogRecordStringTranslationFilter(logging.Filter):
         if isinstance(record.msg, str):
             message = record.getMessage()
             record.msg = StringLogEvent(message)
+            # We must replace record.getMessage() so that a string is returned and not the LogEvent type.
+            # getMessageReplaced is used to indicate we already have done so, to avoid replacing twice.
             record.getMessageReplaced = True
             record.getMessage = MethodType(lambda self: self.msg.getMessage(), record)  # type: ignore
             record.args = None
