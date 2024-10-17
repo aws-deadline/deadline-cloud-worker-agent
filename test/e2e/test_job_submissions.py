@@ -743,10 +743,14 @@ class TestJobSubmission:
         # Create the input files to make sync inputs take a relatively long time
         files_path: str = os.path.join(tmp_path, "files")
         os.mkdir(files_path)
-        for i in range(2000):
+        for i in range(6000):
             file_name: str = os.path.join(files_path, f"input_file_{i+1}.txt")
             with open(file_name, "w+") as input_file:
-                input_file.write(f"{i}")
+                if i % 1000 == 0:
+                    # Create some big files (1GB each) so the syncInputAttachments don't fail due to low transfer rates
+                    input_file.write("A" * 1000000000)
+                else:
+                    input_file.write(f"{i}")
         config = configparser.ConfigParser()
 
         set_setting("defaults.farm_id", deadline_resources.farm.id, config)
