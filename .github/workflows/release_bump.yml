@@ -55,6 +55,8 @@ jobs:
       branch: mainline
       environment: mainline
       os: linux
+    concurrency:
+      group: linuxe2e
 
   WindowsE2ETests:
     needs: UnitTests
@@ -69,6 +71,8 @@ jobs:
       branch: mainline
       environment: mainline
       os: windows
+    concurrency:
+      group: windowse2e
 
   Bump:
     needs: [LinuxE2ETests, WindowsE2ETests, WindowsIntegrationTests]
