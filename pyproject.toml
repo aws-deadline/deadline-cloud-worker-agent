@@ -18,7 +18,7 @@ dependencies = [
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",
     "typing_extensions ~= 4.8",
-    "psutil ~= 5.9",
+    "psutil >= 5.9,< 7.0",
     "pydantic ~= 1.10.0",
     "pywin32 == 306; platform_system == 'Windows'",
     "requests == 2.31.*",
