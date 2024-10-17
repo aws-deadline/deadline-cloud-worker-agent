@@ -3,7 +3,7 @@
 
 set -eux
 
-cd $HOME
+cd "$HOME"
 
 #mkdir -p .aws/models/deadline
 #cp -r /aws/models/deadline/* .aws/models/deadline/
@@ -16,5 +16,5 @@ ln -s /aws ~/.aws
 
 deadline-worker-agent \
     --no-shutdown \
-    --farm-id $FARM_ID \
-    --fleet-id $FLEET_ID
+    --farm-id "$FARM_ID" \
+    --fleet-id "$FLEET_ID"
