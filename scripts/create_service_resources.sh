@@ -25,7 +25,7 @@ assets_s3_bucket=$2
 queue_1_iam_role=${3:-}
 queue_2_iam_role=${4:-}
 
-[ -f $(pwd)/.deployed_resources.sh ] && source $(pwd)/.deployed_resources.sh
+[ -f "$(pwd)"/.deployed_resources.sh ] && source "$(pwd)"/.deployed_resources.sh
 
 if [ "${FARM_ID:-}" == "" ]
 then
@@ -33,7 +33,7 @@ then
     read farm_name
         
     echo "Creating AWS Deadline Cloud Farm $farm_name"
-    FARM_ID=$(aws deadline create-farm --display-name $farm_name | jq -r ".farmId")
+    FARM_ID=$(aws deadline create-farm --display-name "$farm_name" | jq -r ".farmId")
     echo "Created Farm: ${FARM_ID}"
 fi
 
@@ -89,7 +89,7 @@ EOF
     ready=""
     while [[ $ready != "IDLE" ]] && [[ $ready != "SCHEDULING" ]]; do
         sleep 5
-        ready=$(aws deadline get-queue --farm-id $FARM_ID --queue-id $QUEUE_ID_1 | jq -r ".status")
+        ready=$(aws deadline get-queue --farm-id "$FARM_ID" --queue-id "$QUEUE_ID_1" | jq -r ".status")
         echo "Queue $QUEUE_ID_1 in $ready status..."
     done
 
@@ -152,7 +152,7 @@ EOF
     ready=""
     while [[ $ready != "IDLE" ]] && [[ $ready != "SCHEDULING" ]]; do
         sleep 5
-        ready=$(aws deadline get-queue --farm-id $FARM_ID --queue-id $QUEUE_ID_2 | jq -r ".status")
+        ready=$(aws deadline get-queue --farm-id "$FARM_ID" --queue-id "$QUEUE_ID_2" | jq -r ".status")
         echo "Queue $QUEUE_ID_2 in $ready status..."
     done
 
@@ -199,7 +199,7 @@ EOF
     ready=""
     while [[ $ready != "READY" ]] && [[ $ready != "CREATE_FAILED" ]] && [[ $ready != "ACTIVE" ]]; do
         sleep 5
-        ready=$(aws deadline get-fleet --farm-id $FARM_ID --fleet-id $FLEET_ID | jq -r ".status")
+        ready=$(aws deadline get-fleet --farm-id "$FARM_ID" --fleet-id "$FLEET_ID" | jq -r ".status")
         echo "Fleet $FLEET_ID in $ready status..."
     done
 
@@ -209,8 +209,8 @@ EOF
     fi
 fi
 
-aws deadline create-queue-fleet-association --farm-id $FARM_ID --queue-id $QUEUE_ID_1 --fleet-id $FLEET_ID
-aws deadline create-queue-fleet-association --farm-id $FARM_ID --queue-id $QUEUE_ID_2 --fleet-id $FLEET_ID
+aws deadline create-queue-fleet-association --farm-id "$FARM_ID" --queue-id "$QUEUE_ID_1" --fleet-id "$FLEET_ID"
+aws deadline create-queue-fleet-association --farm-id "$FARM_ID" --queue-id "$QUEUE_ID_2" --fleet-id "$FLEET_ID"
     
 echo "export FARM_ID=$FARM_ID" > .deployed_resources.sh
 echo "export QUEUE_ID_1=$QUEUE_ID_1" >> .deployed_resources.sh
