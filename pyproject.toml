@@ -14,7 +14,7 @@ dependencies = [
     "requests ~= 2.31",
     "boto3 >= 1.34.75",
     "deadline == 0.48.*",
-    "openjd-sessions >= 0.7,< 0.9",
+    "openjd-sessions >= 0.8.4,< 0.9",
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",
     "typing_extensions ~= 4.8",

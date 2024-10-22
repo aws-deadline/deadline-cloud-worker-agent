@@ -15,8 +15,6 @@ from threading import Event
 from typing import Optional
 from pathlib import Path
 
-from openjd.sessions import LOG as OPENJD_SESSION_LOG
-
 from ..api_models import WorkerStatus
 from ..boto import DEADLINE_BOTOCORE_CONFIG, OTHER_BOTOCORE_CONFIG, DeadlineClient
 from ..errors import ServiceShutdown
@@ -349,16 +347,8 @@ def _configure_base_logging(
     ):
         logging.getLogger(logger_name).setLevel(logging.WARNING)
 
-    # We don't want the Session logs to appear in the Worker Agent logs, so
-    # set the Open Job Description library's logger to not propagate.
-    # We do this because the Session log will contain job-specific customer
-    # sensitive data. The Worker's log is intended for IT admins that may
-    # have different/lesser permissions/access-rights/need-to-know than the
-    # folk submitting jobs, so keep the sensitive stuff out of the agent log.
-    OPENJD_SESSION_LOG.propagate = False
-
-    # Similarly, Job Attachments is a feature that only runs in the context of a
-    # Session. So, it's logs should not propagate to the root logger. Instead,
+    # Job Attachments is a feature that only runs in the context of a
+    # Session. So, its logs should not propagate to the root logger. Instead,
     # the Job Attachments logs will route to the Session Logs only.
     JOB_ATTACHMENTS_LOGGER = logging.getLogger("deadline.job_attachments")
     JOB_ATTACHMENTS_LOGGER.propagate = False
