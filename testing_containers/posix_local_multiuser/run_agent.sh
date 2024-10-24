@@ -3,7 +3,7 @@
 
 set -eux
 
-cd $HOME
+cd "$HOME"
 
 python -m venv .venv
 source .venv/bin/activate
@@ -14,5 +14,5 @@ ln -s /aws ~/.aws
 deadline-worker-agent \
     --posix-job-user jobuser:sharedgroup \
     --no-shutdown \
-    --farm-id $FARM_ID \
-    --fleet-id $FLEET_ID
+    --farm-id "$FARM_ID" \
+    --fleet-id "$FLEET_ID"
