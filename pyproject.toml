@@ -21,7 +21,7 @@ dependencies = [
     "psutil >= 5.9,< 7.0",
     "pydantic ~= 1.10.0",
     "pywin32 == 306; platform_system == 'Windows'",
-    "requests == 2.31.*",
+    "requests == 2.32.*",
 ]
 requires-python = ">=3.9"
 description = "The AWS Deadline Cloud worker agent can be used to run a worker in an AWS Deadline Cloud fleet"
