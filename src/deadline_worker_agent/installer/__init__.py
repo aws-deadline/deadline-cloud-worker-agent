@@ -12,7 +12,10 @@ import sysconfig
 
 
 if sys.platform == "win32":
-    from deadline_worker_agent.installer.win_installer import start_windows_installer
+    from deadline_worker_agent.installer.win_installer import (
+        start_windows_installer,
+        InstallerFailedException,
+    )
 
 
 INSTALLER_PATH = {
@@ -100,7 +103,11 @@ def install() -> None:
         if args.windows_job_user:
             installer_args.update(windows_job_user=args.windows_job_user)
 
-        start_windows_installer(**installer_args)
+        try:
+            start_windows_installer(**installer_args)
+        except InstallerFailedException as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
     else:
         cmd = [
             "sudo",

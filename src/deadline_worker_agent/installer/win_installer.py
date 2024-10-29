@@ -66,6 +66,21 @@ def print_banner():
     )
 
 
+def is_domain_user(username: str) -> bool:
+    # There are two formats for specifying domain users:
+    #
+    # 1. User Principal Name (UPN), e.g:
+    #
+    #       <USERNAME>@<DOMAIN>
+    #
+    # 2. Down-Level Logon Name, e.g:
+    #
+    #       <DOMAIN>\<USERNAME>
+    #
+    # See https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats
+    return "\\" in username or "@" in username
+
+
 def check_account_existence(account_name: str) -> bool:
     """
     Checks if an account exists on the system by attempting to resolve the account's SID.
@@ -846,16 +861,26 @@ def start_windows_installer(
         logging.error(f"Not a valid value for Fleet id: {fleet_id}")
         print_helping_info_and_exit()
 
+    # Validate that the --user argument is not a domain user. The installer does not currently support this.
+    if is_domain_user(user_name):
+        raise InstallerFailedException(
+            "running worker agent as a domain user is not currently supported. You can "
+            "have jobs run as a domain user by configuring the queue job run user to specify a "
+            "domain user account."
+        )
+
     # Check that user has Administrator privileges
     if not shell.IsUserAnAdmin():
         logging.error(f"User does not have Administrator privileges: {os.environ['USERNAME']}")
         print_helping_info_and_exit()
 
+    # Validate that if a windows job user override is specified, that the user exists
     if windows_job_user is not None and not check_account_existence(windows_job_user):
         raise InstallerFailedException(
             f"Account {windows_job_user} provided for argument windows-job-user does not exist. "
             "Please create the account before proceeding."
         )
+    # Validate that if a windows job user override is specified, that it is not the same as the worker agent user
     elif windows_job_user is not None and users_equal(windows_job_user, user_name):
         raise InstallerFailedException(
             f"Argument for windows-job-user cannot be the same as the worker agent user: {user_name}. "

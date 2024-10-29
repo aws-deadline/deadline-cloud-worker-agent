@@ -121,6 +121,40 @@ def test_start_windows_installer_fails_when_windows_job_user_is_agent_user(
     )
 
 
+# Override the "user" fixture, which feeds into the parsed_kwargs fixture
+# with Valid domain username formats. For valid domain user formats, see:
+# https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats
+@pytest.mark.parametrize(
+    argnames="user",
+    argvalues=(
+        pytest.param("user@domain", id="user principal name"),
+        pytest.param(r"domain\username", id="down-level logon name"),
+    ),
+)
+# No job user override
+@pytest.mark.parametrize(
+    argnames="windows_job_user",
+    argvalues=(None,),
+)
+def test_start_windows_installer_fails_on_domain_worker_user(
+    parsed_kwargs: dict,
+) -> None:
+    # GIVEN
+    with (
+        patch.object(shell, "IsUserAnAdmin", return_value=True),
+        pytest.raises(win_installer.InstallerFailedException) as raise_ctx,
+    ):
+        # WHEN
+        win_installer.start_windows_installer(**parsed_kwargs)
+
+    # THEN
+    assert str(raise_ctx.value) == (
+        "running worker agent as a domain user is not currently supported. You can "
+        "have jobs run as a domain user by configuring the queue job run user to specify a "
+        "domain user account."
+    )
+
+
 class TestCreateLocalQueueUserGroup:
     """Tests for the create_local_queue_user_group function"""
 
