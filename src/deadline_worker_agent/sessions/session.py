@@ -1018,7 +1018,7 @@ class Session:
         *,
         action_status: ActionStatus,
         now: datetime,
-    ) -> None:
+    ) -> Optional[Future]:
         """Internal implementation for the callback invoked on every Open Job Description status/progress
         update and the completion/exit of the current action. The caller should acquire the
         Session._current_action_lock before calling this method.
@@ -1060,12 +1060,12 @@ class Session:
             if action_status.state != ActionState.RUNNING:
                 self._current_action = None
                 self._interrupted = False
-            return
+            return None
 
         current_action = self._current_action
         if current_action is None:
             assert self._stop.is_set(), "current_action is None or stopping"
-            return
+            return None
 
         is_unsuccessful = action_status.state in (
             ActionState.FAILED,
@@ -1097,9 +1097,12 @@ class Session:
                 current_action=current_action,
             )
             future.add_done_callback(on_done_with_sync_asset_outputs)
-
+            # Returning the future just to make this method easier to test.
+            # Tests need to wait on the future to avoid race conditions
+            return future
         else:
             self._handle_action_update(is_unsuccessful, action_status, current_action, now)
+        return None
 
     def _on_done_with_sync_asset_outputs(
         self,

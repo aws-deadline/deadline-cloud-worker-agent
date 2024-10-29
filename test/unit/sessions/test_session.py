@@ -1,6 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
+from concurrent.futures import wait
 from datetime import datetime, timedelta
 from pathlib import PurePosixPath, PureWindowsPath
 from threading import Event, RLock
@@ -1343,10 +1344,12 @@ class TestSessionActionUpdatedImpl:
 
         with patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs:
             # WHEN
-            session._action_updated_impl(
+            future = session._action_updated_impl(
                 action_status=failed_action_status,
                 now=action_complete_time,
             )
+            if future:
+                wait([future])
 
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
@@ -1410,10 +1413,12 @@ class TestSessionActionUpdatedImpl:
 
         with patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs:
             # WHEN
-            session._action_updated_impl(
+            future = session._action_updated_impl(
                 action_status=failed_action_status,
                 now=action_complete_time,
             )
+            if future:
+                wait([future])
 
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
@@ -1488,10 +1493,12 @@ class TestSessionActionUpdatedImpl:
             mock_sync_asset_outputs.side_effect = sync_asset_outputs_side_effect
 
             # WHEN
-            session._action_updated_impl(
+            future = session._action_updated_impl(
                 action_status=success_action_status,
                 now=action_complete_time,
             )
+            if future:
+                wait([future])
 
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
@@ -1565,10 +1572,12 @@ class TestSessionActionUpdatedImpl:
             mock_datetime.now.side_effect = mock_now
 
             # WHEN
-            session._action_updated_impl(
+            future = session._action_updated_impl(
                 action_status=success_action_status,
                 now=action_complete_time,
             )
+            if future:
+                wait([future])
 
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
@@ -1589,14 +1598,12 @@ class TestSessionActionUpdatedImpl:
     ) -> None:
         """Tests that succeeded actions are logged"""
         # WHEN
-        session._action_updated_impl(
+        future = session._action_updated_impl(
             action_status=success_action_status,
             now=action_complete_time,
         )
-        # This because the _action_update_impl submits a future to this thread pool executor
-        # The test assertion depends on this future completing and so there's a race condition
-        # if we do not wait for the thread pool to shutdown and all futures to complete.
-        session._executor.shutdown()
+        if future:
+            wait([future])
 
         # THEN
         mock_mod_logger.info.assert_called_once()
@@ -1618,10 +1625,12 @@ class TestSessionActionUpdatedImpl:
     ) -> None:
         """Tests that failed actions are logged"""
         # WHEN
-        session._action_updated_impl(
+        future = session._action_updated_impl(
             action_status=failed_action_status,
             now=action_complete_time,
         )
+        if future:
+            wait([future])
 
         # THEN
         mock_mod_logger.info.assert_called_once()
@@ -1642,10 +1651,12 @@ class TestSessionActionUpdatedImpl:
     ) -> None:
         """Tests that canceled actions are logged"""
         # WHEN
-        session._action_updated_impl(
+        future = session._action_updated_impl(
             action_status=canceled_action_status,
             now=action_complete_time,
         )
+        if future:
+            wait([future])
 
         # THEN
         mock_mod_logger.info.assert_called_once()
