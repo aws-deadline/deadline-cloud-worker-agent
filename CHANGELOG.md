@@ -1,3 +1,12 @@
+## 0.27.4 (2024-10-30)
+
+
+### Features
+* include specific session runtime logs in the worker log (#422) ([`be55928`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/be55928bb55ca361a2900b16f599ccc1f1b03b7c))
+
+### Bug Fixes
+* non-user-friendly error when trying to install the worker agent as domain user (#457) ([`15afe89`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/15afe89930f99f92346a4b96806c4c68d76bdbae))
+
 ## 0.27.3 (2024-10-17)
 
 
