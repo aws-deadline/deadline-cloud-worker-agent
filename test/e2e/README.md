@@ -1,11 +1,11 @@
 # Cross OS E2E Tests
 
-Tests designed to work with both Linux and Windows workers should use the `operating_system` paramater to differentiate differences between operating systems.
+Tests designed to work with both Linux and Windows workers should use the `operating_system` parameter to differentiate differences between operating systems.
 
 Export the `OPERATING_SYSTEM` environment variable to either "linux" or "windows", depending on the OS of the worker that you would like to test.
 
 # OS Specific Tests
-Use the `mark.skipif` paramater to differentiate between operating systems for os specific tests.
+Use the `mark.skipif` parameter to differentiate between operating systems for os specific tests.
 ```
 @pytest.mark.skipif(
         os.environ["OPERATING_SYSTEM"] == "windows",
@@ -16,7 +16,7 @@ def test_linux_behaviour() -> None:
 
 @pytest.mark.skipif(
         os.environ["OPERATING_SYSTEM"] == "linux",
-        reason="Linux specific test",
+        reason="Windows specific test",
     )
 def test_windows_behaviour() -> None:
     ...
