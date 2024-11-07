@@ -6,6 +6,7 @@ and making sure that the status of the Worker is that of what we expect.
 from datetime import datetime, timezone
 import logging
 import os
+from time import sleep
 import pytest
 from deadline_test_fixtures import DeadlineClient, EC2InstanceWorker
 import pytest
@@ -72,7 +73,12 @@ class TestWorkerStatus:
             ), "deadline-worker-agent process is not running"
 
         check_worker_processes_exist()
-        time_that_worker_was_killed: datetime = datetime.now(timezone.utc)
+
+        # Sleep to make sure the worker process will be killed at least one second after the initial start
+        sleep(1)
+
+        # Floor to seconds, as service start time is precise to seconds
+        time_that_worker_was_killed: datetime = datetime.now(timezone.utc).replace(microsecond=0)
 
         # Kill the worker process
         pkill_command_result = class_worker.send_command(
@@ -86,7 +92,7 @@ class TestWorkerStatus:
 
         check_service_is_active()
 
-        # Check that the service active time is strictly after when we killed the process, since it should have restarted after the kill
+        # Check that the service active time is after when we killed the process, since it should have restarted after the kill
         service_active_enter_timestamp_result = class_worker.send_command(
             "systemctl show --property=ActiveEnterTimestamp  deadline-worker"
         )
@@ -98,7 +104,7 @@ class TestWorkerStatus:
         ).replace(tzinfo=timezone.utc)
 
         assert (
-            time_service_started > time_that_worker_was_killed
+            time_service_started >= time_that_worker_was_killed
         ), "Service has not restarted properly as service started before kill command"
 
         # Check that there are worker processes running
