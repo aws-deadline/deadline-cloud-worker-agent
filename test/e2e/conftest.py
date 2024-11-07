@@ -10,7 +10,7 @@ import posixpath
 import pytest
 import tempfile
 from dataclasses import dataclass, field, InitVar
-from typing import Generator, Type
+from typing import Callable, Generator, Type
 from contextlib import contextmanager
 
 from deadline_test_fixtures import (
@@ -246,6 +246,26 @@ def function_worker(
         yield worker
 
     stop_worker(request, worker)
+
+
+@pytest.fixture(scope="function")
+def function_worker_factory(
+    request: pytest.FixtureRequest,
+    ec2_worker_type: Type[EC2InstanceWorker],
+) -> Generator[Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker], None, None]:
+
+    created_workers = []
+
+    def _create_function_worker(
+        custom_worker_config: DeadlineWorkerConfiguration,
+    ):
+        with create_worker(custom_worker_config, ec2_worker_type, request) as worker:
+            created_workers.append(worker)
+            return worker
+
+    yield _create_function_worker
+    for worker in created_workers:
+        stop_worker(request, worker)
 
 
 def create_worker(
