@@ -5,12 +5,15 @@ and making sure that the behavior and outputs of the Worker is that of what we e
 """
 import logging
 import os
-from typing import Any, Callable
+from typing import Any, Callable, Optional
+import backoff
+import boto3
 import pytest
 from deadline_test_fixtures import DeadlineClient, EC2InstanceWorker, DeadlineWorkerConfiguration
 import pytest
 import dataclasses
-from e2e.utils import submit_custom_job
+from e2e.utils import submit_custom_job, submit_sleep_job
+from e2e.conftest import DeadlineResources
 
 LOG = logging.getLogger(__name__)
 
@@ -76,3 +79,53 @@ class TestWorkerConfiguration:
                 assert (
                     "false" in check_log_exists_result.stdout.lower()
                 ), f"Checking that local session logs do not exist returned unexpected response: {check_log_exists_result}"
+
+    def test_worker_shuts_down_host_machine_if_configured(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        worker_config: DeadlineWorkerConfiguration,
+        function_worker_factory: Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker],
+    ) -> None:
+
+        # Test that if worker in an autoscaling fleet is configured to shut down host machine, the host machine is shut down when there are no more jobs available for the fleet.
+
+        # Submit a job
+        job = submit_sleep_job(
+            "Test Sleep Job with worker shut down host machine",
+            deadline_client,
+            deadline_resources.farm,
+            deadline_resources.scaling_queue,
+        )
+
+        worker_in_autoscaling_fleet_with_shut_down: EC2InstanceWorker = function_worker_factory(
+            dataclasses.replace(
+                worker_config, allow_shutdown=True, fleet=deadline_resources.scaling_fleet
+            )
+        )
+        instance_id: Optional[str] = worker_in_autoscaling_fleet_with_shut_down.instance_id
+        assert instance_id
+
+        ec2_client = boto3.client("ec2")
+        instance_status = ec2_client.describe_instance_status(
+            InstanceIds=[instance_id], IncludeAllInstances=True
+        )["InstanceStatuses"][0]["InstanceState"]
+        assert instance_status["Name"] == "running"
+
+        job.wait_until_complete(client=deadline_client)
+
+        # Check that the worker instance has been shut down
+        @backoff.on_exception(
+            backoff.constant,
+            Exception,
+            max_time=800,
+            interval=30,
+        )
+        def check_instance_stopping() -> None:
+            instance_status = ec2_client.describe_instance_status(
+                InstanceIds=[instance_id], IncludeAllInstances=True
+            )["InstanceStatuses"][0]["InstanceState"]
+
+            assert instance_status["Name"] in ["stopped", "stopping"]
+
+        check_instance_stopping()
