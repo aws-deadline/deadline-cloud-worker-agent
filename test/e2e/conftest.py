@@ -1,14 +1,10 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 import boto3
-import glob
-import json
+import dataclasses
 import logging
 import os
-import pathlib
-import posixpath
 import pytest
-import tempfile
 from dataclasses import dataclass, field, InitVar
 from typing import Callable, Generator, Type
 from contextlib import contextmanager
@@ -20,7 +16,6 @@ from deadline_test_fixtures import (
     Farm,
     Fleet,
     Queue,
-    PipInstall,
     EC2InstanceWorker,
     BootstrapResources,
     PosixSessionUser,
@@ -119,16 +114,12 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
 
 @pytest.fixture(scope="session")
 def worker_config(
-    deadline_resources,
-    codeartifact,
-    service_model,
-    region,
-    operating_system,
-    posix_job_user,
-    posix_env_override_job_user,
-    posix_config_override_job_user,
-    windows_job_users,
-) -> Generator[DeadlineWorkerConfiguration, None, None]:
+    posix_job_user: PosixSessionUser,
+    posix_env_override_job_user: PosixSessionUser,
+    posix_config_override_job_user: PosixSessionUser,
+    worker_config: DeadlineWorkerConfiguration,
+    windows_job_users: list[str],
+) -> DeadlineWorkerConfiguration:
     """
     Builds the configuration for a DeadlineWorker.
 
@@ -146,74 +137,11 @@ def worker_config(
     Returns:
         DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
     """
-    file_mappings: list[tuple[str, str]] = []
-
-    # Deprecated environment variable
-    if os.getenv("WORKER_REGION") is not None:
-        raise Exception(
-            "The environment variable WORKER_REGION is no longer supported. Please use REGION instead."
-        )
-
-    # Prepare the Worker agent Python package
-    worker_agent_whl_path = os.getenv("WORKER_AGENT_WHL_PATH")
-    if worker_agent_whl_path:
-        LOG.info(f"Using Worker agent whl file: {worker_agent_whl_path}")
-        resolved_whl_paths = glob.glob(worker_agent_whl_path)
-        assert (
-            len(resolved_whl_paths) == 1
-        ), f"Expected exactly one Worker agent whl path, but got {resolved_whl_paths} (from pattern {worker_agent_whl_path})"
-        resolved_whl_path = resolved_whl_paths[0]
-
-        if operating_system.name == "AL2023":
-            dest_path = posixpath.join("/tmp", os.path.basename(resolved_whl_path))
-        else:
-            dest_path = posixpath.join(
-                "C:\\Windows\\System32\\Config\\systemprofile\\AppData\\Local\\Temp",
-                os.path.basename(resolved_whl_path),
-            )
-        file_mappings = [(resolved_whl_path, dest_path)]
-
-        LOG.info(f"The whl file will be copied to {dest_path} on the Worker environment")
-        worker_agent_requirement_specifier = dest_path
-    else:
-        worker_agent_requirement_specifier = os.getenv(
-            "WORKER_AGENT_REQUIREMENT_SPECIFIER",
-            "deadline-cloud-worker-agent",
-        )
-        LOG.info(f"Using Worker agent package {worker_agent_requirement_specifier}")
-
-    # Path map the service model
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src_path = pathlib.Path(tmpdir) / f"{service_model.service_name}-service-2.json"
-
-        LOG.info(f"Staging service model to {src_path} for uploading to S3")
-        with src_path.open(mode="w") as f:
-            json.dump(service_model.model, f)
-
-        if operating_system.name == "AL2023":
-            dst_path = posixpath.join("/tmp", src_path.name)
-        else:
-            dst_path = posixpath.join(
-                "C:\\Windows\\System32\\Config\\systemprofile\\AppData\\Local\\Temp", src_path.name
-            )
-        LOG.info(f"The service model will be copied to {dst_path} on the Worker environment")
-        file_mappings.append((str(src_path), dst_path))
-
-        yield DeadlineWorkerConfiguration(
-            farm_id=deadline_resources.farm.id,
-            fleet=deadline_resources.fleet,
-            region=region,
-            allow_shutdown=True,
-            worker_agent_install=PipInstall(
-                requirement_specifiers=[worker_agent_requirement_specifier],
-                codeartifact=codeartifact,
-            ),
-            service_model_path=dst_path,
-            file_mappings=file_mappings or None,
-            job_users=[posix_job_user, posix_config_override_job_user, posix_env_override_job_user],
-            windows_job_users=windows_job_users,
-            start_service=True,
-        )
+    return dataclasses.replace(
+        worker_config,
+        job_users=[posix_job_user, posix_config_override_job_user, posix_env_override_job_user],
+        windows_job_users=windows_job_users,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -414,7 +342,7 @@ def generic_non_queue_job_user() -> PosixSessionUser:
 
 
 @pytest.fixture(scope="session")
-def windows_job_users() -> list:
+def windows_job_users() -> list[str]:
     return [
         "job-user",
         "cli-override",
@@ -424,12 +352,17 @@ def windows_job_users() -> list:
     ]
 
 
-@pytest.fixture(scope="session", params=["linux", "windows"])
-def operating_system(request) -> OperatingSystem:
-    if request.param == "linux":
+@pytest.fixture(scope="session")
+def operating_system() -> OperatingSystem:
+    os_env_var = os.environ.get("OPERATING_SYSTEM")
+    if os_env_var == "linux":
         return OperatingSystem(name="AL2023")
-    else:
+    elif os_env_var == "windows":
         return OperatingSystem(name="WIN2022")
+    else:
+        assert (
+            False
+        ), f'Expected OPERATING_SYSTEM env var to be "linux" or "windows", but got {os_env_var}'
 
 
 def pytest_collection_modifyitems(items):

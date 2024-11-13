@@ -30,7 +30,6 @@ LOG = logging.getLogger(__name__)
     os.environ["OPERATING_SYSTEM"] == "linux",
     reason="Windows Specific Job User Override Tests.",
 )
-@pytest.mark.parametrize("operating_system", ["windows"], indirect=True)
 class TestWindowsJobUserOverride:
     @staticmethod
     def submit_whoami_job(
@@ -238,12 +237,10 @@ class TestWindowsJobUserOverride:
         ), f"Failed to unset DEADLINE_WORKER_WINDOWS_JOB_USER: {cmd_result}"
 
 
-@pytest.mark.usefixtures("operating_system")
 @pytest.mark.skipif(
     os.environ["OPERATING_SYSTEM"] == "windows",
     reason="Linux specific Job User Override tests",
 )
-@pytest.mark.parametrize("operating_system", ["linux"], indirect=True)
 class TestLinuxJobUserOverride:
     @staticmethod
     def submit_whoami_job(

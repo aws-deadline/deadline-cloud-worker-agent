@@ -37,7 +37,6 @@ from e2e.utils import wait_for_job_output, submit_sleep_job, submit_custom_job
 LOG = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize("operating_system", [os.environ["OPERATING_SYSTEM"]], indirect=True)
 class TestJobSubmission:
     def test_success(
         self,

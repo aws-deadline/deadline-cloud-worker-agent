@@ -16,7 +16,6 @@ import backoff
 LOG = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize("operating_system", [os.environ["OPERATING_SYSTEM"]], indirect=True)
 class TestWorkerStatus:
 
     @pytest.mark.skipif(

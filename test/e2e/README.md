@@ -1,23 +1,26 @@
 # Cross OS E2E Tests
 
-Tests designed to work with both Linux and Windows workers should use the `operating_system` parameter to differentiate differences between operating systems.
+Tests designed to cover Linux and Windows workers should use the `operating_system` fixture to for conditional testing logic between operating systems. The fixture uses the value of the `OPERATING_SYSTEM` environment variable and its value should be either `linux` or `windows`.
 
-Export the `OPERATING_SYSTEM` environment variable to either "linux" or "windows", depending on the OS of the worker that you would like to test.
+The `OPERATING_SYSTEM` environment variable is setup both in CI configuration and developer scripting (see [Running Worker Agent E2E Tests](../../DEVELOPMENT.md#running-worker-agent-e2e-tests)).
 
 # OS Specific Tests
-Use the `mark.skipif` parameter to differentiate between operating systems for os specific tests.
-```
+Use the `mark.skipif` parameter to differentiate between operating systems for os specific tests. Decorators are evaluated at import time and cannot use fixtures for their conditions.Instead, use the `OPERATING_SYSTEM` environment variable:
+
+```py
+# Linux-specific test
 @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Linux specific test",
-    )
+    os.environ["OPERATING_SYSTEM"] != "linux",
+    reason="Linux specific test",
+)
 def test_linux_behaviour() -> None:
     ...
 
+# Windows-specific test
 @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "linux",
-        reason="Windows specific test",
-    )
+    os.environ["OPERATING_SYSTEM"] != "windows",
+    reason="Windows specific test",
+)
 def test_windows_behaviour() -> None:
     ...
 ```
