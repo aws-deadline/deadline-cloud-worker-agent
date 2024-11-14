@@ -6,6 +6,7 @@ from .exit_env import ExitEnvironmentAction
 from .openjd_action import OpenjdAction
 from .run_step_task import RunStepTaskAction
 from .sync_input_job_attachments import SyncInputJobAttachmentsAction
+from .run_attachment_download import AttachmentDownloadAction
 
 __all__ = [
     "EnterEnvironmentAction",
@@ -14,4 +15,5 @@ __all__ = [
     "RunStepTaskAction",
     "SessionActionDefinition",
     "SyncInputJobAttachmentsAction",
+    "AttachmentDownloadAction",
 ]

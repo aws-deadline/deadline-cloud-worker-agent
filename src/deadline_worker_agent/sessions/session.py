@@ -29,6 +29,7 @@ from typing import (
 from deadline_worker_agent.api_models import (
     EntityIdentifier,
     SyncInputJobAttachmentsAction,
+    AttachmentDownloadAction,
 )
 
 if TYPE_CHECKING:
@@ -321,7 +322,7 @@ class Session:
         self._stopped_running.wait(timeout=timeout.seconds if timeout else None)
 
     def _run(self) -> None:
-        """The contains the main run loop for processing session actions.
+        """The function contains the main run loop for processing session actions.
 
         This code will loop until Session.stop() is called from another thread.
         """
@@ -447,7 +448,12 @@ class Session:
     def replace_assigned_actions(
         self,
         *,
-        actions: Iterable[EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction],
+        actions: Iterable[
+            EnvironmentAction
+            | TaskRunAction
+            | SyncInputJobAttachmentsAction
+            | AttachmentDownloadAction
+        ],
     ) -> None:
         """Replaces the assigned actions
 
@@ -461,7 +467,7 @@ class Session:
 
         Parameters
         ----------
-        actions : Iterable[EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction]
+        actions : Iterable[EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction | AttachmentDownloadAction]
             The new sequence of actions to be assigned to the session. The order of the actions
             provided is used as the processing order
         """
@@ -471,7 +477,12 @@ class Session:
     def _replace_assigned_actions_impl(
         self,
         *,
-        actions: Iterable[EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction],
+        actions: Iterable[
+            EnvironmentAction
+            | TaskRunAction
+            | SyncInputJobAttachmentsAction
+            | AttachmentDownloadAction
+        ],
     ) -> None:
         """Replaces the assigned actions
 

@@ -46,6 +46,7 @@ __all__ = [
 EnvironmentActionType = Literal["ENV_ENTER", "ENV_EXIT"]
 StepActionType = Literal["TASK_RUN"]  # noqa
 SyncInputJobAttachmentsActionType = Literal["SYNC_INPUT_JOB_ATTACHMENTS"]  # noqa
+AttachmentDownloadActionType = Literal["SYNC_INPUT_JOB_ATTACHMENTS"]  # noqa
 CompletedActionStatus = Literal["SUCCEEDED", "FAILED", "INTERRUPTED", "CANCELED", "NEVER_ATTEMPTED"]
 
 
@@ -87,6 +88,12 @@ class SyncInputJobAttachmentsAction(TypedDict):
     stepId: NotRequired[str]
 
 
+class AttachmentDownloadAction(TypedDict):
+    sessionActionId: str
+    actionType: AttachmentDownloadActionType
+    stepId: NotRequired[str]
+
+
 class LogConfiguration(TypedDict):
     error: NotRequired[str]
     logDriver: str
@@ -97,7 +104,9 @@ class LogConfiguration(TypedDict):
 class AssignedSession(TypedDict):
     queueId: str
     jobId: str
-    sessionActions: list[EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction]
+    sessionActions: list[
+        EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction | AttachmentDownloadAction
+    ]
     logConfiguration: NotRequired[LogConfiguration]
 
 

@@ -46,6 +46,7 @@ from ..api_models import (
     EnvironmentAction,
     TaskRunAction,
     SyncInputJobAttachmentsAction,
+    AttachmentDownloadAction,
 )
 from ..aws.deadline import (
     DeadlineRequestConditionallyRecoverableError,
@@ -1362,7 +1363,10 @@ class WorkerScheduler:
         self,
         *,
         assigned_session_actions: list[
-            EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction
+            EnvironmentAction
+            | TaskRunAction
+            | SyncInputJobAttachmentsAction
+            | AttachmentDownloadAction
         ],
         failure_message: str,
     ) -> None:
