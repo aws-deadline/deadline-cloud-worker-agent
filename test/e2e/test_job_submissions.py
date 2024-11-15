@@ -10,7 +10,13 @@ import pathlib
 from typing import Any, Dict, List, Optional
 import pytest
 import logging
-from deadline_test_fixtures import Job, DeadlineClient, TaskStatus, EC2InstanceWorker
+from deadline_test_fixtures import (
+    Job,
+    DeadlineClient,
+    PosixSessionUser,
+    TaskStatus,
+    EC2InstanceWorker,
+)
 from e2e.conftest import DeadlineResources
 import backoff
 import boto3
@@ -54,6 +60,88 @@ class TestJobSubmission:
         LOG.info(f"Job result: {job}")
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "windows",
+        reason="Linux specific worker log test",
+    )
+    def test_worker_writes_logs_to_disk_securely(
+        self,
+        deadline_resources,
+        session_worker: EC2InstanceWorker,
+        posix_job_user: PosixSessionUser,
+        deadline_client: DeadlineClient,
+    ) -> None:
+        # WHEN
+
+        job = submit_sleep_job(
+            "Test Success Sleep Job",
+            deadline_client,
+            deadline_resources.farm,
+            deadline_resources.queue_a,
+        )
+
+        # THEN
+        LOG.info(f"Waiting for job {job.id} to complete")
+        job.wait_until_complete(client=deadline_client)
+        LOG.info(f"Job result: {job}")
+
+        assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        sessions: list[dict[str, Any]] = deadline_client.list_sessions(
+            farmId=job.farm.id,
+            queueId=job.queue.id,
+            jobId=job.id,
+        ).get("sessions")
+        assert sessions
+
+        worker_logs_directory: str = "/var/log/amazon/deadline"
+        # Check that the session log file is accessible by the worker agent user only
+        for session in sessions:
+            session_id: str = session["sessionId"]
+            session_logs_file_path: str = os.path.join(
+                worker_logs_directory, job.queue.id, f"{session_id}.log"
+            )
+
+            check_session_log_exists_result = session_worker.send_command(
+                command=f"sudo -u deadline-worker [ -e '{session_logs_file_path}' ]"
+            )
+            assert (
+                check_session_log_exists_result.exit_code == 0
+            )  # The -e command returns 0 on linux if the file does  exist
+
+            # Check that the session log file is not accessible by the job  user
+            check_session_log_exists_result = session_worker.send_command(
+                command=f"sudo -u {posix_job_user.user} [ -e '{session_logs_file_path}' ]"
+            )
+            assert (
+                check_session_log_exists_result.exit_code == 1
+            )  # The job user should not have access to the file
+
+        # Check that the worker agent log file is accessible by the worker user only
+
+        check_worker_log_exists_result = session_worker.send_command(
+            command=f"sudo -u deadline-worker [ -e '{worker_logs_directory}/worker-agent.log' ]"
+        )
+        assert check_worker_log_exists_result.exit_code == 0
+
+        # Check that the worker agent log file is not accessible by the job user
+        check_worker_log_accessible_by_job_user_result = session_worker.send_command(
+            command=f"sudo -u {posix_job_user.user} [ -e '{worker_logs_directory}/worker-agent.log' ]"
+        )
+        assert check_worker_log_accessible_by_job_user_result.exit_code == 1
+
+        # Check that the worker agent bootstrap log file is accessible by the worker user only
+        check_worker_bootstrap_log_exists_result = session_worker.send_command(
+            command=f"sudo -u deadline-worker [ -e '{worker_logs_directory}/worker-agent-bootstrap.log' ]"
+        )
+        assert check_worker_bootstrap_log_exists_result.exit_code == 0
+
+        # Check that the worker agent bootstrap log file is not accessible by the job user
+        check_worker_bootstrap_log_accessible_by_job_user_result = session_worker.send_command(
+            command=f"sudo -u {posix_job_user.user} [ -e '{worker_logs_directory}/worker-agent-bootstrap.log' ]"
+        )
+        assert check_worker_bootstrap_log_accessible_by_job_user_result.exit_code == 1
 
     @pytest.mark.parametrize(
         "run_actions,environment_actions, expected_failed_action",
