@@ -124,6 +124,9 @@ def worker_config(
     service_model,
     region,
     operating_system,
+    posix_job_user,
+    posix_env_override_job_user,
+    posix_config_override_job_user,
     windows_job_users,
 ) -> Generator[DeadlineWorkerConfiguration, None, None]:
     """
@@ -207,6 +210,7 @@ def worker_config(
             ),
             service_model_path=dst_path,
             file_mappings=file_mappings or None,
+            job_users=[posix_job_user, posix_config_override_job_user, posix_env_override_job_user],
             windows_job_users=windows_job_users,
             start_service=True,
         )
@@ -378,10 +382,26 @@ def region() -> str:
 
 
 @pytest.fixture(scope="session")
-def job_run_as_user() -> PosixSessionUser:
+def posix_job_user() -> PosixSessionUser:
     return PosixSessionUser(
         user="job-user",
         group="job-user",
+    )
+
+
+@pytest.fixture(scope="session")
+def posix_config_override_job_user() -> PosixSessionUser:
+    return PosixSessionUser(
+        user="config-override",
+        group="job-override-group",
+    )
+
+
+@pytest.fixture(scope="session")
+def posix_env_override_job_user() -> PosixSessionUser:
+    return PosixSessionUser(
+        user="env-override",
+        group="job-override-group",
     )
 
 
