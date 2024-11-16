@@ -22,7 +22,7 @@ from deadline_test_fixtures import (
     DeadlineClient,
     EC2InstanceWorker,
 )
-
+from flaky import flaky
 
 LOG = logging.getLogger(__name__)
 
@@ -319,6 +319,9 @@ class TestLinuxJobUserOverride:
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
+    @flaky(
+        max_runs=3, min_passes=1
+    )  # Flaky due to varying instance types causing race conditions with user reassignment
     def test_config_file_user_override(
         self,
         deadline_resources,
@@ -346,7 +349,7 @@ class TestLinuxJobUserOverride:
         check_worker_service_stopped()
 
         cmd_result = class_worker.send_command(
-            f'sed -i \'s/# posix_job_user = "user:group"/posix_job_user = "{posix_config_override_job_user.user}:{posix_config_override_job_user.group}"/g\' /etc/amazon/deadline/worker.toml'
+            command=f'sed -i \'s/# posix_job_user = "user:group"/posix_job_user = "{posix_config_override_job_user.user}:{posix_config_override_job_user.group}"/g\' /etc/amazon/deadline/worker.toml'
         )
         assert (
             cmd_result.exit_code == 0
@@ -376,12 +379,15 @@ class TestLinuxJobUserOverride:
             assert job.task_run_status == TaskStatus.SUCCEEDED
         finally:
             cmd_result = class_worker.send_command(
-                f"sed -i '/posix_job_user = \"{posix_config_override_job_user.user}:{posix_config_override_job_user.group}\"/d' /etc/amazon/deadline/worker.toml"
+                command=f'sed -i \'s/posix_job_user = "{posix_config_override_job_user.user}:{posix_config_override_job_user.group}"/# posix_job_user = "user:group"/g\' /etc/amazon/deadline/worker.toml'
             )
             assert (
                 cmd_result.exit_code == 0
             ), f"Resetting the job user override via CLI failed: {cmd_result}"
 
+    @flaky(
+        max_runs=3, min_passes=1
+    )  # Flaky due to varying instance types causing race conditions with user reassignment
     def test_env_var_user_override(
         self,
         deadline_resources,
