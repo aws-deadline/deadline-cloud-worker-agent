@@ -5,6 +5,7 @@ and making sure that the behavior and outputs of the Worker is that of what we e
 """
 import logging
 import os
+from time import sleep
 from typing import Any, Callable, Optional
 import backoff
 import boto3
@@ -20,6 +21,64 @@ LOG = logging.getLogger(__name__)
 
 @pytest.mark.parametrize("operating_system", [os.environ["OPERATING_SYSTEM"]], indirect=True)
 class TestWorkerConfiguration:
+
+    def test_worker_requires_no_instance_profile(
+        self,
+        deadline_resources,
+        deadline_client: DeadlineClient,
+        worker_config: DeadlineWorkerConfiguration,
+        function_worker_factory: Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker],
+    ) -> None:
+
+        # Create a EC2 worker with disallow-instance-profiles option for the worker agent
+        # Note that the EC2 instance is created with an instance profile, so no job will ever be picked up by this worker
+        function_worker_factory(
+            dataclasses.replace(
+                worker_config,
+                disallow_instance_profile="True",
+                fleet=deadline_resources.scaling_fleet,
+            )
+        )
+
+        # Check that the worker agent will eventually shut down
+        job = submit_sleep_job(
+            "Test Job with worker instance profiles disallowed",
+            deadline_client,
+            deadline_resources.farm,
+            deadline_resources.queue_a,
+        )
+        try:
+            # Wait until the job is finished creation
+
+            @backoff.on_exception(
+                exception=Exception,
+                wait_gen=backoff.constant,
+                max_time=120,
+                interval=10,
+            )
+            def check_job_created() -> None:
+                job.refresh_job_info(client=deadline_client)
+                assert job.lifecycle_status != "CREATE_IN_PROGRESS"
+
+            check_job_created()
+
+            # Sleep 30 seconds to allow the worker to pick up the job, the worker will not pick up the job due to the instance profile
+            sleep(30)
+
+            def check_job_not_picked_up() -> None:
+                # Check that the job is never picked up, since the worker will not pick up any jobs due to the instance profile
+                job.refresh_job_info(client=deadline_client)
+                assert job.task_run_status in ["PENDING", "READY"]
+
+            check_job_not_picked_up()
+
+        finally:
+            deadline_client.update_job(
+                farmId=job.farm.id,
+                queueId=job.queue.id,
+                jobId=job.id,
+                targetTaskRunStatus="CANCELED",
+            )
 
     def test_worker_local_session_logs_can_be_turned_off(
         self,
