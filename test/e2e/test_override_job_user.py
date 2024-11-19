@@ -22,7 +22,6 @@ from deadline_test_fixtures import (
     DeadlineClient,
     EC2InstanceWorker,
 )
-from flaky import flaky
 
 LOG = logging.getLogger(__name__)
 
@@ -319,9 +318,6 @@ class TestLinuxJobUserOverride:
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
-    @flaky(
-        max_runs=3, min_passes=1
-    )  # Flaky due to varying instance types causing race conditions with user reassignment
     def test_config_file_user_override(
         self,
         deadline_resources,
@@ -385,9 +381,6 @@ class TestLinuxJobUserOverride:
                 cmd_result.exit_code == 0
             ), f"Resetting the job user override via CLI failed: {cmd_result}"
 
-    @flaky(
-        max_runs=3, min_passes=1
-    )  # Flaky due to varying instance types causing race conditions with user reassignment
     def test_env_var_user_override(
         self,
         deadline_resources,
