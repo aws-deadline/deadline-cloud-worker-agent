@@ -318,9 +318,6 @@ class TestLinuxJobUserOverride:
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
-    @pytest.mark.skip(
-        reason="Passes consistently on local but fails in Github. Will re-enable after investigation"
-    )
     def test_config_file_user_override(
         self,
         deadline_resources,
@@ -384,9 +381,6 @@ class TestLinuxJobUserOverride:
                 cmd_result.exit_code == 0
             ), f"Resetting the job user override via CLI failed: {cmd_result}"
 
-    @pytest.mark.skip(
-        reason="Passes consistently on local but fails in Github. Will re-enable after investigation"
-    )
     def test_env_var_user_override(
         self,
         deadline_resources,
