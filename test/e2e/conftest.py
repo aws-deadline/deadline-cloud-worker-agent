@@ -406,6 +406,14 @@ def posix_env_override_job_user() -> PosixSessionUser:
 
 
 @pytest.fixture(scope="session")
+def generic_non_queue_job_user() -> PosixSessionUser:
+    return PosixSessionUser(
+        user="non-queue-user",
+        group="job-override-group",
+    )
+
+
+@pytest.fixture(scope="session")
 def windows_job_users() -> list:
     return [
         "job-user",
