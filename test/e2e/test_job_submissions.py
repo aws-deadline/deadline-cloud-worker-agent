@@ -65,7 +65,7 @@ class TestJobSubmission:
         os.environ["OPERATING_SYSTEM"] == "windows",
         reason="Linux specific queue crendentials test",
     )
-    def test_queue_credentials_file_is_secure(
+    def test_queue_credentials_file_is_secure_from_other_users(
         self,
         deadline_resources,
         session_worker: EC2InstanceWorker,
@@ -73,7 +73,7 @@ class TestJobSubmission:
         generic_non_queue_job_user: PosixSessionUser,
         deadline_client: DeadlineClient,
     ) -> None:
-        # Test to verify that the queue credentials can never be accessed by a different queue or user
+        # Test to verify that the queue credentials can never be accessed by a different user on the same machine
 
         job = submit_custom_job(
             "Test Sleep",
@@ -125,6 +125,61 @@ class TestJobSubmission:
             )
 
             assert check_other_user_cannot_access_credentials_result.exit_code != 0
+
+        finally:
+            deadline_client.update_job(
+                farmId=job.farm.id,
+                queueId=job.queue.id,
+                jobId=job.id,
+                targetTaskRunStatus="CANCELED",
+            )
+            job.wait_until_complete(client=deadline_client)
+
+        return
+
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "windows",
+        reason="Linux specific queue crendentials test",
+    )
+    def test_queue_credentials_file_is_secure_from_other_queues(
+        self,
+        deadline_resources,
+        session_worker: EC2InstanceWorker,
+        deadline_client: DeadlineClient,
+    ) -> None:
+        # Test to verify that the queue credentials can never be accessed by a different queue's job user
+
+        job = submit_sleep_job(
+            "Test Sleep",
+            deadline_client,
+            deadline_resources.farm,
+            deadline_resources.queue_a,
+        )
+        try:
+
+            @backoff.on_predicate(
+                wait_gen=backoff.constant,
+                max_time=120,
+                interval=10,
+            )
+            def is_job_started(current_job: Job) -> bool:
+                current_job.refresh_job_info(client=deadline_client)
+                LOG.info(f"Waiting for job {current_job.id} to be created")
+                return current_job.lifecycle_status != "CREATE_IN_PROGRESS"
+
+            assert is_job_started(job)
+
+            @backoff.on_predicate(backoff.constant, interval=5, max_time=60)
+            def sessions_exist(current_job: Job) -> bool:
+                sessions: list[dict[str, Any]] = deadline_client.list_sessions(
+                    farmId=current_job.farm.id, queueId=current_job.queue.id, jobId=current_job.id
+                ).get("sessions")
+
+                return len(sessions) > 0
+
+            assert sessions_exist(job)
+
+            queue_credentials_directory = f"/var/lib/deadline/queues/{job.queue.id}"
 
             # Verify that another queue's user cannot access the credentials file through a job
             second_queue_job = submit_custom_job(
