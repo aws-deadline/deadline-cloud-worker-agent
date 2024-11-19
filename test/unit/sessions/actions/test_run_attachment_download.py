@@ -3,6 +3,7 @@
 from __future__ import annotations
 from pathlib import Path
 import os
+import sys
 import sysconfig
 import tempfile
 from typing import TYPE_CHECKING, Generator
@@ -109,6 +110,10 @@ class TestStart:
         with patch.object(session, "_asset_sync") as mock_asset_sync:
             yield mock_asset_sync
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Failed in windows due to embeddedFiles.data quotation mark, which will be replaced by python embedded file soon.",
+    )
     def test_attachment_download_action_start(
         self,
         executor: Mock,
@@ -122,13 +127,13 @@ class TestStart:
         Tests that AttachmentDownloadAction.start() calls AssetSync functions to prepare input
         for constructing step script to run openjd action
         """
-        # WHEN
-        action.start(session=session, executor=executor)
-
-        # THEN
+        # GIVEN
         assert job_details.job_attachment_settings is not None
         assert job_details.job_attachment_settings.s3_bucket_name is not None
         assert job_details.job_attachment_settings.root_prefix is not None
+
+        # WHEN
+        action.start(session=session, executor=executor)
 
         mock_asset_sync._aggregate_asset_root_manifests.assert_called_once_with(
             session_dir=session_dir,

@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 import json
 from shlex import quote
-from logging import getLogger, LoggerAdapter
+from logging import LoggerAdapter
 import sysconfig
 from typing import Any, TYPE_CHECKING, Optional
 from dataclasses import asdict
@@ -32,6 +32,7 @@ from deadline.job_attachments.os_file_permission import (
 
 from openjd.sessions import (
     LOG as OPENJD_LOG,
+    LogContent,
     PathMappingRule as OpenjdPathMapping,
     PosixSessionUser,
     WindowsSessionUser,
@@ -52,22 +53,12 @@ from ...log_messages import SessionActionLogKind
 from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
-    from concurrent.futures import Future
     from ..session import Session
     from ..job_entities import JobAttachmentDetails, StepDetails
 
 
-logger = getLogger(__name__)
-
-
-class SyncCanceled(Exception):
-    """Exception indicating the synchronization was canceled"""
-
-    pass
-
-
 class AttachmentDownloadAction(OpenjdAction):
-    """Action to synchronize input job attachments for a AWS Deadline Cloud job
+    """Action to synchronize input job attachments for a AWS Deadline Cloud Session
 
     Parameters
     ----------
@@ -75,7 +66,6 @@ class AttachmentDownloadAction(OpenjdAction):
         The unique action identifier
     """
 
-    _future: Future[None]
     _job_attachment_details: Optional[JobAttachmentDetails]
     _step_details: Optional[StepDetails]
     _step_script: Optional[StepScript_2023_09]
@@ -102,6 +92,7 @@ class AttachmentDownloadAction(OpenjdAction):
         self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
     def set_step_script(self, manifests, path_mapping, s3_settings) -> None:
+        # TODO - update to run python as embedded file
         profile = os.environ.get("AWS_PROFILE")
         deadline_path = os.path.join(Path(sysconfig.get_path("scripts")), "deadline")
 
@@ -151,17 +142,25 @@ class AttachmentDownloadAction(OpenjdAction):
             An executor for running futures
         """
 
-        self._logger.info(f"Syncing inputs using session {session}")
-
         if self._step_details:
             section_title = "Job Attachments Download for Step"
         else:
             section_title = "Job Attachments Download for Job"
 
         # Banner mimicing the one printed by the openjd-sessions runtime
-        self._logger.info("==============================================")
-        self._logger.info(f"--------- AttachmentDownloadAction  {section_title}")
-        self._logger.info("==============================================")
+        # TODO - Consider a better approach to manage the banner title
+        self._logger.info(
+            "==============================================",
+            extra={"openjd_log_content": LogContent.BANNER},
+        )
+        self._logger.info(
+            f"--------- AttachmentDownloadAction  {section_title}",
+            extra={"openjd_log_content": LogContent.BANNER},
+        )
+        self._logger.info(
+            "==============================================",
+            extra={"openjd_log_content": LogContent.BANNER},
+        )
 
         if not (job_attachment_settings := session._job_details.job_attachment_settings):
             raise RuntimeError("Job attachment settings were not contained in JOB_DETAILS entity")
@@ -232,61 +231,62 @@ class AttachmentDownloadAction(OpenjdAction):
             )
         )
 
-        vfs_handled = self._vfs_handling(
+        if self._start_vfs(
             session=session,
             attachments=attachments,
             merged_manifests_by_root=merged_manifests_by_root,
             s3_settings=s3_settings,
+        ):
+            # successfully launched VFS
+            return
+
+        job_attachment_path_mappings = list([asdict(r) for r in dynamic_mapping_rules.values()])
+
+        # Open Job Description session implementation details -- path mappings are sorted.
+        # bisect.insort only supports the 'key' arg in 3.10 or later, so
+        # we first extend the list and sort it afterwards.
+        if session._session._path_mapping_rules:
+            session._session._path_mapping_rules.extend(
+                OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings
+            )
+        else:
+            session._session._path_mapping_rules = [
+                OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings
+            ]
+
+        # Open Job Description Sessions sort the path mapping rules based on length of the parts make
+        # rules that are subsets of each other behave in a predictable manner. We must
+        # sort here since we're modifying that internal list appending to the list.
+        session._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
+
+        # =========================== TO BE DELETED ===========================
+        path_mapping_file_path: str = os.path.join(
+            session._session.working_directory, "path_mapping"
+        )
+        for rule in job_attachment_path_mappings:
+            rule["source_path"] = rule["destination_path"]
+
+        with open(path_mapping_file_path, "w", encoding="utf8") as f:
+            f.write(json.dumps([rule for rule in job_attachment_path_mappings]))
+        # =========================== TO BE DELETED ===========================
+
+        manifest_paths = session._asset_sync._check_and_write_local_manifests(
+            merged_manifests_by_root=merged_manifests_by_root,
+            manifest_write_dir=str(session._session.working_directory),
         )
 
-        if not vfs_handled:
-            job_attachment_path_mappings = list([asdict(r) for r in dynamic_mapping_rules.values()])
+        self.set_step_script(
+            manifests=manifest_paths,
+            path_mapping=path_mapping_file_path,
+            s3_settings=s3_settings,
+        )
+        assert self._step_script is not None
+        session.run_task(
+            step_script=self._step_script,
+            task_parameter_values=dict[str, ParameterValue](),
+        )
 
-            # Open Job Description session implementation details -- path mappings are sorted.
-            # bisect.insort only supports the 'key' arg in 3.10 or later, so
-            # we first extend the list and sort it afterwards.
-            if session._session._path_mapping_rules:
-                session._session._path_mapping_rules.extend(
-                    OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings
-                )
-            else:
-                session._session._path_mapping_rules = [
-                    OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings
-                ]
-
-            # Open Job Description Sessions sort the path mapping rules based on length of the parts make
-            # rules that are subsets of each other behave in a predictable manner. We must
-            # sort here since we're modifying that internal list appending to the list.
-            session._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
-
-            # =========================== TO BE DELETED ===========================
-            path_mapping_file_path: str = os.path.join(
-                session._session.working_directory, "path_mapping"
-            )
-            for rule in job_attachment_path_mappings:
-                rule["source_path"] = rule["destination_path"]
-
-            with open(path_mapping_file_path, "w", encoding="utf8") as f:
-                f.write(json.dumps([rule for rule in job_attachment_path_mappings]))
-            # =========================== TO BE DELETED ===========================
-
-            manifest_paths = session._asset_sync._check_and_write_local_manifests(
-                merged_manifests_by_root=merged_manifests_by_root,
-                manifest_write_dir=str(session._session.working_directory),
-            )
-
-            self.set_step_script(
-                manifests=manifest_paths,
-                path_mapping=path_mapping_file_path,
-                s3_settings=s3_settings,
-            )
-            assert self._step_script is not None
-            session.run_task(
-                step_script=self._step_script,
-                task_parameter_values=dict[str, ParameterValue](),
-            )
-
-    def _vfs_handling(
+    def _start_vfs(
         self,
         session: Session,
         attachments: Attachments,

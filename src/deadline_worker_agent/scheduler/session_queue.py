@@ -78,8 +78,8 @@ SyncInputJobAttachmentsQueueEntry = SessionActionQueueEntry[SyncInputJobAttachme
 SyncInputJobAttachmentsStepDependenciesQueueEntry = SessionActionQueueEntry[
     SyncInputJobAttachmentsActionApiModel
 ]
-AttachmentDownloadActioQueueEntry = SessionActionQueueEntry[AttachmentDownloadActionApiModel]
-AttachmentDownloadActioStepDependenciesQueueEntry = SessionActionQueueEntry[
+AttachmentDownloadActionQueueEntry = SessionActionQueueEntry[AttachmentDownloadActionApiModel]
+AttachmentDownloadActionStepDependenciesQueueEntry = SessionActionQueueEntry[
     AttachmentDownloadActionApiModel
 ]
 CancelOutcome = Literal["FAILED", "NEVER_ATTEMPTED"]
@@ -102,8 +102,8 @@ class SessionActionQueue:
         | TaskRunQueueEntry
         | SyncInputJobAttachmentsQueueEntry
         | SyncInputJobAttachmentsStepDependenciesQueueEntry
-        | AttachmentDownloadActioQueueEntry
-        | AttachmentDownloadActioStepDependenciesQueueEntry
+        | AttachmentDownloadActionQueueEntry
+        | AttachmentDownloadActionStepDependenciesQueueEntry
     ]
     _actions_by_id: dict[
         str,
@@ -111,8 +111,8 @@ class SessionActionQueue:
         | TaskRunQueueEntry
         | SyncInputJobAttachmentsQueueEntry
         | SyncInputJobAttachmentsStepDependenciesQueueEntry
-        | AttachmentDownloadActioQueueEntry
-        | AttachmentDownloadActioStepDependenciesQueueEntry,
+        | AttachmentDownloadActionQueueEntry
+        | AttachmentDownloadActionStepDependenciesQueueEntry,
     ]
     _action_update_callback: Callable[[SessionActionStatus], None]
     _job_entities: JobEntities
@@ -303,8 +303,8 @@ class SessionActionQueue:
             | EnvironmentQueueEntry
             | SyncInputJobAttachmentsQueueEntry
             | SyncInputJobAttachmentsStepDependenciesQueueEntry
-            | AttachmentDownloadActioQueueEntry
-            | AttachmentDownloadActioStepDependenciesQueueEntry
+            | AttachmentDownloadActionQueueEntry
+            | AttachmentDownloadActionStepDependenciesQueueEntry
         ] = []
 
         action_ids_added = list[str]()
@@ -333,12 +333,12 @@ class SessionActionQueue:
                     if ASSET_SYNC_JOB_USER_FEATURE:
                         action = cast(AttachmentDownloadActionApiModel, action)
                         if "stepId" not in action:
-                            queue_entry = AttachmentDownloadActioQueueEntry(
+                            queue_entry = AttachmentDownloadActionQueueEntry(
                                 cancel=cancel_event,
                                 definition=action,
                             )
                         else:
-                            queue_entry = AttachmentDownloadActioStepDependenciesQueueEntry(
+                            queue_entry = AttachmentDownloadActionStepDependenciesQueueEntry(
                                 cancel=cancel_event,
                                 definition=action,
                             )
@@ -483,7 +483,7 @@ class SessionActionQueue:
                     action_definition = cast(AttachmentDownloadActionApiModel, action_definition)
                     if "stepId" not in action_definition:
                         action_queue_entry = cast(
-                            AttachmentDownloadActioQueueEntry, action_queue_entry
+                            AttachmentDownloadActionQueueEntry, action_queue_entry
                         )
                         try:
                             job_attachment_details = self._job_entities.job_attachment_details()
@@ -502,7 +502,7 @@ class SessionActionQueue:
                         )
                     else:
                         action_queue_entry = cast(
-                            AttachmentDownloadActioStepDependenciesQueueEntry, action_queue_entry
+                            AttachmentDownloadActionStepDependenciesQueueEntry, action_queue_entry
                         )
 
                         try:
