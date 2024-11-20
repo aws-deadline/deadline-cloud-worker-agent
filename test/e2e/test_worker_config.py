@@ -36,7 +36,6 @@ class TestWorkerConfiguration:
             dataclasses.replace(
                 worker_config,
                 disallow_instance_profile="True",
-                fleet=deadline_resources.scaling_fleet,
             )
         )
 
