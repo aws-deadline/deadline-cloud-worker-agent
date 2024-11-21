@@ -88,12 +88,18 @@ def submit_sleep_job(
 
 
 def submit_custom_job(
-    job_name: str, deadline_client: DeadlineClient, farm: Farm, queue: Queue, run_script: str
+    job_name: str,
+    deadline_client: DeadlineClient,
+    farm: Farm,
+    queue: Queue,
+    run_script: str,
+    max_retries_per_task: int = 5,
 ) -> Job:
     job = Job.submit(
         client=deadline_client,
         farm=farm,
         queue=queue,
+        max_retries_per_task=max_retries_per_task,
         priority=98,
         template={
             "specificationVersion": "jobtemplate-2023-09",
