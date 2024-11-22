@@ -9,9 +9,7 @@ from time import sleep
 from typing import Any, Callable, Optional
 import backoff
 import boto3
-import pytest
 from deadline_test_fixtures import DeadlineClient, EC2InstanceWorker, DeadlineWorkerConfiguration
-import pytest
 import dataclasses
 from e2e.utils import submit_custom_job, submit_sleep_job
 from e2e.conftest import DeadlineResources
@@ -19,7 +17,6 @@ from e2e.conftest import DeadlineResources
 LOG = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize("operating_system", [os.environ["OPERATING_SYSTEM"]], indirect=True)
 class TestWorkerConfiguration:
 
     def test_worker_requires_no_instance_profile(
