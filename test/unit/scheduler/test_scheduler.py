@@ -30,7 +30,7 @@ from deadline_worker_agent.sessions.job_entities.job_details import (
     JobRunAsUser,
     JobRunAsWindowsUser,
 )
-from deadline_worker_agent.startup.config import JobsRunAsUserOverride
+from deadline_worker_agent.config import JobsRunAsUserOverride
 from deadline_worker_agent.errors import ServiceShutdown
 import deadline_worker_agent.scheduler.scheduler as scheduler_mod
 from deadline_worker_agent.aws.deadline import (

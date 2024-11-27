@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-"""Tests for the deadline_worker_agent.startup.capabilities module"""
+"""Tests for the deadline_worker_agent.capabilities module"""
 
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -9,8 +9,8 @@ import subprocess
 
 from pydantic import ValidationError
 
-from deadline_worker_agent.startup.capabilities import Capabilities
-from deadline_worker_agent.startup import capabilities as capabilities_mod
+from deadline_worker_agent.capabilities import Capabilities
+from deadline_worker_agent import capabilities as capabilities_mod
 
 
 @pytest.mark.parametrize(

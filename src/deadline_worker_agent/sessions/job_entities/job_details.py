@@ -31,9 +31,9 @@ from ...api_models import (
     PathParameter,
     StringParameter,
 )
+from ...config import JobsRunAsUserOverride
 from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
-from ...startup.config import JobsRunAsUserOverride
 
 
 def parameters_from_api_response(
