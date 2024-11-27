@@ -7,7 +7,6 @@ from concurrent.futures import (
 import os
 from pathlib import Path
 import sys
-import json
 from shlex import quote
 from logging import LoggerAdapter
 import sysconfig
@@ -91,32 +90,43 @@ class AttachmentDownloadAction(OpenjdAction):
         self._step_details = step_details
         self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
-    def set_step_script(self, manifests, path_mapping, s3_settings) -> None:
-        # TODO - update to run python as embedded file
-        profile = os.environ.get("AWS_PROFILE")
-        deadline_path = os.path.join(Path(sysconfig.get_path("scripts")), "deadline")
+    def set_step_script(self, manifests, s3_settings) -> None:
+        """Sets the step script for the action
 
-        script = "#!/usr/bin/env bash\n\n{} attachment download -m {} --path-mapping-rules {} --s3-root-uri {}  --profile {}".format(
-            deadline_path,
-            " -m ".join(quote(v) for v in manifests),
-            quote(path_mapping),
+        Parameters
+        ----------
+        manifests : list[BaseAssetManifest]
+            The job attachment manifests
+        s3_settings : JobAttachmentS3Settings
+            The job attachment S3 settings
+        """
+        args = [
+            "{{ Task.File.AttachmentDownload }}",
+            "-pm",
+            "{{ Session.PathMappingRulesFile }}",
+            "-s3",
             s3_settings.to_s3_root_uri(),
-            profile,
-        )
+            "-m",
+        ]
+        args.extend([quote(p) for p in manifests])
 
-        self._step_script = StepScript_2023_09(
-            actions=StepActions_2023_09(
-                onRun=Action_2023_09(command="{{ Task.File.AttachmentDownload }}")
-            ),
-            embeddedFiles=[
-                EmbeddedFileText_2023_09(
-                    name="AttachmentDownload",
-                    type=EmbeddedFileTypes_2023_09.TEXT,
-                    runnable=True,
-                    data=script,
-                )
-            ],
-        )
+        with open(Path(__file__).parent / "scripts" / "attachment_download.py", "r") as f:
+            self._step_script = StepScript_2023_09(
+                actions=StepActions_2023_09(
+                    onRun=Action_2023_09(
+                        command=os.path.join(Path(sysconfig.get_path("scripts")), "python"),
+                        args=args,
+                    )
+                ),
+                embeddedFiles=[
+                    EmbeddedFileText_2023_09(
+                        name="AttachmentDownload",
+                        filename="download.py",
+                        type=EmbeddedFileTypes_2023_09.TEXT,
+                        data=f.read(),
+                    )
+                ],
+            )
 
     def __eq__(self, other: Any) -> bool:
         return (
@@ -173,6 +183,7 @@ class AttachmentDownloadAction(OpenjdAction):
             raise RuntimeError(
                 "Job attachments must be synchronized before downloading Step dependencies."
             )
+
         step_dependencies = self._step_details.dependencies if self._step_details else []
 
         assert job_attachment_settings.s3_bucket_name is not None
@@ -259,25 +270,14 @@ class AttachmentDownloadAction(OpenjdAction):
         # sort here since we're modifying that internal list appending to the list.
         session._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
 
-        # =========================== TO BE DELETED ===========================
-        path_mapping_file_path: str = os.path.join(
-            session._session.working_directory, "path_mapping"
-        )
-        for rule in job_attachment_path_mappings:
-            rule["source_path"] = rule["destination_path"]
-
-        with open(path_mapping_file_path, "w", encoding="utf8") as f:
-            f.write(json.dumps([rule for rule in job_attachment_path_mappings]))
-        # =========================== TO BE DELETED ===========================
-
-        manifest_paths = session._asset_sync._check_and_write_local_manifests(
+        manifest_paths_by_root = session._asset_sync._check_and_write_local_manifests(
             merged_manifests_by_root=merged_manifests_by_root,
             manifest_write_dir=str(session._session.working_directory),
         )
+        session.set_manifest_paths_by_root(manifest_paths_by_root)
 
         self.set_step_script(
-            manifests=manifest_paths,
-            path_mapping=path_mapping_file_path,
+            manifests=manifest_paths_by_root.values(),
             s3_settings=s3_settings,
         )
         assert self._step_script is not None

@@ -29,6 +29,8 @@ from deadline_worker_agent.scheduler.session_queue import (
     SessionActionQueue,
     SyncInputJobAttachmentsQueueEntry,
     SyncInputJobAttachmentsStepDependenciesQueueEntry,
+    AttachmentDownloadActionQueueEntry,
+    AttachmentUploadActionQueueEntry,
 )
 
 from deadline_worker_agent.sessions.actions import (
@@ -519,7 +521,9 @@ class TestIdentifiers:
             EnvironmentQueueEntry
             | TaskRunQueueEntry
             | SyncInputJobAttachmentsQueueEntry
-            | SyncInputJobAttachmentsStepDependenciesQueueEntry,
+            | SyncInputJobAttachmentsStepDependenciesQueueEntry
+            | AttachmentDownloadActionQueueEntry
+            | AttachmentUploadActionQueueEntry
         ],
         expected_identifiers: list[EntityIdentifier] | None,
     ):

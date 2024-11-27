@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, Mock, patch, ANY
 import pytest
 
 from deadline_worker_agent.sessions.actions import AttachmentDownloadAction
+import deadline_worker_agent.sessions.actions as actions_module
 from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
 from openjd.sessions import SessionUser
 from openjd.model import ParameterValue
@@ -134,13 +135,14 @@ class TestStart:
 
         # WHEN
         action.start(session=session, executor=executor)
+        s3_settings = JobAttachmentS3Settings(
+            s3BucketName=job_details.job_attachment_settings.s3_bucket_name,
+            rootPrefix=job_details.job_attachment_settings.root_prefix,
+        )
 
         mock_asset_sync._aggregate_asset_root_manifests.assert_called_once_with(
             session_dir=session_dir,
-            s3_settings=JobAttachmentS3Settings(
-                s3BucketName=job_details.job_attachment_settings.s3_bucket_name,
-                rootPrefix=job_details.job_attachment_settings.root_prefix,
-            ),
+            s3_settings=s3_settings,
             queue_id=TestStart.QUEUE_ID,
             job_id=TestStart.JOB_ID,
             attachments=ANY,
@@ -157,25 +159,34 @@ class TestStart:
             manifest_write_dir=session_dir,
         )
 
-        assert action._step_script == StepScript_2023_09(
-            actions=StepActions_2023_09(
-                onRun=Action_2023_09(command="{{ Task.File.AttachmentDownload }}")
-            ),
-            embeddedFiles=[
-                EmbeddedFileText_2023_09(
-                    name="AttachmentDownload",
-                    type=EmbeddedFileTypes_2023_09.TEXT,
-                    runnable=True,
-                    data="#!/usr/bin/env bash\n\n{} attachment download -m {} --path-mapping-rules {} --s3-root-uri {}  --profile {}".format(
-                        os.path.join(Path(sysconfig.get_path("scripts")), "deadline"),
-                        " -m ".join([]),
-                        os.path.join(session_dir, "path_mapping"),
-                        "s3://job_attachments_bucket/job_attachments",
-                        None,
-                    ),
-                )
-            ],
-        )
+        with open(
+            Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_download.py",
+            "r",
+        ) as f:
+            assert action._step_script == StepScript_2023_09(
+                actions=StepActions_2023_09(
+                    onRun=Action_2023_09(
+                        command=os.path.join(Path(sysconfig.get_path("scripts")), "python"),
+                        args=[
+                            "{{ Task.File.AttachmentDownload }}",
+                            "-pm",
+                            "{{ Session.PathMappingRulesFile }}",
+                            "-s3",
+                            s3_settings.to_s3_root_uri(),
+                            "-m",
+                        ],
+                    )
+                ),
+                embeddedFiles=[
+                    EmbeddedFileText_2023_09(
+                        name="AttachmentDownload",
+                        type=EmbeddedFileTypes_2023_09.TEXT,
+                        filename="download.py",
+                        data=f.read(),
+                    )
+                ],
+            )
+
         session.run_task.assert_called_once_with(
             step_script=action._step_script,
             task_parameter_values=dict[str, ParameterValue](),
