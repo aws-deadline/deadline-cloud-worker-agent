@@ -89,6 +89,7 @@ class Worker:
         cleanup_session_user_processes: bool,
         worker_persistence_dir: Path,
         worker_logs_dir: Path | None,
+        session_root_dir: Path,
         host_metrics_logging: bool,
         host_metrics_logging_interval_seconds: float | None = None,
         retain_session_dir: bool = False,
@@ -113,6 +114,7 @@ class Worker:
             worker_logs_dir=worker_logs_dir,
             retain_session_dir=retain_session_dir,
             stop=stop,
+            session_root_dir=session_root_dir,
         )
         self._stop = stop or Event()
         self._boto_session = boto_session

@@ -648,23 +648,24 @@ def test_passes_worker_logs_dir(
         entrypoint()
 
     # THEN
-    worker_mock.assert_called_once_with(
-        farm_id=ANY,
-        fleet_id=ANY,
-        worker_id=ANY,
-        deadline_client=ANY,
-        s3_client=ANY,
-        logs_client=ANY,
-        boto_session=ANY,
-        job_run_as_user_override=ANY,
-        cleanup_session_user_processes=ANY,
-        worker_persistence_dir=ANY,
-        worker_logs_dir=tmp_path,
-        host_metrics_logging=ANY,
-        host_metrics_logging_interval_seconds=ANY,
-        retain_session_dir=ANY,
-        stop=ANY,
-    )
+    worker_mock.assert_called_once()
+    assert worker_mock.call_args.kwargs["worker_logs_dir"] == tmp_path
+
+
+def test_passes_session_root_dir(
+    configuration: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Assert that the Worker is passed the session_root_dir from the configuration"""
+    # GIVEN
+    configuration.session_root_dir = tmp_path
+    with patch.object(entrypoint_mod, "Worker") as worker_mock:
+        # WHEN
+        entrypoint()
+
+    # THEN
+    worker_mock.assert_called_once()
+    assert worker_mock.call_args.kwargs["session_root_dir"] == tmp_path
 
 
 @patch.object(entrypoint_mod, "_logger")

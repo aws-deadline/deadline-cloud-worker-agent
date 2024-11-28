@@ -172,6 +172,17 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         expected_default=False,
         expected_default_factory_return_value=None,
     ),
+    FieldTestCaseParams(
+        field_name="session_root_dir",
+        expected_type=Path,
+        expected_required=False,
+        expected_default=(
+            Path("/sessions")
+            if os.name == "posix"
+            else Path(os.getenv("PROGRAMDATA", "C:\\ProgramData")) / "Amazon" / "OpenJD"
+        ),
+        expected_default_factory_return_value=None,
+    ),
 ]
 
 

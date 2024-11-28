@@ -1,6 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 import os
 import secrets
@@ -112,6 +113,14 @@ def disallow_instance_profile() -> bool:
 @pytest.fixture
 def windows_job_user() -> str:
     return "job-user"
+
+
+@pytest.fixture
+def session_root_dir() -> Path:
+    if os.name == "nt":
+        return Path("C:\\Sessions\\Root")
+    else:
+        return Path("/my/session/root")
 
 
 @pytest.fixture

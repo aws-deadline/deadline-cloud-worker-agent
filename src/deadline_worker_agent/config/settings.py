@@ -26,6 +26,11 @@ DEFAULT_WINDOWS_WORKER_PERSISTENCE_DIR = Path(
     os.path.expandvars(r"%PROGRAMDATA%/Amazon/Deadline/Cache")
 )
 
+DEFAULT_POSIX_SESSION_ROOT_DIR = Path("/sessions")
+DEFAULT_WINDOWS_SESSION_ROOT_DIR: Path = (
+    Path(os.getenv("PROGRAMDATA", "C:\\ProgramData")) / "Amazon" / "OpenJD"
+)
+
 
 class WorkerSettings(BaseSettings):
     """Model class for the worker settings. This defines all of the fields and their validation as
@@ -116,6 +121,9 @@ class WorkerSettings(BaseSettings):
     host_metrics_logging_interval_seconds: float = 60
     retain_session_dir: bool = False
     structured_logs: bool = False
+    session_root_dir: Path = (
+        DEFAULT_WINDOWS_SESSION_ROOT_DIR if os.name == "nt" else DEFAULT_POSIX_SESSION_ROOT_DIR
+    )
 
     class Config:
         fields = {
@@ -144,6 +152,7 @@ class WorkerSettings(BaseSettings):
             },
             "retain_session_dir": {"env": "DEADLINE_WORKER_RETAIN_SESSION_DIR"},
             "structured_logs": {"env": "DEADLINE_WORKER_STRUCTURED_LOGS"},
+            "session_dir_root": {"env": "DEADLINE_WORKER_SESSION_ROOT_DIR"},
         }
 
         @classmethod

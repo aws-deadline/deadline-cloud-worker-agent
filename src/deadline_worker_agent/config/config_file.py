@@ -149,6 +149,7 @@ class WorkerConfigSection(BaseModel):
     fleet_id: Optional[str] = Field(regex=r"^fleet-[a-z0-9]{32}$", default=None)
     cleanup_session_user_processes: bool = True
     worker_persistence_dir: Optional[Path] = None
+    session_root_dir: Optional[Path] = None
 
 
 class AwsConfigSection(BaseModel):
@@ -394,6 +395,8 @@ class ConfigFile(BaseModel):
             output_settings["fleet_id"] = self.worker.fleet_id
         if self.worker.worker_persistence_dir is not None:
             output_settings["worker_persistence_dir"] = self.worker.worker_persistence_dir
+        if self.worker.session_root_dir is not None:
+            output_settings["session_root_dir"] = self.worker.session_root_dir
         if self.aws.profile is not None:
             output_settings["profile"] = self.aws.profile
         if self.aws.allow_ec2_instance_profile is not None:

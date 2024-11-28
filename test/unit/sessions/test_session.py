@@ -3,7 +3,7 @@
 from __future__ import annotations
 from concurrent.futures import wait
 from datetime import datetime, timedelta
-from pathlib import PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from threading import Event, RLock
 from types import TracebackType
 from typing import Generator, Iterable, Literal, Optional
@@ -172,6 +172,7 @@ def session(
     session_id: str,
     action_update_callback: MagicMock,
     action_update_lock: MagicMock,
+    session_root_dir: Path,
 ) -> Session:
     """A fixture that creates and returns the Worker Session"""
     return Session(
@@ -185,6 +186,7 @@ def session(
         job_id="job-1234",
         action_update_callback=action_update_callback,
         action_update_lock=action_update_lock,
+        session_root_dir=session_root_dir,
     )
 
 
@@ -482,6 +484,26 @@ class TestSessionInit:
             assert env == mock_openjd_session_cls.call_args.kwargs["os_env_vars"]
         else:
             assert not mock_openjd_session_cls.call_args.kwargs.get("os_env_vars", False)
+
+    @pytest.mark.parametrize(
+        argnames="session_root_dir",
+        argvalues=(
+            pytest.param(Path("/foo"), id="1"),
+            pytest.param(Path("/bar"), id="1"),
+        ),
+    )
+    def test_has_session_root_dir(
+        self,
+        session: Session,
+        mock_openjd_session_cls: MagicMock,
+        session_root_dir: Path,
+    ) -> None:
+        """Ensure that Session passes session_root_dir when creating the Open Job Description session"""
+        # THEN
+        mock_openjd_session_cls.assert_called_once()
+        assert (
+            mock_openjd_session_cls.call_args.kwargs["session_root_directory"] == session_root_dir
+        )
 
 
 class TestSessionOuterRun:

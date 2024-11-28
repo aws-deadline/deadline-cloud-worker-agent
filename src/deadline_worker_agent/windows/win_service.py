@@ -8,7 +8,7 @@ import win32serviceutil
 import win32service
 import servicemanager
 
-from deadline_worker_agent.startup.entrypoint import entrypoint
+from ..startup.entrypoint import entrypoint
 
 
 logger = logging.getLogger(__name__)
