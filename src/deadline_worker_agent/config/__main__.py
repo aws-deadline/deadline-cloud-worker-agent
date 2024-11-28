@@ -41,6 +41,9 @@ class ParsedArguments(argparse.Namespace):
     """A Windows username to override the queue jobRunAs configuration. If False, then no
     modification is made. If None, then the setting is unset."""
 
+    session_root_dir: str | None = None
+    """Path to the parent directory where the worker agent creates per-session subdirectories under"""
+
 
 def create_argument_parser() -> argparse.ArgumentParser:
     """Creates the argparse ArgumentParser for the deadline_worker_agent.config module"""
@@ -61,6 +64,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--fleet-id",
         help="The unique identifier for the Deadline Cloud fleet",
         required=False,
+    )
+    worker_group.add_argument(
+        "--session-root-dir",
+        help="The parent directory that worker agent creates per-session subdirectories under",
+        required=False,
+        type=str,
     )
 
     aws_group = parser.add_argument_group("AWS", "Settings related to AWS and EC2 hosts")
@@ -193,6 +202,13 @@ def args_to_setting_modifications(parsed_args: ParsedArguments) -> list[SettingM
             raise NotImplementedError(
                 f"Unexpected value for windows_job_user: {parsed_args.windows_job_user}"
             )
+    if parsed_args.session_root_dir is not None:
+        settings_to_modify.append(
+            SettingModification(
+                setting=ModifiableSetting.SESSION_ROOT_DIR,
+                value=parsed_args.session_root_dir,
+            )
+        )
 
     return settings_to_modify
 

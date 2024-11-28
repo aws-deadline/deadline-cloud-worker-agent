@@ -10,6 +10,11 @@ import requests
 import sys
 import sysconfig
 
+from deadline_worker_agent.config.settings import (
+    DEFAULT_POSIX_SESSION_ROOT_DIR,
+    DEFAULT_WINDOWS_SESSION_ROOT_DIR,
+)
+
 
 if sys.platform == "win32":
     from deadline_worker_agent.installer.win_installer import (
@@ -70,7 +75,7 @@ def install() -> None:
         sys.exit(1)
 
     arg_parser = get_argument_parser()
-    args = arg_parser.parse_args(namespace=ParsedCommandLineArguments)
+    args = arg_parser.parse_args(namespace=ParsedCommandLineArguments())
     scripts_path = Path(sysconfig.get_path("scripts"))
 
     if args.region is None:
@@ -91,6 +96,7 @@ def install() -> None:
             parser=arg_parser,
             grant_required_access=args.grant_required_access,
             allow_ec2_instance_profile=not args.disallow_instance_profile,
+            session_root_dir=args.session_root_dir,
         )
         if args.user:
             installer_args.update(user_name=args.user)
@@ -124,6 +130,8 @@ def install() -> None:
             str(scripts_path),
             "--python-interpreter-path",
             sys.executable,
+            "--session-root-dir",
+            str(args.session_root_dir),
         ]
         if args.vfs_install_path:
             cmd += ["--vfs-install-path", args.vfs_install_path]
@@ -169,6 +177,7 @@ class ParsedCommandLineArguments(Namespace):
     grant_required_access: bool
     disallow_instance_profile: bool
     windows_job_user: Optional[str] = None
+    session_root_dir: Path
 
 
 def get_argument_parser() -> ArgumentParser:  # pragma: no cover
@@ -258,6 +267,16 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
         ),
         action="store_true",
         default=False,
+    )
+    parser.add_argument(
+        "--session-root-dir",
+        help="The root directory under which the worker agent creates session directories",
+        type=Path,
+        default=(
+            str(DEFAULT_WINDOWS_SESSION_ROOT_DIR)
+            if sys.platform == "win32"
+            else str(DEFAULT_POSIX_SESSION_ROOT_DIR)
+        ),  # pragma: nocover
     )
 
     if sys.platform == "win32":

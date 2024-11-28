@@ -113,6 +113,20 @@ To prevent the worker agent from shutting down the host when being told to stop,
 line below:
 """.lstrip(),
     )
+    SESSION_ROOT_DIR = ModifiableSettingData(
+        setting_name="session_root_dir",
+        table_name="worker",
+        preceding_comment="""
+The session root directory is a parent directory where worker agent creates per-session
+subdirectories under. This value is overridden when the DEADLINE_WORKER_SESSION_ROOT_DIR environment
+variable is set or the --session-root-dir command-line argument is specified.
+
+The default session root directory on POSIX systems is "/sessions" and on Windows systems is
+"C:\ProgramData\Amazon\OpenJD".
+
+Uncomment the line below and replace the value with your desired session root directory:
+""".lstrip(),
+    )
     WINDOWS_JOB_USER = ModifiableSettingData(
         setting_name="windows_job_user",
         table_name="os",

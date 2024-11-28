@@ -5,14 +5,15 @@ import sys
 
 assert sys.platform == "win32"
 
-import pathlib
 import os
 import sys
 import typing
 import uuid
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from _pytest.tmpdir import TempPathFactory
 
 import win32api
 import win32con
@@ -116,7 +117,7 @@ def test_ensure_user_profile_exists(windows_user, windows_user_password):
 
     # THEN
     # Verify user profile was created by checking that the home directory exists
-    assert pathlib.Path(f"~{windows_user}").expanduser().exists()
+    assert Path(f"~{windows_user}").expanduser().exists()
 
 
 def delete_group(group_name: str) -> None:
@@ -242,7 +243,7 @@ def test_update_config_file_creates_backup(setup_example_config):
     assert os.path.isfile(backup_worker_config), "Backup of worker config file was not created"
 
 
-def verify_least_privilege(windows_user: str, path: pathlib.Path):
+def verify_least_privilege(windows_user: str, path: Path):
     builtin_admin_group_sid, _, _ = win32security.LookupAccountName(None, "Administrators")
     user_sid, _, _ = win32security.LookupAccountName(None, windows_user)
     sd = win32security.GetFileSecurity(
@@ -278,11 +279,13 @@ def verify_least_privilege(windows_user: str, path: pathlib.Path):
 
 def test_provision_directories(
     windows_user: str,
-    tmp_path: pathlib.Path,
+    tmp_path: Path,
+    tmp_path_factory: TempPathFactory,
 ):
     # GIVEN
     root_dir = tmp_path / "ProgramDataTest"
     root_dir.mkdir()
+    session_root_dir: Path = tmp_path_factory.mktemp("session_root")
     expected_dirs = WorkerAgentDirectories(
         deadline_dir=root_dir / "Amazon" / "Deadline",
         deadline_log_subdir=root_dir / "Amazon" / "Deadline" / "Logs",
@@ -304,7 +307,10 @@ def test_provision_directories(
 
     # WHEN
     with patch.dict(win_installer.os.environ, {"PROGRAMDATA": str(root_dir)}):
-        actual_dirs = provision_directories(windows_user)
+        actual_dirs = provision_directories(
+            agent_username=windows_user,
+            session_root_dir=session_root_dir,
+        )
 
     # THEN
     assert actual_dirs == expected_dirs
@@ -316,9 +322,11 @@ def test_provision_directories(
     verify_least_privilege(windows_user, actual_dirs.deadline_persistence_subdir)
     assert actual_dirs.deadline_config_subdir.exists()
     verify_least_privilege(windows_user, actual_dirs.deadline_config_subdir)
+    assert session_root_dir.exists()
+    verify_least_privilege(windows_user, session_root_dir)
 
 
-def test_update_deadline_client_config(tmp_path: pathlib.Path) -> None:
+def test_update_deadline_client_config(tmp_path: Path) -> None:
     # GIVEN
     deadline_client_config_path = tmp_path / "deadline_client_config"
     deadline_client_config_path.touch(mode=0o644, exist_ok=False)

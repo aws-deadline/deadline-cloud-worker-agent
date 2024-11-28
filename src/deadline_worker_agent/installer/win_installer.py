@@ -317,6 +317,7 @@ def update_config_file(
     allow_ec2_instance_profile: bool,
     shutdown_on_stop: Optional[bool] = None,
     windows_job_user: Optional[str] = None,
+    session_root_dir: Optional[Path] = None,
 ) -> None:
     """
     Updates the worker configuration file, creating it from the example if it does not exist.
@@ -367,6 +368,13 @@ def update_config_file(
                 value=shutdown_on_stop,
             )
         )
+    if session_root_dir is not None:
+        settings_to_modify.append(
+            SettingModification(
+                setting=ModifiableSetting.SESSION_ROOT_DIR,
+                value=str(session_root_dir),
+            )
+        )
 
     updated_keys = [sm.setting.value.setting_name for sm in settings_to_modify]
 
@@ -379,7 +387,11 @@ def update_config_file(
     logging.info(f"Done configuring {updated_keys} in {config_path}")
 
 
-def provision_directories(agent_username: str) -> WorkerAgentDirectories:
+def provision_directories(
+    *,
+    agent_username: str,
+    session_root_dir: Path,
+) -> WorkerAgentDirectories:
     """
     Creates all required directories for Deadline Worker Agent.
     This function creates the following directories:
@@ -391,6 +403,8 @@ def provision_directories(agent_username: str) -> WorkerAgentDirectories:
 
     Parameters
         agent_username(str): Worker Agent's username used for setting the permission for the directories
+        session_root_dir(Path): Path to the parent directory where the worker agent will create session directories
+            under
 
     Returns
         WorkerAgentDirectories: all directories created in the function
@@ -429,6 +443,18 @@ def provision_directories(agent_username: str) -> WorkerAgentDirectories:
     logging.info(f"Provisioning config directory ({deadline_config_subdir})")
     os.makedirs(deadline_config_subdir, exist_ok=True)
     logging.info(f"Done provisioning config directory ({deadline_config_subdir})")
+
+    logging.info(f"Porvisioning session root directory ({session_root_dir})")
+    os.makedirs(session_root_dir, exist_ok=True)
+    _set_windows_permissions(
+        path=session_root_dir,
+        user=agent_username,
+        user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+        group="Administrators",
+        group_permission=FileSystemPermissionEnum.FULL_CONTROL,
+        agent_user_permission=None,
+    )
+    logging.info(f"Done provisioning session root directory ({session_root_dir})")
 
     return WorkerAgentDirectories(
         deadline_dir=Path(deadline_dir),
@@ -772,6 +798,7 @@ def start_windows_installer(
     region: str,
     allow_shutdown: bool,
     parser: ArgumentParser,
+    session_root_dir: Path,
     user_name: str = DEFAULT_WA_USER,
     password: Optional[str] = None,
     group_name: str = DEFAULT_JOB_GROUP,
@@ -851,6 +878,7 @@ def start_windows_installer(
         f"Region: {region}\n"
         f"Worker agent user: {user_name}\n"
         f"Worker job group: {group_name}\n"
+        f"Session root directory: {session_root_dir}\n"
         f"Allow worker agent shutdown: {allow_shutdown}\n"
         f"Install Windows service: {install_service}\n"
         f"Start service: {start_service}\n"
@@ -946,7 +974,7 @@ def start_windows_installer(
         add_user_to_group(group_name, user_name)
 
     # Create directories and configure their permissions
-    agent_dirs = provision_directories(user_name)
+    agent_dirs = provision_directories(agent_username=user_name, session_root_dir=session_root_dir)
     update_config_file(
         deadline_config_sub_directory=str(agent_dirs.deadline_config_subdir),
         farm_id=farm_id,
@@ -956,6 +984,7 @@ def start_windows_installer(
         shutdown_on_stop=allow_shutdown,
         allow_ec2_instance_profile=allow_ec2_instance_profile,
         windows_job_user=windows_job_user,
+        session_root_dir=session_root_dir,
     )
 
     if telemetry_opt_out:

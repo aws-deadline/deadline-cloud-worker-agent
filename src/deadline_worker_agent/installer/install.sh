@@ -48,6 +48,7 @@ telemetry_opt_out="no"
 warning_lines=()
 vfs_install_path="unset"
 python_interpreter_path="unset"
+session_root_dir="/sessions"
 
 usage()
 {
@@ -106,6 +107,8 @@ usage()
     echo "        agent makes requests to the EC2 instance meta-data service (IMDS) to check for an instance profile. "
     echo "        If an instance profile is detected, the worker agent will stop and exit. When this is not provided, "
     echo "        the worker agent no longer performs these checks, allowing it to run with an EC2 instance profile."
+    echo "    --session-root-dir SESSION_ROOT_DIR"
+    echo "        The root directory under which the worker agent will create session directories."
 
     exit 2
 }
@@ -131,7 +134,7 @@ validate_deadline_id() {
 }
 
 # Validate arguments
-PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,scripts-path:,python-interpreter-path:,vfs-install-path:,start,allow-shutdown,no-install-service,telemetry-opt-out,disallow-instance-profile -- "y" "$@")
+PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,scripts-path:,python-interpreter-path:,vfs-install-path:,session-root-dir:,start,allow-shutdown,no-install-service,telemetry-opt-out,disallow-instance-profile -- "y" "$@")
 VALID_ARGUMENTS=$?
 if [ "${VALID_ARGUMENTS}" != "0" ]; then
     usage
@@ -152,6 +155,7 @@ do
     --scripts-path)                 scripts_path="$2"               ; shift 2 ;;
     --python-interpreter-path)      python_interpreter_path="$2"    ; shift 2 ;;
     --vfs-install-path)             vfs_install_path="$2"           ; shift 2 ;;
+    --session-root-dir)             session_root_dir="$2"           ; shift 2 ;;
     --allow-shutdown)               allow_shutdown="yes"            ; shift   ;;
     --disallow-instance-profile)    disallow_instance_profile="yes" ; shift   ;;
     --no-install-service)           no_install_service="yes"        ; shift   ;;
@@ -276,6 +280,7 @@ echo "Worker agent user: ${wa_user}"
 echo "Worker agent group: ${wa_group}"
 echo "Worker job group: ${job_group}"
 echo "Scripts path: ${scripts_path}"
+echo "Session root directory: ${session_root_dir}"
 echo "Worker agent program path: ${worker_agent_program}"
 echo "Deadline client program path: ${client_library_program}"
 echo "Allow worker agent shutdown: ${allow_shutdown}"
@@ -382,10 +387,12 @@ if [ -f /var/lib/deadline/worker.json ]; then
 fi
 echo "Done provisioning persistence directory (/var/lib/deadline)"
 
-echo "Provisioning root directory for OpenJD Sessions (/sessions)"
-mkdir -p /sessions
-chown "${wa_user}:${job_group}" /sessions
-chmod 755 /sessions
+# Provision session directory
+echo "Provisioning root directory for OpenJD Sessions (${session_root_dir})"
+mkdir -p "${session_root_dir}"
+chown "${wa_user}:${job_group}" "${session_root_dir}"
+chmod 755 "${session_root_dir}"
+echo "Done provisioning root directory for OpenJD Sessions (${session_root_dir})"
 
 echo "Provisioning configuration directory (/etc/amazon/deadline)"
 mkdir -p /etc/amazon/deadline
@@ -420,7 +427,8 @@ fi
     --farm-id "${farm_id}"                  \
     --fleet-id "${fleet_id}"                \
     "${allow_ec2_instance_profile_flag}"    \
-    "${shutdown_on_stop_flag}"
+    "${shutdown_on_stop_flag}"              \
+    --session-root-dir "${session_root_dir}"
 
 if ! [[ "${no_install_service}" == "yes" ]]; then
     # Set up the service

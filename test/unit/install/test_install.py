@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 import sys
 import sysconfig
 import typing
@@ -67,6 +67,8 @@ def expected_cmd(
         sysconfig.get_path("scripts"),
         "--python-interpreter-path",
         sys.executable,
+        "--session-root-dir",
+        str(parsed_args.session_root_dir),
         "--vfs-install-path",
         parsed_args.vfs_install_path,
     ]
@@ -142,6 +144,7 @@ class TestInstallRunsCommand:
                 grant_required_access=True,
                 disallow_instance_profile=True,
                 windows_job_user="job-user",
+                session_root_dir="/sessions/root",
             ),
             ParsedCommandLineArguments(
                 farm_id="farm-2",
@@ -159,6 +162,7 @@ class TestInstallRunsCommand:
                 grant_required_access=False,
                 disallow_instance_profile=False,
                 windows_job_user="another-job-user",
+                session_root_dir="/different/root",
             ),
         )
     )
@@ -183,7 +187,8 @@ class TestInstallRunsCommand:
         # THEN
         mock_subprocess_run.assert_called_once_with(expected_cmd, check=True)
         mock_get_arg_parser.assert_called_once_with()
-        mock_parse_args.assert_called_once_with(namespace=ParsedCommandLineArguments)
+        mock_parse_args.assert_called_once_with(namespace=ANY)
+        assert isinstance(mock_parse_args.call_args.kwargs["namespace"], ParsedCommandLineArguments)
 
 
 @pytest.mark.parametrize(

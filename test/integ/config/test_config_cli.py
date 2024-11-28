@@ -63,6 +63,15 @@ def cli_args_for_shutdown_on_stop(value: str | bool | None) -> list[str]:
         raise NotImplementedError(f"Unexpected value: {value}")
 
 
+def cli_args_for_session_root_dir(value: str | bool | None) -> list[str]:
+    if value is None:
+        return []
+    elif isinstance(value, str):
+        return ["--session-root-dir", value]
+    else:
+        raise NotImplementedError(f"Unexpected value: {value}")
+
+
 SETTING_TO_CLI_ARGS: dict[
     config_file.ModifiableSetting, Callable[[str | bool | None], list[str]]
 ] = {
@@ -71,6 +80,7 @@ SETTING_TO_CLI_ARGS: dict[
     config_file.ModifiableSetting.FLEET_ID: cli_args_for_fleet_id,
     config_file.ModifiableSetting.WINDOWS_JOB_USER: cli_args_for_windows_job_user,
     config_file.ModifiableSetting.SHUTDOWN_ON_STOP: cli_args_for_shutdown_on_stop,
+    config_file.ModifiableSetting.SESSION_ROOT_DIR: cli_args_for_session_root_dir,
 }
 
 
