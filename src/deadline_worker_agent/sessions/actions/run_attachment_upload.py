@@ -153,7 +153,7 @@ class AttachmentUploadAction(OpenjdAction):
             rootPrefix=job_attachment_settings.root_prefix,
         )
 
-        manifest_paths_by_root = session._manifest_paths_by_root
+        manifest_paths_by_root = session.manifest_paths_by_root()
         output_path = os.path.join(session._session.working_directory, "diff")
         manifests = list()
 

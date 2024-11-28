@@ -25,13 +25,13 @@ from typing import (
     Tuple,
     TypeVar,
 )
-from ..feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 from deadline_worker_agent.api_models import (
     EntityIdentifier,
     SyncInputJobAttachmentsAction,
     AttachmentDownloadAction,
     AttachmentUploadAction,
 )
+from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 
 if TYPE_CHECKING:
     from ..api_models import CompletedActionStatus, EnvironmentAction, TaskRunAction
@@ -175,7 +175,6 @@ class Session:
     _stopped_running: Event
 
     _manifest_paths_by_root: dict[str, str] = dict()
-    # _merged_manifests_by_root: dict[str, BaseAssetManifest] = dict()
 
     logger: LoggerAdapter
 

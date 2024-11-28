@@ -277,7 +277,8 @@ class AttachmentDownloadAction(OpenjdAction):
         session.set_manifest_paths_by_root(manifest_paths_by_root)
 
         self.set_step_script(
-            manifests=manifest_paths_by_root.values(),
+            # TODO: remove type: ignore after deadline-cloud release
+            manifests=manifest_paths_by_root.values(),  # type: ignore
             s3_settings=s3_settings,
         )
         assert self._step_script is not None

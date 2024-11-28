@@ -22,7 +22,7 @@ python attachment_upload.py \
 
 
 def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> None:
-    s3_path = f"{os.environ.get("DEADLINE_FARM_ID")}/{os.environ.get("DEADLINE_QUEUE_ID")}/{os.environ.get("DEADLINE_JOB_ID")}/{os.environ.get("DEADLINE_STEP_ID")}/{os.environ.get("DEADLINE_TASK_ID")}/{os.environ.get("DEADLINE_SESSIONACTION_ID")}"
+    s3_path = f"{os.environ.get('DEADLINE_FARM_ID')}/{os.environ.get('DEADLINE_QUEUE_ID')}/{os.environ.get('DEADLINE_JOB_ID')}/{os.environ.get('DEADLINE_STEP_ID')}/{os.environ.get('DEADLINE_TASK_ID')}/{os.environ.get('DEADLINE_SESSIONACTION_ID')}"
     api.attachment_upload(
         manifests=manifests,
         s3_root_uri=s3_root_uri,
