@@ -111,10 +111,6 @@ class TestStart:
         with patch.object(session, "_asset_sync") as mock_asset_sync:
             yield mock_asset_sync
 
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="Failed in windows due to embeddedFiles.data quotation mark, which will be replaced by python embedded file soon.",
-    )
     def test_attachment_download_action_start(
         self,
         executor: Mock,

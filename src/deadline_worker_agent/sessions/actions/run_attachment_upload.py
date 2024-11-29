@@ -89,7 +89,7 @@ class AttachmentUploadAction(OpenjdAction):
             self._step_script = StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
-                        command=python_path,
+                        command=str(python_path),
                         args=args,
                     )
                 ),
