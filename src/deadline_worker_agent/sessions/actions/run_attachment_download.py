@@ -5,11 +5,9 @@ from concurrent.futures import (
     Executor,
 )
 import os
-from pathlib import Path
 import sys
-from shlex import quote
+from pathlib import Path
 from logging import LoggerAdapter
-import sysconfig
 from typing import Any, TYPE_CHECKING, Optional
 from dataclasses import asdict
 
@@ -45,7 +43,6 @@ from openjd.model.v2023_09 import (
 )
 from openjd.model import ParameterValue
 
-from ..session import Session
 from ...log_messages import SessionActionLogKind
 
 
@@ -108,13 +105,18 @@ class AttachmentDownloadAction(OpenjdAction):
             s3_settings.to_s3_root_uri(),
             "-m",
         ]
-        args.extend([quote(p) for p in manifests])
+        args.extend(manifests)
+
+        executable_path = Path(sys.executable)
+        python_path = executable_path.parent / executable_path.name.lower().replace(
+            "pythonservice.exe", "python.exe"
+        )
 
         with open(Path(__file__).parent / "scripts" / "attachment_download.py", "r") as f:
             self._step_script = StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
-                        command=os.path.join(Path(sysconfig.get_path("scripts")), "python"),
+                        command=python_path,
                         args=args,
                     )
                 ),
@@ -223,7 +225,7 @@ class AttachmentDownloadAction(OpenjdAction):
         # returns root path to PathMappingRule mapping
         dynamic_mapping_rules: dict[str, PathMappingRule] = (
             session._asset_sync.generate_dynamic_path_mapping(
-                session_dir=session._session.working_directory,
+                session_dir=session.openjd_session.working_directory,
                 attachments=attachments,
             )
         )
@@ -231,7 +233,7 @@ class AttachmentDownloadAction(OpenjdAction):
         # Aggregate manifests (with step step dependency handling)
         merged_manifests_by_root: dict[str, BaseAssetManifest] = (
             session._asset_sync._aggregate_asset_root_manifests(
-                session_dir=session._session.working_directory,
+                session_dir=session.openjd_session.working_directory,
                 s3_settings=s3_settings,
                 queue_id=session._queue_id,
                 job_id=session._queue._job_id,
@@ -256,28 +258,30 @@ class AttachmentDownloadAction(OpenjdAction):
         # Open Job Description session implementation details -- path mappings are sorted.
         # bisect.insort only supports the 'key' arg in 3.10 or later, so
         # we first extend the list and sort it afterwards.
-        if session._session._path_mapping_rules:
-            session._session._path_mapping_rules.extend(
+        if session.openjd_session._path_mapping_rules:
+            session.openjd_session._path_mapping_rules.extend(
                 OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings
             )
         else:
-            session._session._path_mapping_rules = [
+            session.openjd_session._path_mapping_rules = [
                 OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings
             ]
 
         # Open Job Description Sessions sort the path mapping rules based on length of the parts make
         # rules that are subsets of each other behave in a predictable manner. We must
         # sort here since we're modifying that internal list appending to the list.
-        session._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
+        session.openjd_session._path_mapping_rules.sort(
+            key=lambda rule: -len(rule.source_path.parts)
+        )
 
         manifest_paths_by_root = session._asset_sync._check_and_write_local_manifests(
             merged_manifests_by_root=merged_manifests_by_root,
-            manifest_write_dir=str(session._session.working_directory),
+            manifest_write_dir=str(session.openjd_session.working_directory),
         )
-        session.set_manifest_paths_by_root(manifest_paths_by_root)
+        # TODO: remove type: ignore for manifest_paths_by_root after deadline-cloud release
+        session.manifest_paths_by_root = manifest_paths_by_root  # type: ignore
 
         self.set_step_script(
-            # TODO: remove type: ignore after deadline-cloud release
             manifests=manifest_paths_by_root.values(),  # type: ignore
             s3_settings=s3_settings,
         )
@@ -328,7 +332,7 @@ class AttachmentDownloadAction(OpenjdAction):
             assert session._asset_sync is not None
             session._asset_sync._launch_vfs(
                 s3_settings=s3_settings,
-                session_dir=session._session.working_directory,
+                session_dir=session.openjd_session.working_directory,
                 fs_permission_settings=fs_permission_settings,
                 merged_manifests_by_root=merged_manifests_by_root,
                 os_env_vars=dict(os.environ),

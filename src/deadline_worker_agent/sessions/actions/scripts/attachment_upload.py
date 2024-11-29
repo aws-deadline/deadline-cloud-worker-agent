@@ -9,7 +9,8 @@ import boto3
 from deadline.job_attachments import api
 
 """
-A small script to upload job output. 
+A small script to upload job output using attachment upload.
+This is available in deadline-cloud as python API and AWS Deadline Cloud CLI.
 
 Example usage:
 
@@ -26,7 +27,7 @@ def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> N
     api.attachment_upload(
         manifests=manifests,
         s3_root_uri=s3_root_uri,
-        boto3_session=boto3.session.Session(profile_name=os.environ.get("AWS_PROFILE")),
+        boto3_session=boto3.session.Session(),
         path_mapping_rules=path_mapping_rules,
         upload_manifest_path=s3_path,
     )

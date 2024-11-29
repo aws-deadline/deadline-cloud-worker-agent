@@ -95,6 +95,7 @@ class AttachmentDownloadAction(TypedDict):
     stepId: NotRequired[str]
 
 
+# This action is not from API, kepping it here for all action models to be in one place
 class AttachmentUploadAction(TypedDict):
     sessionActionId: str
     actionType: AttachmentUploadActionType

@@ -5,8 +5,7 @@ from concurrent.futures import (
     Executor,
 )
 import os
-import sysconfig
-from shlex import quote
+import sys
 from logging import LoggerAdapter
 from typing import Any, TYPE_CHECKING, Optional
 from pathlib import Path
@@ -25,10 +24,7 @@ from openjd.model import ParameterValue
 from deadline.job_attachments.api.manifest import _manifest_snapshot
 from deadline.job_attachments.models import ManifestSnapshot
 
-from ..session import Session
 from ...log_messages import SessionActionLogKind
-
-
 from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
@@ -81,14 +77,19 @@ class AttachmentUploadAction(OpenjdAction):
             s3_settings.to_s3_root_uri(),
             "-m",
         ]
-        args.extend([quote(p) for p in manifests])
+        args.extend(manifests)
+
+        executable_path = Path(sys.executable)
+        python_path = executable_path.parent / executable_path.name.lower().replace(
+            "pythonservice.exe", "python.exe"
+        )
 
         with open(Path(__file__).parent / "scripts" / "attachment_upload.py", "r") as f:
             data = f.read()
             self._step_script = StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
-                        command=os.path.join(Path(sysconfig.get_path("scripts")), "python"),
+                        command=python_path,
                         args=args,
                     )
                 ),
@@ -153,8 +154,8 @@ class AttachmentUploadAction(OpenjdAction):
             rootPrefix=job_attachment_settings.root_prefix,
         )
 
-        manifest_paths_by_root = session.manifest_paths_by_root()
-        output_path = os.path.join(session._session.working_directory, "diff")
+        manifest_paths_by_root = session.manifest_paths_by_root
+        output_path = os.path.join(session.openjd_session.working_directory, "diff")
         manifests = list()
 
         for root, path in manifest_paths_by_root.items():

@@ -3,15 +3,13 @@
 #! /usr/bin/env python3
 import argparse
 import time
-import os
 import boto3
 
 from deadline.job_attachments import api
 
 """
-A small script to download job output. Can provide just the Job ID to download all outputs
-for a Job, optionally include the Step ID to get all outputs for the Job's Step, or optionally
-include the Job, Step, and Task ID to get the outputs for a specific Task.
+A small script to download job output using attachment download.
+This is available in deadline-cloud as python API and AWS Deadline Cloud CLI.
 
 Example usage:
 
@@ -28,7 +26,7 @@ def download(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) ->
     api.attachment_download(
         manifests=manifests,
         s3_root_uri=s3_root_uri,
-        boto3_session=boto3.session.Session(profile_name=os.environ.get("AWS_PROFILE")),
+        boto3_session=boto3.session.Session(),
         path_mapping_rules=path_mapping_rules,
     )
 

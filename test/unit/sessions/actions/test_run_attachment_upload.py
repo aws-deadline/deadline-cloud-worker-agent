@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 from pathlib import Path
-from shlex import quote
 import os
-import sysconfig
+import sys
 import tempfile
 from typing import TYPE_CHECKING, Generator
 from unittest.mock import MagicMock, Mock, patch
@@ -39,6 +38,15 @@ def executor() -> Mock:
 @pytest.fixture
 def session_id() -> str:
     return "session_id"
+
+
+@pytest.fixture
+def python_path() -> str:
+    executable_path = Path(sys.executable)
+    return str(
+        executable_path.parent
+        / executable_path.name.lower().replace("pythonservice.exe", "python.exe")
+    )
 
 
 @pytest.fixture
@@ -96,10 +104,10 @@ class TestStart:
         session._job_details = job_details
         session._job_attachment_details = job_attachment_details
         session._os_user = job_user
-        session._session = mock_openjd_session_cls
+        session.openjd_session = mock_openjd_session_cls
         session._queue_id = TestStart.QUEUE_ID
         session._queue._job_id = TestStart.JOB_ID
-        session.manifest_paths_by_root.return_value = {
+        session.manifest_paths_by_root = {
             "root1": "manifest1.json",
             "root2": "manifest2.json",
         }
@@ -125,6 +133,7 @@ class TestStart:
         session_dir: str,
         mock_manifest_snapshot: MagicMock,
         job_details: JobDetails,
+        python_path: str,
     ) -> None:
         """
         Tests that AttachmentUploadAction.start() calls AssetSync functions to prepare input
@@ -144,7 +153,7 @@ class TestStart:
         action.start(session=session, executor=executor)
 
         # THEN
-        for root, path in session.manifest_paths_by_root().items():
+        for root, path in session.manifest_paths_by_root.items():
             mock_manifest_snapshot.assert_any_call(
                 root=root,
                 destination=str(os.path.join(session_dir, "diff")),
@@ -159,7 +168,7 @@ class TestStart:
             assert action._step_script == StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
-                        command=os.path.join(Path(sysconfig.get_path("scripts")), "python"),
+                        command=python_path,
                         args=[
                             "{{ Task.File.AttachmentUpload }}",
                             "-pm",
@@ -167,8 +176,8 @@ class TestStart:
                             "-s3",
                             s3_settings.to_s3_root_uri(),
                             "-m",
-                            quote(mock_manifest_snapshot.return_value.manifest),
-                            quote(mock_manifest_snapshot.return_value.manifest),
+                            mock_manifest_snapshot.return_value.manifest,
+                            mock_manifest_snapshot.return_value.manifest,
                         ],
                     )
                 ),

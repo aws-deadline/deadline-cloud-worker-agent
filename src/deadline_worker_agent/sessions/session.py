@@ -237,6 +237,11 @@ class Session:
         self.logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": self._id})
 
     @property
+    def openjd_session(self) -> OPENJDSession:
+        """The openjd session for this session"""
+        return self._session
+
+    @property
     def id(self) -> str:
         """The unique session ID"""
         return self._id
@@ -250,8 +255,9 @@ class Session:
     def manifest_paths_by_root(self) -> dict[str, str]:
         return self._manifest_paths_by_root
 
-    def set_manifest_paths_by_root(self, manifest_paths_by_root) -> None:
-        self._manifest_paths_by_root = manifest_paths_by_root
+    @manifest_paths_by_root.setter
+    def manifest_paths_by_root(self, value: dict[str, str]) -> None:
+        self._manifest_paths_by_root = dict(value)
 
     def _warm_job_entities_cache(self) -> None:
         """Attempts to cache the job entities response for all
@@ -310,7 +316,7 @@ class Session:
             # service. If an action was running at the time of this exception, its failure is
             # reported immediately in the call to Session._cleanup() below.
             self._stop_fail_message = f"Worker encountered an unexpected error: {e}"
-            self.logger.info(self._stop_fail_message)
+            self.logger.error(self._stop_fail_message)
             self._stop.set()
             raise
         finally:
@@ -659,6 +665,7 @@ class Session:
         except Exception as e:
             if self._output_sync_target_action:
                 action_definition = self._output_sync_target_action.definition
+                self._output_sync_target_action = None
 
             logger.error(
                 SessionActionLogEvent(
@@ -1104,14 +1111,15 @@ class Session:
         if self._output_sync_target_action is not None:
 
             if OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(action_status.state, None):
+                # if the current action is a sync output job attachments upload action and it's completed
+                # then we can update and clear the corresponding task run sync target action
                 task_run_action = self._output_sync_target_action
                 self._output_sync_target_action = None
-                logger.info(
-                    f"task run is {task_run_action}, _output_sync_target_action is {self._output_sync_target_action}"
-                )
                 self._handle_action_update(is_unsuccessful, action_status, task_run_action, now)
             else:
-                logger.info("AttachmentUploadAction is still running")
+                logger.debug(
+                    f"SYNC_OUTPUT_JOB_ATTACHMENTS for {self._output_sync_target_action} is still running"
+                )
 
             return None
 
@@ -1255,6 +1263,8 @@ class Session:
                 fail_message="TIMEOUT - Exceeded the allotted runtime limit.",
             )
 
+        # Only report action update when it's not attachment upload for syncing job attachment outputs,
+        # progress reporting is not supported by the output upload yet.
         if not self._output_sync_target_action:
             self._report_action_update(
                 SessionActionStatus(

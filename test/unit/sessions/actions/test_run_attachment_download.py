@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 import os
 import sys
-import sysconfig
 import tempfile
 from typing import TYPE_CHECKING, Generator
 from unittest.mock import MagicMock, Mock, patch, ANY
@@ -38,6 +37,15 @@ def executor() -> Mock:
 @pytest.fixture
 def session_id() -> str:
     return "session_id"
+
+
+@pytest.fixture
+def python_path() -> str:
+    executable_path = Path(sys.executable)
+    return str(
+        executable_path.parent
+        / executable_path.name.lower().replace("pythonservice.exe", "python.exe")
+    )
 
 
 @pytest.fixture
@@ -93,7 +101,7 @@ class TestStart:
         session._job_details = job_details
         session._job_attachment_details = job_attachment_details
         session._os_user = job_user
-        session._session = mock_openjd_session_cls
+        session.openjd_session = mock_openjd_session_cls
         session._queue_id = TestStart.QUEUE_ID
         session._queue._job_id = TestStart.JOB_ID
         return session
@@ -115,6 +123,7 @@ class TestStart:
         session_dir: str,
         mock_asset_sync: MagicMock,
         job_details: JobDetails,
+        python_path: str,
     ) -> None:
         """
         Tests that AttachmentDownloadAction.start() calls AssetSync functions to prepare input
@@ -158,7 +167,7 @@ class TestStart:
             assert action._step_script == StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
-                        command=os.path.join(Path(sysconfig.get_path("scripts")), "python"),
+                        command=python_path,
                         args=[
                             "{{ Task.File.AttachmentDownload }}",
                             "-pm",

@@ -302,16 +302,11 @@ class SessionActionQueue:
 
         Parameters
         ----------
-        action : SessionActionQueueEntry
-            The action to be inserted
+        action : AttachmentUploadActionApiModel
+            The attachment upload action to be inserted to the front of queue
         """
         action_type = action["actionType"]
         action_id = action["sessionActionId"]
-        logger.info(
-            "Inserting attachment upload to the front of queue: %s action: %s",
-            action_type,
-            action_id,
-        )
         cancel_event = Event()
 
         action = cast(AttachmentUploadActionApiModel, action)
@@ -322,7 +317,7 @@ class SessionActionQueue:
 
         self._actions.insert(0, queue_entry)
         self._actions_by_id[action_id] = queue_entry
-        logger.info("Successfully inserted front of queue: %s action: %s", action_type, action_id)
+        logger.debug("Successfully inserted front of queue: %s action: %s", action_type, action_id)
 
     def replace(
         self,
