@@ -2,9 +2,7 @@ name: Release Canary
 
 on:
   schedule:
-    - cron: '0 13 * * *'
-    - cron: '0 19 * * *'
-    - cron: '0 1 * * *'
+    - cron: '0 */3 * * *'
   workflow_dispatch:
 
 jobs:
