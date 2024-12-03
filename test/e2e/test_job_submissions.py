@@ -95,7 +95,19 @@ class TestJobSubmission:
             def is_job_started(current_job: Job) -> bool:
                 current_job.refresh_job_info(client=deadline_client)
                 LOG.info(f"Waiting for job {current_job.id} to be created")
-                return current_job.lifecycle_status != "CREATE_IN_PROGRESS"
+
+                assert current_job.task_run_status not in [
+                    TaskStatus.INTERRUPTING,
+                    TaskStatus.SUSPENDED,
+                    TaskStatus.CANCELED,
+                    TaskStatus.FAILED,
+                    TaskStatus.SUCCEEDED,
+                    TaskStatus.NOT_COMPATIBLE,
+                ], f"Job is not in a valid task run status for this test: {current_job.task_run_status}"
+                return (
+                    current_job.lifecycle_status != "CREATE_IN_PROGRESS"
+                    and current_job.task_run_status == TaskStatus.RUNNING
+                )
 
             assert is_job_started(job)
 
@@ -148,12 +160,17 @@ class TestJobSubmission:
     ) -> None:
         # Test to verify that the queue credentials can never be accessed by a different queue's job user
 
-        job = submit_sleep_job(
+        job = submit_custom_job(
             "Test Sleep",
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
+            """
+            #!/usr/bin/env bash
+            sleep 60
+            """,
         )
+
         try:
 
             @backoff.on_predicate(
@@ -164,7 +181,19 @@ class TestJobSubmission:
             def is_job_started(current_job: Job) -> bool:
                 current_job.refresh_job_info(client=deadline_client)
                 LOG.info(f"Waiting for job {current_job.id} to be created")
-                return current_job.lifecycle_status != "CREATE_IN_PROGRESS"
+
+                assert current_job.task_run_status not in [
+                    TaskStatus.INTERRUPTING,
+                    TaskStatus.SUSPENDED,
+                    TaskStatus.CANCELED,
+                    TaskStatus.FAILED,
+                    TaskStatus.SUCCEEDED,
+                    TaskStatus.NOT_COMPATIBLE,
+                ], f"Job is not in a valid task run status for this test: {current_job.task_run_status}"
+                return (
+                    current_job.lifecycle_status != "CREATE_IN_PROGRESS"
+                    and current_job.task_run_status == TaskStatus.RUNNING
+                )
 
             assert is_job_started(job)
 
