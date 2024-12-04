@@ -1517,7 +1517,7 @@ class TestSessionActionUpdatedImpl:
 
     @pytest.mark.skipif(
         not ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test will be removed after releasing the asset sync job user feature",
+        reason="This test will be run unconditionally after releasing the asset sync job user featuer",
     )
     def test_success_task_run_attachment_upload(
         self,

@@ -87,13 +87,13 @@ class AttachmentDownloadAction(OpenjdAction):
         self._step_details = step_details
         self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
-    def set_step_script(self, manifests, s3_settings) -> None:
+    def set_step_script(self, manifests: list[str], s3_settings: JobAttachmentS3Settings) -> None:
         """Sets the step script for the action
 
         Parameters
         ----------
-        manifests : list[BaseAssetManifest]
-            The job attachment manifests
+        manifests : list[str]
+            The job attachment manifest paths
         s3_settings : JobAttachmentS3Settings
             The job attachment S3 settings
         """
@@ -225,7 +225,7 @@ class AttachmentDownloadAction(OpenjdAction):
         # returns root path to PathMappingRule mapping
         dynamic_mapping_rules: dict[str, PathMappingRule] = (
             session._asset_sync.generate_dynamic_path_mapping(
-                session_dir=session.openjd_session.working_directory,
+                session_dir=session.working_directory,
                 attachments=attachments,
             )
         )
@@ -233,7 +233,7 @@ class AttachmentDownloadAction(OpenjdAction):
         # Aggregate manifests (with step step dependency handling)
         merged_manifests_by_root: dict[str, BaseAssetManifest] = (
             session._asset_sync._aggregate_asset_root_manifests(
-                session_dir=session.openjd_session.working_directory,
+                session_dir=session.working_directory,
                 s3_settings=s3_settings,
                 queue_id=session._queue_id,
                 job_id=session._queue._job_id,
@@ -276,10 +276,9 @@ class AttachmentDownloadAction(OpenjdAction):
 
         manifest_paths_by_root = session._asset_sync._check_and_write_local_manifests(
             merged_manifests_by_root=merged_manifests_by_root,
-            manifest_write_dir=str(session.openjd_session.working_directory),
+            manifest_write_dir=str(session.working_directory),
         )
-        # TODO: remove type: ignore for manifest_paths_by_root after deadline-cloud release
-        session.manifest_paths_by_root = manifest_paths_by_root  # type: ignore
+        session.manifest_paths_by_root = manifest_paths_by_root
 
         self.set_step_script(
             manifests=manifest_paths_by_root.values(),  # type: ignore
@@ -332,7 +331,7 @@ class AttachmentDownloadAction(OpenjdAction):
             assert session._asset_sync is not None
             session._asset_sync._launch_vfs(
                 s3_settings=s3_settings,
-                session_dir=session.openjd_session.working_directory,
+                session_dir=session.working_directory,
                 fs_permission_settings=fs_permission_settings,
                 merged_manifests_by_root=merged_manifests_by_root,
                 os_env_vars=dict(os.environ),

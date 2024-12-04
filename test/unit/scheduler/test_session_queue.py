@@ -258,7 +258,7 @@ class TestSessionActionQueueDequeue:
 
     @pytest.mark.skipif(
         not ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test will always run after releasing the asset sync job user feature",
+        reason="This test will be run unconditionally after releasing the asset sync job user featuer",
     )
     @pytest.mark.parametrize(
         "action, expected",
@@ -279,7 +279,7 @@ class TestSessionActionQueueDequeue:
                         manifests=[],
                     ),
                 ),
-                id="attachmen download job input",
+                id="attachment download job input",
             ),
             pytest.param(
                 AttachmentDownloadActionQueueEntry(
@@ -299,7 +299,7 @@ class TestSessionActionQueueDequeue:
                         step_id="step-1234",
                     ),
                 ),
-                id="attachmen download step dependency",
+                id="attachment download step dependency",
             ),
             pytest.param(
                 AttachmentUploadActionQueueEntry(
@@ -321,7 +321,7 @@ class TestSessionActionQueueDequeue:
             ),
         ],
     )
-    def test_attachments_download_actions(
+    def test_attachments_transfer_actions(
         self,
         action: AttachmentDownloadActionQueueEntry | AttachmentUploadActionQueueEntry,
         expected: AttachmentDownloadAction | AttachmentUploadAction,
@@ -345,8 +345,17 @@ class TestSessionActionQueueDequeue:
         session_queue: SessionActionQueue,
     ) -> None:
         # GIVEN
+        action = EnvironmentQueueEntry(
+            Mock(),  # cancel event
+            EnvironmentAction(
+                sessionActionId="id-env", actionType="ENV_ENTER", environmentId="envid"
+            ),
+        )
+        session_queue._actions = [action]
+        session_queue._actions_by_id[action.definition["sessionActionId"]] = action
+
         upload_action = AttachmentUploadActionBoto(
-            sessionActionId="id",
+            sessionActionId="id-upload",
             actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
             stepId="step-1",
             taskId="task-1",
@@ -356,8 +365,8 @@ class TestSessionActionQueueDequeue:
         session_queue.insert_front(action=upload_action)
 
         # THEN
-        assert len(session_queue._actions) == 1
-        assert "id" in session_queue._actions_by_id
+        assert len(session_queue._actions) == 2
+        assert "id-upload" in session_queue._actions_by_id
 
         # WHEN
         next_action = session_queue.dequeue()

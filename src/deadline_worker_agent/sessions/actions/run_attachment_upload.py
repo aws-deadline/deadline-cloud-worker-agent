@@ -4,7 +4,7 @@ from __future__ import annotations
 from concurrent.futures import (
     Executor,
 )
-import os
+import json
 import sys
 from logging import LoggerAdapter
 from typing import Any, TYPE_CHECKING, Optional
@@ -21,8 +21,6 @@ from openjd.model.v2023_09 import (
     StepActions as StepActions_2023_09,
 )
 from openjd.model import ParameterValue
-from deadline.job_attachments.api.manifest import _manifest_snapshot
-from deadline.job_attachments.models import ManifestSnapshot
 
 from ...log_messages import SessionActionLogKind
 from .openjd_action import OpenjdAction
@@ -67,7 +65,18 @@ class AttachmentUploadAction(OpenjdAction):
 
         self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
-    def set_step_script(self, manifests, s3_settings) -> None:
+    def set_step_script(
+        self, manifest_paths_by_root: dict[str, str], s3_settings: JobAttachmentS3Settings
+    ) -> None:
+        """Sets the step script for the action
+
+        Parameters
+        ----------
+        manifest_paths_by_root : dict[str, str]
+            A dictionary mapping root paths to manifest paths
+        s3_settings : JobAttachmentS3Settings
+            The S3 settings for the job attachment
+        """
 
         args = [
             "{{ Task.File.AttachmentUpload }}",
@@ -75,9 +84,9 @@ class AttachmentUploadAction(OpenjdAction):
             "{{ Session.PathMappingRulesFile }}",
             "-s3",
             s3_settings.to_s3_root_uri(),
-            "-m",
+            "-mm",
+            json.dumps(manifest_paths_by_root),
         ]
-        args.extend(manifests)
 
         executable_path = Path(sys.executable)
         python_path = executable_path.parent / executable_path.name.lower().replace(
@@ -155,27 +164,9 @@ class AttachmentUploadAction(OpenjdAction):
         )
 
         manifest_paths_by_root = session.manifest_paths_by_root
-        output_path = os.path.join(session.openjd_session.working_directory, "diff")
-        manifests = list()
-
-        for root, path in manifest_paths_by_root.items():
-            self._logger.info(
-                f"Snapshooting manifest {path} for local root {root}",
-                extra={"openjd_log_content": LogContent.PARAMETER_INFO},
-            )
-            manifest: Optional[ManifestSnapshot] = _manifest_snapshot(
-                root=root,
-                destination=str(output_path),
-                # `output` is used for job download to discover output manifests
-                # manifest file name need to contain the hash of root path for attachment CLI path mapping
-                name=f"output-{os.path.basename(path)}",
-                diff=path,
-            )
-            if manifest:
-                manifests.append(manifest.manifest)
 
         self.set_step_script(
-            manifests=manifests,
+            manifest_paths_by_root=manifest_paths_by_root,
             s3_settings=s3_settings,
         )
 

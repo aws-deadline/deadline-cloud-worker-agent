@@ -242,6 +242,11 @@ class Session:
         return self._session
 
     @property
+    def working_directory(self) -> Path:
+        """The working directory for this session"""
+        return self._session.working_directory
+
+    @property
     def id(self) -> str:
         """The unique session ID"""
         return self._id

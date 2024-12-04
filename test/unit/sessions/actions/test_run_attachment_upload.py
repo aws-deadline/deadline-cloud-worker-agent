@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 import sys
 import tempfile
+import json
 from typing import TYPE_CHECKING, Generator
 from unittest.mock import MagicMock, Mock, patch
 
@@ -24,7 +25,6 @@ from openjd.model.v2023_09 import (
 
 import deadline_worker_agent.sessions.session as session_mod
 from deadline.job_attachments.models import JobAttachmentS3Settings
-from deadline.job_attachments.models import ManifestSnapshot
 
 if TYPE_CHECKING:
     from deadline_worker_agent.sessions.job_entities import JobAttachmentDetails
@@ -78,9 +78,11 @@ def action_id() -> str:
 @pytest.fixture
 def action(
     action_id: str,
+    step_id: str,
+    task_id: str,
 ) -> actions_module.AttachmentUploadAction:
     return actions_module.AttachmentUploadAction(
-        id=action_id, session_id="session-1234", step_id="step-1234", task_id="task-1234"
+        id=action_id, session_id="session-1234", step_id=step_id, task_id=task_id
     )
 
 
@@ -114,26 +116,16 @@ class TestStart:
 
         return session
 
-    @pytest.fixture(autouse=True)
-    def mock_manifest_snapshot(self) -> Generator[MagicMock, None, None]:
-        with patch.object(
-            actions_module.run_attachment_upload,
-            "_manifest_snapshot",
-            return_value=ManifestSnapshot(
-                manifest=f"{session_dir}/diff/output-hash_manifest-timestamp.manifest"
-            ),
-        ) as mock_snapshot:
-            yield mock_snapshot
-
     def test_attachment_upload_action_start(
         self,
         executor: Mock,
         session: Mock,
         action: actions_module.AttachmentUploadAction,
-        session_dir: str,
-        mock_manifest_snapshot: MagicMock,
         job_details: JobDetails,
         python_path: str,
+        step_id: str,
+        task_id: str,
+        action_id: str,
     ) -> None:
         """
         Tests that AttachmentUploadAction.start() calls AssetSync functions to prepare input
@@ -152,15 +144,6 @@ class TestStart:
         # WHEN
         action.start(session=session, executor=executor)
 
-        # THEN
-        for root, path in session.manifest_paths_by_root.items():
-            mock_manifest_snapshot.assert_any_call(
-                root=root,
-                destination=str(os.path.join(session_dir, "diff")),
-                name=f"output-{os.path.basename(path)}",
-                diff=path,
-            )
-
         with open(
             Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_upload.py",
             "r",
@@ -175,9 +158,8 @@ class TestStart:
                             "{{ Session.PathMappingRulesFile }}",
                             "-s3",
                             s3_settings.to_s3_root_uri(),
-                            "-m",
-                            mock_manifest_snapshot.return_value.manifest,
-                            mock_manifest_snapshot.return_value.manifest,
+                            "-mm",
+                            json.dumps(session.manifest_paths_by_root),
                         ],
                     )
                 ),
@@ -195,8 +177,8 @@ class TestStart:
             step_script=action._step_script,
             task_parameter_values=dict[str, ParameterValue](),
             os_env_vars={
-                "DEADLINE_SESSIONACTION_ID": "sessionaction-abc123",
-                "DEADLINE_STEP_ID": "step-1234",
-                "DEADLINE_TASK_ID": "task-1234",
+                "DEADLINE_SESSIONACTION_ID": action_id,
+                "DEADLINE_STEP_ID": step_id,
+                "DEADLINE_TASK_ID": task_id,
             },
         )

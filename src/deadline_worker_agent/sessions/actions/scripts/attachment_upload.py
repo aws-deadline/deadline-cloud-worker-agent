@@ -5,8 +5,12 @@ import argparse
 import time
 import os
 import boto3
+import json
+from typing import Optional
 
 from deadline.job_attachments import api
+from deadline.job_attachments.api.manifest import _manifest_snapshot
+from deadline.job_attachments.models import ManifestSnapshot
 
 """
 A small script to upload job output using attachment upload.
@@ -17,8 +21,7 @@ Example usage:
 python attachment_upload.py \
     -pm /sessions/session-f63c206fb5f04c04aa17821001aa3847fajfm5x4/path_mapping.json \
     -s3 s3://test-job-attachment/DeadlineCloud \
-    -m /sessions/session-f63c206fb5f04c04aa17821001aa3847fajfm5x4/manifests/0bb7eb91fdf8780c4a7e6174de6dfc5e_manifest \
-    -m /sessions/session-f63c206fb5f04c04aa17821001aa3847fajfm5x4/manifests/0bb7eb91fdf8780c4a7e6174de6dfc5e_manifest
+    -mm '{"/sessions/session-e0317487a6cd470084b1c6fd85c789e6ank4lmh5/assetroot-a7714e87e776d9f1c179": "/sessions/session-e0317487a6cd470084b1c6fd85c789e6ank4lmh5/manifests/0bb7eb91fdf8780c4a7e6174de6dfc5e_manifest"}'
 """
 
 
@@ -33,18 +36,39 @@ def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> N
     )
 
 
+def snapshot(manifest_paths_by_root: dict[str, str]) -> list[str]:
+    output_path = os.path.join(os.getcwd(), "diff")
+    manifests = list()
+
+    for root, path in manifest_paths_by_root.items():
+        manifest: Optional[ManifestSnapshot] = _manifest_snapshot(
+            root=root,
+            destination=str(output_path),
+            # `output` is used for job download to discover output manifests
+            # manifest file name need to contain the hash of root path for attachment CLI path mapping
+            name=f"output-{os.path.basename(path)}",
+            diff=path,
+        )
+        if manifest:
+            manifests.append(manifest.manifest)
+
+    return manifests
+
+
 if __name__ == "__main__":
     start_time = time.perf_counter()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-pm", "--path-mapping", type=str, help="", required=True)
     parser.add_argument("-s3", "--s3-uri", type=str, help="", required=True)
-    parser.add_argument("-m", "--manifests", nargs="*", type=str, help="", required=True)
+    parser.add_argument("-mm", "--manifest-map", type=json.loads, required=True)
 
     args = parser.parse_args()
     path_mapping = args.path_mapping
     s3_uri = args.s3_uri
-    manifests = args.manifests
+    manifest_map = args.manifest_map
+
+    manifests = snapshot(manifest_paths_by_root=manifest_map)
 
     print("\nStarting upload...")
     upload(manifests=manifests, s3_root_uri=s3_uri, path_mapping_rules=path_mapping)
