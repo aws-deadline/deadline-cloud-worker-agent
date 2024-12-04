@@ -13,8 +13,11 @@ from deadline.job_attachments.api.manifest import _manifest_snapshot
 from deadline.job_attachments.models import ManifestSnapshot
 
 """
-A small script to upload job output using attachment upload.
-This is available in deadline-cloud as python API and AWS Deadline Cloud CLI.
+A small script to
+1. capture the difference since the given base input manifest to generate manifests via manifest snapshot
+2. upload job output based on the diff manifests using attachment upload
+
+The manifest snapshot and attachment upload commands are available in deadline-cloud as python API and AWS Deadline Cloud CLI.
 
 Example usage:
 
@@ -41,12 +44,15 @@ def snapshot(manifest_paths_by_root: dict[str, str]) -> list[str]:
     manifests = list()
 
     for root, path in manifest_paths_by_root.items():
+        # TODO - use the public api for manifest snapshot once that's final and made public
         manifest: Optional[ManifestSnapshot] = _manifest_snapshot(
             root=root,
+            # direcotry to put the generated diff manifests
             destination=str(output_path),
             # `output` is used for job download to discover output manifests
             # manifest file name need to contain the hash of root path for attachment CLI path mapping
             name=f"output-{os.path.basename(path)}",
+            # this path to manifest servers as a base for the snapshot, generate only difference since this manifest
             diff=path,
         )
         if manifest:

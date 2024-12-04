@@ -91,6 +91,7 @@ class TestStart:
     def session(
         self,
         session_id: str,
+        session_dir: str,
         job_details: JobDetails,
         job_user: SessionUser,
         job_attachment_details: JobAttachmentDetails,
@@ -102,6 +103,7 @@ class TestStart:
         session._job_attachment_details = job_attachment_details
         session._os_user = job_user
         session.openjd_session = mock_openjd_session_cls
+        session.working_directory = session_dir
         session._queue_id = TestStart.QUEUE_ID
         session._queue._job_id = TestStart.JOB_ID
         return session

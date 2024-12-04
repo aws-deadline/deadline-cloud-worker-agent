@@ -1589,7 +1589,7 @@ class TestSessionActionUpdatedImpl:
 
     @pytest.mark.skipif(
         ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test will be removed after releasing the asset sync job user feature",
+        reason="This test will be re-written before releasing the asset sync job user feature",
     )
     def test_success_task_run_fail_output_sync(
         self,
@@ -1675,7 +1675,7 @@ class TestSessionActionUpdatedImpl:
 
     @pytest.mark.skipif(
         ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test will be removed after releasing the asset sync job user feature",
+        reason="This test will be re-written before releasing the asset sync job user feature",
     )
     def test_logs_succeeded(
         self,

@@ -298,7 +298,7 @@ class SessionActionQueue:
         *,
         action: AttachmentUploadActionApiModel,
     ) -> None:
-        """Inserts an attachmen upload action at the front of the queue
+        """Inserts an attachment upload action at the front of the queue
 
         Parameters
         ----------
