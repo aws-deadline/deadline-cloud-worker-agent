@@ -47,13 +47,20 @@ start_service="no"
 telemetry_opt_out="no"
 warning_lines=()
 vfs_install_path="unset"
+python_interpreter_path="unset"
 
 usage()
 {
-    echo "Usage: install.sh --farm-id FARM_ID --fleet-id FLEET_ID"
-    echo "                  [--region REGION] [--user USER]"
-    echo "                  [--scripts-path SCRIPTS_PATH]"
+    echo "Usage: install.sh --farm-id FARM_ID"
+    echo "                  --fleet-id FLEET_ID"
+    echo "                  --scripts-path SCRIPTS_PATH"
+    echo "                  --python-interpreter-path PYTHON_INTERPRETER_PATH"
+    echo "                  --region REGION"
+    echo "                  [--user USER]"
     echo "                  [-y]"
+    echo "                  [--disallow-instance-profile]"
+    echo "                  [--no-install-service]"
+    echo "                  [--allow-shutdown]"
     echo "                  [--vfs-install-path VFS_INSTALL_PATH]"
     echo ""
     echo "Arguments"
@@ -75,6 +82,9 @@ usage()
     echo "        installed. This is used as the program path when creating the systemd service for the "
     echo "        Worker Agent. If not specified, the first program named 'deadline-worker-agent' and"
     echo "        'deadline' found in the search path will be used."
+    echo "    --python-interpreter-path"
+    echo "        Path to the Python interpreter for the worker agent. If a Python virtual environment is "
+    echo "        being used, this path should reference the Python executable of the virtual environment."
     echo "    --allow-shutdown"
     echo "        Dictates whether a sudoers rule is created/deleted allowing the worker agent the"
     echo "        ability to shutdown the host system"
@@ -121,7 +131,7 @@ validate_deadline_id() {
 }
 
 # Validate arguments
-PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,scripts-path:,vfs-install-path:,start,allow-shutdown,no-install-service,telemetry-opt-out,disallow-instance-profile -- "y" "$@")
+PARSED_ARGUMENTS=$(getopt -n install.sh --longoptions farm-id:,fleet-id:,region:,user:,group:,scripts-path:,python-interpreter-path:,vfs-install-path:,start,allow-shutdown,no-install-service,telemetry-opt-out,disallow-instance-profile -- "y" "$@")
 VALID_ARGUMENTS=$?
 if [ "${VALID_ARGUMENTS}" != "0" ]; then
     usage
@@ -140,6 +150,7 @@ do
     --user)                         wa_user="$2"                    ; shift 2 ;;
     --group)                        job_group="$2"                  ; shift 2 ;;
     --scripts-path)                 scripts_path="$2"               ; shift 2 ;;
+    --python-interpreter-path)      python_interpreter_path="$2"    ; shift 2 ;;
     --vfs-install-path)             vfs_install_path="$2"           ; shift 2 ;;
     --allow-shutdown)               allow_shutdown="yes"            ; shift   ;;
     --disallow-instance-profile)    disallow_instance_profile="yes" ; shift   ;;
@@ -173,18 +184,8 @@ elif ! validate_deadline_id fleet "${fleet_id}"; then
     usage
 fi
 if [[ "${scripts_path}" == "unset" ]]; then
-    set +e
-    worker_agent_program=$(which deadline-worker-agent)
-    if [[ "$?" != "0" ]]; then
-        echo "ERROR: Could not find deadline-worker-agent in search path"
-        exit 1
-    fi
-    client_library_program=$(which deadline)
-    if [[ "$?" != "0" ]]; then
-        echo "ERROR: Could not find deadline in search path"
-        exit 1
-    fi
-    set -e
+    echo "ERROR: --scripts-path is not specified"
+    usage
 elif [[ ! -d "${scripts_path}" ]]; then
     echo "ERROR: The specified scripts path is not found: \"${scripts_path}\""
     usage
@@ -202,6 +203,13 @@ else
         exit 1
     fi
     set -e
+fi
+if [[ "${python_interpreter_path}" == "unset" ]]; then
+    echo "ERROR: --python-interpreter-path is not specified"
+    usage
+elif [[ ! -f "${python_interpreter_path}" ]]; then
+    echo "ERROR: The Python interpreter path is not found: \"${python_interpreter_path}\""
+    usage
 fi
 
 if [[ "${region}" == "unset" ]]; then
@@ -394,44 +402,25 @@ echo "Done provisioning configuration directory"
 
 if [[ "${allow_shutdown}" == "yes" ]]; then
    shutdown_on_stop="true"
+   shutdown_on_stop_flag="--shutdown-on-stop"
 else
    shutdown_on_stop="false"
+   shutdown_on_stop_flag="--no-shutdown-on-stop"
 fi
 if [[ "${disallow_instance_profile}" == "yes" ]]; then
    allow_ec2_instance_profile="false"
+   allow_ec2_instance_profile_flag="--no-allow-ec2-instance-profile"
 else
    allow_ec2_instance_profile="true"
+   allow_ec2_instance_profile_flag="--allow-ec2-instance-profile"
 fi
 
-echo "Configuring farm and fleet"
-echo "Configuring shutdown on stop"
-echo "Configuring allow ec2 instance profile"
-sed -E                                                          \
-    --in-place=.bak                                             \
-    -e "s,^# farm_id\s*=\s*\"REPLACE-WITH-WORKER-FARM-ID\"$,farm_id = \"${farm_id}\",g"    \
-    -e "s,^# fleet_id\s*=\s*\"REPLACE-WITH-WORKER-FLEET-ID\"$,fleet_id = \"${fleet_id}\",g" \
-    -e "s,^[#]*\s*shutdown_on_stop\s*=\s*\w+$,shutdown_on_stop = ${shutdown_on_stop},g"    \
-    -e "s,^[#]*\s*allow_ec2_instance_profile\s*=\s*\w+$,allow_ec2_instance_profile = ${allow_ec2_instance_profile},g"    \
-    /etc/amazon/deadline/worker.toml
-if ! grep "farm_id = \"${farm_id}\"" /etc/amazon/deadline/worker.toml; then
-    echo "ERROR: Failed to configure farm ID in /etc/amazon/deadline/worker.toml."
-    exit 1
-fi
-if ! grep "fleet_id = \"${fleet_id}\"" /etc/amazon/deadline/worker.toml; then
-    echo "ERROR: Failed to configure fleet ID in /etc/amazon/deadline/worker.toml."
-    exit 1
-fi
-if ! grep "shutdown_on_stop = ${shutdown_on_stop}" /etc/amazon/deadline/worker.toml; then
-    echo "ERROR: Failed to configure shutdown on stop in /etc/amazon/deadline/worker.toml."
-    exit 1
-fi
-if ! grep "allow_ec2_instance_profile = ${allow_ec2_instance_profile}" /etc/amazon/deadline/worker.toml; then
-    echo "ERROR: Failed to configure allow ec2 instance profile in /etc/amazon/deadline/worker.toml."
-    exit 1
-fi
-echo "Done configuring farm and fleet"
-echo "Done configuring shutdown on stop"
-echo "Done configuring allow ec2 instance profile"
+"${python_interpreter_path}"                \
+    -m deadline_worker_agent.config         \
+    --farm-id "${farm_id}"                  \
+    --fleet-id "${fleet_id}"                \
+    "${allow_ec2_instance_profile_flag}"    \
+    "${shutdown_on_stop_flag}"
 
 if ! [[ "${no_install_service}" == "yes" ]]; then
     # Set up the service

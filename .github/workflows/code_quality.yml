@@ -2,7 +2,7 @@ name: Code Quality
 
 on:
   pull_request:
-    branches: [ mainline, feature_windows ]
+    branches: [ mainline, feature_* ]
   workflow_call:
     inputs:
       branch:
@@ -10,8 +10,8 @@ on:
         type: string
 
 jobs:
-  Test:
-    name: Python
+  UnitTest:
+    name: Unit Tests
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -20,3 +20,23 @@ jobs:
     with:
       os: ${{ matrix.os }}
       python-version: ${{ matrix.python-version }}
+
+  IntegrationTests:
+    name: Integration Tests
+    needs: UnitTest
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.9', '3.10', '3.11']
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Hatch
+      run: |
+        pip install --upgrade hatch
+
+    - name: Run Integration Tests
+      run: hatch run integ-test

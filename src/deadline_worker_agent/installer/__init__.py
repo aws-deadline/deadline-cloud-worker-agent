@@ -122,6 +122,8 @@ def install() -> None:
             args.user,
             "--scripts-path",
             str(scripts_path),
+            "--python-interpreter-path",
+            sys.executable,
         ]
         if args.vfs_install_path:
             cmd += ["--vfs-install-path", args.vfs_install_path]

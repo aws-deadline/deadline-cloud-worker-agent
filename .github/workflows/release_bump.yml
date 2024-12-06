@@ -14,36 +14,14 @@ on:
         - major
 
 jobs:
-  UnitTests:
-    name: Unit Tests
+  UnitIntegTests:
+    name: Unit and Integration Tests
     uses: ./.github/workflows/code_quality.yml
     with:
       branch: mainline
 
-  WindowsIntegrationTests:
-    needs: UnitTests
-    name: Windows Integration Tests
-    runs-on: windows-latest
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        python-version: ['3.9', '3.10', '3.11']
-    env:
-        PYTHON: ${{ matrix.python-version }}
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Hatch
-      run: |
-        pip install --upgrade hatch
-
-    - name: Run Windows Integration Tests
-      run: hatch run windows-integ-test
-
   LinuxE2ETests:
-    needs: UnitTests
+    needs: UnitIntegTests
     name: Linux E2E Test
     permissions:
       id-token: write
@@ -59,7 +37,7 @@ jobs:
       group: linuxe2e
 
   WindowsE2ETests:
-    needs: UnitTests
+    needs: UnitIntegTests
     name: Windows E2E Test
     permissions:
       id-token: write
@@ -75,7 +53,7 @@ jobs:
       group: windowse2e
 
   Bump:
-    needs: [LinuxE2ETests, WindowsE2ETests, WindowsIntegrationTests]
+    needs: [UnitIntegTests, LinuxE2ETests, WindowsE2ETests]
     name: Version Bump
     uses: aws-deadline/.github/.github/workflows/reusable_bump.yml@mainline
     secrets: inherit

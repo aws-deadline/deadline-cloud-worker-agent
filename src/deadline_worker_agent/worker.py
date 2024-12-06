@@ -28,6 +28,7 @@ from .metrics import HostMetricsLogger
 from .scheduler import WorkerScheduler
 from .sessions import Session
 
+
 logger = getLogger(__name__)
 
 
@@ -132,7 +133,7 @@ class Worker:
             # TODO: Remove this once WA is stable or put behind a debug flag
             signal.signal(signal.SIGUSR1, self._output_thread_stacks)  # type: ignore
         elif os.name == "nt":
-            from .windows.win_service import is_windows_session_zero
+            from .windows.win_session import is_windows_session_zero
 
             # If we are in session 0, we are running as a Windows Service using pywin32
             # pywin32's pythonservice.exe owns the main thread and the Python application

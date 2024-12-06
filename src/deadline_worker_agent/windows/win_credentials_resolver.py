@@ -21,12 +21,12 @@ from ..boto import (
     NoOverflowExponentialBackoff as Backoff,
     Session as BotoSession,
 )
-from . import win_service
 from .win_logon import (
     get_windows_credentials,
     _WindowsCredentialsCacheEntry,
     unload_and_close,
 )
+from .win_session import is_windows_session_zero
 
 logger = getLogger(__name__)
 
@@ -96,7 +96,7 @@ class WindowsCredentialsResolver:
     def prune_cache(self):
         # If we are running as a Windows Service, we maintain a logon token for the user and
         # do not need to persist the password nor rotate it.
-        if win_service.is_windows_session_zero():
+        if is_windows_session_zero():
             return
 
         # Filter out entries that haven't been accessed in the last CACHE_EXPIRATION hours
@@ -109,7 +109,7 @@ class WindowsCredentialsResolver:
 
     def clear(self):
         """Clears all users from the cache and cleans up any open resources"""
-        if win_service.is_windows_session_zero():
+        if is_windows_session_zero():
             for user in self._user_cache.values():
                 if user.windows_session_user:
                     logger.info(
@@ -131,7 +131,7 @@ class WindowsCredentialsResolver:
         a username and password. For this reason, our cache key should use the password secret
         ARN since a change of secret may imply a change of password.
         """
-        if win_service.is_windows_session_zero():
+        if is_windows_session_zero():
             return user_name
         else:
             # Create a composite key using user and arn

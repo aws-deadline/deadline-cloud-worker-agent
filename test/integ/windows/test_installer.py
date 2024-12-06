@@ -7,7 +7,6 @@ assert sys.platform == "win32"
 
 import pathlib
 import os
-import re
 import sys
 import typing
 import uuid
@@ -39,8 +38,10 @@ from deadline_worker_agent.installer.win_installer import (
     WorkerAgentDirectories,
 )
 
-if sys.platform != "win32":
-    pytest.skip("Windows-specific tests", allow_module_level=True)
+try:
+    from tomllib import load as load_toml
+except ModuleNotFoundError:
+    from tomli import load as load_toml
 
 
 def test_user_existence():
@@ -173,50 +174,65 @@ def setup_example_config(tmp_path):
     # Create an example config file similar to 'worker.toml.example' in the tmp_path
     example_config_path = os.path.join(tmp_path, "worker.toml")
     with open(example_config_path, "w") as f:
-        f.write('# farm_id = "REPLACE-WITH-WORKER-FARM-ID"\n')
-        f.write('# fleet_id = "REPLACE-WITH-WORKER-FLEET-ID"\n')
-        f.write("# shutdown_on_stop = false")
+        f.write(
+            """
+[worker]
+# farm_id = "REPLACE-WITH-WORKER-FARM-ID"
+# fleet_id = "REPLACE-WITH-WORKER-FLEET-ID"
+                
+[aws]
+# allow_ec2_instance_profile = false
+                
+[os]
+# shutdown_on_stop = false
+"""
+        )
     return str(tmp_path)
 
 
 def test_update_config_file_updates_values(setup_example_config):
+    # GIVEN
     deadline_config_sub_directory = setup_example_config
 
     farm_id = "123"
     fleet_id = "456"
     shutdown_on_stop = True
+    allow_ec2_instance_profile = True
 
+    # WHEN
     update_config_file(
-        deadline_config_sub_directory,
-        farm_id,
-        fleet_id,
+        deadline_config_sub_directory=deadline_config_sub_directory,
+        farm_id=farm_id,
+        fleet_id=fleet_id,
         shutdown_on_stop=shutdown_on_stop,
+        allow_ec2_instance_profile=allow_ec2_instance_profile,
     )
 
+    # THEN
     # Verify that the configuration file was created and placeholders were replaced
     worker_config_file = os.path.join(deadline_config_sub_directory, "worker.toml")
     assert os.path.isfile(worker_config_file), "Worker config file was not created"
 
-    with open(worker_config_file, "r") as file:
-        content = file.read()
+    with open(worker_config_file, "rb") as file:
+        config_doc = load_toml(file)
 
     # Check if all values have been correctly replaced
-    assert re.search(
-        rf'^farm_id = "{farm_id}"$', content, flags=re.MULTILINE
-    ), "farm_id placeholder was not replaced"
-    assert re.search(
-        rf'^fleet_id = "{fleet_id}"$', content, flags=re.MULTILINE
-    ), "fleet_id placeholder was not replaced"
-    assert re.search(
-        rf"^shutdown_on_stop = {str(shutdown_on_stop).lower()}$", content, flags=re.MULTILINE
-    ), "shutdown_on_stop was not replaced"
+    assert config_doc["worker"]["farm_id"] == farm_id
+    assert config_doc["worker"]["fleet_id"] == fleet_id
+    assert config_doc["os"]["shutdown_on_stop"] == shutdown_on_stop
+    assert config_doc["aws"]["allow_ec2_instance_profile"] == allow_ec2_instance_profile
 
 
 def test_update_config_file_creates_backup(setup_example_config):
     deadline_config_sub_directory = setup_example_config
 
     # Call the function under test with some IDs
-    update_config_file(deadline_config_sub_directory, "test_farm", "test_fleet")
+    update_config_file(
+        deadline_config_sub_directory=deadline_config_sub_directory,
+        farm_id="test_farm",
+        fleet_id="test_fleet",
+        allow_ec2_instance_profile=True,
+    )
 
     # Check that both the original and backup files exist
     worker_config_file = os.path.join(deadline_config_sub_directory, "worker.toml")

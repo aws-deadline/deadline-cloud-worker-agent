@@ -9,13 +9,14 @@ on:
   
 
 jobs:
-  WindowsIntegrationTests:
-    name: Windows Integration Tests
-    runs-on: windows-latest
+  IntegrationTests:
+    name: Integration Tests
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     strategy:
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ['3.9', '3.10', '3.11']
     steps:
     - uses: actions/checkout@v4
@@ -24,8 +25,8 @@ jobs:
       run: |
         pip install --upgrade hatch
 
-    - name: Run Windows Integration Tests
-      run: hatch run windows-integ-test
+    - name: Run Integration Tests
+      run: hatch run integ-test
       
   MainlineLinuxE2ETest:
     name: Linux E2E Test

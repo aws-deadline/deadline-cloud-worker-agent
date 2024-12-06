@@ -43,7 +43,7 @@ if sys.platform == "win32":
 
         @fixture(autouse=True)
         def outside_session_0(self) -> Generator[MagicMock, None, None]:
-            with patch.object(win_logon_mod.win_service, "is_windows_session_zero") as mock:
+            with patch.object(win_logon_mod, "is_windows_session_zero") as mock:
                 mock.return_value = False
                 yield mock
 
@@ -109,7 +109,7 @@ if sys.platform == "win32":
 
         @fixture(autouse=True)
         def is_session_0(self) -> Generator[MagicMock, None, None]:
-            with patch.object(win_logon_mod.win_service, "is_windows_session_zero") as mock:
+            with patch.object(win_logon_mod, "is_windows_session_zero") as mock:
                 mock.return_value = True
                 yield mock
 

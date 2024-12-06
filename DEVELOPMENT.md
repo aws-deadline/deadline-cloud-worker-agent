@@ -132,6 +132,19 @@ To stop the agent, simply run:
 docker exec test_worker_agent /home/agentuser/term_agent.sh
 ```
 
+### Running Worker Agent Integration Tests
+
+The worker agent has integration tests that run locally on the host machine they are run from.
+These tests cover integration with the host operating system and file-system. If you are making
+changes that apply to both Windows and Linux, you will need to test your changes on both a Linux
+host and a Windows host.
+
+To run the tests, run:
+
+```sh
+hatch run integ-test
+```
+
 ### Running Worker Agent E2E Tests
 
 The worker agent has end-to-end tests that run the agent on ec2 instances with the live Deadline Cloud service. These tests

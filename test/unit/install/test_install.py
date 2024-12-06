@@ -6,6 +6,7 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Generator
 from unittest.mock import MagicMock, patch
+import sys
 import sysconfig
 import typing
 
@@ -64,6 +65,8 @@ def expected_cmd(
         parsed_args.user,
         "--scripts-path",
         sysconfig.get_path("scripts"),
+        "--python-interpreter-path",
+        sys.executable,
         "--vfs-install-path",
         parsed_args.vfs_install_path,
     ]

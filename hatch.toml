@@ -12,7 +12,7 @@ test = "pytest test/unit --numprocesses=auto {args}"
 version = "hatch version"
 metadata = "hatch project metadata {args:}"
 e2e-test= "pytest --no-cov test/e2e {args:}"
-windows-integ-test = "pytest --no-cov test/integ/installer {args:}"
+integ-test = "pytest --no-cov test/integ {args:}"
 typing = "mypy {args:src test}"
 style = [
   "ruff check {args:.}",
