@@ -11,8 +11,8 @@ from deadline_worker_agent.aws.deadline import (
     create_worker,
     DeadlineRequestUnrecoverableError,
 )
-from deadline_worker_agent.startup.config import Configuration
-from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
+from deadline_worker_agent.config import Configuration
+from deadline_worker_agent.config.cli_args import ParsedCommandLineArguments
 import deadline_worker_agent.aws.deadline as deadline_mod
 
 

@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 from deadline_worker_agent import Worker
+from deadline_worker_agent.config import JobsRunAsUserOverride
 from deadline_worker_agent.errors import ServiceShutdown
-from deadline_worker_agent.startup.config import JobsRunAsUserOverride
 import deadline_worker_agent.worker as worker_mod
 
 
