@@ -5,7 +5,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 import tempfile
 from pathlib import Path
-from deadline_worker_agent.startup.capabilities import Capabilities
+from deadline_worker_agent.capabilities import Capabilities
 
 from pydantic import ValidationError, BaseSettings
 import pytest
@@ -15,15 +15,15 @@ try:
 except ModuleNotFoundError:
     from tomli import TOMLDecodeError
 
-from deadline_worker_agent.errors import ConfigurationError
-from deadline_worker_agent.startup.config_file import (
+from deadline_worker_agent.config.errors import ConfigurationError
+from deadline_worker_agent.config.config_file import (
     WorkerConfigSection,
     AwsConfigSection,
     LoggingConfigSection,
     OsConfigSection,
     ConfigFile,
 )
-from deadline_worker_agent.startup import config_file as config_file_mod
+from deadline_worker_agent.config import config_file as config_file_mod
 
 
 @pytest.fixture

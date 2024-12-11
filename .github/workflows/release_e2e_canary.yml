@@ -38,6 +38,8 @@ jobs:
       branch: release
       environment: canary
       os: linux
+    concurrency:
+      group: releaselinuxe2ecanary
 
   ReleaseWindowsE2ECanary:
     name: Release Windows Canary
@@ -51,3 +53,5 @@ jobs:
       branch: release
       environment: canary
       os: windows
+    concurrency:
+      group: releasewindowse2ecanary

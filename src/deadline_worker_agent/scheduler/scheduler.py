@@ -46,6 +46,7 @@ from ..api_models import (
     EnvironmentAction,
     TaskRunAction,
     SyncInputJobAttachmentsAction,
+    AttachmentDownloadAction,
 )
 from ..aws.deadline import (
     DeadlineRequestConditionallyRecoverableError,
@@ -55,10 +56,7 @@ from ..aws.deadline import (
     DeadlineRequestUnrecoverableError,
     update_worker_schedule,
 )
-from .log import LOGGER
-from .session_cleanup import SessionUserCleanupManager
-from .session_queue import SessionActionQueue, SessionActionStatus
-from ..startup.config import JobsRunAsUserOverride
+from ..config import JobsRunAsUserOverride
 from ..utils import MappingWithCallbacks
 from ..file_system_operations import FileSystemPermissionEnum, make_directory, touch_file
 from ..log_messages import (
@@ -71,6 +69,9 @@ from ..log_messages import (
     WorkerLogEvent,
     WorkerLogEventOp,
 )
+from .log import LOGGER
+from .session_cleanup import SessionUserCleanupManager
+from .session_queue import SessionActionQueue, SessionActionStatus
 
 if sys.platform == "win32":
     from ..windows.win_credentials_resolver import WindowsCredentialsResolver
@@ -1362,7 +1363,10 @@ class WorkerScheduler:
         self,
         *,
         assigned_session_actions: list[
-            EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction
+            EnvironmentAction
+            | TaskRunAction
+            | SyncInputJobAttachmentsAction
+            | AttachmentDownloadAction
         ],
         failure_message: str,
     ) -> None:

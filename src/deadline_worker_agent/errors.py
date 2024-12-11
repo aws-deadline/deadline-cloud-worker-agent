@@ -3,12 +3,6 @@
 from __future__ import annotations
 
 
-class ConfigurationError(Exception):
-    """An exception raised when an error is encountered loading configuration"""
-
-    pass
-
-
 class PlatformInterruption(Exception):
     """A shutdown warning signal was emitted by the platform"""
 

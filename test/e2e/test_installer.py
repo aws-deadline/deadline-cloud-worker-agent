@@ -17,7 +17,6 @@ LOG = logging.getLogger(__name__)
     os.environ["OPERATING_SYSTEM"] == "windows",
     reason="Linux specific test",
 )
-@pytest.mark.parametrize("operating_system", ["linux"], indirect=True)
 class TestInstaller:
     def test_installer_shutdown_permission(
         self,

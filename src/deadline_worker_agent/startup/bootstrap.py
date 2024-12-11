@@ -21,7 +21,7 @@ from ..aws.deadline import (
     create_worker,
     update_worker,
 )
-from .config import Configuration
+from ..config import Configuration
 from .host_properties import get_host_properties as _get_host_properties
 from ..api_models import WorkerStatus
 from ..boto import DEADLINE_BOTOCORE_CONFIG, DeadlineClient, Session

@@ -12,7 +12,7 @@ from deadline_worker_agent.aws.deadline import (
     record_sync_outputs_telemetry_event,
     record_uncaught_exception_telemetry_event,
 )
-from deadline_worker_agent.startup.capabilities import Capabilities
+from deadline_worker_agent.capabilities import Capabilities
 from deadline.job_attachments.progress_tracker import SummaryStatistics
 
 

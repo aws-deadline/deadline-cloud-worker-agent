@@ -30,12 +30,12 @@ from ...aws.deadline import (
     batch_get_job_entity,
 )
 from ...boto import DeadlineClient
+from ...config import JobsRunAsUserOverride
 from .job_attachment_details import JobAttachmentDetails
 from .job_details import JobDetails
 from .job_entity_type import JobEntityType
 from .step_details import StepDetails
 from .environment_details import EnvironmentDetails
-from ...startup.config import JobsRunAsUserOverride
 
 if TYPE_CHECKING:
     from ...api_models import (

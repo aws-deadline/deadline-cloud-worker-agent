@@ -21,8 +21,8 @@ from deadline_worker_agent.log_sync.cloudwatch import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,
     LOG_CONFIG_OPTION_STREAM_NAME_KEY,
 )
-from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
-from deadline_worker_agent.startup.config import Configuration
+from deadline_worker_agent.config import Configuration
+from deadline_worker_agent.config.cli_args import ParsedCommandLineArguments
 from deadline_worker_agent.startup.bootstrap import WorkerPersistenceInfo
 from deadline_worker_agent.startup import bootstrap as bootstrap_mod
 from deadline_worker_agent.aws.deadline import (

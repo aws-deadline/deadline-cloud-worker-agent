@@ -14,7 +14,7 @@ import subprocess
 from pydantic import BaseModel, NonNegativeFloat, PositiveFloat
 import psutil
 
-from ..errors import ConfigurationError
+from .config.errors import ConfigurationError
 
 if TYPE_CHECKING:
     from pydantic.typing import CallableGenerator
