@@ -25,12 +25,13 @@ from typing import (
     Tuple,
     TypeVar,
 )
-
 from deadline_worker_agent.api_models import (
     EntityIdentifier,
     SyncInputJobAttachmentsAction,
     AttachmentDownloadAction,
+    AttachmentUploadAction,
 )
+from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 
 if TYPE_CHECKING:
     from ..api_models import CompletedActionStatus, EnvironmentAction, TaskRunAction
@@ -155,6 +156,7 @@ class Session:
     _queue: SessionActionQueue
     _report_action_update: Callable[[SessionActionStatus], None]
     _stop: Event
+    _output_sync_target_action: CurrentAction | None = None
     _current_action: CurrentAction | None = None
     _current_action_lock: RLock
     _stop_current_action_result: Literal["INTERRUPTED", "FAILED"] = "FAILED"
@@ -171,6 +173,8 @@ class Session:
     # Event that is set only when this Session is not running at all
     # i.e. it has exited, or never started, its main run loop/logic.
     _stopped_running: Event
+
+    _manifest_paths_by_root: dict[str, str] = dict()
 
     logger: LoggerAdapter
 
@@ -233,6 +237,16 @@ class Session:
         self.logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": self._id})
 
     @property
+    def openjd_session(self) -> OPENJDSession:
+        """The openjd session for this session"""
+        return self._session
+
+    @property
+    def working_directory(self) -> Path:
+        """The working directory for this session"""
+        return self._session.working_directory
+
+    @property
     def id(self) -> str:
         """The unique session ID"""
         return self._id
@@ -241,6 +255,14 @@ class Session:
     def os_user(self) -> Optional[SessionUser]:
         """The session user"""
         return self._os_user
+
+    @property
+    def manifest_paths_by_root(self) -> dict[str, str]:
+        return self._manifest_paths_by_root
+
+    @manifest_paths_by_root.setter
+    def manifest_paths_by_root(self, value: dict[str, str]) -> None:
+        self._manifest_paths_by_root = dict(value)
 
     def _warm_job_entities_cache(self) -> None:
         """Attempts to cache the job entities response for all
@@ -299,6 +321,7 @@ class Session:
             # service. If an action was running at the time of this exception, its failure is
             # reported immediately in the call to Session._cleanup() below.
             self._stop_fail_message = f"Worker encountered an unexpected error: {e}"
+            self.logger.error(self._stop_fail_message)
             self._stop.set()
             raise
         finally:
@@ -453,6 +476,7 @@ class Session:
             | TaskRunAction
             | SyncInputJobAttachmentsAction
             | AttachmentDownloadAction
+            | AttachmentUploadAction
         ],
     ) -> None:
         """Replaces the assigned actions
@@ -467,7 +491,7 @@ class Session:
 
         Parameters
         ----------
-        actions : Iterable[EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction | AttachmentDownloadAction]
+        actions : Iterable[EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction | AttachmentDownloadAction | AttachmentUploadAction]
             The new sequence of actions to be assigned to the session. The order of the actions
             provided is used as the processing order
         """
@@ -482,6 +506,7 @@ class Session:
             | TaskRunAction
             | SyncInputJobAttachmentsAction
             | AttachmentDownloadAction
+            | AttachmentUploadAction
         ],
     ) -> None:
         """Replaces the assigned actions
@@ -643,6 +668,10 @@ class Session:
                 executor=self._executor,
             )
         except Exception as e:
+            if self._output_sync_target_action:
+                action_definition = self._output_sync_target_action.definition
+                self._output_sync_target_action = None
+
             logger.error(
                 SessionActionLogEvent(
                     subtype=SessionActionLogEventSubtype.END,
@@ -1084,33 +1113,64 @@ class Session:
             ActionState.TIMEOUT,
         )
 
+        if self._output_sync_target_action is not None:
+
+            if OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(action_status.state, None):
+                # if the current action is a sync output job attachments upload action and it's completed
+                # then we can update and clear the corresponding task run sync target action
+                task_run_action = self._output_sync_target_action
+                self._output_sync_target_action = None
+                self._handle_action_update(is_unsuccessful, action_status, task_run_action, now)
+            else:
+                logger.debug(
+                    f"SYNC_OUTPUT_JOB_ATTACHMENTS for {self._output_sync_target_action} is still running"
+                )
+
+            return None
+
         if (
             action_status.state == ActionState.SUCCESS
             and isinstance(current_action.definition, RunStepTaskAction)
             and self._asset_sync is not None
         ):
-            # Synchronizing job output attachments is currently bundled together with the
-            # RunStepTaskAction. The synchronization happens after the task run succeeds,
-            # and both must be successful in order to mark the action as SUCCEEDED.
+            if ASSET_SYNC_JOB_USER_FEATURE:
+                # create attachment upload action and insert to the front of queue
 
-            # Banner matching the subsection banner generated by openjd-sessions
-            self.logger.info("----------------------------------------------")
-            self.logger.info("Uploading output files to Job Attachments")
-            self.logger.info("----------------------------------------------")
-            future: Future = self._executor.submit(
-                self._sync_asset_outputs,
-                current_action=current_action,
-            )
-            on_done_with_sync_asset_outputs = partial(
-                self._on_done_with_sync_asset_outputs,
-                is_unsuccessful=is_unsuccessful,
-                action_status=action_status,
-                current_action=current_action,
-            )
-            future.add_done_callback(on_done_with_sync_asset_outputs)
-            # Returning the future just to make this method easier to test.
-            # Tests need to wait on the future to avoid race conditions
-            return future
+                assert current_action.definition.step_id is not None
+                action = AttachmentUploadAction(
+                    sessionActionId=current_action.definition._id,
+                    actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
+                    stepId=current_action.definition.step_id,
+                    taskId=current_action.definition.task_id,
+                )
+
+                self._queue.insert_front(action=action)
+                self._output_sync_target_action = self._current_action
+                self._current_action = None
+
+            else:
+                # Synchronizing job output attachments is currently bundled together with the
+                # RunStepTaskAction. The synchronization happens after the task run succeeds,
+                # and both must be successful in order to mark the action as SUCCEEDED.
+
+                # Banner matching the subsection banner generated by openjd-sessions
+                self.logger.info("----------------------------------------------")
+                self.logger.info("Uploading output files to Job Attachments")
+                self.logger.info("----------------------------------------------")
+                future: Future = self._executor.submit(
+                    self._sync_asset_outputs,
+                    current_action=current_action,
+                )
+                on_done_with_sync_asset_outputs = partial(
+                    self._on_done_with_sync_asset_outputs,
+                    is_unsuccessful=is_unsuccessful,
+                    action_status=action_status,
+                    current_action=current_action,
+                )
+                future.add_done_callback(on_done_with_sync_asset_outputs)
+                # Returning the future just to make this method easier to test.
+                # Tests need to wait on the future to avoid race conditions
+                return future
         else:
             self._handle_action_update(is_unsuccessful, action_status, current_action, now)
         return None
@@ -1208,16 +1268,19 @@ class Session:
                 fail_message="TIMEOUT - Exceeded the allotted runtime limit.",
             )
 
-        self._report_action_update(
-            SessionActionStatus(
-                id=current_action.definition.id,
-                status=action_status,
-                start_time=current_action.start_time,
-                end_time=now if action_status.state != ActionState.RUNNING else None,
-                update_time=now if action_status.state == ActionState.RUNNING else None,
-                completed_status=completed_status,
+        # Only report action update when it's not attachment upload for syncing job attachment outputs,
+        # progress reporting is not supported by the output upload yet.
+        if not self._output_sync_target_action:
+            self._report_action_update(
+                SessionActionStatus(
+                    id=current_action.definition.id,
+                    status=action_status,
+                    start_time=current_action.start_time,
+                    end_time=now if action_status.state != ActionState.RUNNING else None,
+                    update_time=now if action_status.state == ActionState.RUNNING else None,
+                    completed_status=completed_status,
+                )
             )
-        )
 
     @record_success_fail_telemetry_event(metric_name="sync_asset_outputs")  # type: ignore
     def _sync_asset_outputs(

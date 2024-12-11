@@ -14,13 +14,13 @@ import sys
 
 from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
 
-from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
-from deadline_worker_agent.startup import config as config_mod
+from deadline_worker_agent.config import config as config_mod
+from deadline_worker_agent.config.cli_args import ParsedCommandLineArguments
 
 
 @pytest.fixture(autouse=True)
 def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
-    """Patches the WorkerSettings class import in the deadline_worker_agent.startup.config module
+    """Patches the WorkerSettings class import in the deadline_worker_agent.config.config module
     module and returns the Mock instance"""
 
     defaults = {

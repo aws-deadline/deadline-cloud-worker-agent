@@ -19,14 +19,14 @@ from pathlib import Path
 import boto3
 import requests
 
+from .aws_credentials import WorkerBoto3Session, AwsCredentialsRefresher
 from .boto import DeadlineClient
+from .config import JobsRunAsUserOverride
 from .errors import ServiceShutdown
+from .log_messages import AwsCredentialsLogEvent, AwsCredentialsLogEventOp
 from .metrics import HostMetricsLogger
 from .scheduler import WorkerScheduler
 from .sessions import Session
-from .startup.config import JobsRunAsUserOverride
-from .aws_credentials import WorkerBoto3Session, AwsCredentialsRefresher
-from .log_messages import AwsCredentialsLogEvent, AwsCredentialsLogEventOp
 
 logger = getLogger(__name__)
 

@@ -29,6 +29,8 @@ from deadline_worker_agent.scheduler.session_queue import (
     SessionActionQueue,
     SyncInputJobAttachmentsQueueEntry,
     SyncInputJobAttachmentsStepDependenciesQueueEntry,
+    AttachmentDownloadActionQueueEntry,
+    AttachmentUploadActionQueueEntry,
 )
 
 from deadline_worker_agent.sessions.actions import (
@@ -37,6 +39,8 @@ from deadline_worker_agent.sessions.actions import (
     RunStepTaskAction,
     SessionActionDefinition,
     SyncInputJobAttachmentsAction,
+    AttachmentDownloadAction,
+    AttachmentUploadAction,
 )
 from deadline_worker_agent.sessions.errors import (
     EnvironmentDetailsError,
@@ -60,15 +64,14 @@ from deadline_worker_agent.api_models import (
     EnvironmentAction,
     TaskRunAction,
     SyncInputJobAttachmentsAction as SyncInputJobAttachmentsActionBoto,
+    AttachmentDownloadAction as AttachmentDownloadActionBoto,
+    AttachmentUploadAction as AttachmentUploadActionBoto,
 )
+from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 
 
 _TEST_ENVIRONMENT_SCRIPT = EnvironmentScript(
     actions=EnvironmentActions(onEnter=Action(command="test"))
-)
-_TEST_ENVIRONMENT = Environment(
-    name="TestEnv",
-    script=_TEST_ENVIRONMENT_SCRIPT,
 )
 _TEST_STEP_TEMPLATE = StepTemplate(
     name="TestStep", script=StepScript(actions=StepActions(onRun=Action(command="test.exe")))
@@ -164,6 +167,34 @@ class TestSessionActionQueueDequeue:
                 ),
                 id="task run",
             ),
+        ],
+    )
+    def test(
+        self,
+        action: EnvironmentQueueEntry | TaskRunQueueEntry,
+        expected: SessionActionDefinition,
+        session_queue: SessionActionQueue,
+    ) -> None:
+        # GIVEN
+        session_queue._actions = [action]
+        session_queue._actions_by_id[action.definition["sessionActionId"]] = action
+
+        # WHEN
+        result = session_queue.dequeue()
+
+        # THEN
+        assert type(result) is type(expected)
+        assert result.id == expected.id  # type: ignore
+        assert len(session_queue._actions) == 0
+        assert len(session_queue._actions_by_id) == 0
+
+    @pytest.mark.skipif(
+        ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test will be removed after releasing the asset sync job user feature",
+    )
+    @pytest.mark.parametrize(
+        "action, expected",
+        [
             pytest.param(
                 SyncInputJobAttachmentsQueueEntry(
                     Mock(),  # cancel event
@@ -204,10 +235,12 @@ class TestSessionActionQueueDequeue:
             ),
         ],
     )
-    def test(
+    def test_sync_input_job_attachments_actions(
         self,
-        action: EnvironmentQueueEntry | TaskRunQueueEntry,
-        expected: SessionActionDefinition,
+        action: (
+            SyncInputJobAttachmentsQueueEntry | SyncInputJobAttachmentsStepDependenciesQueueEntry
+        ),
+        expected: SyncInputJobAttachmentsAction,
         session_queue: SessionActionQueue,
     ) -> None:
         # GIVEN
@@ -222,6 +255,124 @@ class TestSessionActionQueueDequeue:
         assert result.id == expected.id  # type: ignore
         assert len(session_queue._actions) == 0
         assert len(session_queue._actions_by_id) == 0
+
+    @pytest.mark.skipif(
+        not ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test will be run unconditionally after releasing the asset sync job user featuer",
+    )
+    @pytest.mark.parametrize(
+        "action, expected",
+        [
+            pytest.param(
+                AttachmentDownloadActionQueueEntry(
+                    Mock(),  # cancel event
+                    AttachmentDownloadActionBoto(
+                        sessionActionId="id",
+                        actionType="SYNC_INPUT_JOB_ATTACHMENTS",
+                    ),
+                ),
+                AttachmentDownloadAction(
+                    id="id",
+                    session_id="session-1234",
+                    job_attachment_details=JobAttachmentDetails(
+                        job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
+                        manifests=[],
+                    ),
+                ),
+                id="attachment download job input",
+            ),
+            pytest.param(
+                AttachmentDownloadActionQueueEntry(
+                    Mock(),  # cancel event
+                    AttachmentDownloadActionBoto(
+                        sessionActionId="id",
+                        actionType="SYNC_INPUT_JOB_ATTACHMENTS",
+                        stepId="step-2",
+                    ),
+                ),
+                AttachmentDownloadAction(
+                    id="id",
+                    session_id="session-1234",
+                    step_details=StepDetails(
+                        step_template=_TEST_STEP_TEMPLATE,
+                        dependencies=["step-1"],
+                        step_id="step-1234",
+                    ),
+                ),
+                id="attachment download step dependency",
+            ),
+            pytest.param(
+                AttachmentUploadActionQueueEntry(
+                    Mock(),  # cancel event
+                    AttachmentUploadActionBoto(
+                        sessionActionId="id",
+                        actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
+                        stepId="step-1",
+                        taskId="task-1",
+                    ),
+                ),
+                AttachmentUploadAction(
+                    id="id",
+                    session_id="session-1234",
+                    step_id="step-1",
+                    task_id="task-1",
+                ),
+                id="attachment upload action",
+            ),
+        ],
+    )
+    def test_attachments_transfer_actions(
+        self,
+        action: AttachmentDownloadActionQueueEntry | AttachmentUploadActionQueueEntry,
+        expected: AttachmentDownloadAction | AttachmentUploadAction,
+        session_queue: SessionActionQueue,
+    ) -> None:
+        # GIVEN
+        session_queue._actions = [action]
+        session_queue._actions_by_id[action.definition["sessionActionId"]] = action
+
+        # WHEN
+        result = session_queue.dequeue()
+
+        # THEN
+        assert type(result) is type(expected)
+        assert result.id == expected.id  # type: ignore
+        assert len(session_queue._actions) == 0
+        assert len(session_queue._actions_by_id) == 0
+
+    def test_attachment_upload_insert_dequeue(
+        self,
+        session_queue: SessionActionQueue,
+    ) -> None:
+        # GIVEN
+        action = EnvironmentQueueEntry(
+            Mock(),  # cancel event
+            EnvironmentAction(
+                sessionActionId="id-env", actionType="ENV_ENTER", environmentId="envid"
+            ),
+        )
+        session_queue._actions = [action]
+        session_queue._actions_by_id[action.definition["sessionActionId"]] = action
+
+        upload_action = AttachmentUploadActionBoto(
+            sessionActionId="id-upload",
+            actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
+            stepId="step-1",
+            taskId="task-1",
+        )
+
+        # WHEN
+        session_queue.insert_front(action=upload_action)
+
+        # THEN
+        assert len(session_queue._actions) == 2
+        assert "id-upload" in session_queue._actions_by_id
+
+        # WHEN
+        next_action = session_queue.dequeue()
+
+        # THEN
+        assert type(next_action) is AttachmentUploadAction
 
     @pytest.mark.parametrize(
         argnames=("queue_entry", "error_type"),
@@ -519,7 +670,9 @@ class TestIdentifiers:
             EnvironmentQueueEntry
             | TaskRunQueueEntry
             | SyncInputJobAttachmentsQueueEntry
-            | SyncInputJobAttachmentsStepDependenciesQueueEntry,
+            | SyncInputJobAttachmentsStepDependenciesQueueEntry
+            | AttachmentDownloadActionQueueEntry
+            | AttachmentUploadActionQueueEntry
         ],
         expected_identifiers: list[EntityIdentifier] | None,
     ):
