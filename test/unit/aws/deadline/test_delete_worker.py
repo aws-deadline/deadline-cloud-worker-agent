@@ -12,8 +12,8 @@ from deadline_worker_agent.aws.deadline import (
 )
 
 import deadline_worker_agent.aws.deadline as deadline_mod
-from deadline_worker_agent.startup.config import Configuration
-from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
+from deadline_worker_agent.config import Configuration
+from deadline_worker_agent.config.cli_args import ParsedCommandLineArguments
 
 
 @pytest.fixture

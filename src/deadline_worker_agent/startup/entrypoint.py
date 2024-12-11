@@ -16,27 +16,27 @@ from typing import Optional
 from pathlib import Path
 
 from ..api_models import WorkerStatus
-from ..boto import DEADLINE_BOTOCORE_CONFIG, OTHER_BOTOCORE_CONFIG, DeadlineClient
-from ..errors import ServiceShutdown
-from ..linux.capabilities import drop_kill_cap_from_inheritable
-from ..log_sync.cloudwatch import stream_cloudwatch_logs
-from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger
-from ..worker import Worker
-from .bootstrap import bootstrap_worker
-from .capabilities import detect_system_capabilities
-from .config import Configuration, ConfigurationError
-from ..log_messages import (
-    AgentInfoLogEvent,
-    LogRecordStringTranslationFilter,
-    WorkerLogEvent,
-    WorkerLogEventOp,
-)
 from ..aws.deadline import (
     update_worker,
     update_worker_schedule,
     record_worker_start_telemetry_event,
     record_uncaught_exception_telemetry_event,
 )
+from ..boto import DEADLINE_BOTOCORE_CONFIG, OTHER_BOTOCORE_CONFIG, DeadlineClient
+from ..capabilities import detect_system_capabilities
+from ..config import Configuration, ConfigurationError
+from ..errors import ServiceShutdown
+from ..linux.capabilities import drop_kill_cap_from_inheritable
+from ..log_messages import (
+    AgentInfoLogEvent,
+    LogRecordStringTranslationFilter,
+    WorkerLogEvent,
+    WorkerLogEventOp,
+)
+from ..log_sync.cloudwatch import stream_cloudwatch_logs
+from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger
+from ..worker import Worker
+from .bootstrap import bootstrap_worker
 
 __all__ = ["entrypoint"]
 _logger = logging.getLogger(__name__)

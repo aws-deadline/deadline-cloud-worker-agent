@@ -47,6 +47,7 @@ EnvironmentActionType = Literal["ENV_ENTER", "ENV_EXIT"]
 StepActionType = Literal["TASK_RUN"]  # noqa
 SyncInputJobAttachmentsActionType = Literal["SYNC_INPUT_JOB_ATTACHMENTS"]  # noqa
 AttachmentDownloadActionType = Literal["SYNC_INPUT_JOB_ATTACHMENTS"]  # noqa
+AttachmentUploadActionType = Literal["SYNC_OUTPUT_JOB_ATTACHMENTS"]  # noqa
 CompletedActionStatus = Literal["SUCCEEDED", "FAILED", "INTERRUPTED", "CANCELED", "NEVER_ATTEMPTED"]
 
 
@@ -92,6 +93,14 @@ class AttachmentDownloadAction(TypedDict):
     sessionActionId: str
     actionType: AttachmentDownloadActionType
     stepId: NotRequired[str]
+
+
+# This action is not from API, kepping it here for all action models to be in one place
+class AttachmentUploadAction(TypedDict):
+    sessionActionId: str
+    actionType: AttachmentUploadActionType
+    stepId: str
+    taskId: str
 
 
 class LogConfiguration(TypedDict):

@@ -15,6 +15,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from deadline_worker_agent.api_models import WorkerStatus
+from deadline_worker_agent.config import Configuration, ConfigurationError
 from deadline_worker_agent.errors import ServiceShutdown
 from deadline_worker_agent.log_sync.loggers import ROOT_LOGGER
 from deadline_worker_agent.startup import entrypoint as entrypoint_mod
@@ -24,7 +25,6 @@ from deadline_worker_agent.startup.bootstrap import (
     WorkerPersistenceInfo,
 )
 from deadline_worker_agent.aws.deadline import WorkerLogConfig
-from deadline_worker_agent.startup.config import Configuration, ConfigurationError
 from deadline_worker_agent.log_messages import WorkerLogEvent
 
 entrypoint = entrypoint_mod.entrypoint

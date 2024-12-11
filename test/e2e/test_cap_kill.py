@@ -78,7 +78,8 @@ def test_cap_kill_not_inherited_by_running_jobs(
         max_retries_per_task=1,
         template={
             "specificationVersion": "jobtemplate-2023-09",
-            "name": "JobSessionActionTimeoutFail",
+            "name": "Try to send cross-user Linux signals",
+            "description": "Tests that CAP_KILL is not inherited from the worker agent",
             "steps": [
                 {
                     "hostRequirements": {
@@ -120,10 +121,22 @@ def test_cap_kill_not_inherited_by_running_jobs(
         "logs",
         config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
     )
+    possible_error_messages: list[str] = [
+        # this is the output format from the "kill" program which will be the format in
+        # openjd-sessions versions after 0.9.0
+        # (see https://github.com/OpenJobDescription/openjd-sessions-for-python/commit/84008be79e80cdd9b06095933ea0c58baee89c92#diff-7cf6bc1778d45b770b1736b74b151f26d01d1cd26611f36df4c689e892aefbc6R379)
+        f"kill: sending signal to {sleep_job_in_bg_pid} failed: Operation not permitted",
+        # this is the output format in openjd-sessions 0.9.0 and earlier (used "kill" bash built-in
+        # and not exec which uses the kill program)
+        f"kill: ({sleep_job_in_bg_pid}) - Operation not permitted",
+    ]
+    possible_error_message_re_pattern = (
+        "("
+        + "|".join(re.escape(possible_error_msg) for possible_error_msg in possible_error_messages)
+        + ")"
+    )
     job.assert_single_task_log_contains(
         deadline_client=deadline_client,
         logs_client=logs_client,
-        expected_pattern=re.escape(
-            f"kill: sending signal to {sleep_job_in_bg_pid} failed: Operation not permitted"
-        ),
+        expected_pattern=possible_error_message_re_pattern,
     )

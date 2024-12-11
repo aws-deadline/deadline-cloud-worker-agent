@@ -16,6 +16,7 @@ from ..api_models import (
     EnvironmentAction as EnvironmentActionApiModel,
     SyncInputJobAttachmentsAction as SyncInputJobAttachmentsActionApiModel,
     AttachmentDownloadAction as AttachmentDownloadActionApiModel,
+    AttachmentUploadAction as AttachmentUploadActionApiModel,
     TaskRunAction as TaskRunActionApiModel,
     EntityIdentifier,
     EnvironmentDetailsIdentifier,
@@ -31,6 +32,7 @@ from ..sessions.actions import (
     RunStepTaskAction,
     SessionActionDefinition,
     SyncInputJobAttachmentsAction,
+    AttachmentUploadAction,
     AttachmentDownloadAction,
 )
 from .session_action_status import SessionActionStatus
@@ -52,6 +54,7 @@ if TYPE_CHECKING:
         TaskRunActionApiModel,
         SyncInputJobAttachmentsActionApiModel,
         AttachmentDownloadActionApiModel,
+        AttachmentUploadActionApiModel,
     )
 else:
     D = TypeVar("D")
@@ -78,6 +81,7 @@ SyncInputJobAttachmentsQueueEntry = SessionActionQueueEntry[SyncInputJobAttachme
 SyncInputJobAttachmentsStepDependenciesQueueEntry = SessionActionQueueEntry[
     SyncInputJobAttachmentsActionApiModel
 ]
+AttachmentUploadActionQueueEntry = SessionActionQueueEntry[AttachmentUploadActionApiModel]
 AttachmentDownloadActionQueueEntry = SessionActionQueueEntry[AttachmentDownloadActionApiModel]
 AttachmentDownloadActionStepDependenciesQueueEntry = SessionActionQueueEntry[
     AttachmentDownloadActionApiModel
@@ -102,6 +106,7 @@ class SessionActionQueue:
         | TaskRunQueueEntry
         | SyncInputJobAttachmentsQueueEntry
         | SyncInputJobAttachmentsStepDependenciesQueueEntry
+        | AttachmentUploadActionQueueEntry
         | AttachmentDownloadActionQueueEntry
         | AttachmentDownloadActionStepDependenciesQueueEntry
     ]
@@ -111,6 +116,7 @@ class SessionActionQueue:
         | TaskRunQueueEntry
         | SyncInputJobAttachmentsQueueEntry
         | SyncInputJobAttachmentsStepDependenciesQueueEntry
+        | AttachmentUploadActionQueueEntry
         | AttachmentDownloadActionQueueEntry
         | AttachmentDownloadActionStepDependenciesQueueEntry,
     ]
@@ -287,6 +293,32 @@ class SessionActionQueue:
                 )
             )
 
+    def insert_front(
+        self,
+        *,
+        action: AttachmentUploadActionApiModel,
+    ) -> None:
+        """Inserts an attachment upload action at the front of the queue
+
+        Parameters
+        ----------
+        action : AttachmentUploadActionApiModel
+            The attachment upload action to be inserted to the front of queue
+        """
+        action_type = action["actionType"]
+        action_id = action["sessionActionId"]
+        cancel_event = Event()
+
+        action = cast(AttachmentUploadActionApiModel, action)
+        queue_entry = AttachmentUploadActionQueueEntry(
+            cancel=cancel_event,
+            definition=action,
+        )
+
+        self._actions.insert(0, queue_entry)
+        self._actions_by_id[action_id] = queue_entry
+        logger.debug("Successfully inserted front of queue: %s action: %s", action_type, action_id)
+
     def replace(
         self,
         *,
@@ -295,6 +327,7 @@ class SessionActionQueue:
             | TaskRunActionApiModel
             | SyncInputJobAttachmentsActionApiModel
             | AttachmentDownloadActionApiModel
+            | AttachmentUploadActionApiModel
         ],
     ) -> None:
         """Update the queue's actions"""
@@ -305,6 +338,7 @@ class SessionActionQueue:
             | SyncInputJobAttachmentsStepDependenciesQueueEntry
             | AttachmentDownloadActionQueueEntry
             | AttachmentDownloadActionStepDependenciesQueueEntry
+            | AttachmentUploadActionQueueEntry
         ] = []
 
         action_ids_added = list[str]()
@@ -477,6 +511,19 @@ class SessionActionQueue:
                     task_parameter_values=task_parameters,
                     task_id=action_definition["taskId"],
                 )
+            elif action_type == "SYNC_OUTPUT_JOB_ATTACHMENTS":
+                action_queue_entry = cast(AttachmentUploadActionQueueEntry, action_queue_entry)
+                action_definition = action_queue_entry.definition
+                step_id = action_definition["stepId"]
+                task_id = action_definition["taskId"]
+
+                next_action = AttachmentUploadAction(
+                    id=action_id,
+                    session_id=self._session_id,
+                    step_id=step_id,
+                    task_id=task_id,
+                )
+
             elif action_type == "SYNC_INPUT_JOB_ATTACHMENTS":
                 action_definition = action_queue_entry.definition
                 if ASSET_SYNC_JOB_USER_FEATURE:

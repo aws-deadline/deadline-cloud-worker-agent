@@ -14,9 +14,9 @@ from pydantic import ValidationError
 
 from openjd.sessions import PosixSessionUser, SessionUser
 
-from ..errors import ConfigurationError
-from .capabilities import Capabilities
+from ..capabilities import Capabilities
 from .cli_args import ParsedCommandLineArguments, get_argument_parser
+from .errors import ConfigurationError
 from .settings import WorkerSettings
 
 if sys.platform == "win32":
@@ -244,7 +244,7 @@ class Configuration:
         Arguments:
             logger: logging.Logger
                 An optional logger to log the configuration to. If not specified, this uses
-                the `deadline_worker_agent.startup.config` logger.
+                the `deadline_worker_agent.config` logger.
             level: int
                 The logging level to use. This defaults to `DEBUG`.
         """
