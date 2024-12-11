@@ -11,10 +11,9 @@ from pathlib import Path
 
 from pydantic import ConstrainedStr
 
-from deadline_worker_agent.startup.capabilities import Capabilities
-import deadline_worker_agent.startup.settings as settings_mod
-from deadline_worker_agent.startup.settings import WorkerSettings
-from deadline_worker_agent.startup import settings as settings_mod
+import deadline_worker_agent.config.settings as settings_mod
+from deadline_worker_agent.capabilities import Capabilities
+from deadline_worker_agent.config.settings import WorkerSettings
 
 
 @pytest.fixture(autouse=True)

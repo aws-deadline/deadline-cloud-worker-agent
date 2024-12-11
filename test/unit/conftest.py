@@ -43,7 +43,7 @@ from deadline_worker_agent.sessions.job_entities.job_attachment_details import (
     JobAttachmentDetails,
     JobAttachmentManifestProperties,
 )
-from deadline_worker_agent.startup.config import JobsRunAsUserOverride
+from deadline_worker_agent.config import JobsRunAsUserOverride
 
 VFS_DEFAULT_INSTALL_PATH = "/opt/deadline_vfs"
 
@@ -438,14 +438,14 @@ def host_properties(hostname: str) -> HostProperties:
 
 @pytest.fixture
 def mock_config_file_not_found() -> Generator[MagicMock, None, None]:
-    """Fixture that mocks deadline_worker_agent.startup.config_file.ConfigFile.load() to raise a
+    """Fixture that mocks deadline_worker_agent.config.config_file.ConfigFile.load() to raise a
     FileNotFound error.
 
     This can be used to avoid tests being impacted by the contents of a worker agent config file
     present in the development environment.
     """
     with patch(
-        "deadline_worker_agent.startup.config_file.ConfigFile.load",
+        "deadline_worker_agent.config.config_file.ConfigFile.load",
         side_effect=FileNotFoundError(),
     ) as mock_config_file_load:
         yield mock_config_file_load

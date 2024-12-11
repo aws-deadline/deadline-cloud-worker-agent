@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import BaseSettings, Field
 from pydantic.env_settings import SettingsSourceCallable
 
-from .capabilities import Capabilities
+from ..capabilities import Capabilities
 from .config_file import ConfigFile
 
 import os

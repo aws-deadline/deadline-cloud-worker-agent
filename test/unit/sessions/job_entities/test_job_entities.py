@@ -44,7 +44,7 @@ from deadline_worker_agent.api_models import (
     StepDetailsData,
     StepDetailsIdentifier,
 )
-from deadline_worker_agent.startup.config import JobsRunAsUserOverride
+from deadline_worker_agent.config import JobsRunAsUserOverride
 from deadline_worker_agent.sessions.job_entities import (
     EnvironmentDetails,
     JobAttachmentDetails,

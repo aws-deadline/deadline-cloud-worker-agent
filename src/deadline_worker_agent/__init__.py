@@ -4,7 +4,7 @@
 
 from ._version import __version__  # noqa
 from .installer import install
-from .startup.config import Configuration
+from .config import Configuration
 from .startup.entrypoint import entrypoint
 from .worker import Worker
 
