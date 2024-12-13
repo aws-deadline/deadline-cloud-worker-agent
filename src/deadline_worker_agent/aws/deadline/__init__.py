@@ -17,8 +17,8 @@ from openjd.model import version as openjd_model_version
 from openjd.sessions import version as openjd_sessions_version
 
 from ..._version import __version__ as version  # noqa
-from ...startup.config import Configuration
-from ...startup.capabilities import Capabilities
+from ...config import Configuration
+from ...capabilities import Capabilities
 from ...boto import DeadlineClient, NoOverflowExponentialBackoff as Backoff
 from ...api_models import (
     AssumeFleetRoleForWorkerResponse,

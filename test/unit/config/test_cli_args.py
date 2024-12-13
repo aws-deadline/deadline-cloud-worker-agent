@@ -8,7 +8,7 @@ from argparse import ArgumentParser
 import pytest
 import os
 
-from deadline_worker_agent.startup import cli_args as cli_args_mod
+from deadline_worker_agent.config import cli_args as cli_args_mod
 
 
 class TestArgumentParser:

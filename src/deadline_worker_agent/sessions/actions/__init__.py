@@ -7,6 +7,7 @@ from .openjd_action import OpenjdAction
 from .run_step_task import RunStepTaskAction
 from .sync_input_job_attachments import SyncInputJobAttachmentsAction
 from .run_attachment_download import AttachmentDownloadAction
+from .run_attachment_upload import AttachmentUploadAction
 
 __all__ = [
     "EnterEnvironmentAction",
@@ -16,4 +17,5 @@ __all__ = [
     "SessionActionDefinition",
     "SyncInputJobAttachmentsAction",
     "AttachmentDownloadAction",
+    "AttachmentUploadAction",
 ]

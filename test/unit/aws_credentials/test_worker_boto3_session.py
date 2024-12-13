@@ -10,8 +10,8 @@ from deadline_worker_agent.aws.deadline import DeadlineRequestUnrecoverableError
 import deadline_worker_agent.aws_credentials.worker_boto3_session as worker_boto3_session_mod
 from deadline_worker_agent.aws_credentials.worker_boto3_session import WorkerBoto3Session
 from deadline_worker_agent.boto import DEADLINE_BOTOCORE_CONFIG
-from deadline_worker_agent.startup.cli_args import ParsedCommandLineArguments
-from deadline_worker_agent.startup.config import Configuration
+from deadline_worker_agent.config import Configuration
+from deadline_worker_agent.config.cli_args import ParsedCommandLineArguments
 
 
 @pytest.fixture

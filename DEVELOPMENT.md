@@ -18,6 +18,10 @@ Files of note include:
 
 This contains logic for boto3 and botocore.
 
+### `src/deadline_worker_agent/config`
+
+This Python sub-package contains modules for the worker agent's configuration settings system.
+
 ### `src/deadline_worker_agent/startup`
 
 This contains logic for the startup phase in the Worker Agent's lifecycle.

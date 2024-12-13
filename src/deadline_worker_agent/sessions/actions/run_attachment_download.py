@@ -5,12 +5,9 @@ from concurrent.futures import (
     Executor,
 )
 import os
-from pathlib import Path
 import sys
-import json
-from shlex import quote
+from pathlib import Path
 from logging import LoggerAdapter
-import sysconfig
 from typing import Any, TYPE_CHECKING, Optional
 from dataclasses import asdict
 
@@ -46,7 +43,6 @@ from openjd.model.v2023_09 import (
 )
 from openjd.model import ParameterValue
 
-from ..session import Session
 from ...log_messages import SessionActionLogKind
 
 
@@ -91,32 +87,48 @@ class AttachmentDownloadAction(OpenjdAction):
         self._step_details = step_details
         self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
-    def set_step_script(self, manifests, path_mapping, s3_settings) -> None:
-        # TODO - update to run python as embedded file
-        profile = os.environ.get("AWS_PROFILE")
-        deadline_path = os.path.join(Path(sysconfig.get_path("scripts")), "deadline")
+    def set_step_script(self, manifests: list[str], s3_settings: JobAttachmentS3Settings) -> None:
+        """Sets the step script for the action
 
-        script = "#!/usr/bin/env bash\n\n{} attachment download -m {} --path-mapping-rules {} --s3-root-uri {}  --profile {}".format(
-            deadline_path,
-            " -m ".join(quote(v) for v in manifests),
-            quote(path_mapping),
+        Parameters
+        ----------
+        manifests : list[str]
+            The job attachment manifest paths
+        s3_settings : JobAttachmentS3Settings
+            The job attachment S3 settings
+        """
+        args = [
+            "{{ Task.File.AttachmentDownload }}",
+            "-pm",
+            "{{ Session.PathMappingRulesFile }}",
+            "-s3",
             s3_settings.to_s3_root_uri(),
-            profile,
+            "-m",
+        ]
+        args.extend(manifests)
+
+        executable_path = Path(sys.executable)
+        python_path = executable_path.parent / executable_path.name.lower().replace(
+            "pythonservice.exe", "python.exe"
         )
 
-        self._step_script = StepScript_2023_09(
-            actions=StepActions_2023_09(
-                onRun=Action_2023_09(command="{{ Task.File.AttachmentDownload }}")
-            ),
-            embeddedFiles=[
-                EmbeddedFileText_2023_09(
-                    name="AttachmentDownload",
-                    type=EmbeddedFileTypes_2023_09.TEXT,
-                    runnable=True,
-                    data=script,
-                )
-            ],
-        )
+        with open(Path(__file__).parent / "scripts" / "attachment_download.py", "r") as f:
+            self._step_script = StepScript_2023_09(
+                actions=StepActions_2023_09(
+                    onRun=Action_2023_09(
+                        command=str(python_path),
+                        args=args,
+                    )
+                ),
+                embeddedFiles=[
+                    EmbeddedFileText_2023_09(
+                        name="AttachmentDownload",
+                        filename="download.py",
+                        type=EmbeddedFileTypes_2023_09.TEXT,
+                        data=f.read(),
+                    )
+                ],
+            )
 
     def __eq__(self, other: Any) -> bool:
         return (
@@ -173,6 +185,7 @@ class AttachmentDownloadAction(OpenjdAction):
             raise RuntimeError(
                 "Job attachments must be synchronized before downloading Step dependencies."
             )
+
         step_dependencies = self._step_details.dependencies if self._step_details else []
 
         assert job_attachment_settings.s3_bucket_name is not None
@@ -212,7 +225,7 @@ class AttachmentDownloadAction(OpenjdAction):
         # returns root path to PathMappingRule mapping
         dynamic_mapping_rules: dict[str, PathMappingRule] = (
             session._asset_sync.generate_dynamic_path_mapping(
-                session_dir=session._session.working_directory,
+                session_dir=session.working_directory,
                 attachments=attachments,
             )
         )
@@ -220,7 +233,7 @@ class AttachmentDownloadAction(OpenjdAction):
         # Aggregate manifests (with step step dependency handling)
         merged_manifests_by_root: dict[str, BaseAssetManifest] = (
             session._asset_sync._aggregate_asset_root_manifests(
-                session_dir=session._session.working_directory,
+                session_dir=session.working_directory,
                 s3_settings=s3_settings,
                 queue_id=session._queue_id,
                 job_id=session._queue._job_id,
@@ -245,39 +258,30 @@ class AttachmentDownloadAction(OpenjdAction):
         # Open Job Description session implementation details -- path mappings are sorted.
         # bisect.insort only supports the 'key' arg in 3.10 or later, so
         # we first extend the list and sort it afterwards.
-        if session._session._path_mapping_rules:
-            session._session._path_mapping_rules.extend(
+        if session.openjd_session._path_mapping_rules:
+            session.openjd_session._path_mapping_rules.extend(
                 OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings
             )
         else:
-            session._session._path_mapping_rules = [
+            session.openjd_session._path_mapping_rules = [
                 OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings
             ]
 
         # Open Job Description Sessions sort the path mapping rules based on length of the parts make
         # rules that are subsets of each other behave in a predictable manner. We must
         # sort here since we're modifying that internal list appending to the list.
-        session._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
-
-        # =========================== TO BE DELETED ===========================
-        path_mapping_file_path: str = os.path.join(
-            session._session.working_directory, "path_mapping"
+        session.openjd_session._path_mapping_rules.sort(
+            key=lambda rule: -len(rule.source_path.parts)
         )
-        for rule in job_attachment_path_mappings:
-            rule["source_path"] = rule["destination_path"]
 
-        with open(path_mapping_file_path, "w", encoding="utf8") as f:
-            f.write(json.dumps([rule for rule in job_attachment_path_mappings]))
-        # =========================== TO BE DELETED ===========================
-
-        manifest_paths = session._asset_sync._check_and_write_local_manifests(
+        manifest_paths_by_root = session._asset_sync._check_and_write_local_manifests(
             merged_manifests_by_root=merged_manifests_by_root,
-            manifest_write_dir=str(session._session.working_directory),
+            manifest_write_dir=str(session.working_directory),
         )
+        session.manifest_paths_by_root = manifest_paths_by_root
 
         self.set_step_script(
-            manifests=manifest_paths,
-            path_mapping=path_mapping_file_path,
+            manifests=manifest_paths_by_root.values(),  # type: ignore
             s3_settings=s3_settings,
         )
         assert self._step_script is not None
@@ -327,7 +331,7 @@ class AttachmentDownloadAction(OpenjdAction):
             assert session._asset_sync is not None
             session._asset_sync._launch_vfs(
                 s3_settings=s3_settings,
-                session_dir=session._session.working_directory,
+                session_dir=session.working_directory,
                 fs_permission_settings=fs_permission_settings,
                 merged_manifests_by_root=merged_manifests_by_root,
                 os_env_vars=dict(os.environ),

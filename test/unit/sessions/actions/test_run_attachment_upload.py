@@ -5,8 +5,9 @@ from pathlib import Path
 import os
 import sys
 import tempfile
+import json
 from typing import TYPE_CHECKING, Generator
-from unittest.mock import MagicMock, Mock, patch, ANY
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -57,6 +58,11 @@ def session_dir(session_id: str):
 
 
 @pytest.fixture
+def diff_dir(session_dir: str):
+    return os.path.join(session_dir, "diff")
+
+
+@pytest.fixture
 def mock_openjd_session_cls(session_dir: str) -> Generator[MagicMock, None, None]:
     """Mocks the Worker Agent Session module's import of the Open Job Description Session class"""
     with patch.object(session_mod, "OPENJDSession") as mock_openjd_session:
@@ -72,17 +78,16 @@ def action_id() -> str:
 @pytest.fixture
 def action(
     action_id: str,
-    job_attachment_details: JobAttachmentDetails,
-) -> actions_module.AttachmentDownloadAction:
-    return actions_module.AttachmentDownloadAction(
-        id=action_id,
-        session_id="session-1234",
-        job_attachment_details=job_attachment_details,
+    step_id: str,
+    task_id: str,
+) -> actions_module.AttachmentUploadAction:
+    return actions_module.AttachmentUploadAction(
+        id=action_id, session_id="session-1234", step_id=step_id, task_id=task_id
     )
 
 
 class TestStart:
-    """Tests for AttachmentDownloadAction.start()"""
+    """Tests for AttachmentUploadAction.start()"""
 
     QUEUE_ID = "queue-test"
     JOB_ID = "job-test"
@@ -91,7 +96,6 @@ class TestStart:
     def session(
         self,
         session_id: str,
-        session_dir: str,
         job_details: JobDetails,
         job_user: SessionUser,
         job_attachment_details: JobAttachmentDetails,
@@ -103,28 +107,28 @@ class TestStart:
         session._job_attachment_details = job_attachment_details
         session._os_user = job_user
         session.openjd_session = mock_openjd_session_cls
-        session.working_directory = session_dir
         session._queue_id = TestStart.QUEUE_ID
         session._queue._job_id = TestStart.JOB_ID
+        session.manifest_paths_by_root = {
+            "root1": "manifest1.json",
+            "root2": "manifest2.json",
+        }
+
         return session
 
-    @pytest.fixture(autouse=True)
-    def mock_asset_sync(self, session: Mock) -> Generator[MagicMock, None, None]:
-        with patch.object(session, "_asset_sync") as mock_asset_sync:
-            yield mock_asset_sync
-
-    def test_attachment_download_action_start(
+    def test_attachment_upload_action_start(
         self,
         executor: Mock,
         session: Mock,
-        action: actions_module.AttachmentDownloadAction,
-        session_dir: str,
-        mock_asset_sync: MagicMock,
+        action: actions_module.AttachmentUploadAction,
         job_details: JobDetails,
         python_path: str,
+        step_id: str,
+        task_id: str,
+        action_id: str,
     ) -> None:
         """
-        Tests that AttachmentDownloadAction.start() calls AssetSync functions to prepare input
+        Tests that AttachmentUploadAction.start() calls AssetSync functions to prepare input
         for constructing step script to run openjd action
         """
         # GIVEN
@@ -132,34 +136,16 @@ class TestStart:
         assert job_details.job_attachment_settings.s3_bucket_name is not None
         assert job_details.job_attachment_settings.root_prefix is not None
 
-        # WHEN
-        action.start(session=session, executor=executor)
         s3_settings = JobAttachmentS3Settings(
             s3BucketName=job_details.job_attachment_settings.s3_bucket_name,
             rootPrefix=job_details.job_attachment_settings.root_prefix,
         )
 
-        mock_asset_sync._aggregate_asset_root_manifests.assert_called_once_with(
-            session_dir=session_dir,
-            s3_settings=s3_settings,
-            queue_id=TestStart.QUEUE_ID,
-            job_id=TestStart.JOB_ID,
-            attachments=ANY,
-            step_dependencies=[],
-            dynamic_mapping_rules=ANY,
-            storage_profiles_path_mapping_rules={},
-        )
-        mock_asset_sync.generate_dynamic_path_mapping.assert_called_once_with(
-            session_dir=session_dir,
-            attachments=ANY,
-        )
-        mock_asset_sync._check_and_write_local_manifests.assert_called_once_with(
-            merged_manifests_by_root=ANY,
-            manifest_write_dir=session_dir,
-        )
+        # WHEN
+        action.start(session=session, executor=executor)
 
         with open(
-            Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_download.py",
+            Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_upload.py",
             "r",
         ) as f:
             assert action._step_script == StepScript_2023_09(
@@ -167,20 +153,21 @@ class TestStart:
                     onRun=Action_2023_09(
                         command=python_path,
                         args=[
-                            "{{ Task.File.AttachmentDownload }}",
+                            "{{ Task.File.AttachmentUpload }}",
                             "-pm",
                             "{{ Session.PathMappingRulesFile }}",
                             "-s3",
                             s3_settings.to_s3_root_uri(),
-                            "-m",
+                            "-mm",
+                            json.dumps(session.manifest_paths_by_root),
                         ],
                     )
                 ),
                 embeddedFiles=[
                     EmbeddedFileText_2023_09(
-                        name="AttachmentDownload",
+                        name="AttachmentUpload",
                         type=EmbeddedFileTypes_2023_09.TEXT,
-                        filename="download.py",
+                        filename="upload.py",
                         data=f.read(),
                     )
                 ],
@@ -189,4 +176,9 @@ class TestStart:
         session.run_task.assert_called_once_with(
             step_script=action._step_script,
             task_parameter_values=dict[str, ParameterValue](),
+            os_env_vars={
+                "DEADLINE_SESSIONACTION_ID": action_id,
+                "DEADLINE_STEP_ID": step_id,
+                "DEADLINE_TASK_ID": task_id,
+            },
         )

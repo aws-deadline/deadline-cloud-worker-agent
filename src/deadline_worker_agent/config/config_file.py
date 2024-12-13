@@ -13,8 +13,8 @@ try:
 except ModuleNotFoundError:
     from tomli import load as load_toml, TOMLDecodeError
 
-from ..errors import ConfigurationError
-from .capabilities import Capabilities
+from ..capabilities import Capabilities
+from .errors import ConfigurationError
 
 
 # Default path for the Worker configuration file keyed on the value of sys.platform

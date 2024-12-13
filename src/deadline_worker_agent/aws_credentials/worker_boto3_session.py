@@ -7,7 +7,7 @@ from typing import Any, cast
 from botocore.utils import JSONFileCache
 
 from ..boto import DEADLINE_BOTOCORE_CONFIG, Session
-from ..startup.config import Configuration
+from ..config import Configuration
 from ..aws.deadline import (
     DeadlineRequestUnrecoverableError,
     assume_fleet_role_for_worker,

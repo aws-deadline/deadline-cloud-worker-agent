@@ -32,7 +32,12 @@ from openjd.sessions import (
     WindowsSessionUser,
 )
 
-from deadline_worker_agent.api_models import EnvironmentAction, TaskRunAction
+from deadline_worker_agent.api_models import (
+    EnvironmentAction,
+    TaskRunAction,
+    AttachmentUploadAction,
+)
+from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 from deadline_worker_agent.sessions import Session
 import deadline_worker_agent.sessions.session as session_mod
 from deadline_worker_agent.sessions.session import (
@@ -1429,6 +1434,10 @@ class TestSessionActionUpdatedImpl:
         assert session._current_action is None, "Current session action emptied"
         mock_sync_asset_outputs.assert_not_called()
 
+    @pytest.mark.skipif(
+        ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test will be removed after releasing the asset sync job user feature",
+    )
     def test_success_task_run(
         self,
         action_id: str,
@@ -1506,6 +1515,82 @@ class TestSessionActionUpdatedImpl:
         assert session._current_action is None, "Current session action emptied"
         mock_sync_asset_outputs.assert_called_once_with(current_action=current_action)
 
+    @pytest.mark.skipif(
+        not ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test will be run unconditionally after releasing the asset sync job user featuer",
+    )
+    def test_success_task_run_attachment_upload(
+        self,
+        action_id: str,
+        session_action_queue: MagicMock,
+        session: Session,
+        action_start_time: datetime,
+        action_complete_time: datetime,
+        step_id: str,
+        success_action_status: ActionStatus,
+        task_id: str,
+        mock_report_action_update: MagicMock,
+    ) -> None:
+        """Tests that if a task run succeeds (the Open Job Description action), that job attachment output
+        sync is performed, and AFTER that, the action success is returned."""
+        # GIVEN
+        current_action = CurrentAction(
+            definition=RunStepTaskAction(
+                details=StepDetails(
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command="echo",
+                                    args=["hello"],
+                                ),
+                            ),
+                        ),
+                    ),
+                    step_id=step_id,
+                ),
+                id=action_id,
+                task_id=task_id,
+                task_parameter_values=dict[str, ParameterValue](),
+            ),
+            start_time=action_start_time,
+        )
+        session._current_action = current_action
+        queue_cancel_all: MagicMock = session_action_queue.cancel_all
+
+        def mock_now(*arg, **kwarg) -> datetime:
+            return action_complete_time
+
+        with (patch.object(session_mod, "datetime") as mock_datetime,):
+            mock_datetime.now.side_effect = mock_now
+
+            # WHEN
+            future = session._action_updated_impl(
+                action_status=success_action_status,
+                now=action_complete_time,
+            )
+            if future:
+                wait([future])
+
+        # THEN
+        mock_report_action_update.assert_not_called()
+        queue_cancel_all.assert_not_called()
+        assert session._output_sync_target_action == current_action
+        assert session._current_action is None, "Current session action emptied"
+        session_action_queue.insert_front.assert_called_once_with(
+            action=AttachmentUploadAction(
+                sessionActionId=action_id,
+                actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
+                stepId=step_id,
+                taskId=task_id,
+            )
+        )
+
+    @pytest.mark.skipif(
+        ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test will be re-written before releasing the asset sync job user feature",
+    )
     def test_success_task_run_fail_output_sync(
         self,
         action_id: str,
@@ -1588,6 +1673,10 @@ class TestSessionActionUpdatedImpl:
         assert session._current_action is None, "Current session action emptied"
         mock_sync_asset_outputs.assert_called_once_with(current_action=current_action)
 
+    @pytest.mark.skipif(
+        ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test will be re-written before releasing the asset sync job user feature",
+    )
     def test_logs_succeeded(
         self,
         action_complete_time: datetime,
