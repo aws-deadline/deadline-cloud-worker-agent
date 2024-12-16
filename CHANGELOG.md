@@ -3,11 +3,16 @@
 
 ### Features
 * directly send cancel OS signals on Linux (#479) ([`a0fc35c`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/a0fc35c419bba964ffa5146f8bb65c54064fc929))
-* ASSET_SYNC_JOB_USER_FEATURE - run job attachment output upload as job user (#495) ([`678f29a`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/678f29a6ae86265b6a0f912cdcc52a2ceccb7b62))
-* ASSET_SYNC_JOB_USER_FEATURE - integrate with job attachment download cli as a openjd action run (#476) ([`07abc76`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/07abc76dc9bdd46a7281a6349b1bb7eaaa808810))
 
 ### Bug Fixes
 * increase e2e test instance size (#468) ([`2f7cc57`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/2f7cc57169d710f3da21412ae0f40f5b1e171f05))
+
+### Experimental
+
+These changes are experimental and only available through the use of feature flags
+
+* ASSET_SYNC_JOB_USER_FEATURE - run job attachment output upload as job user (#495) ([`678f29a`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/678f29a6ae86265b6a0f912cdcc52a2ceccb7b62))
+* ASSET_SYNC_JOB_USER_FEATURE - integrate with job attachment download cli as a openjd action run (#476) ([`07abc76`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/07abc76dc9bdd46a7281a6349b1bb7eaaa808810))
 
 ## 0.27.4 (2024-10-30)
 
