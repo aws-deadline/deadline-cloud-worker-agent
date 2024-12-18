@@ -883,7 +883,7 @@ def test_openjd_logs_openjd_log_content_session_not_in_map() -> None:
     # GIVEN
     message = "Test OpenJD Message."
     session_id = "not exist"
-    expected_message = f"{message} The Worker Agent could not locate the job and queue ID for this log originating from session {session_id}. Please report this to the service team."
+    expected_message = f"{message}"  # Checking that we don't append a message
     record = logging.makeLogRecord(
         {
             "name": LOG.name,

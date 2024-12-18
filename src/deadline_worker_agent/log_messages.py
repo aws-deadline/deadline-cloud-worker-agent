@@ -639,8 +639,7 @@ class LogRecordStringTranslationFilter(logging.Filter):
                 user=None,  # User is only used for SessionLogEventSubtype.USER
             )
         else:
-            # This also should never happen. Fall back to a StringLogEvent.
-            record.msg += f" The Worker Agent could not locate the job and queue ID for this log originating from session {session_id}. Please report this to the service team."
+            # This can happen at the very beginning of a session. Fall back to a StringLogEvent.
             return
         record.getMessageReplaced = True
         record.getMessage = MethodType(lambda self: self.msg.getMessage(), record)  # type: ignore
