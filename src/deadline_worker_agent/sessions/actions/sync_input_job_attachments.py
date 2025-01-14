@@ -60,7 +60,7 @@ class SyncInputJobAttachmentsAction(SessionActionDefinition):
         super(SyncInputJobAttachmentsAction, self).__init__(
             id=id,
             action_log_kind=(
-                SessionActionLogKind.JA_SYNC
+                SessionActionLogKind.JA_SYNC_INPUT
                 if step_details is None
                 else SessionActionLogKind.JA_DEP_SYNC
             ),

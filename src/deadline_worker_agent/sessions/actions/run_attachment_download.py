@@ -44,8 +44,6 @@ from openjd.model.v2023_09 import (
 from openjd.model import ParameterValue
 
 from ...log_messages import SessionActionLogKind
-
-
 from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
@@ -77,7 +75,7 @@ class AttachmentDownloadAction(OpenjdAction):
         super(AttachmentDownloadAction, self).__init__(
             id=id,
             action_log_kind=(
-                SessionActionLogKind.JA_SYNC
+                SessionActionLogKind.JA_SYNC_INPUT
                 if step_details is None
                 else SessionActionLogKind.JA_DEP_SYNC
             ),

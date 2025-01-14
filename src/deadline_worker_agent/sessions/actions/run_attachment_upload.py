@@ -58,7 +58,7 @@ class AttachmentUploadAction(OpenjdAction):
     ) -> None:
         super(AttachmentUploadAction, self).__init__(
             id=id,
-            action_log_kind=(SessionActionLogKind.JA_SYNC),
+            action_log_kind=(SessionActionLogKind.JA_SYNC_OUTPUT),
         )
         self._step_id = step_id
         self._task_id = task_id

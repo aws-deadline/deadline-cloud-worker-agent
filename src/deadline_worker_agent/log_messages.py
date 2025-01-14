@@ -473,7 +473,8 @@ class SessionActionLogKind(str, Enum):
     ENV_ENTER = "EnvEnter"
     ENV_EXIT = "EnvExit"
     TASK_RUN = "TaskRun"
-    JA_SYNC = "JobAttachSyncInput"
+    JA_SYNC_INPUT = "JobAttachSyncInput"
+    JA_SYNC_OUTPUT = "JobAttachSyncOutput"
     JA_DEP_SYNC = "JobAttachSyncDeps"
 
 
