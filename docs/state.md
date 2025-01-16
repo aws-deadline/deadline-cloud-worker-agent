@@ -32,6 +32,10 @@ The structure of the persistence directory is:
 └── worker.json
 ```
 
+**It is recommended if you are preparing an Amazon Machine Image (AMI) or a disk image, to delete 
+the worker persistence directory before making the image in order to prevent all hosts using that 
+image from running with the same worker ID.**
+
 ### Worker state file
 
 Path: `<PERSISTENCE_DIR>/worker.json`
@@ -40,7 +44,8 @@ The worker maintains a worker state which is a JSON representation of the follow
 
 ```jsonc
 {
-    "worker_id": "<WORKER_ID>"
+    "worker_id": "<WORKER_ID>",
+    "instance_id": "<INSTANCE_ID>"  # OPTIONAL
 }
 ```
 
@@ -48,17 +53,44 @@ The worker maintains a worker state which is a JSON representation of the follow
 
 This contains a unique identifier that represents the worker in your AWS Deadline Cloud fleet.
 
-When the agent starts up, it checks for the worker state file and this value. If a `worker_id` is
-found, the worker agent will transition the worker to the `RUNNING` state and begin running as the
+
+#### `instance_id`
+
+This is an optional parameter which contains an identifier of the EC2 instance running the worker, if applicable. 
+
+
+#### How the State File Affects Startup Behavior
+
+When the agent starts up, it checks for the worker state file and these values. If a `worker_id` is 
+found, and an `instance_id` in the file either matches that of the running host or is not present, 
+the worker agent will transition the worker to the `RUNNING` state and begin running as the
 worker.
 
-If the worker state file is not found or contains no value for `worker_id`, then the worker agent
-will create a new worker in the AWS Deadline Cloud fleet and persist the `worker_id` to the worker
-state file.
+If the worker state file is not found, contains no value for `worker_id`, or contains a `worker_id` 
+with an `instance_id` that is different than the `instance_id` detected on the running host, then 
+the worker agent will create a new worker in the AWS Deadline Cloud fleet and persist the 
+`worker_id` and `instance_id` to the worker state file. 
 
-If you are preparing an Amazon Machine Image (AMI) or a disk image, be sure that the `worker_id` is
-not persisted before making the image - otherwise all hosts using the image will attempt to run as
-the same worker and error.
+The above logic is represented in the diagram below.
+
+```mermaid
+graph TD;
+    S1@{ shape: circle, label: "Start"}-->Q1{Query IMDS /instance-id endpoint};
+    Q1--- |Success: instance ID returned|C2{Check if Worker State File Exists};
+    Q1--- |Failure: Timeout or Denied|C1{Check if Worker State File Exists};
+    C1---|State File Does Not Exist|S5;
+    C1 ---|State File Exists|C3{Worker ID exists in state file?}
+    C3 ---|Worker ID exists|S4@{shape: stadium, label: "Start worker with given worker ID"};
+    C3 ---|Worker ID not in state file|S5@{shape: stadium, label: "Create worker with new worker ID and store Worker ID in Worker State File"};
+    C2 ---|State File Does Not Exist|S7@{shape: stadium, label: "Store Worker ID and Instance ID in Worker State File"};
+    C2 ---|State File Exists|C4{Worker ID exists in state file?};
+    C4 ---|Worker ID not in state file|S7@{shape: stadium, label: "Create worker with new worker ID and store new worker ID and instance ID in state file"};
+    C4 ---|Worker ID in State File|C5{Instance ID in state file?};
+    C5 ---|Instance ID in State File|C6{Instance ID in state file matches IMDS instance id?};
+    C6 ---|Matches|S8@{shape: stadium, label: "Start worker with given worker ID"};
+    C5 ---|Instance ID not in State File|S8@{shape: stadium, label: "Start worker with given worker ID and store instance ID in state file"};
+    C6 ---|Does not match|S7
+```
 
 ## Worker AWS credentials
 

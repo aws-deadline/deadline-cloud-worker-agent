@@ -1,4 +1,5 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+from __future__ import annotations
 
 from typing import Any, Generator, Optional
 from unittest.mock import ANY, MagicMock, call, patch
@@ -49,6 +50,9 @@ AWSLOGS_LOG_CONFIGURATION = LogConfiguration(
         LOG_CONFIG_OPTION_STREAM_NAME_KEY: CLOUDWATCH_LOG_STREAM,
     },
 )
+
+INSTANCE_ID = "i-aaaaaaaaaaaaaaaa"
+WORKER_ID = f"worker-{32*'a'}"
 
 
 @fixture
@@ -490,6 +494,12 @@ class TestLoadOrCreateWorker:
     def session_mock(self) -> MagicMock:
         return MagicMock()
 
+    @fixture(autouse=True)
+    def get_instance_id_mock(self) -> Generator[MagicMock, None, None]:
+        with patch.object(bootstrap_mod, "_get_instance_id") as get_instance_id_mock:
+            get_instance_id_mock.return_value = INSTANCE_ID
+            yield get_instance_id_mock
+
     @fixture
     def deadline_client_mock(self, session_mock: MagicMock) -> MagicMock:
         deadline_client = MagicMock()
@@ -509,12 +519,24 @@ class TestLoadOrCreateWorker:
             create_worker_mock.return_value = {"workerId": worker_id}
             yield create_worker_mock
 
+    @mark.parametrize(
+        "saved_instance_id, get_instance_id_value",
+        [
+            param(INSTANCE_ID, INSTANCE_ID, id="same-instance-id"),
+            param(None, INSTANCE_ID, id="no-saved-instance-id"),
+            param(INSTANCE_ID, None, id="saved-instance-id-no-imds"),
+            param(None, None, id="no-saved-instance-id-no-imds"),
+        ],
+    )
     def test_existing_worker_successful_restore(
         self,
         worker_persistence_info_mock: MagicMock,
         session_mock: MagicMock,
         config: Configuration,
         create_worker_mock: MagicMock,
+        get_instance_id_mock: MagicMock,
+        saved_instance_id: str | None,
+        get_instance_id_value: str | None,
     ) -> None:
         """
         Test that we return a previously saved Worker when there is one.
@@ -522,8 +544,10 @@ class TestLoadOrCreateWorker:
 
         # GIVEN
         worker_info_mock = MagicMock()
+        worker_info_mock.instance_id = saved_instance_id
         worker_persistence_info_mock.load.return_value = worker_info_mock
         worker_persistence_info_mock.save = MagicMock()
+        get_instance_id_mock.return_value = get_instance_id_value
 
         # WHEN
         worker_info_result, has_existing_result = bootstrap_mod._load_or_create_worker(
@@ -536,24 +560,41 @@ class TestLoadOrCreateWorker:
         worker_persistence_info_mock.load.assert_called_once_with(config=config)
         worker_persistence_info_mock.save.assert_not_called()
         create_worker_mock.assert_not_called()
-        worker_info_mock.save.assert_not_called()
+        if get_instance_id_value is not None and saved_instance_id is None:
+            worker_info_mock.save.assert_called_once_with(config=config)
+            assert worker_info_mock.instance_id == get_instance_id_value
+        else:
+            worker_info_mock.save.assert_not_called()
 
+    @mark.parametrize(
+        "load_result",
+        [
+            param(None, id="no-saved-state"),
+            param(
+                WorkerPersistenceInfo(worker_id=WORKER_ID, instance_id=INSTANCE_ID + "1"),
+                id="saved-state-diff-instance-id",
+            ),
+        ],
+    )
     def test_creates_worker_when_no_existing(
         self,
-        worker_id: str,
         worker_persistence_info_mock: MagicMock,
         session_mock: MagicMock,
         deadline_client_mock: MagicMock,
         config: Configuration,
         create_worker_mock: MagicMock,
         host_properties: HostProperties,
+        load_result: WorkerPersistenceInfo | None,
     ):
-        """Test that we create and persist a new worker when there is no previously saved Worker to load."""
+        """
+        Test that we create and persist a new worker when there is no previously saved Worker to load.
+        Or when the previously saved Worker has a different instance ID
+        """
 
         # GIVEN
         worker_info_mock = MagicMock()
         worker_persistence_info_mock.return_value = worker_info_mock
-        worker_persistence_info_mock.load.return_value = None
+        worker_persistence_info_mock.load.return_value = load_result
 
         # WHEN
         worker_info_result, has_existing_result = bootstrap_mod._load_or_create_worker(
@@ -566,7 +607,9 @@ class TestLoadOrCreateWorker:
         create_worker_mock.assert_called_once_with(
             deadline_client=deadline_client_mock, config=config, host_properties=host_properties
         )
-        worker_persistence_info_mock.assert_called_once_with(worker_id=worker_id)
+        worker_persistence_info_mock.assert_called_once_with(
+            worker_id=WORKER_ID, instance_id=INSTANCE_ID
+        )
         worker_info_mock.save.assert_called_once_with(config=config)
         session_mock.client.assert_called_once_with("deadline", config=DEADLINE_BOTOCORE_CONFIG)
 
