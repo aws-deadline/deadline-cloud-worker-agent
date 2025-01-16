@@ -2,6 +2,7 @@
 
 #! /usr/bin/env python3
 import argparse
+import sys
 import time
 import os
 import boto3
@@ -61,23 +62,37 @@ def snapshot(manifest_paths_by_root: dict[str, str]) -> list[str]:
     return manifests
 
 
-if __name__ == "__main__":
-    start_time = time.perf_counter()
-
+def parse_args(args):
     parser = argparse.ArgumentParser()
     parser.add_argument("-pm", "--path-mapping", type=str, help="", required=True)
     parser.add_argument("-s3", "--s3-uri", type=str, help="", required=True)
     parser.add_argument("-mm", "--manifest-map", type=json.loads, required=True)
+    return parser.parse_args(args)
 
-    args = parser.parse_args()
-    path_mapping = args.path_mapping
-    s3_uri = args.s3_uri
-    manifest_map = args.manifest_map
 
-    manifests = snapshot(manifest_paths_by_root=manifest_map)
+def main(args=None):
+    start_time = time.perf_counter()
 
-    print("\nStarting upload...")
-    upload(manifests=manifests, s3_root_uri=s3_uri, path_mapping_rules=path_mapping)
+    if args is None:
+        args = sys.argv[1:]
 
-    total = time.perf_counter() - start_time
-    print(f"Finished uploading after {total} seconds")
+    parsed_args = parse_args(args)
+
+    manifests = snapshot(manifest_paths_by_root=parsed_args.manifest_map)
+
+    if manifests:
+        print("\nStarting upload...")
+        upload(
+            manifests=manifests,
+            s3_root_uri=parsed_args.s3_uri,
+            path_mapping_rules=parsed_args.path_mapping,
+        )
+
+        total = time.perf_counter() - start_time
+        print(f"Finished uploading after {total} seconds")
+    else:
+        print("No manifests to upload")
+
+
+if __name__ == "__main__":
+    main()
