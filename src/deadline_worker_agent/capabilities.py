@@ -39,7 +39,10 @@ def detect_system_capabilities() -> Capabilities:
 
     attributes[AttributeCapabilityName("attr.worker.cpu.arch")] = [_get_arch()]
 
-    amounts[AmountCapabilityName("amount.worker.vcpu")] = float(psutil.cpu_count())
+    cpu_count = psutil.cpu_count()
+    if cpu_count is None:
+        raise RuntimeError("Unable to determine cpu count")
+    amounts[AmountCapabilityName("amount.worker.vcpu")] = float(cpu_count)
     amounts[AmountCapabilityName("amount.worker.memory")] = float(psutil.virtual_memory().total) / (
         1024.0**2
     )
