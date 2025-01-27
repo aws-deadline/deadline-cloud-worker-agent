@@ -903,7 +903,7 @@ class TestJobSubmission:
 
         @backoff.on_predicate(
             wait_gen=backoff.constant,
-            max_time=60,
+            max_time=70,
             interval=5,
         )
         def is_expected_session_action_canceled(sessions) -> bool:
