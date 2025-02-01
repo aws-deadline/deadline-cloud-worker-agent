@@ -106,6 +106,7 @@ def _get_gpu_count(*, verbose: bool = True) -> int:
 def _get_gpu_memory(*, verbose: bool = True) -> int:
     """
     Get the total GPU memory available on the machine.
+    Disabled GPUs will appear to have 0 MiB memory if they have no memory currently allocated for use.
 
     Returns
     -------
@@ -138,7 +139,15 @@ def _get_gpu_memory(*, verbose: bool = True) -> int:
 
     mem_per_gpu: list[int] = []
     for line in output.splitlines():
-        mem_mib = int(line.replace("MiB", ""))
+        try:
+            # Active GPU: nvidia-smi returns an integer followed by "MiB"
+            # Disabled GPU with no memory currently allocated: nvidia-smi returns "[N/A]"
+            mem_mib = int(line.replace("MiB", ""))
+        except ValueError:
+            if verbose:
+                _logger.warning(f"Could not detect GPU memory, non-numeric result returned by nvidia-smi: {line}")
+            mem_mib = 0
+        
         mem_per_gpu.append(mem_mib)
 
     min_memory = min(mem_per_gpu)
