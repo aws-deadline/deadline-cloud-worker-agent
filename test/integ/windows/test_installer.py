@@ -141,24 +141,24 @@ def windows_group():
 def test_create_local_queue_user_group():
     group_name = "test_create_local_queue_user_group"
     # Ensure the group does not exist initially
-    assert not check_account_existence(
-        group_name
-    ), f"Group '{group_name}' already exists before test."
+    assert not check_account_existence(group_name), (
+        f"Group '{group_name}' already exists before test."
+    )
 
     try:
         create_local_queue_user_group(group_name)
-        assert check_account_existence(
-            group_name
-        ), f"Group '{group_name}' was not created as expected."
+        assert check_account_existence(group_name), (
+            f"Group '{group_name}' was not created as expected."
+        )
     finally:
         delete_group(group_name)
 
 
 def test_is_user_in_group(windows_user, windows_group):
     # GIVEN
-    assert not is_user_in_group(
-        windows_group, windows_user
-    ), f"User '{windows_user}' is already in group '{windows_group}'"
+    assert not is_user_in_group(windows_group, windows_user), (
+        f"User '{windows_user}' is already in group '{windows_group}'"
+    )
     win32net.NetLocalGroupAddMembers(None, windows_group, 3, [{"domainandname": windows_user}])
 
     # WHEN/THEN
@@ -252,9 +252,9 @@ def verify_least_privilege(windows_user: str, path: Path):
     )
     # Verify ownership
     owner_sid = sd.GetSecurityDescriptorOwner()
-    assert (
-        builtin_admin_group_sid == owner_sid
-    ), f"Expected directory '{path}' to be owned by 'Administrators' but got '{win32security.LookupAccountSid(None, owner_sid)}'"
+    assert builtin_admin_group_sid == owner_sid, (
+        f"Expected directory '{path}' to be owned by 'Administrators' but got '{win32security.LookupAccountSid(None, owner_sid)}'"
+    )
 
     # Verify all ACEs
     dacl = sd.GetSecurityDescriptorDacl()
@@ -263,16 +263,15 @@ def verify_least_privilege(windows_user: str, path: Path):
         _ace_info, mask, sid = ace
         ace_type, ace_flags = _ace_info
 
-        assert (
-            ace_type == ntsecuritycon.ACCESS_ALLOWED_ACE_TYPE
-        ), f"Unexpected ace type found for {path}"
+        assert ace_type == ntsecuritycon.ACCESS_ALLOWED_ACE_TYPE, (
+            f"Unexpected ace type found for {path}"
+        )
         assert (
             ace_flags == ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE
         ), "Unexpected inheritance in ace for  {path}"
         assert (
             # we set ntsecuritycon.GENERIC_ALL but that gets converted to win32File.FILE_ALL_ACCESS
-            mask
-            == win32file.FILE_ALL_ACCESS
+            mask == win32file.FILE_ALL_ACCESS
         ), f"Expected only FILE_FULL_ACCESS aces for {path} but found {mask}"
         assert sid in [builtin_admin_group_sid, user_sid], f"Unexpected sid found in ace for {path}"
 
@@ -292,18 +291,18 @@ def test_provision_directories(
         deadline_persistence_subdir=root_dir / "Amazon" / "Deadline" / "Cache",
         deadline_config_subdir=root_dir / "Amazon" / "Deadline" / "Config",
     )
-    assert (
-        not expected_dirs.deadline_dir.exists()
-    ), f"Cannot test provision_directories because {expected_dirs.deadline_dir} already exists"
-    assert (
-        not expected_dirs.deadline_log_subdir.exists()
-    ), f"Cannot test provision_directories because {expected_dirs.deadline_log_subdir} already exists"
-    assert (
-        not expected_dirs.deadline_persistence_subdir.exists()
-    ), f"Cannot test provision_directories because {expected_dirs.deadline_persistence_subdir} already exists"
-    assert (
-        not expected_dirs.deadline_config_subdir.exists()
-    ), f"Cannot test provision_directories because {expected_dirs.deadline_config_subdir} already exists"
+    assert not expected_dirs.deadline_dir.exists(), (
+        f"Cannot test provision_directories because {expected_dirs.deadline_dir} already exists"
+    )
+    assert not expected_dirs.deadline_log_subdir.exists(), (
+        f"Cannot test provision_directories because {expected_dirs.deadline_log_subdir} already exists"
+    )
+    assert not expected_dirs.deadline_persistence_subdir.exists(), (
+        f"Cannot test provision_directories because {expected_dirs.deadline_persistence_subdir} already exists"
+    )
+    assert not expected_dirs.deadline_config_subdir.exists(), (
+        f"Cannot test provision_directories because {expected_dirs.deadline_config_subdir} already exists"
+    )
 
     # WHEN
     with patch.dict(win_installer.os.environ, {"PROGRAMDATA": str(root_dir)}):

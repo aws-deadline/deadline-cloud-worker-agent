@@ -122,9 +122,9 @@ class Worker:
         self._retain_session_dir = retain_session_dir
 
         if host_metrics_logging:
-            assert (
-                host_metrics_logging_interval_seconds is not None
-            ), "host_metrics_logging_interval_seconds is required if host metrics logging is enabled"
+            assert host_metrics_logging_interval_seconds is not None, (
+                "host_metrics_logging_interval_seconds is required if host metrics logging is enabled"
+            )
             self._host_metrics_logger = HostMetricsLogger(
                 logger=logger, interval_s=host_metrics_logging_interval_seconds
             )

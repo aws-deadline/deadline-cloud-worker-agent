@@ -979,9 +979,9 @@ class TestCreateNewSessions:
         # THEN
         for action_num in (1, 2):
             action_id = f"action-{action_num}"
-            assert (
-                action_update := scheduler._action_updates_map.get(action_id, None)
-            ), f"no action update for {action_id}"
+            assert (action_update := scheduler._action_updates_map.get(action_id, None)), (
+                f"no action update for {action_id}"
+            )
             assert action_update.id == action_id
             assert action_update.status is not None
             assert action_update.status.state == ActionState.FAILED
@@ -1031,9 +1031,9 @@ class TestCreateNewSessions:
         # THEN
         for action_num in (1, 2):
             action_id = f"action-{action_num}"
-            assert (
-                action_update := scheduler._action_updates_map.get(action_id, None)
-            ), f"no action update for {action_id}"
+            assert (action_update := scheduler._action_updates_map.get(action_id, None)), (
+                f"no action update for {action_id}"
+            )
             assert action_update.id == action_id
             assert action_update.status is not None
             assert action_update.status.state == ActionState.FAILED
@@ -1106,9 +1106,9 @@ class TestCreateNewSessions:
         # THEN
         for action_num in (1, 2):
             action_id = f"action-{action_num}"
-            assert (
-                action_update := scheduler._action_updates_map.get(action_id, None)
-            ), f"no action update for {action_id}"
+            assert (action_update := scheduler._action_updates_map.get(action_id, None)), (
+                f"no action update for {action_id}"
+            )
             assert action_update.id == action_id
             assert action_update.status is not None
             assert action_update.status.state == ActionState.FAILED
@@ -1248,7 +1248,9 @@ class TestCreateNewSessions:
         )
         mock_job_entities.return_value = job_entity_mock
 
-        with (patch.object(scheduler, "_executor"),):
+        with (
+            patch.object(scheduler, "_executor"),
+        ):
             # WHEN
             scheduler._create_new_sessions(assigned_sessions=assigned_sessions)
 
@@ -1368,7 +1370,6 @@ class TestCreateNewSessions:
         expected_result: Optional[SessionUser],
         expected_exception: Optional[str],
     ) -> None:
-
         # WHEN
         if expected_exception is not None:
             with pytest.raises(ValueError, match=expected_exception):

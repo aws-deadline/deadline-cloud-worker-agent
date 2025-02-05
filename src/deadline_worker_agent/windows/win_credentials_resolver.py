@@ -202,7 +202,7 @@ class WindowsCredentialsResolver:
             self._user_cache[user_key] = _WindowsCredentialsCacheEntry(windows_session_user=None)
             # Raise a ValueError so that the scheduler can fail the associated jobs
             raise ValueError(
-                f"No valid credentials for {user} available. Credentials will be fetched again {self.RETRY_AFTER.total_seconds()//60} minutes after last fetch"
+                f"No valid credentials for {user} available. Credentials will be fetched again {self.RETRY_AFTER.total_seconds() // 60} minutes after last fetch"
             )
         else:
             # Cache the _WindowsCredentialsCacheEntry object

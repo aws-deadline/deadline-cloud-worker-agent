@@ -218,9 +218,9 @@ def test_settings_field(test_case_params: FieldTestCaseParams) -> None:
             default_factory_return_value == test_case_params.expected_default_factory_return_value
         )
     else:
-        assert (
-            test_case_params.expected_default_factory_return_value is None
-        ), f"no default factory for {test_case_params.field_name} but expected one"
+        assert test_case_params.expected_default_factory_return_value is None, (
+            f"no default factory for {test_case_params.field_name} but expected one"
+        )
 
 
 def test_settings_field_coverage() -> None:

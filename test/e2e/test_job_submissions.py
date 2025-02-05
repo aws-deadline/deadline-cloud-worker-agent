@@ -3,6 +3,7 @@
 This test module contains tests that verify the Worker agent's behavior by submitting jobs to the
 Deadline Cloud service and checking that the result/output of the jobs is as we expect it.
 """
+
 import hashlib
 from flaky import flaky
 import json
@@ -103,7 +104,9 @@ class TestJobSubmission:
                     TaskStatus.FAILED,
                     TaskStatus.SUCCEEDED,
                     TaskStatus.NOT_COMPATIBLE,
-                ], f"Job is not in a valid task run status for this test: {current_job.task_run_status}"
+                ], (
+                    f"Job is not in a valid task run status for this test: {current_job.task_run_status}"
+                )
                 return (
                     current_job.lifecycle_status != "CREATE_IN_PROGRESS"
                     and current_job.task_run_status == TaskStatus.RUNNING
@@ -189,7 +192,9 @@ class TestJobSubmission:
                     TaskStatus.FAILED,
                     TaskStatus.SUCCEEDED,
                     TaskStatus.NOT_COMPATIBLE,
-                ], f"Job is not in a valid task run status for this test: {current_job.task_run_status}"
+                ], (
+                    f"Job is not in a valid task run status for this test: {current_job.task_run_status}"
+                )
                 return (
                     current_job.lifecycle_status != "CREATE_IN_PROGRESS"
                     and current_job.task_run_status == TaskStatus.RUNNING
@@ -383,7 +388,6 @@ class TestJobSubmission:
         environment_actions: Dict[str, Any],
         expected_failed_action: str,
     ) -> None:
-
         job: Job = Job.submit(
             client=deadline_client,
             farm=deadline_resources.farm,
@@ -438,9 +442,9 @@ class TestJobSubmission:
                         if session_action["status"] == "FAILED":
                             found_failed_session_action = True
                     else:
-                        assert (
-                            session_action["status"] != "FAILED"
-                        ), f"Session action that should not have failed is in FAILED status. {session_action}"
+                        assert session_action["status"] != "FAILED", (
+                            f"Session action that should not have failed is in FAILED status. {session_action}"
+                        )
             return found_failed_session_action
 
         sessions: list[dict[str, Any]] = deadline_client.list_sessions(
@@ -536,7 +540,9 @@ class TestJobSubmission:
                         "status"
                     ] == "FAILED" and "TIMEOUT" in get_session_action_response.get(
                         "progressMessage", ""
-                    ), f"taskRun action should have FAILED {get_session_action_response} with 'TIMEOUT' in the progressMessage"
+                    ), (
+                        f"taskRun action should have FAILED {get_session_action_response} with 'TIMEOUT' in the progressMessage"
+                    )
 
         assert found_task_run_action
 
@@ -695,7 +701,6 @@ class TestJobSubmission:
 
                 LOG.info(f"Session Actions: {session_actions}")
                 for session_action in session_actions:
-
                     # Session action should be canceled if it's the action we expect to be canceled
                     if expected_canceled_action in session_action["definition"]:
                         if session_action["status"] == "CANCELED":
@@ -809,23 +814,21 @@ class TestJobSubmission:
                                     else {"command": "whoami"}
                                 ),
                                 "onExit": (
-                                    (
-                                        {
-                                            "command": "echo",
-                                            "args": ["Environment exit " + environment_exit_id],
-                                        }
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
-                                        else {
-                                            "command": "powershell",
-                                            "args": [
-                                                '"Environment"',
-                                                "+",
-                                                '" exit "',
-                                                "+",
-                                                f'"{environment_exit_id}"',
-                                            ],
-                                        }
-                                    )
+                                    {
+                                        "command": "echo",
+                                        "args": ["Environment exit " + environment_exit_id],
+                                    }
+                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    else {
+                                        "command": "powershell",
+                                        "args": [
+                                            '"Environment"',
+                                            "+",
+                                            '" exit "',
+                                            "+",
+                                            f'"{environment_exit_id}"',
+                                        ],
+                                    }
                                 ),
                             },
                             "embeddedFiles": [
@@ -885,7 +888,6 @@ class TestJobSubmission:
 
                 logging.info(f"Session Actions: {session_actions}")
                 for session_action in session_actions:
-
                     # Session action should be canceled if it's the action we expect to be canceled
                     if expected_canceled_action in session_action["definition"]:
                         if session_action["status"] == "RUNNING":
@@ -918,7 +920,6 @@ class TestJobSubmission:
 
                 logging.info(f"Session Actions: {session_actions}")
                 for session_action in session_actions:
-
                     # Session action should be canceled if it's the action we expect to be canceled
                     if expected_canceled_action in session_action["definition"]:
                         if session_action["status"] == "CANCELED":
@@ -946,7 +947,7 @@ class TestJobSubmission:
                     "logs",
                     config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
                 ),
-                expected_pattern=rf'{"Environment exit " + environment_exit_id}',
+                expected_pattern=rf"{'Environment exit ' + environment_exit_id}",
             )
 
         # Test that worker continues polling for work
@@ -962,9 +963,9 @@ class TestJobSubmission:
         job.wait_until_complete(client=deadline_client)
         LOG.info(f"Job result: {job}")
 
-        assert (
-            job.task_run_status == TaskStatus.SUCCEEDED
-        ), "Worker failed to continue polling for work after job cancelation"
+        assert job.task_run_status == TaskStatus.SUCCEEDED, (
+            "Worker failed to continue polling for work after job cancelation"
+        )
 
     @flaky(max_runs=3, min_passes=1)  # Flaky as sync input sometimes completes before expected.
     def test_worker_reports_canceled_sync_input_actions_as_canceled(
@@ -1015,7 +1016,7 @@ class TestJobSubmission:
         files_path: str = os.path.join(tmp_path, "files")
         os.mkdir(files_path)
         for i in range(6000):
-            file_name: str = os.path.join(files_path, f"input_file_{i+1}.txt")
+            file_name: str = os.path.join(files_path, f"input_file_{i + 1}.txt")
             with open(file_name, "w+") as input_file:
                 if i % 1000 == 0:
                     # Create some big files (1GB each) so the syncInputAttachments don't fail due to low transfer rates
@@ -1126,7 +1127,6 @@ class TestJobSubmission:
         deadline_client: DeadlineClient,
         session_worker: EC2InstanceWorker,
     ) -> None:
-
         # Tests that if a taskRun action is cancelled, all remaining taskRun actions that depend on it will be NEVER_ATTEMPTED
 
         step_one_name = "StepOneSucceeded"
@@ -1412,7 +1412,6 @@ class TestJobSubmission:
             found_unsuccessful_env_exit: bool = False
             found_successful_env_exit: bool = False
             for session in sessions:
-
                 session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
                     farmId=job.farm.id,
                     queueId=job.queue.id,
@@ -1598,7 +1597,6 @@ class TestJobSubmission:
         deadline_client: DeadlineClient,
         session_worker: EC2InstanceWorker,
     ) -> None:
-
         job_start_time_seconds: float = time.time()
         job: Job = Job.submit(
             client=deadline_client,
@@ -1825,7 +1823,6 @@ class TestJobSubmission:
                 open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file,
                 tempfile.TemporaryDirectory() as temporary_output_directory,
             ):
-
                 job_parameters: List[Dict[str, str]] = [
                     {
                         "name": "OutputFilePath",
@@ -2077,7 +2074,7 @@ class TestJobSubmission:
 
         # Create 2500 very small files to transfer
         for i in range(2500):
-            file_name: str = os.path.join(file_path, f"file_{i+1}.txt")
+            file_name: str = os.path.join(file_path, f"file_{i + 1}.txt")
             with open(file_name, "w") as file_to_write:
                 file_to_write.write(str(i))
 
@@ -2395,7 +2392,6 @@ class TestJobSubmission:
         deadline_client: DeadlineClient,
         session_worker: EC2InstanceWorker,
     ) -> None:
-
         # Make sure that worker reports task progress, as well as the status message
 
         # Submit a job with a task that sleeps for 60 seconds , which is more than the UpdateWorkerSchedule interval of 30 seconds
@@ -2685,18 +2681,18 @@ class TestJobSubmission:
             for session_action in session_actions:
                 # Session action should be failed for a syncinputJobAttachments action
                 if "syncInputJobAttachments" in session_action["definition"]:
-                    assert (
-                        session_action["status"] == "FAILED"
-                    ), f"syncInputJobAttachments Session action that should have failed is in {session_action['status']} status. {session_action}"
+                    assert session_action["status"] == "FAILED", (
+                        f"syncInputJobAttachments Session action that should have failed is in {session_action['status']} status. {session_action}"
+                    )
                     found_failed_session_action = True
                 else:
                     # Every other session action should have never been attempted, since the syncInputJobAttachments action failed
-                    assert (
-                        session_action["status"] == "NEVER_ATTEMPTED"
-                    ), f"Session action that should not have failed is in FAILED status. {session_action}"
-        assert (
-            found_failed_session_action
-        ), "Was not able to find any syncInputJobAttachments session actions"
+                    assert session_action["status"] == "NEVER_ATTEMPTED", (
+                        f"Session action that should not have failed is in FAILED status. {session_action}"
+                    )
+        assert found_failed_session_action, (
+            "Was not able to find any syncInputJobAttachments session actions"
+        )
 
         # Make sure the worker is still running and not crashed after this
         get_worker_response: dict[str, Any] = deadline_client.get_worker(
@@ -2736,7 +2732,6 @@ class TestJobSubmission:
             """
         ),
     ):
-
         job: Job = submit_custom_job(
             job_name="10 Minutes Sleep Job",
             deadline_client=deadline_client,

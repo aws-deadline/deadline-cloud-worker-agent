@@ -140,9 +140,9 @@ class Configuration:
         if parsed_cli_args.windows_job_user is not None:
             settings_kwargs["windows_job_user"] = parsed_cli_args.windows_job_user
         if parsed_cli_args.disallow_instance_profile is not None:
-            settings_kwargs["allow_instance_profile"] = (
-                not parsed_cli_args.disallow_instance_profile
-            )
+            settings_kwargs[
+                "allow_instance_profile"
+            ] = not parsed_cli_args.disallow_instance_profile
         if parsed_cli_args.logs_dir is not None:
             settings_kwargs["worker_logs_dir"] = parsed_cli_args.logs_dir.absolute()
         if parsed_cli_args.persistence_dir is not None:

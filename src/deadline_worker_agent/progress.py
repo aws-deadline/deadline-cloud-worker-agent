@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-""" Module for progress handling """
+"""Module for progress handling"""
 
 from logging import getLogger
 

@@ -37,7 +37,7 @@ from .validation import Field, validate_object
 
 
 def parameters_from_api_response(
-    params: dict[str, StringParameter | PathParameter | IntParameter | FloatParameter | str]
+    params: dict[str, StringParameter | PathParameter | IntParameter | FloatParameter | str],
 ) -> dict[str, ParameterValue]:
     result = dict[str, ParameterValue]()
     for name, value in params.items():

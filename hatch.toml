@@ -16,10 +16,10 @@ integ-test = "pytest --no-cov test/integ {args:}"
 typing = "mypy {args:src test}"
 style = [
   "ruff check {args:.}",
-  "black --check --diff {args:.}",
+  "ruff format --check {args:.}"
 ]
 fmt = [
-  "black {args:.}",
+  "ruff format",
   "style",
 ]
 lint = [

@@ -1,6 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 """Tests for the Worker Agent entrypoint"""
+
 from __future__ import annotations
 
 import logging

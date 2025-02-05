@@ -22,7 +22,6 @@ python attachment_download.py \
 
 
 def download(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> None:
-
     api.attachment_download(
         manifests=manifests,
         s3_root_uri=s3_root_uri,

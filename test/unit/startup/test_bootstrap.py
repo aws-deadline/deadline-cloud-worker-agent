@@ -52,7 +52,7 @@ AWSLOGS_LOG_CONFIGURATION = LogConfiguration(
 )
 
 INSTANCE_ID = "i-aaaaaaaaaaaaaaaa"
-WORKER_ID = f"worker-{32*'a'}"
+WORKER_ID = f"worker-{32 * 'a'}"
 
 
 @fixture
@@ -226,7 +226,9 @@ class TestWorkerInfo:
         # GIVEN
         config.worker_state_file = worker_state_file = MagicMock()
         worker_state_file.is_absolute.return_value = True
-        with (patch.object(bootstrap_mod.json, "dump") as dump_mock,):
+        with (
+            patch.object(bootstrap_mod.json, "dump") as dump_mock,
+        ):
             state_file_open_mock: MagicMock = worker_state_file.open
             state_file_touch_mock: MagicMock = worker_state_file.touch
             state_file_open_mock_enter: MagicMock = state_file_open_mock.return_value.__enter__

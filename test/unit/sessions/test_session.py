@@ -1584,7 +1584,9 @@ class TestSessionActionUpdatedImpl:
         def mock_now(*arg, **kwarg) -> datetime:
             return action_complete_time
 
-        with (patch.object(session_mod, "datetime") as mock_datetime,):
+        with (
+            patch.object(session_mod, "datetime") as mock_datetime,
+        ):
             mock_datetime.now.side_effect = mock_now
 
             # WHEN

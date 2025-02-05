@@ -3,6 +3,7 @@
 This test module contains tests that verify the Worker agent's behavior by starting/stopping the Worker,
 and making sure that the status of the Worker is that of what we expect.
 """
+
 from datetime import datetime, timezone
 import logging
 import os
@@ -17,7 +18,6 @@ LOG = logging.getLogger(__name__)
 
 
 class TestWorkerStatus:
-
     @pytest.mark.skipif(
         os.environ["OPERATING_SYSTEM"] == "windows",
         reason="Linux specific test",
@@ -50,9 +50,9 @@ class TestWorkerStatus:
         def check_service_is_active() -> None:
             # The service should be active
             service_check_result = class_worker.send_command("systemctl is-active deadline-worker")
-            assert (
-                service_check_result.exit_code == 0
-            ), "Unable to check whether deadline-worker is active"
+            assert service_check_result.exit_code == 0, (
+                "Unable to check whether deadline-worker is active"
+            )
             assert (
                 "inactive" not in service_check_result.stdout
                 and "active" in service_check_result.stdout
@@ -67,9 +67,9 @@ class TestWorkerStatus:
                 f"pgrep --count --full -u {class_worker.configuration.agent_user} deadline-worker-agent"
             )
 
-            assert (
-                process_check_result.exit_code == 0
-            ), "deadline-worker-agent process is not running"
+            assert process_check_result.exit_code == 0, (
+                "deadline-worker-agent process is not running"
+            )
 
         check_worker_processes_exist()
 
@@ -83,9 +83,9 @@ class TestWorkerStatus:
         pkill_command_result = class_worker.send_command(
             f"sudo pkill -9 --full -u {class_worker.configuration.agent_user} deadline-worker-agent"
         )
-        assert (
-            pkill_command_result.exit_code == 0
-        ), f"Failed to kill the worker agent process: {pkill_command_result}"
+        assert pkill_command_result.exit_code == 0, (
+            f"Failed to kill the worker agent process: {pkill_command_result}"
+        )
 
         # Wait for the process to be restarted by the service
 
@@ -102,9 +102,9 @@ class TestWorkerStatus:
             "%a %Y-%m-%d %H:%M:%S %Z",
         ).replace(tzinfo=timezone.utc)
 
-        assert (
-            time_service_started >= time_that_worker_was_killed
-        ), "Service has not restarted properly as service started before kill command"
+        assert time_service_started >= time_that_worker_was_killed, (
+            "Service has not restarted properly as service started before kill command"
+        )
 
         # Check that there are worker processes running
         check_worker_processes_exist()
@@ -143,12 +143,12 @@ class TestWorkerStatus:
             service_check_result = class_worker.send_command(
                 '(Get-Service -Name "DeadlineWorker").Status'
             )
-            assert (
-                service_check_result.exit_code == 0
-            ), "Unable to check whether DeadlineWorker service is running"
-            assert (
-                "Running" in service_check_result.stdout
-            ), f"DeadlineWorker service is in unexpected status {service_check_result.stdout}"
+            assert service_check_result.exit_code == 0, (
+                "Unable to check whether DeadlineWorker service is running"
+            )
+            assert "Running" in service_check_result.stdout, (
+                f"DeadlineWorker service is in unexpected status {service_check_result.stdout}"
+            )
 
         check_service_is_running()
 
@@ -162,9 +162,9 @@ class TestWorkerStatus:
         check_worker_processes_exist()
         # Kill the worker process
         pkill_command_result = class_worker.send_command("Stop-Process pythonservice")
-        assert (
-            pkill_command_result.exit_code == 0
-        ), f"Failed to kill the worker agent process: {pkill_command_result}"
+        assert pkill_command_result.exit_code == 0, (
+            f"Failed to kill the worker agent process: {pkill_command_result}"
+        )
 
         # Wait for the process to be restarted by the service
 

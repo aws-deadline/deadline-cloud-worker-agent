@@ -330,9 +330,9 @@ class CloudWatchLogEventPartitioner:
             ValueError - raised when the input string could not be chunked into valid UTF-8 strings. This is likely due
             to a malformed string input that encodes to a nonvalid UTF-8 byte sequence.
         """
-        assert (
-            size >= 4
-        ), f"Chunk size too small ({size}). Must be at least 4 bytes to handle all UTF-8 characters."
+        assert size >= 4, (
+            f"Chunk size too small ({size}). Must be at least 4 bytes to handle all UTF-8 characters."
+        )
 
         start = 0
         chunks: list[tuple[str, int]] = []

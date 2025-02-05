@@ -28,7 +28,6 @@ LOG = logging.getLogger(__name__)
 
 
 class TestWorkerConfiguration:
-
     def test_worker_requires_no_instance_profile(
         self,
         deadline_resources,
@@ -36,7 +35,6 @@ class TestWorkerConfiguration:
         worker_config: DeadlineWorkerConfiguration,
         function_worker_factory: Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker],
     ) -> None:
-
         # Create a EC2 worker with disallow-instance-profiles option for the worker agent
         # Note that the EC2 instance is created with an instance profile, so no job will ever be picked up by this worker
         function_worker_factory(
@@ -93,7 +91,6 @@ class TestWorkerConfiguration:
         worker_config: DeadlineWorkerConfiguration,
         function_worker_factory: Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker],
     ) -> None:
-
         worker_with_local_session_logs_off: EC2InstanceWorker = function_worker_factory(
             dataclasses.replace(worker_config, no_local_session_logs="True")
         )
@@ -141,9 +138,9 @@ class TestWorkerConfiguration:
                 check_log_exists_result = worker_with_local_session_logs_off.send_command(
                     command=f'Test-Path -Path "{session_logs_file_path}" -PathType leaf -Credential $Cred'
                 )
-                assert (
-                    "false" in check_log_exists_result.stdout.lower()
-                ), f"Checking that local session logs do not exist returned unexpected response: {check_log_exists_result}"
+                assert "false" in check_log_exists_result.stdout.lower(), (
+                    f"Checking that local session logs do not exist returned unexpected response: {check_log_exists_result}"
+                )
 
     def test_worker_shuts_down_host_machine_if_configured(
         self,
@@ -152,7 +149,6 @@ class TestWorkerConfiguration:
         worker_config: DeadlineWorkerConfiguration,
         function_worker_factory: Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker],
     ) -> None:
-
         # Test that if worker in an autoscaling fleet is configured to shut down host machine, the host machine is shut down when there are no more jobs available for the fleet.
 
         # Submit a job

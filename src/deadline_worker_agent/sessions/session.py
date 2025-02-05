@@ -1110,7 +1110,6 @@ class Session:
         )
 
         if self._output_sync_target_action is not None:
-
             if OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(action_status.state, None):
                 # if the current action is a sync output job attachments upload action and it's completed
                 # then we can update and clear the corresponding task run sync target action
