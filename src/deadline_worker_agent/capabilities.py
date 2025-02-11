@@ -164,7 +164,7 @@ def _get_gpu_memory(*, verbose: bool = True) -> int:
         return 0
     output = output_bytes.decode().strip()
 
-    mem_per_gpu = _parse_gpu_memory(output)
+    mem_per_gpu = _parse_gpu_memory(output, verbose)
 
     min_memory = min(mem_per_gpu)
 
