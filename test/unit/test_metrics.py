@@ -280,8 +280,8 @@ class TestHostMetricsLogger:
         ) -> None:
             # GIVEN
             DECIMAL_NUMBER_PATTERN = r"\d+(?:\.\d+)?"
+            # fmt: off
             EXPECTED_LOG_MESSAGE_PATTERN = " ".join(
-                # fmt: off
                 [
                     "cpu-usage-percent", DECIMAL_NUMBER_PATTERN,
                     "memory-total-bytes", DECIMAL_NUMBER_PATTERN,
@@ -297,8 +297,8 @@ class TestHostMetricsLogger:
                     "disk-read-bytes-per-second", rf"(?:{DECIMAL_NUMBER_PATTERN}|NOT_AVAILABLE|NOT_SUPPORTED)",
                     "disk-write-bytes-per-second", rf"(?:{DECIMAL_NUMBER_PATTERN}|NOT_AVAILABLE|NOT_SUPPORTED)",
                 ]
-                # fmt: on
             )
+            # fmt: on
             logger = logging.getLogger(__name__)
             caplog.set_level(0, logger.name)
             host_metrics_logger = HostMetricsLogger(logger=logger, interval_s=1)

@@ -1,0 +1,13 @@
+[os]
+
+# AWS Deadline Cloud may specify a Windows OS user to run a Job's session actions as. Setting
+# "windows_job_user" will override the OS user and the session actions will be run as
+# the user given in the value of "windows_job_user" instead. It is important to note that by specifying 
+# this value, the password for the Windows OS user specified will be reset to a random, unstored value.
+# This setting also requires that the worker agent is run with administrator privileges. This setting is 
+# incompatible the setting "run_jobs_as_agent_user" set to true.
+#
+# To have a specific Windows OS user used when running jobs, uncomment the line below and
+# replace the username as desired. This value is overridden when the DEADLINE_WORKER_WINDOWS_JOB_USER
+# environment variable or if the --windows-job-user command-line flag is specified.
+# windows_job_user = "input-user"

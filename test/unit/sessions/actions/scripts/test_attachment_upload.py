@@ -28,7 +28,6 @@ def valid_args(path_mapping_file_path: str):
 
 
 class TestAttachmentUpload:
-
     def test_parse_args(self, path_mapping_file_path: str, valid_args: dict):
         # Test valid arguments
         args = parse_args(valid_args)

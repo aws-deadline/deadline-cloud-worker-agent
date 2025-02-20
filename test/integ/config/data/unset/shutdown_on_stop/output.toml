@@ -1,0 +1,15 @@
+[os]
+
+# AWS Deadline Cloud may tell the worker to stop. If the "shutdown_on_stop" setting below is true, then the
+# Worker will attempt to shutdown the host system after the Worker has been stopped.
+#
+# This value is overridden when the DEADLINE_WORKER_NO_SHUTDOWN environment variable is set using
+# one of the following case-insensitive values:
+#
+#     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+#
+# or if the --no-shutdown command-line flag is specified.
+#
+# To prevent the worker agent from shutting down the host when being told to stop, uncomment the
+# line below:
+# shutdown_on_stop = false

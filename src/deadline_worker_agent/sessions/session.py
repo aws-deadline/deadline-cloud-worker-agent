@@ -97,7 +97,6 @@ OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
     ActionState.SUCCESS: "SUCCEEDED",
     ActionState.TIMEOUT: "FAILED",
 }
-DEFAULT_POSIX_OPENJD_SESSION_DIR = Path("/sessions")
 TIME_DELTA_ZERO = timedelta()
 
 # During a SYNC_INPUT_JOB_ATTACHMENTS session action, the transfer rate is periodically reported through
@@ -192,6 +191,7 @@ class Session:
         job_details: JobDetails,
         action_update_callback: Callable[[SessionActionStatus], None],
         action_update_lock: RLock,
+        session_root_dir: Path,
     ) -> None:
         self._id = id
         self._action_update_lock = action_update_lock
@@ -211,10 +211,6 @@ class Session:
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
 
-        session_root_directory: Optional[Path] = None
-        if os.name == "posix":
-            session_root_directory = DEFAULT_POSIX_OPENJD_SESSION_DIR
-
         self._session = OPENJDSession(
             session_id=self._id,
             job_parameter_values=self._job_details.parameters,
@@ -223,7 +219,7 @@ class Session:
             user=self._os_user,
             callback=openjd_session_action_callback,
             os_env_vars=self._env,
-            session_root_directory=session_root_directory,
+            session_root_directory=session_root_dir,
         )
 
         self._queue = queue
@@ -1117,7 +1113,6 @@ class Session:
         )
 
         if self._output_sync_target_action is not None:
-
             if OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(action_status.state, None):
                 # if the current action is a sync output job attachments upload action and it's completed
                 # then we can update and clear the corresponding task run sync target action

@@ -21,7 +21,8 @@ from datetime import datetime, timezone
 
 import secrets
 import string
-from . import win_service
+
+from .win_session import is_windows_session_zero
 
 if TYPE_CHECKING:
     from _win32typing import PyHKEY, PyHANDLE
@@ -69,7 +70,7 @@ def get_windows_credentials(username: str, password: str) -> _WindowsCredentials
         BadCredentialsException: If the username and/or password are incorrect
         OSError: If the UserProfile fails to load in session zero
     """
-    if not win_service.is_windows_session_zero():
+    if not is_windows_session_zero():
         # raises: BadCredentialsException
         return _WindowsCredentialsCacheEntry(
             windows_session_user=WindowsSessionUser(user=username, password=password)

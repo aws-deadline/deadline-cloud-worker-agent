@@ -1,6 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 import os
 import secrets
@@ -115,6 +116,14 @@ def windows_job_user() -> str:
 
 
 @pytest.fixture
+def session_root_dir() -> Path:
+    if os.name == "nt":
+        return Path("C:\\Sessions\\Root")
+    else:
+        return Path("/my/session/root")
+
+
+@pytest.fixture
 def parsed_args(
     farm_id: str,
     fleet_id: str,
@@ -131,6 +140,7 @@ def parsed_args(
     grant_required_access: bool,
     disallow_instance_profile: bool,
     windows_job_user: str,
+    session_root_dir: Path,
 ) -> ParsedCommandLineArguments:
     parsed_args = ParsedCommandLineArguments()
     parsed_args.farm_id = farm_id
@@ -148,6 +158,7 @@ def parsed_args(
     parsed_args.grant_required_access = grant_required_access
     parsed_args.disallow_instance_profile = disallow_instance_profile
     parsed_args.windows_job_user = windows_job_user
+    parsed_args.session_root_dir = session_root_dir
     return parsed_args
 
 

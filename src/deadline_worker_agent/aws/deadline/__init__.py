@@ -144,7 +144,7 @@ def _apply_lower_bound_to_delay(delay: float, lower_bound: Optional[float] = Non
 
 
 def _get_resource_id_and_status_from_conflictexception_header(
-    response: dict[str, Any]
+    response: dict[str, Any],
 ) -> tuple[Optional[str], Optional[str]]:
     context = response.get("context", {})
     resourceId = response.get("resourceId")

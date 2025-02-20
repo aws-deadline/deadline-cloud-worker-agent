@@ -29,6 +29,11 @@ import winerror
 from openjd.sessions import BadCredentialsException, WindowsSessionUser
 from win32comext.shell import shell
 
+from ..config.config_file import (
+    ConfigFile,
+    ModifiableSetting,
+    SettingModification,
+)
 from ..file_system_operations import (
     _set_windows_permissions,
     FileSystemPermissionEnum,
@@ -305,12 +310,14 @@ def add_user_to_group(group_name: str, user_name: str) -> None:
 
 
 def update_config_file(
+    *,
     deadline_config_sub_directory: str,
     farm_id: str,
     fleet_id: str,
+    allow_ec2_instance_profile: bool,
     shutdown_on_stop: Optional[bool] = None,
-    allow_ec2_instance_profile: Optional[bool] = None,
     windows_job_user: Optional[str] = None,
+    session_root_dir: Optional[Path] = None,
 ) -> None:
     """
     Updates the worker configuration file, creating it from the example if it does not exist.
@@ -318,126 +325,73 @@ def update_config_file(
     replaces specific placeholders with the provided values.
 
     Parameters:
-    - deadline_config_sub_directory (str): Subdirectory for Deadline configuration files.
     - farm_id (str): The farm ID to set in the configuration.
     - fleet_id (str): The fleet ID to set in the configuration.
+    - allow_ec2_instance_profile (bool): Whether the agent should be configured to run with[out] an EC2 instance profile.
     - shutdown_on_stop (Optional[bool]): The shutdown_on_stop value to set. Does nothing if set to None.
+    - windows_job_user (Optional[str]): The OS username to be used when running jobs. Overrides the queue's jobRunAs configuration.
+        Does nothing if set to None.
     """
     logging.info("Updating configuration file")
 
-    worker_config_file = os.path.join(deadline_config_sub_directory, "worker.toml")
+    config_path = Path(deadline_config_sub_directory) / "worker.toml"
 
     # Check if the worker.toml file exists, if not, create it from the example
-    if not os.path.isfile(worker_config_file):
+    if not os.path.isfile(config_path):
         # Directory where the script and example configuration files are located.
         script_dir = os.path.dirname(os.path.realpath(__file__))
         example_config_path = os.path.join(script_dir, "worker.toml.example")
-        shutil.copy(example_config_path, worker_config_file)
+        shutil.copy(example_config_path, config_path)
 
-    # Make a backup of the worker configuration file
-    backup_worker_config = worker_config_file + ".bak"
-    shutil.copy(worker_config_file, backup_worker_config)
-
-    # Read the content of the worker configuration file
-    with open(worker_config_file, "r") as file:
-        content = file.read()
-
-    updated_keys = []
-
-    # Replace the placeholders with actual farm_id and fleet_id
-    content = re.sub(
-        r'^# farm_id\s*=\s*("REPLACE-WITH-WORKER-FARM-ID")$',
-        f'farm_id = "{farm_id}"',
-        content,
-        flags=re.MULTILINE,
-    )
-    if not re.search(
-        rf'^farm_id = "{re.escape(farm_id)}"$',
-        content,
-        flags=re.MULTILINE,
-    ):
-        raise InstallerFailedException(f"Failed to configure farm ID in {worker_config_file}")
-    else:
-        updated_keys.append("farm_id")
-    content = re.sub(
-        r'^# fleet_id\s*=\s*("REPLACE-WITH-WORKER-FLEET-ID")$',
-        f'fleet_id = "{fleet_id}"',
-        content,
-        flags=re.MULTILINE,
-    )
-    if not re.search(
-        rf'^fleet_id = "{re.escape(fleet_id)}"$',
-        content,
-        flags=re.MULTILINE,
-    ):
-        raise InstallerFailedException(f"Failed to configure fleet ID in {worker_config_file}")
-    else:
-        updated_keys.append("fleet_id")
+    settings_to_modify: list[SettingModification] = [
+        SettingModification(
+            setting=ModifiableSetting.FARM_ID,
+            value=farm_id,
+        ),
+        SettingModification(
+            setting=ModifiableSetting.FLEET_ID,
+            value=fleet_id,
+        ),
+        SettingModification(
+            setting=ModifiableSetting.WINDOWS_JOB_USER,
+            value=windows_job_user,
+        ),
+        SettingModification(
+            setting=ModifiableSetting.ALLOW_EC2_INSTANCE_PROFILE,
+            value=allow_ec2_instance_profile,
+        ),
+    ]
     if shutdown_on_stop is not None:
-        shutdown_on_stop_toml = str(shutdown_on_stop).lower()
-        content = re.sub(
-            r"^#*\s*shutdown_on_stop\s*=\s*\w+$",
-            f"shutdown_on_stop = {shutdown_on_stop_toml}",
-            content,
-            flags=re.MULTILINE,
-        )
-        if not re.search(
-            rf"^shutdown_on_stop = {re.escape(shutdown_on_stop_toml)}$",
-            content,
-            flags=re.MULTILINE,
-        ):
-            raise InstallerFailedException(
-                f"Failed to configure shutdown_on_stop in {worker_config_file}"
+        settings_to_modify.append(
+            SettingModification(
+                setting=ModifiableSetting.SHUTDOWN_ON_STOP,
+                value=shutdown_on_stop,
             )
-        else:
-            updated_keys.append("shutdown_on_stop")
-    if allow_ec2_instance_profile is not None:
-        allow_ec2_instance_profile_toml = str(allow_ec2_instance_profile).lower()
-        content = re.sub(
-            r"^#*\s*allow_ec2_instance_profile\s*=\s*\w+$",
-            f"allow_ec2_instance_profile = {allow_ec2_instance_profile_toml}",
-            content,
-            flags=re.MULTILINE,
         )
-        if not re.search(
-            rf"^allow_ec2_instance_profile = {re.escape(allow_ec2_instance_profile_toml)}$",
-            content,
-            flags=re.MULTILINE,
-        ):
-            raise InstallerFailedException(
-                f"Failed to configure allow_ec2_instance_profile in {worker_config_file}"
+    if session_root_dir is not None:
+        settings_to_modify.append(
+            SettingModification(
+                setting=ModifiableSetting.SESSION_ROOT_DIR,
+                value=str(session_root_dir),
             )
-        else:
-            updated_keys.append("allow_ec2_instance_profile")
-
-    if windows_job_user is not None:
-        escaped_username = windows_job_user.replace("\\", "\\\\\\\\")
-        content = re.sub(
-            r'^#*\s*windows_job_user\s*=\s*".{1,512}"$',  # defer validation to OS
-            f'windows_job_user = "{escaped_username}"',
-            content,
-            flags=re.MULTILINE,
         )
-        search_username = windows_job_user.replace("\\", "\\\\")
-        if not re.search(
-            rf'^windows_job_user = "{re.escape(search_username)}"$',
-            content,
-            flags=re.MULTILINE,
-        ):
-            raise InstallerFailedException(
-                f"Failed to configure windows_job_user in {worker_config_file}"
-            )
-        else:
-            updated_keys.append("windows_job_user")
 
-    # Write the updated content back to the worker configuration file
-    with open(worker_config_file, "w") as file:
-        file.write(content)
+    updated_keys = [sm.setting.value.setting_name for sm in settings_to_modify]
 
-    logging.info(f"Done configuring {updated_keys} in {worker_config_file}")
+    ConfigFile.modify_config_file_settings(
+        settings_to_modify=settings_to_modify,
+        backup=True,
+        config_path=config_path,
+    )
+
+    logging.info(f"Done configuring {updated_keys} in {config_path}")
 
 
-def provision_directories(agent_username: str) -> WorkerAgentDirectories:
+def provision_directories(
+    *,
+    agent_username: str,
+    session_root_dir: Path,
+) -> WorkerAgentDirectories:
     """
     Creates all required directories for Deadline Worker Agent.
     This function creates the following directories:
@@ -449,6 +403,8 @@ def provision_directories(agent_username: str) -> WorkerAgentDirectories:
 
     Parameters
         agent_username(str): Worker Agent's username used for setting the permission for the directories
+        session_root_dir(Path): Path to the parent directory where the worker agent will create session directories
+            under
 
     Returns
         WorkerAgentDirectories: all directories created in the function
@@ -487,6 +443,18 @@ def provision_directories(agent_username: str) -> WorkerAgentDirectories:
     logging.info(f"Provisioning config directory ({deadline_config_subdir})")
     os.makedirs(deadline_config_subdir, exist_ok=True)
     logging.info(f"Done provisioning config directory ({deadline_config_subdir})")
+
+    logging.info(f"Porvisioning session root directory ({session_root_dir})")
+    os.makedirs(session_root_dir, exist_ok=True)
+    _set_windows_permissions(
+        path=session_root_dir,
+        user=agent_username,
+        user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+        group="Administrators",
+        group_permission=FileSystemPermissionEnum.FULL_CONTROL,
+        agent_user_permission=None,
+    )
+    logging.info(f"Done provisioning session root directory ({session_root_dir})")
 
     return WorkerAgentDirectories(
         deadline_dir=Path(deadline_dir),
@@ -830,6 +798,7 @@ def start_windows_installer(
     region: str,
     allow_shutdown: bool,
     parser: ArgumentParser,
+    session_root_dir: Path,
     user_name: str = DEFAULT_WA_USER,
     password: Optional[str] = None,
     group_name: str = DEFAULT_JOB_GROUP,
@@ -909,6 +878,7 @@ def start_windows_installer(
         f"Region: {region}\n"
         f"Worker agent user: {user_name}\n"
         f"Worker job group: {group_name}\n"
+        f"Session root directory: {session_root_dir}\n"
         f"Allow worker agent shutdown: {allow_shutdown}\n"
         f"Install Windows service: {install_service}\n"
         f"Start service: {start_service}\n"
@@ -1004,16 +974,17 @@ def start_windows_installer(
         add_user_to_group(group_name, user_name)
 
     # Create directories and configure their permissions
-    agent_dirs = provision_directories(user_name)
+    agent_dirs = provision_directories(agent_username=user_name, session_root_dir=session_root_dir)
     update_config_file(
-        str(agent_dirs.deadline_config_subdir),
-        farm_id,
-        fleet_id,
+        deadline_config_sub_directory=str(agent_dirs.deadline_config_subdir),
+        farm_id=farm_id,
+        fleet_id=fleet_id,
         # This always sets shutdown_on_stop even if the user did not provide
         # any "shutdown" option to be consistent with POSIX installer
         shutdown_on_stop=allow_shutdown,
         allow_ec2_instance_profile=allow_ec2_instance_profile,
         windows_job_user=windows_job_user,
+        session_root_dir=session_root_dir,
     )
 
     if telemetry_opt_out:

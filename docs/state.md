@@ -163,15 +163,24 @@ IAM"][iam-security-best-practices] when handling worker AWS credentials files.
 
 [aws-config-credentials-path-override]: https://docs.aws.amazon.com/sdkref/latest/guide/file-location.html#file-location-change
 
-## Session directories
+## Session Directories
 
-The worker agent creates a session directory for each worker session it runs. The session
-directories are created in a platform-specific path:
+The worker agent creates a unique session directory for each worker session it runs. The session
+directories are created under a configurable root directory. This can be configured by supplying a
+`--session-root-dir <SESSION_ROOT_DIR>` argument to `install-deadline-worker`. If not specified,
+the platform-specific defaults are:
 
-| Platform | Session directory path |
+| Platform | Default session root directory |
 | --- | --- |
-| POSIX | `/sessions/<SESSION_ID>` |
-| Windows | `C:\ProgramData\Amazon\OpenJD\<SESSION_ID>` |
+| POSIX | `/sessions` |
+| Windows | `C:\ProgramData\Amazon\OpenJD` |
+
+Session directories are created as children of the session root directory. The directories begin
+with the session ID, with trailing random characters:
+
+```
+<SESSION_ROOT_DIR>/<SESSION_ID>_a159c9
+```
 
 These directories are populated by the worker agent with files created to run the session. This
 includes:

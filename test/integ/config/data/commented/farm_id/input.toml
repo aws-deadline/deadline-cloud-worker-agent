@@ -1,0 +1,12 @@
+[worker]
+
+# The unique identifier of the AWS Deadline Cloud farm that the Worker belongs to. This value is overridden
+# when the DEADLINE_WORKER_FARM_ID environment variable is set or the --farm-id command-line argument
+# is specified.
+#
+# The following is an example for setting the farm ID in this configuration file:
+#
+# farm_id = "farm-aabbccddeeff11223344556677889900"
+#
+# Uncomment the line below and replace the value with your AWS Deadline Cloud farm ID:
+# farm_id = "farm-abc"

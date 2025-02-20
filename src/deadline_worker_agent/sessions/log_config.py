@@ -175,7 +175,7 @@ class LogConfiguration:
             log_driver = LogDriver(log_configuration["logDriver"])
         except ValueError:
             raise ValueError(
-                f"Unsupported log driver: \"{log_configuration['logDriver']}\""
+                f'Unsupported log driver: "{log_configuration["logDriver"]}"'
             ) from None
 
         return LogConfiguration(

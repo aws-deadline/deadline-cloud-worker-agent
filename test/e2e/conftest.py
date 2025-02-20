@@ -185,7 +185,6 @@ def function_worker_factory(
     request: pytest.FixtureRequest,
     ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker], None, None]:
-
     created_workers = []
 
     def _create_function_worker(
@@ -250,9 +249,9 @@ def create_worker(
         assert security_group_id, "SECURITY_GROUP_ID is required when deploying an EC2 worker"
 
         bootstrap_resources: BootstrapResources = request.getfixturevalue("bootstrap_resources")
-        assert (
-            bootstrap_resources.worker_instance_profile_name
-        ), "Worker instance profile is required when deploying an EC2 worker"
+        assert bootstrap_resources.worker_instance_profile_name, (
+            "Worker instance profile is required when deploying an EC2 worker"
+        )
 
         ec2_client = boto3.client("ec2")
         s3_client = boto3.client("s3")
@@ -360,9 +359,9 @@ def operating_system() -> OperatingSystem:
     elif os_env_var == "windows":
         return OperatingSystem(name="WIN2022")
     else:
-        assert (
-            False
-        ), f'Expected OPERATING_SYSTEM env var to be "linux" or "windows", but got {os_env_var}'
+        assert False, (
+            f'Expected OPERATING_SYSTEM env var to be "linux" or "windows", but got {os_env_var}'
+        )
 
 
 def pytest_collection_modifyitems(items):

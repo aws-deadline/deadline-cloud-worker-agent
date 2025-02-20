@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from threading import Event
 from typing import Generator
-from unittest.mock import ANY, MagicMock, call, patch
+from unittest.mock import MagicMock, call, patch
 from pathlib import Path
 
 import pytest
@@ -53,6 +53,7 @@ def worker(
     s3_client: MagicMock,
     worker_id: str,
     worker_logs_dir: Path,
+    session_root_dir: Path,
     # This is unused, but declaring it as a dependency fixture ensures we mock the scheduler class
     # before we instantiate the Worker instance within this fixture body
     mock_scheduler_cls: MagicMock,
@@ -71,6 +72,7 @@ def worker(
             worker_persistence_dir=Path("/var/lib/deadline"),
             worker_logs_dir=worker_logs_dir,
             host_metrics_logging=False,
+            session_root_dir=session_root_dir,
         )
 
 
@@ -134,6 +136,13 @@ class TestInit:
         assert isinstance(worker._stop, Event)
         assert not worker._stop.is_set()
 
+    @pytest.mark.parametrize(
+        argnames="worker_logs_dir",
+        argvalues=(
+            pytest.param(Path("/foo"), id="1"),
+            pytest.param(Path("/bar"), id="2"),
+        ),
+    )
     def test_passes_worker_logs_dir(
         self,
         # Not used, but declared in order to have the Worker.__init__() called
@@ -144,19 +153,28 @@ class TestInit:
         """Asserts that when a Worker instance is created, the worker_logs_dir keyword argument is
         passed when creating the WorkerScheduler instance"""
         # THEN
-        mock_scheduler_cls.assert_called_once_with(
-            deadline=ANY,
-            farm_id=ANY,
-            fleet_id=ANY,
-            worker_id=ANY,
-            job_run_as_user_override=ANY,
-            boto_session=ANY,
-            cleanup_session_user_processes=ANY,
-            worker_persistence_dir=ANY,
-            worker_logs_dir=worker_logs_dir,
-            retain_session_dir=ANY,
-            stop=ANY,
-        )
+        mock_scheduler_cls.assert_called_once()
+        assert mock_scheduler_cls.call_args.kwargs["worker_logs_dir"] == worker_logs_dir
+
+    @pytest.mark.parametrize(
+        argnames="session_root_dir",
+        argvalues=(
+            pytest.param(Path("/foo"), id="1"),
+            pytest.param(Path("/bar"), id="2"),
+        ),
+    )
+    def test_passes_session_root_dir(
+        self,
+        # Not used, but declared in order to have the Worker.__init__() called
+        worker: Worker,
+        mock_scheduler_cls: MagicMock,
+        session_root_dir: Path,
+    ) -> None:
+        """Asserts that when a Worker instance is created, the session_root_dir keyword argument is
+        passed when creating the WorkerScheduler instance"""
+        # THEN
+        mock_scheduler_cls.assert_called_once()
+        assert mock_scheduler_cls.call_args.kwargs["session_root_dir"] == session_root_dir
 
 
 class TestRun:

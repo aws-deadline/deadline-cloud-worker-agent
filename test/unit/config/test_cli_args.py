@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 from argparse import ArgumentParser
+from pathlib import Path
 
 import pytest
 import os
@@ -43,6 +44,7 @@ class TestArgumentParser:
         assert result.verbose is None
         assert result.posix_job_user is None
         assert result.windows_job_user is None
+        assert result.session_root_dir is None
 
     @pytest.mark.parametrize(
         ["farm_id"],
@@ -175,3 +177,18 @@ class TestArgumentParser:
 
         # THEN
         assert result.windows_job_user == windows_job_user
+
+    def test_session_root_dir(
+        self,
+        arg_parser: ArgumentParser,
+        # defined in conftest.py in this dir
+        session_root_dir: str,
+    ) -> None:
+        # GIVEN
+        args = ["--session-root-dir", session_root_dir]
+
+        # WHEN
+        result = arg_parser.parse_args(args, namespace=cli_args_mod.ParsedCommandLineArguments())
+
+        # THEN
+        assert result.session_root_dir == Path(session_root_dir)

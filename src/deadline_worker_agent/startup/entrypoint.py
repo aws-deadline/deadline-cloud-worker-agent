@@ -179,6 +179,7 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
                 host_metrics_logging_interval_seconds=config.host_metrics_logging_interval_seconds,
                 retain_session_dir=config.retain_session_dir,
                 stop=stop,
+                session_root_dir=config.session_root_dir,
             )
             try:
                 worker_sessions.run()

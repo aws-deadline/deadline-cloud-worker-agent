@@ -187,7 +187,7 @@ class JobEntities:
             entity_identifier_fields = cast(
                 JobAttachmentDetailsIdentifierFields, entity_identifier_fields
             )
-            return f'JA({entity_identifier_fields["jobId"]})'
+            return f"JA({entity_identifier_fields['jobId']})"
         else:
             raise ValueError(f'Unexpected entity type "{entity_type}"')
 
@@ -267,9 +267,9 @@ class JobEntities:
                     list[BaseEntityErrorFields], list(failed_entity.values())
                 )
                 # Assert only fails if there's a service bug.
-                assert (
-                    len(failed_entity_values) == 1
-                ), f"Entity errors should contain a single key, but got {failed_entity.keys()}"
+                assert len(failed_entity_values) == 1, (
+                    f"Entity errors should contain a single key, but got {failed_entity.keys()}"
+                )
 
                 failed_entity_value = failed_entity_values[0]
                 if failed_entity_value["code"] == "MaxPayloadSizeExceeded":
