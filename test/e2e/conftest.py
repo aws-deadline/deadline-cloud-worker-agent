@@ -37,6 +37,7 @@ class DeadlineResources:
     fleet: Fleet = field(init=False)
     scaling_queue: Queue = field(init=False)
     scaling_fleet: Fleet = field(init=False)
+    queue_a_job_storage_profile_id: str = field(init=False)
 
     farm_id: InitVar[str]
     queue_a_id: InitVar[str]
@@ -45,6 +46,7 @@ class DeadlineResources:
     fleet_id: InitVar[str]
     scaling_queue_id: InitVar[str]
     scaling_fleet_id: InitVar[str]
+    job_storage_profile_id: InitVar[str]
 
     def __post_init__(
         self,
@@ -55,6 +57,7 @@ class DeadlineResources:
         fleet_id: str,
         scaling_queue_id: str,
         scaling_fleet_id: str,
+        job_storage_profile_id: str,
     ) -> None:
         object.__setattr__(self, "farm", Farm(id=farm_id))
         object.__setattr__(self, "queue_a", Queue(id=queue_a_id, farm=self.farm))
@@ -65,6 +68,7 @@ class DeadlineResources:
         object.__setattr__(self, "fleet", Fleet(id=fleet_id, farm=self.farm, autoscaling=False))
         object.__setattr__(self, "scaling_queue", Queue(id=scaling_queue_id, farm=self.farm))
         object.__setattr__(self, "scaling_fleet", Fleet(id=scaling_fleet_id, farm=self.farm))
+        object.__setattr__(self, "queue_a_job_storage_profile_id", job_storage_profile_id)
 
 
 @pytest.fixture(scope="session")
@@ -80,6 +84,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         FLEET_ID: ID of a non scaling Deadline fleet to use for tests.
         SCALING_QUEUE_ID: ID of the Deadline scaling queue to use.
         SCALING_FLEET_ID: ID of the Deadline scaling fleet to use.
+        JOB_STORAGE_PROFILE_ID: ID of the Deadline storage profile to use
 
     Returns:
         DeadlineResources: The Deadline resources used for tests
@@ -92,9 +97,10 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
 
     scaling_queue_id = os.environ["SCALING_QUEUE_ID"]
     scaling_fleet_id = os.environ["SCALING_FLEET_ID"]
+    job_storage_profile_id = os.environ["JOB_STORAGE_PROFILE_ID"]
 
     LOG.info(
-        f"Configured Deadline Cloud Resources, farm: {farm_id}, scaling_fleet: {scaling_fleet_id}, scaling_queue: {scaling_queue_id} ,queue_a: {queue_a_id}, queue_b: {queue_b_id}, fleet: {fleet_id}"
+        f"Configured Deadline Cloud Resources, farm: {farm_id}, scaling_fleet: {scaling_fleet_id}, scaling_queue: {scaling_queue_id}, queue_a: {queue_a_id}, storage_profile_id for queue_a: {job_storage_profile_id}, queue_b: {queue_b_id}, fleet: {fleet_id}"
     )
 
     sts_client = boto3.client("sts")
@@ -109,6 +115,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         fleet_id=fleet_id,
         scaling_queue_id=scaling_queue_id,
         scaling_fleet_id=scaling_fleet_id,
+        job_storage_profile_id=job_storage_profile_id,
     )
 
 

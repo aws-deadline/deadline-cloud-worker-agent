@@ -79,6 +79,8 @@ Outputs:
   WindowsAutoFleetX86Id:
     Value: !GetAtt [WindowsAutoScalingFleetx86, FleetId]
 
+  LinuxJobStorageProfileId:
+    Value: !GetAtt [LinuxJobStorageProfile, StorageProfileId]
 
 Resources:
 
@@ -544,6 +546,20 @@ Resources:
               Service:
                 - !Sub credentials.deadline.${AWS::URLSuffix}
       Policies:
+        - PolicyName: TaskLogPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  # Allow Deadline Cloud Monitor users to read Task logs
+                  - logs:GetLogEvents
+                Resource:
+                  - !Join
+                    - ''
+                    - - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*:/aws/deadline/
+                      - !GetAtt DeadlineFarm.FarmId
+                      - /*
         - PolicyName: JobAttachmentsPermissions
           PolicyDocument:
             Version: '2012-10-17'
@@ -623,12 +639,39 @@ Resources:
     Properties:
       DisplayName: DeadlineCloudAgent-E2ETesting
 
+  LinuxFleetStorageProfile:
+    Type: AWS::Deadline::StorageProfile
+    Properties:
+      DisplayName: "LinuxFleetStorageProfile"
+      FarmId: !GetAtt  DeadlineFarm.FarmId  # Reference to your Deadline Farm ID
+      OsFamily: "LINUX"    # Valid values: LINUX, WINDOWS, or MACOS
+      FileSystemLocations:
+        - Name: "StorageProfileTest"
+          Path: "/tmp/storageprofiletest/dest"
+          Type: "LOCAL"
+
+  LinuxJobStorageProfile:
+    Type: AWS::Deadline::StorageProfile
+    Properties:
+      DisplayName: "LinuxJobStorageProfile"
+      FarmId: !GetAtt  DeadlineFarm.FarmId  # Reference to your Deadline Farm ID
+      OsFamily: "LINUX"    # Valid values: LINUX, WINDOWS, or MACOS
+      FileSystemLocations:
+        - Name: "StorageProfileTest"
+          Path: "/tmp/storageprofiletest"
+          Type: "LOCAL"
+
   MainQueue:
     Type: AWS::Deadline::Queue
     Properties:
       DisplayName: MainQueue
       Description: The main queue that test jobs are submitted to
       FarmId: !GetAtt DeadlineFarm.FarmId
+      AllowedStorageProfileIds:
+        - !GetAtt LinuxJobStorageProfile.StorageProfileId
+        - !GetAtt LinuxFleetStorageProfile.StorageProfileId
+      RequiredFileSystemLocationNames:
+        - "StorageProfileTest"
       JobAttachmentSettings:
         RootPrefix: Deadline
         S3BucketName: !Ref JobAttachmentsBucket
@@ -646,7 +689,7 @@ Resources:
     Type: AWS::Deadline::Queue
     Properties:
       DisplayName: SecondaryQueue
-      Description: Queue used when a test needs to excersize queue-switching behavior
+      Description: Queue used when a test needs to excercise queue-switching behavior
         and cross-queue permissions.
       FarmId: !GetAtt DeadlineFarm.FarmId
       JobAttachmentSettings:
@@ -661,6 +704,9 @@ Resources:
           PasswordArn: !Ref WindowsJobUserPasswordSecret
         RunAs: QUEUE_CONFIGURED_USER
       RoleArn: !GetAtt QueueRole.Arn
+      AllowedStorageProfileIds:
+        - !GetAtt LinuxJobStorageProfile.StorageProfileId
+        - !GetAtt LinuxFleetStorageProfile.StorageProfileId
 
   NonValidRoleQueue:
     Type: AWS::Deadline::Queue
@@ -680,7 +726,9 @@ Resources:
           PasswordArn: !Ref WindowsJobUserPasswordSecret
         RunAs: QUEUE_CONFIGURED_USER
       RoleArn: !GetAtt NonValidQueueRole.Arn
-
+      AllowedStorageProfileIds:
+        - !GetAtt LinuxJobStorageProfile.StorageProfileId
+        - !GetAtt LinuxFleetStorageProfile.StorageProfileId
 
   AutoscalingQueue:
     Type: AWS::Deadline::Queue
@@ -712,6 +760,7 @@ Resources:
       RoleArn: !GetAtt LinuxFleetRole.Arn
       Configuration:
         CustomerManaged:
+          StorageProfileId: !GetAtt LinuxFleetStorageProfile.StorageProfileId
           Mode: NO_SCALING
           WorkerCapabilities:
             CpuArchitectureType: x86_64

@@ -79,4 +79,5 @@ export NON_VALID_ROLE_QUEUE_ID=$(echo ${STACK_OUTPUTS} | jq -r '.NonValidRoleQue
 export FLEET_ID=$(echo ${STACK_OUTPUTS} | jq -r ".${OS}ManualFleetX86Id")
 export SCALING_QUEUE_ID=$(echo ${STACK_OUTPUTS} | jq -r '.ScalingQueueId')
 export SCALING_FLEET_ID=$(echo ${STACK_OUTPUTS} | jq -r ".${OS}AutoFleetX86Id")
+export JOB_STORAGE_PROFILE_ID=$(echo ${STACK_OUTPUTS} | jq -r '.LinuxJobStorageProfileId')
 EOF
