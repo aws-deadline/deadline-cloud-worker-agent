@@ -10,7 +10,7 @@ import sys
 import os
 
 import tomlkit
-from pydantic import BaseModel, BaseSettings, Field, ValidationError, root_validator, StrictStr
+from pydantic.v1 import BaseModel, BaseSettings, Field, ValidationError, root_validator, StrictStr
 from tomlkit.container import Container
 from tomlkit.items import Bool, Comment, SingleKey, String, Table, Trivia, Whitespace
 
