@@ -11,13 +11,13 @@ import platform
 import shutil
 import subprocess
 
-from pydantic import BaseModel, NonNegativeFloat, PositiveFloat
+from pydantic.v1 import BaseModel, NonNegativeFloat, PositiveFloat
 import psutil
 
 from .config.errors import ConfigurationError
 
 if TYPE_CHECKING:
-    from pydantic.typing import CallableGenerator
+    from pydantic.v1.typing import CallableGenerator
 
 
 _logger = logging.getLogger(__name__)

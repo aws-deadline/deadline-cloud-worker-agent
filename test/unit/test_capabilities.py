@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import subprocess
 
-from pydantic import ValidationError
+from pydantic.v1 import ValidationError
 
 from deadline_worker_agent.capabilities import Capabilities
 from deadline_worker_agent import capabilities as capabilities_mod
