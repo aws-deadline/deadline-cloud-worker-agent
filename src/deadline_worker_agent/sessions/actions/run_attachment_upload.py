@@ -179,4 +179,5 @@ class AttachmentUploadAction(OpenjdAction):
                 "DEADLINE_STEP_ID": self._step_id,
                 "DEADLINE_TASK_ID": self._task_id,
             },
+            log_task_banner=False,
         )

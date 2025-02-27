@@ -289,6 +289,7 @@ class AttachmentDownloadAction(OpenjdAction):
         session.run_task(
             step_script=self._step_script,
             task_parameter_values=dict[str, ParameterValue](),
+            log_task_banner=False,
         )
 
     def _start_vfs(

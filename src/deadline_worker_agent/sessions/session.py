@@ -1365,6 +1365,7 @@ class Session:
             step_script=step_script,
             task_parameter_values=task_parameter_values,
             os_env_vars=os_env_vars,
+            log_task_banner=log_task_banner,
         )
 
     def stop(

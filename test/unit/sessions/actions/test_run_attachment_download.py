@@ -190,4 +190,5 @@ class TestStart:
         session.run_task.assert_called_once_with(
             step_script=action._step_script,
             task_parameter_values=dict[str, ParameterValue](),
+            log_task_banner=False,
         )
