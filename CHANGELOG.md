@@ -1,3 +1,17 @@
+## 0.28.0 (2025-02-27)
+
+### BREAKING CHANGES
+* A defect was fixed in the OpenJobDescription specification ([OpenJobDescription/openjd-specifications#70](https://github.com/OpenJobDescription/openjd-specifications/issues/70)) which causes a breaking change to Worker Agent behaviour. Environment exits previously had no default timeout and they now have a default timeout of 5 minutes. To have long-running environment exit actions, job templates can specify a large timeout value when defining environment exit actions in a job or environment template.
+
+### Features
+* configurable session root directory (#513) ([`dd541a1`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/dd541a12eac344e109ca283166f978a20af8439c))
+
+### Bug Fixes
+* more robust config file modifications in install-deadline-worker (#512) ([`1060b4b`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/1060b4bd29890c0b76ece8665b0415cb5a3303e2))
+* worker state file saved on AMI causes multiple instances sharing same worker ID (#527) ([`ec001c9`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/ec001c9830b0fd7639248a2b2bc892787993c5b2))
+* skip attachment upload when outputs not modified (#524) ([`972df4e`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/972df4ead8311967ad26844f0445859cae9ae483))
+* update log kind to differentiate sync input and sync output (#523) ([`af28588`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/af285880ae66c697534aabae2f28fbc626873fa8))
+
 ## 0.27.5 (2024-12-14)
 
 
