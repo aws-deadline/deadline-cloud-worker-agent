@@ -536,11 +536,11 @@ class SessionActionQueue:
                             job_attachment_details = self._job_entities.job_attachment_details()
                         except UnsupportedSchema as e:
                             raise JobEntityUnsupportedSchemaError(
-                                action_id, SessionActionLogKind.JA_SYNC, e._version
+                                action_id, SessionActionLogKind.JA_SYNC_INPUT, e._version
                             ) from e
                         except ValueError as e:
                             raise JobAttachmentDetailsError(
-                                action_id, SessionActionLogKind.JA_SYNC, str(e)
+                                action_id, SessionActionLogKind.JA_SYNC_INPUT, str(e)
                             ) from e
                         next_action = AttachmentDownloadAction(
                             id=action_id,
@@ -588,11 +588,11 @@ class SessionActionQueue:
                             job_attachment_details = self._job_entities.job_attachment_details()
                         except UnsupportedSchema as e:
                             raise JobEntityUnsupportedSchemaError(
-                                action_id, SessionActionLogKind.JA_SYNC, e._version
+                                action_id, SessionActionLogKind.JA_SYNC_INPUT, e._version
                             ) from e
                         except ValueError as e:
                             raise JobAttachmentDetailsError(
-                                action_id, SessionActionLogKind.JA_SYNC, str(e)
+                                action_id, SessionActionLogKind.JA_SYNC_INPUT, str(e)
                             ) from e
                         next_action = SyncInputJobAttachmentsAction(
                             id=action_id,

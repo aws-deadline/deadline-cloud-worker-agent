@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Sequence, Tuple, cast, TYPE_CHECKING
 
-from pydantic import ValidationError
+from pydantic.v1 import ValidationError
 
 from openjd.sessions import PosixSessionUser, SessionUser
 
@@ -87,6 +87,8 @@ class Configuration:
     """Whether to retain the OpenJD's session directory on completion"""
     structured_logs: bool
     """Whether or not the Worker Agent logs are structured logs."""
+    session_root_dir: Path
+    """Path to the root directory where worker session directories are created under"""
 
     # Used to optimize the memory allocation and attribute lookup speed. Tells python to not create a dict
     # for the attributes.
@@ -109,6 +111,7 @@ class Configuration:
         "host_metrics_logging_interval_seconds",
         "retain_session_dir",
         "structured_logs",
+        "session_root_dir",
     )
 
     def __init__(
@@ -137,9 +140,9 @@ class Configuration:
         if parsed_cli_args.windows_job_user is not None:
             settings_kwargs["windows_job_user"] = parsed_cli_args.windows_job_user
         if parsed_cli_args.disallow_instance_profile is not None:
-            settings_kwargs["allow_instance_profile"] = (
-                not parsed_cli_args.disallow_instance_profile
-            )
+            settings_kwargs[
+                "allow_instance_profile"
+            ] = not parsed_cli_args.disallow_instance_profile
         if parsed_cli_args.logs_dir is not None:
             settings_kwargs["worker_logs_dir"] = parsed_cli_args.logs_dir.absolute()
         if parsed_cli_args.persistence_dir is not None:
@@ -156,6 +159,8 @@ class Configuration:
             settings_kwargs["retain_session_dir"] = parsed_cli_args.retain_session_dir
         if parsed_cli_args.structured_logs is not None:
             settings_kwargs["structured_logs"] = parsed_cli_args.structured_logs
+        if parsed_cli_args.session_root_dir is not None:
+            settings_kwargs["session_root_dir"] = parsed_cli_args.session_root_dir.absolute()
 
         settings = WorkerSettings(**settings_kwargs)
 
@@ -207,6 +212,7 @@ class Configuration:
         self.host_metrics_logging_interval_seconds = settings.host_metrics_logging_interval_seconds
         self.retain_session_dir = settings.retain_session_dir
         self.structured_logs = settings.structured_logs
+        self.session_root_dir = settings.session_root_dir
 
         self._validate()
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, fields, field
 from time import sleep
 from typing import Optional
 import json
@@ -95,6 +95,11 @@ class WorkerPersistenceInfo:
     worker_id: str
     """The Worker ID"""
 
+    instance_id: str | None = field(
+        default=None,
+    )
+    """The EC2 instance ID of the Worker, if applicable"""
+
     @classmethod
     def load(cls, *, config: Configuration) -> Optional[WorkerPersistenceInfo]:
         """Load the Worker Bootstrap from the Worker Agent state persistence file"""
@@ -155,7 +160,7 @@ class WorkerPersistenceInfo:
         config.worker_state_file.touch(mode=stat.S_IWUSR | stat.S_IRUSR, exist_ok=True)
         with config.worker_state_file.open("w", encoding="utf8") as fh:
             json.dump(
-                asdict(self),
+                {k: v for k, v in asdict(self).items() if v is not None},
                 fh,
             )
         _logger.info(
@@ -263,22 +268,65 @@ def _load_or_create_worker(
     Raises:
         SystemExit - Any error here is unrecoverable, and the Agent should exit.
     """
+    instance_id = _get_instance_id()
 
     worker_info: Optional[WorkerPersistenceInfo] = None
     has_existing_worker = False
     if use_existing_worker:
         worker_info = WorkerPersistenceInfo.load(config=config)
         if worker_info:
-            has_existing_worker = True
-            _logger.info(
-                WorkerLogEvent(
-                    op=WorkerLogEventOp.LOAD,
-                    farm_id=config.farm_id,
-                    fleet_id=config.fleet_id,
-                    worker_id=worker_info.worker_id,
-                    message="Worker identity loaded from prior run.",
+            if (
+                instance_id is not None
+                and worker_info.instance_id is not None
+                and worker_info.instance_id != instance_id
+            ):
+                # This can happen if an AMI is created from an instance that started the worker agent and left behind a
+                # worker persistence file. Ideally the file is removed before creating the AMI but in the event it still
+                # exists, simply create a new worker and replace the file.
+                _logger.warning(
+                    WorkerLogEvent(
+                        op=WorkerLogEventOp.LOAD,
+                        farm_id=config.farm_id,
+                        fleet_id=config.fleet_id,
+                        worker_id=worker_info.worker_id,
+                        message=(
+                            f"Worker state file contains an instance ID ({worker_info.instance_id}) different to that of the running host ({instance_id}). "
+                            "This could be the result of a worker state file being included in the image being launched. "
+                            "For guidance on preparing a worker image, please refer to https://docs.aws.amazon.com/deadline-cloud/latest/developerguide/create-ami.html#prepare-the-instance. "
+                            "Ignoring the persisted worker identity and creating a new worker. "
+                        ),
+                    )
                 )
-            )
+                worker_info = None
+            elif worker_info.instance_id is None and instance_id is not None:
+                # No instance id in the state file could be the result of an upgrade
+                # Add the instance ID to the state file but still load the same worker id.
+                worker_info.instance_id = instance_id
+                _logger.info(
+                    WorkerLogEvent(
+                        op=WorkerLogEventOp.LOAD,
+                        farm_id=config.farm_id,
+                        fleet_id=config.fleet_id,
+                        worker_id=worker_info.worker_id,
+                        message=(
+                            "Worker state file did not contain an instance ID. "
+                            f"Adding instance ID ({worker_info.instance_id}) to worker state file."
+                        ),
+                    )
+                )
+                worker_info.save(config=config)
+                has_existing_worker = True
+            else:
+                has_existing_worker = True
+                _logger.info(
+                    WorkerLogEvent(
+                        op=WorkerLogEventOp.LOAD,
+                        farm_id=config.farm_id,
+                        fleet_id=config.fleet_id,
+                        worker_id=worker_info.worker_id,
+                        message="Worker identity loaded from prior run.",
+                    )
+                )
 
     if not worker_info:
         # Worker creation must be done using bootstrap credentials from the environment
@@ -303,7 +351,7 @@ def _load_or_create_worker(
             # Raises: SystemExit
             sys.exit(1)
         worker_id = create_worker_response["workerId"]
-        worker_info = WorkerPersistenceInfo(worker_id=worker_id)
+        worker_info = WorkerPersistenceInfo(worker_id=worker_id, instance_id=instance_id)
         _logger.info(
             WorkerLogEvent(
                 op=WorkerLogEventOp.CREATE,
@@ -520,6 +568,28 @@ def _enforce_no_instance_profile_or_stop_worker(
         raise
 
 
+def _get_instance_id() -> str | None:
+    """
+    This function attempts to query the IMDS /instance-id endpoint for the instance ID.
+    The query will return the instance ID on success, and will return None if the query fails or
+    times out. The timeout is limited to half a second and will occur if running off AWS.
+    """
+    response = _get_metadata("instance-id")
+    if response is None:
+        _logger.info(
+            "IMDS is not reachable. Worker host is not an EC2 instance or IMDs is turned off."
+        )
+        return None
+    _logger.debug("IMDS /instance-id response %d", response.status_code)
+    if response.status_code != 200:
+        _logger.info(
+            f"Error attempting to detect instance ID: Recieved HTTP {response.status_code} from IMDS."
+        )
+        return None
+    _logger.info(f"Worker host is running on instance {response.text}.")
+    return response.text
+
+
 def _enforce_no_instance_profile() -> None:
     """
     This function will query the IMDS /iam/info endpoint in a loop until either:
@@ -573,13 +643,14 @@ def _get_metadata(metadata_type: str) -> requests.Response | None:
         response = requests.put(
             "http://169.254.169.254/latest/api/token",
             headers={"X-aws-ec2-metadata-token-ttl-seconds": "30"},
+            timeout=0.5,  # Non-aws worker hosts will time-out, but the default timeout can be > 20s
         )
         token = response.text
         response = requests.get(
             f"http://169.254.169.254/latest/meta-data/{metadata_type}",
             headers={"X-aws-ec2-metadata-token": token},
         )
-    except ConnectionError:
+    except (TimeoutError, ConnectionError):
         _logger.info("Not running on Ec2, the metadata service was not found!")
         return None
     else:

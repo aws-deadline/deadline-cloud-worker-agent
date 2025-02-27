@@ -74,7 +74,6 @@ class TestWindowsJobUserOverride:
         class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
     ) -> None:
-
         job = self.submit_whoami_job(
             "no user override", deadline_client, deadline_resources.farm, deadline_resources.queue_a
         )
@@ -98,16 +97,15 @@ class TestWindowsJobUserOverride:
         class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
     ) -> None:
-
         class_worker.stop_worker_service()
 
         cmd_result = class_worker.send_command(
             "(Get-Content -Path C:\ProgramData\Amazon\Deadline\Config\worker.toml -Raw) -replace '# windows_job_user = \"job-user\"', 'windows_job_user = \"config-override\"' | Set-Content -Path C:\ProgramData\Amazon\Deadline\Config\worker.toml"
         )
 
-        assert (
-            cmd_result.exit_code == 0
-        ), f"Setting the job user override via CLI failed: {cmd_result}"
+        assert cmd_result.exit_code == 0, (
+            f"Setting the job user override via CLI failed: {cmd_result}"
+        )
 
         class_worker.start_worker_service()
 
@@ -144,7 +142,6 @@ class TestWindowsJobUserOverride:
         class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
     ) -> None:
-
         class_worker.stop_worker_service()
 
         cmd_result = class_worker.send_command(
@@ -156,9 +153,9 @@ class TestWindowsJobUserOverride:
             + "--windows-job-user install-override"
         )
 
-        assert (
-            cmd_result.exit_code == 0
-        ), f"Failed to install worker with job user override: {cmd_result}"
+        assert cmd_result.exit_code == 0, (
+            f"Failed to install worker with job user override: {cmd_result}"
+        )
 
         class_worker.start_worker_service()
 
@@ -195,16 +192,15 @@ class TestWindowsJobUserOverride:
         class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
     ) -> None:
-
         class_worker.stop_worker_service()
 
         cmd_result = class_worker.send_command(
             "[System.Environment]::SetEnvironmentVariable('DEADLINE_WORKER_WINDOWS_JOB_USER', 'env-override', [System.EnvironmentVariableTarget]::Machine)",
         )
 
-        assert (
-            cmd_result.exit_code == 0
-        ), f"Failed to set DEADLINE_WORKER_WINDOWS_JOB_USER: {cmd_result}"
+        assert cmd_result.exit_code == 0, (
+            f"Failed to set DEADLINE_WORKER_WINDOWS_JOB_USER: {cmd_result}"
+        )
 
         class_worker.start_worker_service()
 
@@ -232,9 +228,9 @@ class TestWindowsJobUserOverride:
             "[System.Environment]::SetEnvironmentVariable('DEADLINE_WORKER_WINDOWS_JOB_USER', '', [System.EnvironmentVariableTarget]::Machine)",
         )
 
-        assert (
-            cmd_result.exit_code == 0
-        ), f"Failed to unset DEADLINE_WORKER_WINDOWS_JOB_USER: {cmd_result}"
+        assert cmd_result.exit_code == 0, (
+            f"Failed to unset DEADLINE_WORKER_WINDOWS_JOB_USER: {cmd_result}"
+        )
 
 
 @pytest.mark.skipif(
@@ -322,7 +318,6 @@ class TestLinuxJobUserOverride:
         posix_config_override_job_user: PosixSessionUser,
         deadline_client: DeadlineClient,
     ) -> None:
-
         class_worker.stop_worker_service()
 
         @backoff.on_exception(
@@ -344,9 +339,9 @@ class TestLinuxJobUserOverride:
         cmd_result = class_worker.send_command(
             command=f'sed -i \'s/# posix_job_user = "user:group"/posix_job_user = "{posix_config_override_job_user.user}:{posix_config_override_job_user.group}"/g\' /etc/amazon/deadline/worker.toml'
         )
-        assert (
-            cmd_result.exit_code == 0
-        ), f"Setting the job user override via CLI failed: {cmd_result}"
+        assert cmd_result.exit_code == 0, (
+            f"Setting the job user override via CLI failed: {cmd_result}"
+        )
 
         try:
             class_worker.start_worker_service()
@@ -374,9 +369,9 @@ class TestLinuxJobUserOverride:
             cmd_result = class_worker.send_command(
                 command=f'sed -i \'s/posix_job_user = "{posix_config_override_job_user.user}:{posix_config_override_job_user.group}"/# posix_job_user = "user:group"/g\' /etc/amazon/deadline/worker.toml'
             )
-            assert (
-                cmd_result.exit_code == 0
-            ), f"Resetting the job user override via CLI failed: {cmd_result}"
+            assert cmd_result.exit_code == 0, (
+                f"Resetting the job user override via CLI failed: {cmd_result}"
+            )
 
     def test_env_var_user_override(
         self,
@@ -385,7 +380,6 @@ class TestLinuxJobUserOverride:
         posix_env_override_job_user: PosixSessionUser,
         deadline_client: DeadlineClient,
     ) -> None:
-
         class_worker.stop_worker_service()
 
         @backoff.on_exception(
@@ -408,9 +402,9 @@ class TestLinuxJobUserOverride:
             f'echo "Environment=DEADLINE_WORKER_POSIX_JOB_USER={posix_env_override_job_user.user}:{posix_env_override_job_user.group}" >> /etc/systemd/system/deadline-worker.service.d/config.conf',
         )
 
-        assert (
-            cmd_result.exit_code == 0
-        ), f"Failed to set DEADLINE_WORKER_POSIX_JOB_USER: {cmd_result}"
+        assert cmd_result.exit_code == 0, (
+            f"Failed to set DEADLINE_WORKER_POSIX_JOB_USER: {cmd_result}"
+        )
 
         class_worker.send_command("systemctl daemon-reload")
 
@@ -440,7 +434,7 @@ class TestLinuxJobUserOverride:
             cmd_result = class_worker.send_command(
                 f"sed -i '/Environment=DEADLINE_WORKER_POSIX_JOB_USER={posix_env_override_job_user.user}/d' /etc/systemd/system/deadline-worker.service.d/config.conf"
             )
-            assert (
-                cmd_result.exit_code == 0
-            ), f"Resetting the job user override via CLI failed: {cmd_result}"
+            assert cmd_result.exit_code == 0, (
+                f"Resetting the job user override via CLI failed: {cmd_result}"
+            )
             class_worker.send_command("sudo systemctl daemon-reload")

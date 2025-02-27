@@ -1,0 +1,26 @@
+[aws]
+
+# The "allow_ec2_instance_profile" setting controls whether the Worker will run with an EC2 instance
+# profile associated to the host instance. This value is overridden when the
+# DEADLINE_WORKER_ALLOW_INSTANCE_PROFILE environment variable is set using one of the following
+# case-insensitive values:
+#
+#     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+#
+# or if the --disallow-instance-profile command-line flag is specified.
+#
+# By default, this value is true and the worker agent will run with or without an instance profile
+# if the worker is on an EC2 host. If this value is false, the worker host will query the EC2
+# instance meta-data service (IMDS) to check for an instance profile. If an instance profile is
+# detected, the worker agent will stop and exit.
+#
+#  ***************************************** WARNING *****************************************
+#  *                                                                                         *
+#  *     IF THIS IS TRUE, THEN ANY SESSIONS RUNNING ON THE WORKER CAN ASSUME THE INSTANCE    *
+#  *                  PROFILE AND USE ITS ASSOCIATED PRIVILEGES                              *
+#  *                                                                                         *
+#  *******************************************************************************************
+#
+# To turn on this feature and have the worker agent not run with an EC2 instance profile,
+# uncomment the line below:
+allow_ec2_instance_profile = true

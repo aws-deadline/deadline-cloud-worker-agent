@@ -35,6 +35,18 @@
 # The following is the default worker persistence dir on POSIX systems.
 # worker_persistence_dir = "/var/lib/deadline"
 
+
+# The session root directory is a parent directory where worker agent creates per-session
+# subdirectories under. This value is overridden when the DEADLINE_WORKER_SESSION_ROOT_DIR environment
+# variable is set or the --session-root-dir command-line argument is specified.
+#
+# The default session root directory on POSIX systems is "/sessions" and on Windows systems is
+# "C:\ProgramData\Amazon\OpenJD".
+#
+# Uncomment the line below and replace the value with your desired session root directory:
+#
+# session_root_dir = "/sessions"
+
 [aws]
 
 # The worker agent requires initial AWS credentials in order to bootstrap the worker. Bootstrapping

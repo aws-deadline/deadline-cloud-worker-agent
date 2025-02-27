@@ -9,7 +9,7 @@ import pytest
 import os
 from pathlib import Path
 
-from pydantic import ConstrainedStr
+from pydantic.v1 import ConstrainedStr
 
 import deadline_worker_agent.config.settings as settings_mod
 from deadline_worker_agent.capabilities import Capabilities
@@ -172,6 +172,17 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         expected_default=False,
         expected_default_factory_return_value=None,
     ),
+    FieldTestCaseParams(
+        field_name="session_root_dir",
+        expected_type=Path,
+        expected_required=False,
+        expected_default=(
+            Path("/sessions")
+            if os.name == "posix"
+            else Path(os.getenv("PROGRAMDATA", "C:\\ProgramData")) / "Amazon" / "OpenJD"
+        ),
+        expected_default_factory_return_value=None,
+    ),
 ]
 
 
@@ -207,9 +218,9 @@ def test_settings_field(test_case_params: FieldTestCaseParams) -> None:
             default_factory_return_value == test_case_params.expected_default_factory_return_value
         )
     else:
-        assert (
-            test_case_params.expected_default_factory_return_value is None
-        ), f"no default factory for {test_case_params.field_name} but expected one"
+        assert test_case_params.expected_default_factory_return_value is None, (
+            f"no default factory for {test_case_params.field_name} but expected one"
+        )
 
 
 def test_settings_field_coverage() -> None:

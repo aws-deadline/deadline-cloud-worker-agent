@@ -1430,7 +1430,9 @@ class TestCloudWatchHandler:
         """
 
         # GIVEN
-        with (patch.object(handler, "close") as close_mock,):
+        with (
+            patch.object(handler, "close") as close_mock,
+        ):
             # WHEN
             with handler:
                 # THEN
@@ -1451,7 +1453,9 @@ class TestCloudWatchHandler:
         """
 
         # GIVEN
-        with (patch.object(handler, "close") as close_mock,):
+        with (
+            patch.object(handler, "close") as close_mock,
+        ):
             with raises(Exception):
                 with handler:
                     # WHEN

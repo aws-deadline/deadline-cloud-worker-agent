@@ -193,6 +193,7 @@ class WorkerScheduler:
     _worker_persistence_dir: Path
     _worker_logs_dir: Path | None
     _retain_session_dir: bool
+    _session_root_dir: Path
 
     # Map from queueId -> QueueAwsCredentials.
     _queue_aws_credentials: dict[str, QueueAwsCredentials]
@@ -212,6 +213,7 @@ class WorkerScheduler:
         cleanup_session_user_processes: bool,
         worker_persistence_dir: Path,
         worker_logs_dir: Path | None,
+        session_root_dir: Path,
         retain_session_dir: bool = False,
         stop: Event | None = None,
     ) -> None:
@@ -249,6 +251,7 @@ class WorkerScheduler:
         self._worker_logs_dir = worker_logs_dir
         self._retain_session_dir = retain_session_dir
         self._windows_credentials_resolver: Optional[WindowsCredentialsResolver]
+        self._session_root_dir = session_root_dir
 
         if os.name == "nt" and not (
             self._job_run_as_user_override.job_user or self._job_run_as_user_override.run_as_agent
@@ -1116,6 +1119,7 @@ class WorkerScheduler:
                 retain_session_dir=self._retain_session_dir,
                 action_update_callback=self._handle_session_action_update,
                 action_update_lock=self._action_update_lock,
+                session_root_dir=self._session_root_dir,
             )
 
             def run_session(

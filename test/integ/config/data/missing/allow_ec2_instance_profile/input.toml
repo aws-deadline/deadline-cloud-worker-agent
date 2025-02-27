@@ -1,0 +1,7 @@
+[aws]
+
+# Some prior content that should be preserved
+prior_setting_1 = 1
+
+# More content to preserve
+prior_setting_2 = "abc"  # and here's an inline comment

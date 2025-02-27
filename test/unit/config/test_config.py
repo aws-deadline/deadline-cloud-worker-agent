@@ -5,8 +5,8 @@
 from __future__ import annotations
 from contextlib import nullcontext
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-from typing import Any, Generator, List, Optional, cast
+from unittest.mock import ANY, MagicMock, patch
+from typing import Generator, List, Optional, cast
 import logging
 import pytest
 import os
@@ -42,6 +42,7 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "host_metrics_logging": True,
         "host_metrics_logging_interval_seconds": 10,
         "retain_session_dir": False,
+        "session_root_dir": Path("/sessions"),
     }
 
     class FakeWorkerSettings:
@@ -70,7 +71,7 @@ def parsed_args(
 
 @pytest.fixture(autouse=True)
 def arg_parser(
-    parsed_args: config_mod.ParsedCommandLineArguments,
+    parsed_args: ParsedCommandLineArguments,
 ) -> Generator[MagicMock, None, None]:
     """Fixture containing the mocked argument parser"""
     with patch.object(config_mod, "get_argument_parser") as get_argument_parser:
@@ -133,17 +134,13 @@ class TestLoad:
         config_mod.Configuration.load(args)
 
         # THEN
-        class IsEmptyParsedCommandLineArguments:
-            def __eq__(self, other: Any) -> bool:
-                return (
-                    isinstance(other, config_mod.ParsedCommandLineArguments)
-                    and other.profile is None
-                    and other.farm_id is None
-                    and other.fleet_id is None
-                    and other.verbose is None
-                )
-
-        parse_args.assert_called_with(args, namespace=IsEmptyParsedCommandLineArguments())
+        parse_args.assert_called_once_with(args, namespace=ANY)
+        namespace_arg = parse_args.call_args.kwargs["namespace"]
+        assert isinstance(namespace_arg, config_mod.ParsedCommandLineArguments)
+        assert namespace_arg.profile is None
+        assert namespace_arg.farm_id is None
+        assert namespace_arg.fleet_id is None
+        assert namespace_arg.verbose is None
 
     def test_uses_parsed_farm_id(self, parsed_args: config_mod.ParsedCommandLineArguments) -> None:
         """Tests that the farm ID is parsed from command-line arguments"""
@@ -399,6 +396,43 @@ class TestLoad:
         # THEN
         assert config.retain_session_dir == retain_session_dir
 
+    @pytest.mark.parametrize(
+        argnames="session_root_dir",
+        argvalues=(
+            pytest.param(
+                Path("/foo"),
+                marks=pytest.mark.skipif(os.name == "nt", reason="POSIX-speicifc test"),
+            ),
+            pytest.param(
+                Path("/bar"),
+                marks=pytest.mark.skipif(os.name == "nt", reason="POSIX-speicifc test"),
+            ),
+            pytest.param(
+                Path("C:\\foo"),
+                marks=pytest.mark.skipif(os.name != "nt", reason="POSIX-speicifc test"),
+            ),
+            pytest.param(
+                Path("C:\\bar"),
+                marks=pytest.mark.skipif(os.name != "nt", reason="POSIX-speicifc test"),
+            ),
+        ),
+    )
+    def test_uses_session_root_dir(
+        self,
+        parsed_args: config_mod.ParsedCommandLineArguments,
+        session_root_dir: Path,
+    ) -> None:
+        # GIVEN
+        parsed_args.session_root_dir = session_root_dir
+        parsed_args.farm_id = "farm_id"
+        parsed_args.fleet_id = "fleet_id"
+
+        # WHEN
+        config = config_mod.Configuration.load()
+
+        # THEN
+        assert config.session_root_dir == session_root_dir
+
 
 class TestInit:
     """Tests for Configuration.__init__"""
@@ -435,13 +469,15 @@ class TestInit:
         assert config.verbose == verbose
 
     def test_correct_default_paths(self) -> None:
-        """Tests that the Configuration has worker_persistence_dir and worker_credentials_dir
-        Path attributes that point to the correct default path:
+        """Tests that the Configuration has worker_persistence_dir, worker_credentials_dir,
+        worker_state_file, and session_root_dir Path attributes that point to the correct default
+        path:
 
         POSIX:
             worker_persistence_dir = /var/lib/deadline
             worker_credentials_dir = /var/lib/deadline/credentials
             worker_state_file = /var/lib/deadline/worker.json
+            session_root_dir = /sessions
         """
         # GIVEN
         cli_args = ParsedCommandLineArguments()
@@ -457,6 +493,7 @@ class TestInit:
         assert config.worker_persistence_dir == Path("/var/lib/deadline")
         assert config.worker_credentials_dir == Path("/var/lib/deadline/credentials")
         assert config.worker_state_file == Path("/var/lib/deadline/worker.json")
+        assert config.session_root_dir == Path("/sessions")
 
     def test_empty_fleet_id(self) -> None:
         """Tests when no `fleet_id` is supplied a `ConfigurationError` is raised"""
@@ -926,6 +963,35 @@ class TestInit:
             assert "retain_session_dir" not in call.kwargs
 
     @pytest.mark.parametrize(
+        argnames="session_root_dir",
+        argvalues=(
+            Path("/foo"),
+            Path("/bar"),
+            None,
+        ),
+    )
+    def test_session_root_dir_passed_to_settings_initializer(
+        self,
+        session_root_dir: Path | None,
+        parsed_args: ParsedCommandLineArguments,
+        mock_worker_settings_cls: MagicMock,
+    ) -> None:
+        # GIVEN
+        parsed_args.session_root_dir = session_root_dir
+
+        # WHEN
+        config_mod.Configuration(parsed_cli_args=parsed_args)
+
+        # THEN
+        mock_worker_settings_cls.assert_called_once()
+        call = mock_worker_settings_cls.call_args_list[0]
+
+        if session_root_dir is not None:
+            assert call.kwargs.get("session_root_dir") == session_root_dir.absolute()
+        else:
+            assert "session_root_dir" not in call.kwargs
+
+    @pytest.mark.parametrize(
         argnames=("posix_job_user_setting", "windows_job_user_setting"),
         argvalues=(
             pytest.param(
@@ -1102,11 +1168,7 @@ class TestLog:
         config.log(logger=logger)
 
         # THEN
-        class Any:
-            def __eq__(self, other: object) -> bool:
-                return True
-
-        logger_log_mock.assert_called_with(logging.DEBUG, Any())
+        logger_log_mock.assert_called_with(logging.DEBUG, ANY)
 
     def test_supplied_level(self) -> None:
         # GIVEN

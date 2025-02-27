@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from deadline_worker_agent.capabilities import Capabilities
 
-from pydantic import ValidationError, BaseSettings
+from pydantic.v1 import ValidationError, BaseSettings
 import pytest
 
 try:
@@ -238,6 +238,22 @@ class TestWorkerConfigSection:
 
         # THEN
         WorkerConfigSection.parse_obj(worker_config_section_data)
+
+    def test_session_root_dir_valid(
+        self,
+        worker_config_section_data: dict[str, Any],
+        # defined in conftest.py in this dir
+        session_root_dir: str,
+    ) -> None:
+        """Asserts that a valid path to a session root directory is parsed as expected"""
+        # GIVEN
+        worker_config_section_data["session_root_dir"] = session_root_dir
+
+        # WHEN
+        parsed = WorkerConfigSection.parse_obj(worker_config_section_data)
+
+        # THEN
+        assert parsed.session_root_dir == Path(session_root_dir)
 
 
 class TestAwsConfigSection:

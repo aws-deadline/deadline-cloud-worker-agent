@@ -2,19 +2,18 @@ name: Release Canary
 
 on:
   schedule:
-    - cron: '0 13 * * *'
-    - cron: '0 19 * * *'
-    - cron: '0 1 * * *'
+    - cron: '0 */3 * * *'
   workflow_dispatch:
 
 jobs:
-  WindowsIntegrationTests:
-    name: Windows Integration Tests
-    runs-on: windows-latest
+  IntegrationTests:
+    name: Integration Tests
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     strategy:
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ['3.9', '3.10', '3.11']
     steps:
     - uses: actions/checkout@v4
@@ -23,8 +22,8 @@ jobs:
       run: |
         pip install --upgrade hatch
 
-    - name: Run Windows Integration Tests
-      run: hatch run windows-integ-test
+    - name: Run Integration Tests
+      run: hatch run integ-test
       
   ReleaseLinuxE2ECanary:
     name: Release Linux Canary

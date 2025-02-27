@@ -1,0 +1,18 @@
+[worker]
+
+# Some prior content that should be preserved
+prior_setting_1 = 1
+
+# More content to preserve
+prior_setting_2 = "abc"  # and here's an inline comment
+
+# The unique identifier of the AWS Deadline Cloud fleet that the Worker belongs to. This value is overridden
+# when the DEADLINE_WORKER_FLEET_ID environment variable is set or the --fleet-id command-line
+# argument is specified.
+#
+# The following is an example for setting the fleet ID in this configuration file:
+#
+# fleet_id = "fleet-aabbccddeeff11223344556677889900"
+#
+# Uncomment the line below and replace the value with your AWS Deadline Cloud fleet ID:
+fleet_id = "fleet-abc"

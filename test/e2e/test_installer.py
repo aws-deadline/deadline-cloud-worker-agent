@@ -3,6 +3,7 @@
 This test module contains tests that verify the Installer's behavior by submitting commands to the
 Deadline Cloud worker and checking that the result/output of the worker agent is as we expect it.
 """
+
 import pytest
 import logging
 import os
@@ -22,7 +23,6 @@ class TestInstaller:
         self,
         session_worker: EC2InstanceWorker,
     ) -> None:
-
         cmd_result = session_worker.send_command(
             "egrep \
                 '^deadline-worker ALL=\(root\) NOPASSWD: /usr/sbin/shutdown now$' \

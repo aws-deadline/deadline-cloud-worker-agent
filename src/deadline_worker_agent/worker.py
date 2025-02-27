@@ -28,6 +28,7 @@ from .metrics import HostMetricsLogger
 from .scheduler import WorkerScheduler
 from .sessions import Session
 
+
 logger = getLogger(__name__)
 
 
@@ -88,6 +89,7 @@ class Worker:
         cleanup_session_user_processes: bool,
         worker_persistence_dir: Path,
         worker_logs_dir: Path | None,
+        session_root_dir: Path,
         host_metrics_logging: bool,
         host_metrics_logging_interval_seconds: float | None = None,
         retain_session_dir: bool = False,
@@ -112,6 +114,7 @@ class Worker:
             worker_logs_dir=worker_logs_dir,
             retain_session_dir=retain_session_dir,
             stop=stop,
+            session_root_dir=session_root_dir,
         )
         self._stop = stop or Event()
         self._boto_session = boto_session
@@ -119,9 +122,9 @@ class Worker:
         self._retain_session_dir = retain_session_dir
 
         if host_metrics_logging:
-            assert (
-                host_metrics_logging_interval_seconds is not None
-            ), "host_metrics_logging_interval_seconds is required if host metrics logging is enabled"
+            assert host_metrics_logging_interval_seconds is not None, (
+                "host_metrics_logging_interval_seconds is required if host metrics logging is enabled"
+            )
             self._host_metrics_logger = HostMetricsLogger(
                 logger=logger, interval_s=host_metrics_logging_interval_seconds
             )
@@ -132,7 +135,7 @@ class Worker:
             # TODO: Remove this once WA is stable or put behind a debug flag
             signal.signal(signal.SIGUSR1, self._output_thread_stacks)  # type: ignore
         elif os.name == "nt":
-            from .windows.win_service import is_windows_session_zero
+            from .windows.win_session import is_windows_session_zero
 
             # If we are in session 0, we are running as a Windows Service using pywin32
             # pywin32's pythonservice.exe owns the main thread and the Python application

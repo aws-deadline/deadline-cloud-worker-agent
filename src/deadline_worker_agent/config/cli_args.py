@@ -26,6 +26,7 @@ class ParsedCommandLineArguments(Namespace):
     host_metrics_logging: bool | None = None
     host_metrics_logging_interval_seconds: float | None = None
     structured_logs: bool | None = None
+    session_root_dir: Path | None = None
 
 
 def get_argument_parser() -> ArgumentParser:
@@ -151,5 +152,11 @@ def get_argument_parser() -> ArgumentParser:
         action="store_const",
         const=True,
         default=None,
+    )
+    parser.add_argument(
+        "--session-root-dir",
+        help="Path to the directory where session directories are created under.",
+        default=None,
+        type=Path,
     )
     return parser

@@ -3,14 +3,24 @@
 This test module contains tests that verify the Worker agent's behavior by creating the Worker with non-default configuration settings,
 and making sure that the behavior and outputs of the Worker is that of what we expect.
 """
-import logging
-import os
+
 from time import sleep
 from typing import Any, Callable, Optional
 import backoff
 import boto3
-from deadline_test_fixtures import DeadlineClient, EC2InstanceWorker, DeadlineWorkerConfiguration
+import botocore
 import dataclasses
+import logging
+import os
+import re
+
+from deadline_test_fixtures import (
+    DeadlineClient,
+    DeadlineWorkerConfiguration,
+    EC2InstanceWorker,
+    OperatingSystem,
+)
+
 from e2e.utils import submit_custom_job, submit_sleep_job
 from e2e.conftest import DeadlineResources
 
@@ -18,7 +28,6 @@ LOG = logging.getLogger(__name__)
 
 
 class TestWorkerConfiguration:
-
     def test_worker_requires_no_instance_profile(
         self,
         deadline_resources,
@@ -26,7 +35,6 @@ class TestWorkerConfiguration:
         worker_config: DeadlineWorkerConfiguration,
         function_worker_factory: Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker],
     ) -> None:
-
         # Create a EC2 worker with disallow-instance-profiles option for the worker agent
         # Note that the EC2 instance is created with an instance profile, so no job will ever be picked up by this worker
         function_worker_factory(
@@ -83,7 +91,6 @@ class TestWorkerConfiguration:
         worker_config: DeadlineWorkerConfiguration,
         function_worker_factory: Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker],
     ) -> None:
-
         worker_with_local_session_logs_off: EC2InstanceWorker = function_worker_factory(
             dataclasses.replace(worker_config, no_local_session_logs="True")
         )
@@ -131,9 +138,9 @@ class TestWorkerConfiguration:
                 check_log_exists_result = worker_with_local_session_logs_off.send_command(
                     command=f'Test-Path -Path "{session_logs_file_path}" -PathType leaf -Credential $Cred'
                 )
-                assert (
-                    "false" in check_log_exists_result.stdout.lower()
-                ), f"Checking that local session logs do not exist returned unexpected response: {check_log_exists_result}"
+                assert "false" in check_log_exists_result.stdout.lower(), (
+                    f"Checking that local session logs do not exist returned unexpected response: {check_log_exists_result}"
+                )
 
     def test_worker_shuts_down_host_machine_if_configured(
         self,
@@ -142,7 +149,6 @@ class TestWorkerConfiguration:
         worker_config: DeadlineWorkerConfiguration,
         function_worker_factory: Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker],
     ) -> None:
-
         # Test that if worker in an autoscaling fleet is configured to shut down host machine, the host machine is shut down when there are no more jobs available for the fleet.
 
         # Submit a job
@@ -184,3 +190,66 @@ class TestWorkerConfiguration:
             assert instance_status["Name"] in ["stopped", "stopping"]
 
         check_instance_stopping()
+
+    def test_session_root_dir(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        worker_config: DeadlineWorkerConfiguration,
+        function_worker_factory: Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker],
+        operating_system: OperatingSystem,
+    ) -> None:
+        """Tests that when a session root directory is configured, that session directories
+        are created under this root directory."""
+
+        # GIVEN
+        logs_client = boto3.client(
+            "logs",
+            config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+        )
+        session_root_dir: str
+        run_script: str
+
+        if operating_system.is_amazon_linux():
+            run_script = """
+#!/usr/bin/bash
+
+set -euo pipefail
+
+pwd
+""".lstrip()
+            session_root_dir = "/mysessionroot"
+        elif operating_system.is_windows():
+            run_script = """
+$ErrorActionPreference = 'Stop'
+
+(Get-Item .).FullName
+"""
+            session_root_dir = "C:\\Sessions"
+        else:
+            raise NotImplementedError(f"Test not implemented for {operating_system}")
+
+        function_worker_factory(
+            dataclasses.replace(worker_config, session_root_dir=session_root_dir)
+        )
+
+        # WHEN
+        job = submit_custom_job(
+            "Test Job with worker local session logs off",
+            deadline_client,
+            deadline_resources.farm,
+            deadline_resources.queue_a,
+            run_script=run_script,
+        )
+
+        # THEN
+        job.wait_until_complete(client=deadline_client)
+        assert job.task_run_status == "SUCCEEDED"
+        job.assert_single_task_log_contains(
+            deadline_client=deadline_client,
+            logs_client=logs_client,
+            expected_pattern=re.compile(
+                f"^{re.escape(session_root_dir)}[\\\\/]session-[a-f0-9]{{32}}.*$", re.MULTILINE
+            ),
+            assert_fail_msg=f"Session root directory ({session_root_dir}) not applied",
+        )
