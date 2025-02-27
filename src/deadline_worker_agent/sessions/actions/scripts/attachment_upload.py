@@ -50,9 +50,9 @@ def merge(manifest_paths_by_root: dict[str, list[str]]) -> dict[str, str]:
         else:
             output: Optional[ManifestMerge] = _manifest_merge(
                 root=root,
-                # this path to manifest servers as a base for the snapshot, generate only difference since this manifest
+                # paths to manifest files to be merged
                 manifest_files=paths,
-                # direcotry to put the generated merged manifests
+                # directory to put the generated merged manifests
                 destination=str(manifest_path),
                 name="merge",
             )
@@ -70,7 +70,7 @@ def snapshot(manifest_path_by_root: dict[str, str]) -> list[str]:
         # TODO - use the public api for manifest snapshot once that's final and made public
         manifest: Optional[ManifestSnapshot] = _manifest_snapshot(
             root=root,
-            # direcotry to put the generated diff manifests
+            # directory to put the generated diff manifests
             destination=str(output_path),
             # `output` is used for job download to discover output manifests
             # manifest file name need to contain the hash of root path for attachment CLI path mapping

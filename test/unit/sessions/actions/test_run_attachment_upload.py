@@ -181,5 +181,4 @@ class TestStart:
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
             },
-            log_task_banner=False,
         )
