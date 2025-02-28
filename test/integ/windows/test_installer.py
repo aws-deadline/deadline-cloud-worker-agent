@@ -243,13 +243,16 @@ def test_update_config_file_creates_backup(setup_example_config):
     assert os.path.isfile(backup_worker_config), "Backup of worker config file was not created"
 
 
-def verify_least_privilege(windows_user: str, path: Path):
+def verify_least_privilege(windows_user: str, path: Path, is_session_root: bool = False):
     builtin_admin_group_sid, _, _ = win32security.LookupAccountName(None, "Administrators")
     user_sid, _, _ = win32security.LookupAccountName(None, windows_user)
+    users_group_sid, _, _ = win32security.LookupAccountName(None, "Users")
+
     sd = win32security.GetFileSecurity(
         str(path),
         win32con.DACL_SECURITY_INFORMATION | win32con.OWNER_SECURITY_INFORMATION,
     )
+
     # Verify ownership
     owner_sid = sd.GetSecurityDescriptorOwner()
     assert builtin_admin_group_sid == owner_sid, (
@@ -258,22 +261,54 @@ def verify_least_privilege(windows_user: str, path: Path):
 
     # Verify all ACEs
     dacl = sd.GetSecurityDescriptorDacl()
-    assert dacl.GetAceCount() == 2, f"Number of aces for {path} was not as expected"
+    if is_session_root:
+        assert dacl.GetAceCount() == 3, f"Number of aces for {path} was not as expected"
+    else:
+        assert dacl.GetAceCount() == 2, f"Number of aces for {path} was not as expected"
+
+    users_group_permission_found = False
+    list_directory_and_read_mask = (
+        ntsecuritycon.FILE_LIST_DIRECTORY
+        | ntsecuritycon.FILE_TRAVERSE
+        | ntsecuritycon.FILE_GENERIC_READ
+    )
+
     for ace in [dacl.GetAce(i) for i in range(dacl.GetAceCount())]:
         _ace_info, mask, sid = ace
         ace_type, ace_flags = _ace_info
 
-        assert ace_type == ntsecuritycon.ACCESS_ALLOWED_ACE_TYPE, (
-            f"Unexpected ace type found for {path}"
-        )
-        assert (
-            ace_flags == ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE
-        ), "Unexpected inheritance in ace for  {path}"
-        assert (
-            # we set ntsecuritycon.GENERIC_ALL but that gets converted to win32File.FILE_ALL_ACCESS
-            mask == win32file.FILE_ALL_ACCESS
-        ), f"Expected only FILE_FULL_ACCESS aces for {path} but found {mask}"
-        assert sid in [builtin_admin_group_sid, user_sid], f"Unexpected sid found in ace for {path}"
+        if sid in [builtin_admin_group_sid, user_sid]:
+            assert ace_type == ntsecuritycon.ACCESS_ALLOWED_ACE_TYPE, (
+                f"Unexpected ace type found for {path}"
+            )
+            assert (
+                ace_flags == ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE
+            ), "Unexpected inheritance in ace for  {path}"
+            assert (
+                # we set ntsecuritycon.GENERIC_ALL but that gets converted to win32File.FILE_ALL_ACCESS
+                mask == win32file.FILE_ALL_ACCESS
+            ), f"Expected only FILE_FULL_ACCESS aces for {path} but found {mask}"
+            assert sid in [builtin_admin_group_sid, user_sid], (
+                f"Unexpected sid found in ace for {path}"
+            )
+        # Check for Users group ACE with LIST_DIRECTORY_AND_READ permissions
+        elif sid == users_group_sid:
+            assert ace_type == ntsecuritycon.ACCESS_ALLOWED_ACE_TYPE, (
+                f"Unexpected ace type found for Users group ACE for {path}"
+            )
+            assert (
+                ace_flags == ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE
+            ), f"Unexpected inheritance in Users group ace for {path}"
+
+            # Check if the mask includes all required permissions for LIST_DIRECTORY_AND_READ
+            assert (mask & list_directory_and_read_mask) == list_directory_and_read_mask, (
+                f"Users group does not have LIST_DIRECTORY_AND_READ permissions for {path}"
+            )
+
+            users_group_permission_found = True
+
+    if is_session_root:
+        assert users_group_permission_found, f"No ACE found for Users group for {path}"
 
 
 def test_provision_directories(
@@ -322,7 +357,7 @@ def test_provision_directories(
     assert actual_dirs.deadline_config_subdir.exists()
     verify_least_privilege(windows_user, actual_dirs.deadline_config_subdir)
     assert session_root_dir.exists()
-    verify_least_privilege(windows_user, session_root_dir)
+    verify_least_privilege(windows_user, session_root_dir, is_session_root=True)
 
 
 def test_update_deadline_client_config(tmp_path: Path) -> None:
