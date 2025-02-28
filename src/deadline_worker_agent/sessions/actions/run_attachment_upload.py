@@ -66,7 +66,7 @@ class AttachmentUploadAction(OpenjdAction):
         self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
     def set_step_script(
-        self, manifest_paths_by_root: dict[str, str], s3_settings: JobAttachmentS3Settings
+        self, manifest_paths_by_root: dict[str, list[str]], s3_settings: JobAttachmentS3Settings
     ) -> None:
         """Sets the step script for the action
 
@@ -144,7 +144,7 @@ class AttachmentUploadAction(OpenjdAction):
             extra={"openjd_log_content": LogContent.BANNER},
         )
         self._logger.info(
-            "--------- AttachmentUploadAction ---------",
+            "--------- Job Attachments Upload for Task",
             extra={"openjd_log_content": LogContent.BANNER},
         )
         self._logger.info(
@@ -179,4 +179,5 @@ class AttachmentUploadAction(OpenjdAction):
                 "DEADLINE_STEP_ID": self._step_id,
                 "DEADLINE_TASK_ID": self._task_id,
             },
+            log_task_banner=False,
         )

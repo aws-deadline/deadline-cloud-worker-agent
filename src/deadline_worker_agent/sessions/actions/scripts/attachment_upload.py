@@ -10,8 +10,8 @@ import json
 from typing import Optional
 
 from deadline.job_attachments import api
-from deadline.job_attachments.api.manifest import _manifest_snapshot
-from deadline.job_attachments.models import ManifestSnapshot
+from deadline.job_attachments.api.manifest import _manifest_snapshot, _manifest_merge
+from deadline.job_attachments.models import ManifestSnapshot, ManifestMerge
 
 """
 A small script to
@@ -40,15 +40,37 @@ def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> N
     )
 
 
-def snapshot(manifest_paths_by_root: dict[str, str]) -> list[str]:
+def merge(manifest_paths_by_root: dict[str, list[str]]) -> dict[str, str]:
+    manifest_path = os.path.join(os.getcwd(), "manifest")
+    merged_manifests = dict()
+
+    for root, paths in manifest_paths_by_root.items():
+        if len(paths) == 1:
+            merged_manifests[root] = paths[0]
+        else:
+            output: Optional[ManifestMerge] = _manifest_merge(
+                root=root,
+                # paths to manifest files to be merged
+                manifest_files=paths,
+                # directory to put the generated merged manifests
+                destination=str(manifest_path),
+                name="merge",
+            )
+            if output:
+                merged_manifests[output.manifest_root] = output.local_manifest_path
+
+    return merged_manifests
+
+
+def snapshot(manifest_path_by_root: dict[str, str]) -> list[str]:
     output_path = os.path.join(os.getcwd(), "diff")
     manifests = list()
 
-    for root, path in manifest_paths_by_root.items():
+    for root, path in manifest_path_by_root.items():
         # TODO - use the public api for manifest snapshot once that's final and made public
         manifest: Optional[ManifestSnapshot] = _manifest_snapshot(
             root=root,
-            # direcotry to put the generated diff manifests
+            # directory to put the generated diff manifests
             destination=str(output_path),
             # `output` is used for job download to discover output manifests
             # manifest file name need to contain the hash of root path for attachment CLI path mapping
@@ -78,7 +100,9 @@ def main(args=None):
 
     parsed_args = parse_args(args)
 
-    manifests = snapshot(manifest_paths_by_root=parsed_args.manifest_map)
+    manifest_path_by_root = merge(manifest_paths_by_root=parsed_args.manifest_map)
+
+    manifests = snapshot(manifest_path_by_root=manifest_path_by_root)
 
     if manifests:
         print("\nStarting upload...")
@@ -91,7 +115,7 @@ def main(args=None):
         total = time.perf_counter() - start_time
         print(f"Finished uploading after {total} seconds")
     else:
-        print("No manifests to upload")
+        print("\nNo output to upload")
 
 
 if __name__ == "__main__":

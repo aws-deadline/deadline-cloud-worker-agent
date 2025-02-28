@@ -1,4 +1,5 @@
 ## 0.28.0 (2025-02-27)
+**This Release has been pulled from PyPI. The use of this release contains a regression in default permissions for the session directory on Windows. Downgrade to 0.27.5 or upgrade to the next release if available.**
 
 ### BREAKING CHANGES
 * A defect was fixed in the OpenJobDescription specification ([OpenJobDescription/openjd-specifications#70](https://github.com/OpenJobDescription/openjd-specifications/issues/70)) which causes a breaking change to Worker Agent behaviour. Environment exits previously had no default timeout and they now have a default timeout of 5 minutes. To have long-running environment exit actions, job templates can specify a large timeout value when defining environment exit actions in a job or environment template.
