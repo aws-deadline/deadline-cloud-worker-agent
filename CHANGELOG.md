@@ -1,3 +1,17 @@
+## 0.28.1 (2025-03-05)
+
+
+
+### Bug Fixes
+* install-deadline-worker on Windows creates session root directory without read and traversal permissions for Users (#563) ([`29e7aee`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/29e7aee77ab362094b219dd5ec20920a1b859078))
+
+### Experimental
+
+These changes are experimental and only available through the use of feature flags
+
+* ASSET_SYNC_JOB_USER_FEATURE - **fix**: task with step-step dependency upload job inputs as outputs (#529) ([`abe0fb0`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/abe0fb0f2c4b04de1490943502f83061e160d938))
+
+
 ## 0.28.0 (2025-02-27)
 **This Release has been pulled from PyPI. The use of this release contains a regression in default permissions for the session directory on Windows. Downgrade to 0.27.5 or upgrade to the next release if available.**
 
