@@ -288,9 +288,10 @@ def verify_least_privilege(windows_user: str, path: Path, is_session_root: bool 
                 # we set ntsecuritycon.GENERIC_ALL but that gets converted to win32File.FILE_ALL_ACCESS
                 mask == win32file.FILE_ALL_ACCESS
             ), f"Expected only FILE_FULL_ACCESS aces for {path} but found {mask}"
-            assert sid in [builtin_admin_group_sid, user_sid], (
-                f"Unexpected sid found in ace for {path}"
-            )
+            assert sid in [
+                builtin_admin_group_sid,
+                user_sid,
+            ], f"Unexpected sid found in ace for {path}"
         # Check for Users group ACE with LIST_DIRECTORY_AND_READ permissions
         elif sid == users_group_sid:
             assert ace_type == ntsecuritycon.ACCESS_ALLOWED_ACE_TYPE, (
