@@ -353,3 +353,17 @@ class TestGetGPUMemory:
         )
 
         assert result == expected_result
+
+    @patch.object(capabilities_mod.subprocess, "check_output")
+    def test_unexpected_output_does_not_raise_exception(
+        self,
+        check_output_mock: MagicMock,
+    ) -> None:
+        # GIVEN
+        check_output_mock.return_value = b"[N/A]"
+
+        # WHEN
+        result = capabilities_mod._get_gpu_memory()
+
+        # THEN
+        assert result == 0
