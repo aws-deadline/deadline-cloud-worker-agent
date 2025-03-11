@@ -1,3 +1,10 @@
+## 0.28.2 (2025-03-11)
+
+
+
+### Bug Fixes
+* worker agent unable to start without EC2 metadata access (#572) ([`5e73148`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/5e7314839a3cd9da7bfa50ab9f4198fcabb5edf4))
+
 ## 0.28.1 (2025-03-05)
 
 
