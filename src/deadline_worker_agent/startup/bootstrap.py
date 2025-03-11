@@ -650,8 +650,8 @@ def _get_metadata(metadata_type: str) -> requests.Response | None:
             f"http://169.254.169.254/latest/meta-data/{metadata_type}",
             headers={"X-aws-ec2-metadata-token": token},
         )
-    except (TimeoutError, ConnectionError):
-        _logger.info("Not running on Ec2, the metadata service was not found!")
+    except Exception:
+        _logger.info("Not running on EC2 or the metadata service was unable to be found!")
         return None
     else:
         return response
