@@ -120,10 +120,15 @@ def _get_gpu_memory(*, verbose: bool = True) -> int:
 
         mem_per_gpu: list[int] = []
         for line in output.splitlines():
-            mem_mib = int(line.replace("MiB", ""))
-            mem_per_gpu.append(mem_mib)
+            try:
+                mem_mib = int(line.replace("MiB", ""))
+                mem_per_gpu.append(mem_mib)
+            except:
+                # If there's a parsing error on a line, skip it
+                pass
 
-        min_memory = min(mem_per_gpu)
+        # If no line had a valid memory amount, default to 0
+        min_memory = min(mem_per_gpu, default=0)
 
         if verbose:
             _logger.info("Minimum total memory of all GPUs: %s", min_memory)
