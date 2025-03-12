@@ -1012,6 +1012,10 @@ class TestJobSubmission:
                     }
                 )
             )
+
+        # 100 meg file.    10,000,000
+        large_file = "A" * 100000000
+
         # Create the input files to make sync inputs take a relatively long time
         files_path: str = os.path.join(tmp_path, "files")
         os.mkdir(files_path)
@@ -1020,7 +1024,9 @@ class TestJobSubmission:
             with open(file_name, "w+") as input_file:
                 if i % 1000 == 0:
                     # Create some big files (1GB each) so the syncInputAttachments don't fail due to low transfer rates
-                    input_file.write("A" * 1000000000)
+                    # Write 10 100 meg buffers to reduce memory usage.
+                    for _ in range(10):
+                        input_file.write(large_file)
                 else:
                     input_file.write(f"{i}")
         config = configparser.ConfigParser()
