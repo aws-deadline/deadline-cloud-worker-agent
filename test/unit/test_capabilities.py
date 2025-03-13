@@ -353,3 +353,26 @@ class TestGetGPUMemory:
         )
 
         assert result == expected_result
+
+    @pytest.mark.parametrize(
+        ("output", "expected_value"),
+        (
+            pytest.param("[N/A]", 0),
+            pytest.param("[N/A]\n[N/A]", 0),
+            pytest.param("\n\n\n", 0),
+            pytest.param("1000 MiB\n\n\n", 1000),
+            pytest.param("1000 MiB\n[N/A]\n\n", 1000),
+        ),
+    )
+    @patch.object(capabilities_mod.subprocess, "check_output")
+    def test_unexpected_output_does_not_raise_exception(
+        self, check_output_mock: MagicMock, output: str, expected_value: int
+    ) -> None:
+        # GIVEN
+        check_output_mock.return_value = bytes(output, encoding="utf-8")
+
+        # WHEN
+        result = capabilities_mod._get_gpu_memory()
+
+        # THEN
+        assert result == expected_value

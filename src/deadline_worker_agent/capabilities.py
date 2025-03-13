@@ -116,6 +116,23 @@ def _get_gpu_memory(*, verbose: bool = True) -> int:
         output_bytes = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"]
         )
+        output = output_bytes.decode().strip()
+
+        mem_per_gpu: list[int] = []
+        for line in output.splitlines():
+            try:
+                mem_mib = int(line.replace("MiB", ""))
+                mem_per_gpu.append(mem_mib)
+            except:
+                # If there's a parsing error on a line, skip it
+                pass
+
+        # If no line had a valid memory amount, default to 0
+        min_memory = min(mem_per_gpu, default=0)
+
+        if verbose:
+            _logger.info("Minimum total memory of all GPUs: %s", min_memory)
+        return min_memory
     except FileNotFoundError:
         if verbose:
             _logger.warning("Could not detect GPU memory, nvidia-smi not found")
@@ -134,18 +151,6 @@ def _get_gpu_memory(*, verbose: bool = True) -> int:
         if verbose:
             _logger.warning("Could not detect GPU memory, unexpected error running nvidia-smi")
         return 0
-    output = output_bytes.decode().strip()
-
-    mem_per_gpu: list[int] = []
-    for line in output.splitlines():
-        mem_mib = int(line.replace("MiB", ""))
-        mem_per_gpu.append(mem_mib)
-
-    min_memory = min(mem_per_gpu)
-
-    if verbose:
-        _logger.info("Minimum total memory of all GPUs: %s", min_memory)
-    return min_memory
 
 
 def capability_type(capability_name_str: str) -> Literal["amount", "attr"]:

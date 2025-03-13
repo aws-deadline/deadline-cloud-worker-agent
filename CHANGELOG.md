@@ -1,3 +1,17 @@
+## 0.28.3 (2025-03-13)
+
+
+
+### Bug Fixes
+* unexpected GPU memory configurations crash worker agent (#574) ([`b423bfb`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/b423bfb68e258c2b86e90925669572691ccab2c3))
+
+## 0.28.2 (2025-03-11)
+
+
+
+### Bug Fixes
+* worker agent unable to start without EC2 metadata access (#572) ([`5e73148`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/5e7314839a3cd9da7bfa50ab9f4198fcabb5edf4))
+
 ## 0.28.1 (2025-03-05)
 
 
