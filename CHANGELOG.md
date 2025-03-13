@@ -1,3 +1,10 @@
+## 0.28.3 (2025-03-13)
+
+
+
+### Bug Fixes
+* unexpected GPU memory configurations crash worker agent (#574) ([`b423bfb`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/b423bfb68e258c2b86e90925669572691ccab2c3))
+
 ## 0.28.2 (2025-03-11)
 
 
