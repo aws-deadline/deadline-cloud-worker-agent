@@ -560,6 +560,15 @@ Resources:
                     - ''
                     - - !GetAtt JobAttachmentsBucket.Arn
                       - /*
+              - Effect: Allow
+                Action:
+                  - logs:GetLogEvents
+                Resource:
+                  - !Join
+                    - ''
+                    - - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/deadline/
+                      - !GetAtt DeadlineFarm.FarmId
+                      - /*
       Tags:
         - Key: Origin
           Value: DeadlineCloudAgentE2ETest
