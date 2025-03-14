@@ -7,7 +7,6 @@ import stat
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import json
-
 from botocore.exceptions import ClientError
 from pytest import fixture, mark, param, raises
 
@@ -883,7 +882,6 @@ class TestStartWorker:
             )
 
 
-@mark.usefixtures("get_metadata_mock")
 class TestEnforceNoInstanceProfile:
     def test_success(
         self,
@@ -945,6 +943,27 @@ class TestEnforceNoInstanceProfile:
             "Unexpected HTTP status code (%d) from /iam/info IMDS response",
             unexpected_status_code,
         )
+
+    def test_imds_exception_handling(
+        self,
+        mod_logger_mock: MagicMock,
+    ) -> None:
+        # GIVEN
+        logger_info: MagicMock = mod_logger_mock.info
+        with patch.object(
+            bootstrap_mod.requests,
+            "put",
+            side_effect=bootstrap_mod.requests.ConnectionError("Testing"),
+        ) as requests_put_mock:
+            # WHEN
+            result = bootstrap_mod._get_metadata("iam/info")
+
+        # THEN
+        requests_put_mock.assert_called_once()
+        logger_info.assert_called_once_with(
+            "Not running on EC2 or the metadata service was unable to be found!",
+        )
+        assert result is None
 
 
 class TestEnforceNoInstanceProfileOrStopWorker:
