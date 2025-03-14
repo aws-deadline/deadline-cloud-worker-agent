@@ -151,13 +151,16 @@ The worker agent has end-to-end tests that run the agent on ec2 instances with t
 are located under `test/e2e` in this repository. To run these tests:
 
 1. Configure your AWS credentials profile & region to test within. (e.g. Set the env vars `AWS_PROFILE` and `AWS_DEFAULT_REGION`)
-2. Deploy the testing infrastructure: Run `scripts/deploy_e2e_testing_infrastructure.sh`
-3. Gather the environment variable exports that you will need for each OS:
+2. Deploy https://github.com/aws-cloudformation/community-registry-extensions/blob/main/resources/S3_DeleteBucketContents/resource-role-prod.yaml to your account. Note down the output role ARN.
+3. Goto `AWS Console -> CloudFormation -> Public Extensions -> Search for Third Party Resource: 'AwsCommunity::S3::DeleteBucketContents' -> Activate`. Use the role ARN from step 2.
+4. Before deploying the test farm, make sure your account has sufficient Farm quota. Each account has a limit of 2.
+5. Deploy the testing infrastructure: Run `scripts/deploy_e2e_testing_infrastructure.sh`
+6. Gather the environment variable exports that you will need for each OS:
 ```bash
 ./scripts/get_e2e_test_ids_from_cfn.sh --os Linux > .e2e_linux_infra.sh
 ./scripts/get_e2e_test_ids_from_cfn.sh --os Windows > .e2e_windows_infra.sh
 ```
-4. Run the tests:
+7. Run the tests:
 ```
 rm -f dist/*
 hatch build
