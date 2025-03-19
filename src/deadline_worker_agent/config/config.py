@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Sequence, Tuple, cast, TYPE_CHECKING
 
-from pydantic import ValidationError
+from pydantic.v1 import ValidationError
 
 from openjd.sessions import PosixSessionUser, SessionUser
 

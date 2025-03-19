@@ -1,3 +1,46 @@
+## 0.28.3 (2025-03-13)
+
+
+
+### Bug Fixes
+* unexpected GPU memory configurations crash worker agent (#574) ([`b423bfb`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/b423bfb68e258c2b86e90925669572691ccab2c3))
+
+## 0.28.2 (2025-03-11)
+
+
+
+### Bug Fixes
+* worker agent unable to start without EC2 metadata access (#572) ([`5e73148`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/5e7314839a3cd9da7bfa50ab9f4198fcabb5edf4))
+
+## 0.28.1 (2025-03-05)
+
+
+
+### Bug Fixes
+* install-deadline-worker on Windows creates session root directory without read and traversal permissions for Users (#563) ([`29e7aee`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/29e7aee77ab362094b219dd5ec20920a1b859078))
+
+### Experimental
+
+These changes are experimental and only available through the use of feature flags
+
+* ASSET_SYNC_JOB_USER_FEATURE - **fix**: task with step-step dependency upload job inputs as outputs (#529) ([`abe0fb0`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/abe0fb0f2c4b04de1490943502f83061e160d938))
+
+
+## 0.28.0 (2025-02-27)
+**This Release has been pulled from PyPI. The use of this release contains a regression in default permissions for the session directory on Windows. Downgrade to 0.27.5 or upgrade to the next release if available.**
+
+### BREAKING CHANGES
+* A defect was fixed in the OpenJobDescription specification ([OpenJobDescription/openjd-specifications#70](https://github.com/OpenJobDescription/openjd-specifications/issues/70)) which causes a breaking change to Worker Agent behaviour. Environment exits previously had no default timeout and they now have a default timeout of 5 minutes. To have long-running environment exit actions, job templates can specify a large timeout value when defining environment exit actions in a job or environment template.
+
+### Features
+* configurable session root directory (#513) ([`dd541a1`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/dd541a12eac344e109ca283166f978a20af8439c))
+
+### Bug Fixes
+* more robust config file modifications in install-deadline-worker (#512) ([`1060b4b`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/1060b4bd29890c0b76ece8665b0415cb5a3303e2))
+* worker state file saved on AMI causes multiple instances sharing same worker ID (#527) ([`ec001c9`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/ec001c9830b0fd7639248a2b2bc892787993c5b2))
+* skip attachment upload when outputs not modified (#524) ([`972df4e`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/972df4ead8311967ad26844f0445859cae9ae483))
+* update log kind to differentiate sync input and sync output (#523) ([`af28588`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/af285880ae66c697534aabae2f28fbc626873fa8))
+
 ## 0.27.5 (2024-12-14)
 
 

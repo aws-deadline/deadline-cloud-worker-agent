@@ -994,4 +994,5 @@ class TestProvisionDirectories:
             group="Administrators",
             group_permission=FileSystemPermissionEnum.FULL_CONTROL,
             agent_user_permission=None,
+            users_group_permission=FileSystemPermissionEnum.LIST_DIRECTORY_AND_READ,
         )

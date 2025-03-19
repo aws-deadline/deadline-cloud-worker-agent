@@ -156,6 +156,7 @@ class TestStart:
         mock_asset_sync._check_and_write_local_manifests.assert_called_once_with(
             merged_manifests_by_root=ANY,
             manifest_write_dir=session_dir,
+            manifest_name_suffix="job",
         )
 
         with open(
@@ -189,4 +190,5 @@ class TestStart:
         session.run_task.assert_called_once_with(
             step_script=action._step_script,
             task_parameter_values=dict[str, ParameterValue](),
+            log_task_banner=False,
         )

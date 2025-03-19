@@ -173,7 +173,7 @@ class Session:
     # i.e. it has exited, or never started, its main run loop/logic.
     _stopped_running: Event
 
-    _manifest_paths_by_root: dict[str, str] = dict()
+    _manifest_paths_by_root: dict[str, list[str]] = dict()
 
     logger: LoggerAdapter
 
@@ -206,6 +206,7 @@ class Session:
         self._report_action_update = action_update_callback
         self._env = env
         self._executor = ThreadPoolExecutor(max_workers=1)
+        self._manifest_paths_by_root = dict()
 
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
@@ -253,12 +254,14 @@ class Session:
         return self._os_user
 
     @property
-    def manifest_paths_by_root(self) -> dict[str, str]:
+    def manifest_paths_by_root(self) -> dict[str, list[str]]:
         return self._manifest_paths_by_root
 
-    @manifest_paths_by_root.setter
-    def manifest_paths_by_root(self, value: dict[str, str]) -> None:
-        self._manifest_paths_by_root = dict(value)
+    def add_manifest_path(self, root: str, path: str):
+        if self._manifest_paths_by_root.get(root):
+            self._manifest_paths_by_root[root].append(path)
+        else:
+            self._manifest_paths_by_root[root] = [path]
 
     def _warm_job_entities_cache(self) -> None:
         """Attempts to cache the job entities response for all
@@ -1356,11 +1359,13 @@ class Session:
         step_script: StepScriptModel,
         task_parameter_values: TaskParameterSet,
         os_env_vars: Optional[dict[str, str]] = None,
+        log_task_banner: bool = True,
     ) -> None:
         self._session.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,
             os_env_vars=os_env_vars,
+            log_task_banner=log_task_banner,
         )
 
     def stop(

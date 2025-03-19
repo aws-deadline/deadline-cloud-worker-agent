@@ -9,7 +9,7 @@ import pytest
 import os
 from pathlib import Path
 
-from pydantic import ConstrainedStr
+from pydantic.v1 import ConstrainedStr
 
 import deadline_worker_agent.config.settings as settings_mod
 from deadline_worker_agent.capabilities import Capabilities

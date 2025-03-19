@@ -15,6 +15,7 @@ class FileSystemPermissionEnum(Enum):
     EXECUTE = "EXECUTE"
     READ_WRITE = "READ_WRITE"
     FULL_CONTROL = "FULL_CONTROL"
+    LIST_DIRECTORY_AND_READ = "LIST_DIRECTORY_AND_READ"
 
 
 def set_permissions(
@@ -82,6 +83,7 @@ def _set_windows_permissions(
     group: Optional[str] = None,
     group_permission: Optional[FileSystemPermissionEnum] = None,
     agent_user_permission: Optional[FileSystemPermissionEnum] = None,
+    users_group_permission: Optional[FileSystemPermissionEnum] = None,
 ):
     import win32security
     import ntsecuritycon
@@ -129,6 +131,16 @@ def _set_windows_permissions(
             group_sid,
         )
 
+    # Add an ACE to the DACL giving the User group the required access and inheritance of the ACE
+    if users_group_permission is not None:
+        users_group_sid, _, _ = win32security.LookupAccountName(None, "Users")
+        dacl.AddAccessAllowedAceEx(
+            win32security.ACL_REVISION,
+            ntsecuritycon.OBJECT_INHERIT_ACE | ntsecuritycon.CONTAINER_INHERIT_ACE,
+            _get_ntsecuritycon_mode(users_group_permission),
+            users_group_sid,
+        )
+
     # Get the security descriptor of the object
     sd = win32security.GetFileSecurity(str(path.resolve()), win32security.DACL_SECURITY_INFORMATION)
 
@@ -157,5 +169,8 @@ def _get_ntsecuritycon_mode(mode: FileSystemPermissionEnum) -> int:
         FileSystemPermissionEnum.EXECUTE.value: ntsecuritycon.FILE_GENERIC_EXECUTE
         | ntsecuritycon.FILE_GENERIC_READ,
         FileSystemPermissionEnum.FULL_CONTROL.value: ntsecuritycon.GENERIC_ALL,
+        FileSystemPermissionEnum.LIST_DIRECTORY_AND_READ.value: ntsecuritycon.FILE_LIST_DIRECTORY
+        | ntsecuritycon.FILE_TRAVERSE
+        | ntsecuritycon.FILE_GENERIC_READ,
     }
     return permission_mapping[mode.value]

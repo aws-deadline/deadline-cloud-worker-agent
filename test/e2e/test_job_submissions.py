@@ -95,7 +95,7 @@ class TestJobSubmission:
             )
             def is_job_started(current_job: Job) -> bool:
                 current_job.refresh_job_info(client=deadline_client)
-                LOG.info(f"Waiting for job {current_job.id} to be created")
+                LOG.info(f"Waiting for job {current_job.id} to be created and running")
 
                 assert current_job.task_run_status not in [
                     TaskStatus.INTERRUPTING,
@@ -183,7 +183,7 @@ class TestJobSubmission:
             )
             def is_job_started(current_job: Job) -> bool:
                 current_job.refresh_job_info(client=deadline_client)
-                LOG.info(f"Waiting for job {current_job.id} to be created")
+                LOG.info(f"Waiting for job {current_job.id} to be created and running")
 
                 assert current_job.task_run_status not in [
                     TaskStatus.INTERRUPTING,
@@ -558,9 +558,9 @@ class TestJobSubmission:
                             else "powershell"
                         ),
                         "args": (
-                            ["40"]
+                            ["300"]
                             if os.environ["OPERATING_SYSTEM"] == "linux"
-                            else ["ping", "localhost", "-n", "40"]
+                            else ["ping", "localhost", "-n", "300"]
                         ),
                         "cancelation": {
                             "mode": "NOTIFY_THEN_TERMINATE",
@@ -589,9 +589,9 @@ class TestJobSubmission:
                             else "powershell"
                         ),
                         "args": (
-                            ["40"]
+                            ["300"]
                             if os.environ["OPERATING_SYSTEM"] == "linux"
-                            else ["ping", "localhost", "-n", "40"]
+                            else ["ping", "localhost", "-n", "300"]
                         ),
                         "cancelation": {
                             "mode": "NOTIFY_THEN_TERMINATE",
@@ -652,12 +652,12 @@ class TestJobSubmission:
             max_time=120,
             interval=10,
         )
-        def is_job_started(current_job: Job) -> bool:
+        def is_job_created(current_job: Job) -> bool:
             current_job.refresh_job_info(client=deadline_client)
             LOG.info(f"Waiting for job {current_job.id} to be created")
             return current_job.lifecycle_status != "CREATE_IN_PROGRESS"
 
-        assert is_job_started(job)
+        assert is_job_created(job)
 
         @backoff.on_predicate(
             wait_gen=backoff.constant,
@@ -859,12 +859,12 @@ class TestJobSubmission:
             max_time=120,
             interval=10,
         )
-        def is_job_started(current_job: Job) -> bool:
+        def is_job_created(current_job: Job) -> bool:
             current_job.refresh_job_info(client=deadline_client)
             logging.info(f"Waiting for job {current_job.id} to be created")
             return current_job.lifecycle_status != "CREATE_IN_PROGRESS"
 
-        assert is_job_started(job)
+        assert is_job_created(job)
 
         @backoff.on_predicate(
             wait_gen=backoff.constant,
@@ -1012,6 +1012,10 @@ class TestJobSubmission:
                     }
                 )
             )
+
+        # 100 meg file.    10,000,000
+        large_file = "A" * 100000000
+
         # Create the input files to make sync inputs take a relatively long time
         files_path: str = os.path.join(tmp_path, "files")
         os.mkdir(files_path)
@@ -1020,7 +1024,9 @@ class TestJobSubmission:
             with open(file_name, "w+") as input_file:
                 if i % 1000 == 0:
                     # Create some big files (1GB each) so the syncInputAttachments don't fail due to low transfer rates
-                    input_file.write("A" * 1000000000)
+                    # Write 10 100 meg buffers to reduce memory usage.
+                    for _ in range(10):
+                        input_file.write(large_file)
                 else:
                     input_file.write(f"{i}")
         config = configparser.ConfigParser()
@@ -1241,7 +1247,7 @@ class TestJobSubmission:
         )
         def is_job_started_with_sessions(current_job: Job) -> bool:
             current_job.refresh_job_info(client=deadline_client)
-            LOG.info(f"Waiting for job {current_job.id} to be created")
+            LOG.info(f"Waiting for job {current_job.id} to be created and running")
             if current_job.lifecycle_status == "CREATE_IN_PROGRESS":
                 return False
             sessions: list[dict[str, Any]] = deadline_client.list_sessions(
@@ -2579,12 +2585,12 @@ echo -n $(cat {{Param.DataDir}}/files/test_input_file)Hello > {{Param.DataDir}}/
             max_time=120,
             interval=2,
         )
-        def is_job_started() -> bool:
+        def is_job_created() -> bool:
             job.refresh_job_info(client=deadline_client)
             LOG.info(f"Waiting for job {job.id} to be created")
             return job.lifecycle_status != "CREATE_IN_PROGRESS"
 
-        assert is_job_started()
+        assert is_job_created()
 
         @backoff.on_predicate(
             wait_gen=backoff.constant,

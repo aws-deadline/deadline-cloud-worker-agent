@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Optional, Tuple
 from pathlib import Path
 
-from pydantic import BaseSettings, Field
-from pydantic.env_settings import SettingsSourceCallable
+from pydantic.v1 import BaseSettings, Field
+from pydantic.v1.env_settings import SettingsSourceCallable
 
 from ..capabilities import Capabilities
 from .config_file import ConfigFile

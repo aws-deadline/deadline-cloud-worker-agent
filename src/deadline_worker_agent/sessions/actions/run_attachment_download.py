@@ -164,7 +164,7 @@ class AttachmentDownloadAction(OpenjdAction):
             extra={"openjd_log_content": LogContent.BANNER},
         )
         self._logger.info(
-            f"--------- AttachmentDownloadAction  {section_title}",
+            f"--------- {section_title}",
             extra={"openjd_log_content": LogContent.BANNER},
         )
         self._logger.info(
@@ -275,8 +275,11 @@ class AttachmentDownloadAction(OpenjdAction):
         manifest_paths_by_root = session._asset_sync._check_and_write_local_manifests(
             merged_manifests_by_root=merged_manifests_by_root,
             manifest_write_dir=str(session.working_directory),
+            manifest_name_suffix="step" if self._step_details else "job",
         )
-        session.manifest_paths_by_root = manifest_paths_by_root
+        # Set the manifests by root mapping to session for attachment upload to determine output
+        for root_name, root_path in manifest_paths_by_root.items():
+            session.add_manifest_path(root=root_name, path=root_path)
 
         self.set_step_script(
             manifests=manifest_paths_by_root.values(),  # type: ignore
@@ -286,6 +289,7 @@ class AttachmentDownloadAction(OpenjdAction):
         session.run_task(
             step_script=self._step_script,
             task_parameter_values=dict[str, ParameterValue](),
+            log_task_banner=False,
         )
 
     def _start_vfs(

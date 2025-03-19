@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from deadline_worker_agent.capabilities import Capabilities
 
-from pydantic import ValidationError, BaseSettings
+from pydantic.v1 import ValidationError, BaseSettings
 import pytest
 
 try:
