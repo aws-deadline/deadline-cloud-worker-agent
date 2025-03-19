@@ -560,6 +560,19 @@ Resources:
                     - ''
                     - - !GetAtt JobAttachmentsBucket.Arn
                       - /*
+        - PolicyName: LogPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:GetLogEvents
+                Resource:
+                  - !Join
+                    - ''
+                    - - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/deadline/
+                      - !GetAtt DeadlineFarm.FarmId
+                      - /*
       Tags:
         - Key: Origin
           Value: DeadlineCloudAgentE2ETest
