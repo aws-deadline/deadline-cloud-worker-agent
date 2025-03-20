@@ -9,9 +9,9 @@ import logging
 import os
 
 from e2e.utils import submit_custom_job
+from e2e.conftest import DeadlineResources
 from deadline_test_fixtures import (
     DeadlineClient,
-    DeadlineResources,
     EC2InstanceWorker,
 )
 
