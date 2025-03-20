@@ -48,7 +48,7 @@ class TestWindowsInstaller:
         # Length of time for the job to run
         job_time = 5
         # Default Windows Worker Agent username
-        defaultName = "deadline-worker"
+        default_name = "deadline-worker"
 
         def countdown_script(seconds: int = 1):
             return f"""
@@ -98,35 +98,37 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permissions_str}"
         # Job to ensure the instance is fully running
         submit_custom_job(
             job_name="Test Job to start the instance",
-            client=deadline_client,
+            deadline_client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             run_script=countdown_script(),
+            max_retries_per_task=2,
         ).wait_until_complete(client=deadline_client)
 
         retain_instance_job = submit_custom_job(
             job_name="Test Job to retain the instance",
-            client=deadline_client,
+            deadline_client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             run_script=countdown_script(job_time),
+            max_retries_per_task=2,
         )
 
         try:
             # Check administrator membership
-            check_admin_permissions(session_worker, defaultName)
+            check_admin_permissions(session_worker, default_name)
 
             # Check for verified permissions
             check_security_permissions(
                 session=session_worker,
-                username=defaultName,
+                username=default_name,
                 permissions=["SeServiceLogonRight"],
                 should_exist=True,
             )
 
             check_security_permissions(
                 session=session_worker,
-                username=defaultName,
+                username=default_name,
                 permissions=["SeAssignPrimary"],
                 should_exist=True,
             )
@@ -134,7 +136,7 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permissions_str}"
             # Check permissions that should not be assigned
             check_security_permissions(
                 session=session_worker,
-                username=defaultName,
+                username=default_name,
                 permissions=["SeShutdown", "SeIncreaseQuota"],
                 should_exist=False,
             )
