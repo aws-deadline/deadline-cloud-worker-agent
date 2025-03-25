@@ -689,7 +689,7 @@ Resources:
     Type: AWS::Deadline::Queue
     Properties:
       DisplayName: SecondaryQueue
-      Description: Queue used when a test needs to excercise queue-switching behavior
+      Description: Queue used when a test needs to exercise queue-switching behavior
         and cross-queue permissions.
       FarmId: !GetAtt DeadlineFarm.FarmId
       JobAttachmentSettings:

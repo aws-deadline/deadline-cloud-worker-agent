@@ -2469,11 +2469,6 @@ echo -n $(cat {{Param.DataDir}}/files/test_input_file)Hello > {{Param.DataDir}}/
                                             "type": "TEXT",
                                             "runnable": True,
                                             "data": step_script,
-                                            **(
-                                                {"filename": "appendscript.bat"}
-                                                if os.environ["OPERATING_SYSTEM"] == "windows"
-                                                else {}
-                                            ),
                                         }
                                     ],
                                 },
