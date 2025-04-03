@@ -205,6 +205,7 @@ def function_worker_factory(
     for worker in created_workers:
         stop_worker(request, worker)
 
+
 @pytest.fixture(scope="class")
 def class_worker_factory(
     request: pytest.FixtureRequest,
