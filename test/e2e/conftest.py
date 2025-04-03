@@ -205,6 +205,24 @@ def function_worker_factory(
     for worker in created_workers:
         stop_worker(request, worker)
 
+@pytest.fixture(scope="class")
+def class_worker_factory(
+    request: pytest.FixtureRequest,
+    ec2_worker_type: Type[EC2InstanceWorker],
+) -> Generator[Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker], None, None]:
+    created_workers = []
+
+    def _create_class_worker(
+        custom_worker_config: DeadlineWorkerConfiguration,
+    ):
+        with create_worker(custom_worker_config, ec2_worker_type, request) as worker:
+            created_workers.append(worker)
+            return worker
+
+    yield _create_class_worker
+    for worker in created_workers:
+        stop_worker(request, worker)
+
 
 def create_worker(
     worker_config: DeadlineWorkerConfiguration,
