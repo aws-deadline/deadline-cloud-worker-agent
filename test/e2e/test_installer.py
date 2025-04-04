@@ -46,7 +46,6 @@ class TestInstaller:
         assert cmd_result.exit_code == 0, f"Shutdown WA permission do not exist: {cmd_result}"
 
 
-@pytest.mark.usefixtures("setup_custom_worker")
 @pytest.mark.skipif(os.environ["OPERATING_SYSTEM"] == "linux", reason="Windows specific tests")
 class TestWindowsInstaller:
     # Names for tests
@@ -56,13 +55,7 @@ class TestWindowsInstaller:
 
     WHOAMI_COMMAND = '((whoami).split("\\")[1])'
 
-    # Shared Class Variables
-    install_windows_worker_command: str
-    deadline_client: DeadlineClient
-    deadline_resources: DeadlineResources
-    class_worker: WindowsInstanceBuildWorker
-
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="class", autouse=True)
     def setup_custom_worker(
         self,
         request,
@@ -73,11 +66,11 @@ class TestWindowsInstaller:
     ):
         cls = request.cls
 
-        cls.deadline_client = deadline_client
-        cls.deadline_resources = deadline_resources
+        cls._deadline_client = deadline_client
+        cls._deadline_resources = deadline_resources
 
         # Creating an EC2 instance with a custom worker agent
-        cls.class_worker = class_worker_factory(
+        cls._class_worker = class_worker_factory(
             dataclasses.replace(
                 worker_config,
                 agent_user=self.CUSTOM_AGENT_NAME,
@@ -127,11 +120,11 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permission}"
     def test_custom_worker_agent_permissions(self) -> None:
         try:
             # Check administrator membership
-            self.check_admin_permissions(self.class_worker, self.CUSTOM_AGENT_NAME)
+            self.check_admin_permissions(self._class_worker, self.CUSTOM_AGENT_NAME)
 
             # Check for verified permissions
             self.check_security_permissions(
-                session=self.class_worker,
+                session=self._class_worker,
                 username=self.CUSTOM_AGENT_NAME,
                 permissions=["SeServiceLogonRight", "SeAssignPrimary"],
                 should_exist=True,
@@ -139,21 +132,21 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permission}"
 
             # Check permissions that should not be assigned
             self.check_security_permissions(
-                session=self.class_worker,
+                session=self._class_worker,
                 username=self.CUSTOM_AGENT_NAME,
                 permissions=["SeShutdown", "SeIncreaseQuota"],
                 should_exist=False,
             )
         finally:
             # Cleanup the temp directory
-            cmd_result = self.class_worker.send_command(
+            cmd_result = self._class_worker.send_command(
                 command='Remove-Item "$env:TEMP\security.cfg" -Force'
             )
             assert cmd_result.exit_code == 0, "Failed to cleanup security configuration file"
 
     def test_no_default_worker_agent_user(self) -> None:
         # Get all local users
-        get_users_cmd_result = self.class_worker.send_command(
+        get_users_cmd_result = self._class_worker.send_command(
             command="""
           Get-LocalUser | Select-Object Name, Enabled | Format-Table -AutoSize
           """
@@ -163,22 +156,20 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permission}"
             f"Default worker agent user {self.DEFAULT_AGENT_NAME} should not exist"
         )
 
-    def test_custom_agent_runs_job_as_user(
-        self,
-    ) -> None:
+    def test_custom_agent_runs_job_as_user(self) -> None:
         # Submit a job that prints the job users username
         job_result: Job = submit_custom_job(
             job_name="Test Custom Worker Agent Runs Job as User",
-            deadline_client=self.deadline_client,
-            farm=self.deadline_resources.farm,
-            queue=self.deadline_resources.queue_a,
+            deadline_client=self._deadline_client,
+            farm=self._deadline_resources.farm,
+            queue=self._deadline_resources.queue_a,
             run_script=self.WHOAMI_COMMAND,
         )
 
-        job_result.wait_until_complete(client=self.deadline_client)
+        job_result.wait_until_complete(client=self._deadline_client)
 
         job_result.assert_single_task_log_contains(
-            deadline_client=self.deadline_client,
+            deadline_client=self._deadline_client,
             logs_client=boto3.client(
                 "logs",
                 config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
