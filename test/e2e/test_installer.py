@@ -152,8 +152,8 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permission}"
         # Get all local users
         get_users_cmd_result = self.class_worker.send_command(
             command="""
-          Get-LocalUser | Select-Object Name, Enabled | Format-Table -AutoSize
-          """
+Get-LocalUser | Select-Object Name, Enabled | Format-Table -AutoSize
+"""
         )
         assert get_users_cmd_result.exit_code == 0, "Failed to get local users"
         assert self.DEFAULT_AGENT_NAME not in get_users_cmd_result.stdout, (
