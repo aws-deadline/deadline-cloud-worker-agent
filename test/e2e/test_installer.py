@@ -11,8 +11,6 @@ import dataclasses
 import logging
 import os
 
-
-from typing import Callable
 from e2e.utils import submit_custom_job
 from e2e.conftest import DeadlineResources
 from deadline_test_fixtures import (
@@ -111,7 +109,7 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permission}"
         try:
             # Check administrator membership
             self.check_admin_permissions(
-                worker=class_worker, 
+                worker=class_worker,
                 username=self.CUSTOM_AGENT_NAME,
             )
 
