@@ -120,17 +120,11 @@ $content | Select-String -Pattern "^# shutdown_on_stop =|^shutdown_on_stop = fal
         )
         result_output = cmd_result.stdout.strip()
         # LOG.info(f"Allow Shutdown Permissions Found: {result_output}")
-        assert result_output, (
-            "Expected to find shutdown_on_stop in worker.toml"
-        )
+        assert result_output, "Expected to find shutdown_on_stop in worker.toml"
         if allow_shutdown:
-            assert result_output == "shutdown_on_stop = true", (
-                "Allow Shutdown should be enabled"
-            )
+            assert result_output == "shutdown_on_stop = true", "Allow Shutdown should be enabled"
         else:
-            assert result_output != "shutdown_on_stop = true", (
-                "Allow Shutdown should be disabled"
-            )
+            assert result_output != "shutdown_on_stop = true", "Allow Shutdown should be disabled"
 
     # Windows Installer Tests
     def test_custom_worker_agent_permissions(
