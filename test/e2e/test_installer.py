@@ -49,6 +49,7 @@ class TestWindowsInstaller:
     CUSTOM_AGENT_NAME = "custom-agent-worker"
     DEFAULT_AGENT_NAME = "deadline-worker"
     DEFAULT_JOB_USER = "job-user"
+    ADMIN_SID = "S-1-5-32-544"
 
     WHOAMI_COMMAND = '((whoami).split("\\")[1])'
 
@@ -60,6 +61,7 @@ class TestWindowsInstaller:
         return dataclasses.replace(
             worker_config,
             agent_user=self.CUSTOM_AGENT_NAME,
+            allow_shutdown=False,
         )
 
     # Shared Class Methods
@@ -92,6 +94,7 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permission}"
             assert cmd_result.exit_code == 0, (
                 f"Failed to execute 'Get-Content' for permissions: {permission}"
             )
+            # LOG.info(f"Permissions Output: {cmd_result.stdout}")
             if should_exist:
                 assert username in cmd_result.stdout, (
                     f"{username} does not have required permissions: {permission}"
@@ -100,6 +103,34 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permission}"
                 assert username not in cmd_result.stdout, (
                     f"{username} has unexpected permissions: {permission}"
                 )
+
+    @staticmethod
+    def check_allow_shutdown_windows_toml(
+        worker: EC2InstanceWorker,
+        allow_shutdown: bool,
+    ) -> None:
+        cmd_result = worker.send_command(
+            command="""
+$content = Get-Content "C:\ProgramData\Amazon\Deadline\Config\worker.toml"
+$content | Select-String -Pattern "^# shutdown_on_stop =|^shutdown_on_stop = false|^shutdown_on_stop = true"
+"""
+        )
+        assert cmd_result.exit_code == 0, (
+            "Failed to retrieve shutdown_on_stop settings from worker.toml"
+        )
+        result_output = cmd_result.stdout.strip()
+        # LOG.info(f"Allow Shutdown Permissions Found: {result_output}")
+        assert result_output, (
+            "Expected to find shutdown_on_stop in worker.toml"
+        )
+        if allow_shutdown:
+            assert result_output == "shutdown_on_stop = true", (
+                "Allow Shutdown should be enabled"
+            )
+        else:
+            assert result_output != "shutdown_on_stop = true", (
+                "Allow Shutdown should be disabled"
+            )
 
     # Windows Installer Tests
     def test_custom_worker_agent_permissions(
@@ -113,7 +144,7 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permission}"
                 username=self.CUSTOM_AGENT_NAME,
             )
 
-            # Check for verified permissions
+            # Verify additional install service permissions are granted
             self.check_security_permissions(
                 worker=class_worker,
                 username=self.CUSTOM_AGENT_NAME,
@@ -121,32 +152,18 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permission}"
                 should_exist=True,
             )
 
-            # Check permissions that should not be assigned
+            # Verify Admin have the Shutdown and Increase Quota permissions
             self.check_security_permissions(
                 worker=class_worker,
-                username=self.CUSTOM_AGENT_NAME,
-                permissions=["SeShutdown"],
-                should_exist=False,
-            )
-        finally:
-            # Cleanup the temp directory
-            cmd_result = class_worker.send_command(
-                command='Remove-Item "$env:TEMP\security.cfg" -Force'
-            )
-            assert cmd_result.exit_code == 0, "Failed to cleanup security configuration file"
-
-    @pytest.mark.xfail(reason="We are investigating why the test is failing.")
-    def test_worker_agent_quota_permission(
-        self,
-        class_worker: EC2InstanceWorker,
-    ) -> None:
-        try:
-            # Check permissions that should be assigned
-            self.check_security_permissions(
-                worker=class_worker,
-                username=self.CUSTOM_AGENT_NAME,
-                permissions=["SeIncreaseQuota"],
+                username=self.ADMIN_SID,
+                permissions=["SeIncreaseQuota", "SeShutdownPrivilege"],
                 should_exist=True,
+            )
+
+            # Verify shutdown permissions in worker.toml
+            self.check_allow_shutdown_windows_toml(
+                worker=class_worker,
+                allow_shutdown=False,
             )
         finally:
             # Cleanup the temp directory
