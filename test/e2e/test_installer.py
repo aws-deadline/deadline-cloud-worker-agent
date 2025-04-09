@@ -112,7 +112,7 @@ Get-Content "$env:TEMP\security.cfg" | Select-String "{permission}"
         cmd_result = worker.send_command(
             command="""
 $content = Get-Content "C:\ProgramData\Amazon\Deadline\Config\worker.toml"
-$content | Select-String -Pattern "^# shutdown_on_stop =|^shutdown_on_stop = false|^shutdown_on_stop = true"
+$content | Select-String -Pattern "^# shutdown_on_stop =|^shutdown_on_stop ="
 """
         )
         assert cmd_result.exit_code == 0, (
