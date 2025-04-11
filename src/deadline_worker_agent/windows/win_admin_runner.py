@@ -1,0 +1,134 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+# This assertion short-circuits mypy from type checking this module on platforms other than Windows
+# https://mypy.readthedocs.io/en/stable/common_issues.html#python-version-and-system-platform-checks
+import sys
+
+assert sys.platform == "win32"
+from logging import Logger
+from pathlib import Path
+from typing import Optional
+import subprocess
+import win32com.shell.shell as shell
+import win32con
+from win32com.shell import shellcon
+import win32event
+import win32process
+import os
+import time
+
+from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum, touch_file
+from deadline_worker_agent.utils import FileContext
+
+
+class _WindowsScriptRunner:
+    def __init__(
+        self,
+        working_directory: Path,
+        script_path: str,
+        logger: Logger,
+    ):
+        """
+        working_directory: Process working directory.
+        script_path: Full path where to run the script.
+        environment_variables: Environment variables to set for the process.
+        admin: Run the process as admin.
+        """
+        self._working_directory = working_directory
+        self._script_path = script_path
+        self._logfile = os.path.join(os.path.dirname(script_path), "host_configuration.log")
+        self._logger = logger
+
+    def _run(self, executable: str, command: str) -> int:
+        """Run the executable with command. Tails the prescribed log file until process exit.
+        Returns the process exit code.
+        """
+        self._prepare_file_permissions()
+
+        with FileContext(self._logfile) as _:
+            # Run the command, allow the window to show.
+            # https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-shellexecuteinfoa
+            try:
+                result = shell.ShellExecuteEx(
+                    nShow=win32con.SW_SHOW,
+                    fMask=shellcon.SEE_MASK_NOCLOSEPROCESS,
+                    lpVerb="runas",
+                    lpFile=executable,
+                    lpParameters=command,
+                    lpDirectory=str(self._working_directory.resolve()),
+                )
+                process_handle = result["hProcess"]
+
+                # Tail the output while the process is running
+                with open(self._logfile, "r", encoding="utf-8-sig") as f:
+                    while (
+                        win32event.WaitForSingleObject(process_handle, 100) == win32con.WAIT_TIMEOUT
+                    ):
+                        line = f.readline()
+                        if line:
+                            self._logger.info(line.rstrip("\r\n"))
+                        else:
+                            time.sleep(0.1)  # Small delay to reduce CPU usage
+
+                    # Read any remaining output at the end.
+                    for line in f:
+                        self._logger.info(line.rstrip("\r\n"))
+            except Exception as e:
+                self._logger.info(f"Powershell execute error with {e}")
+                with open(self._logfile, "r", encoding="utf-8-sig") as f:
+                    # Read any remaining output at the end.
+                    for line in f:
+                        self._logger.info(line.rstrip("\r\n"))
+
+            # Get the exit code
+            return_code = win32process.GetExitCodeProcess(process_handle)
+            self._logger.info(f"Powershell exited with {return_code}")
+            return return_code
+
+    def run_powershell(self, env_vars: Optional[dict[str, Optional[str]]]) -> int:
+        """Run powershell with the constructed script
+        Returns the process exit code.
+        """
+
+        # Run Powershell, tell it to run a ps1 file and output all logs to the log file.
+        executable = "powershell.exe"
+        ps_command = [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            f"""& {{
+                $OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+                {self._prefix_environment_variables(env_vars)}
+                . '{self._script_path}' *>&1 | Out-File -FilePath '{self._logfile}' -Encoding utf8;
+                $exitCode = $LASTEXITCODE;
+                if ($null -eq $exitCode) {{ $exitCode = if ($?) {{ 0 }} else {{ 1 }} }};
+                exit $exitCode
+            }}""",
+        ]
+        command_line = subprocess.list2cmdline(ps_command)
+        return self._run(executable=executable, command=command_line)
+
+    def _prepare_file_permissions(self):
+        """Ensure the script and log is executable and readable by the current user."""
+        touch_file(
+            file_path=Path(self._logfile),
+            agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+        )
+        touch_file(
+            file_path=Path(self._script_path),
+            agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+        )
+
+    @staticmethod
+    def _prefix_environment_variables(env_vars: Optional[dict[str, Optional[str]]]) -> str:
+        env_script = ""
+        if env_vars:
+            for key in env_vars.keys():
+                value = env_vars.get(key)
+                if value is not None:
+                    env_script += f"""$env:{key} = '{value}'\n"""
+                else:
+                    env_script += f"$env:{key} = $null\n"
+
+        return env_script

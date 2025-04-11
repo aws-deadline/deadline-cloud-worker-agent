@@ -53,10 +53,10 @@ Log events may also contain a `type`, `subtype`, icon (`ti`), and additional fie
 | AgentInfo | None | None | platform; python[interpreter,version]; agent[version,installedAt,runningAs]; depenencies | Information about the running Agent software. |
 | API | Req | 📤 | operation; request_url; params; resource (optional) | A request to an AWS API. Only requests to AWS Deadline Cloud APIs contain a resource field. |
 | API | Resp | 📥 | operation; params; status_code, request_id; error (optional) | A response from an AWS API request. |
-| FileSystem | Read/Write/Create/Delete | 💾 | filepath; message | A filesystem operation. |
 | AWSCreds | Load/Install/Delete | 🔑 | resource; message; role_arn (optional) | Related to an operation for AWS Credentials. |
 | AWSCreds | Query | 🔑 | resource; message; role_arn (optional); expiry (optional) | Related to an operation for AWS Credentials. |
 | AWSCreds | Refresh | 🔑 | resource; message; role_arn (optional); expiry (optional); scheduled_time (optional) | Related to an operation for AWS Credentials. |
+| FileSystem | Read/Write/Create/Delete | 💾 | filepath; message | A filesystem operation. |
 | Metrics | System | 📊 | many | System metrics. |
 | Session | Starting/Failed/AWSCreds/Complete/Info | 🔷 | queue_id; job_id; session_id | An update or information related to a Session. |
 | Session | Add/Remove | 🔷 | queue_id; job_id; session_id; action_ids; queued_actions | Adding or removing SessionActions in a Session. |
@@ -64,6 +64,7 @@ Log events may also contain a `type`, `subtype`, icon (`ti`), and additional fie
 | Session | User | 🔷 | queue_id; job_id; session_id; user | The user that a Session is running Actions as. |
 | Session | Runtime | 🔷 | queue_id; job_id; session_id | Information related to the running Session. This includes information about the host, process control, and encountered Exceptions which could contain information like filepaths. |
 | Worker | Create/Load/ID/Status/Delete | 💻 | farm_id; fleet_id; worker_id (optional); message | A notification related to a Worker resource within AWS Deadline Cloud. |
+| Worker | HostConfiguration | 📜 | farm_id; fleet_id; worker_id (optional); message; status; exit_code (optional); success (optional) | Worker Host configuration event. |
 
 If you prefer structured logs to be emited on your host, then you can configure your Worker Agent to emit structured logs instead. Please see the
 `structured_logs` option in the [`worker.toml.example`](../src/deadline_worker_agent/installer/worker.toml.example)

@@ -113,6 +113,17 @@ class DeadlineRequestInterrupted(Exception):
 
 
 @dataclass(frozen=True)
+class WorkerHostConfiguration:
+    """Host Configuration after a worker has started."""
+
+    script_body: str
+    """Host Configuration Script Body."""
+
+    script_timeout_seconds: int
+    """Customer Supplied timeout."""
+
+
+@dataclass(frozen=True)
 class WorkerLogConfig:
     """The destination where the Worker Agent should synchronize its logs to"""
 

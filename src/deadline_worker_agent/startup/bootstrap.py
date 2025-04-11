@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict, fields, field
 from time import sleep
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple, cast
 import json
 import logging as _logging
 import stat
@@ -16,6 +16,7 @@ import requests
 from ..aws.deadline import (
     DeadlineRequestConditionallyRecoverableError,
     DeadlineRequestUnrecoverableError,
+    WorkerHostConfiguration,
     WorkerLogConfig,
     construct_worker_log_config,
     create_worker,
@@ -100,6 +101,8 @@ class WorkerPersistenceInfo:
     )
     """The EC2 instance ID of the Worker, if applicable"""
 
+    host_configuration_succeeded: bool | None = field(default=None)
+
     @classmethod
     def load(cls, *, config: Configuration) -> Optional[WorkerPersistenceInfo]:
         """Load the Worker Bootstrap from the Worker Agent state persistence file"""
@@ -115,7 +118,7 @@ class WorkerPersistenceInfo:
         )
 
         with config.worker_state_file.open("r", encoding="utf8") as fh:
-            data: dict[str, str] = json.load(fh)
+            data: dict[str, str | bool] = json.load(fh)
 
         own_fields = set(f.name for f in fields(class_or_instance=WorkerPersistenceInfo))
         selected_data = {key: value for key, value in data.items() if key in own_fields}
@@ -129,7 +132,7 @@ class WorkerPersistenceInfo:
                 )
             )
 
-        return cls(**selected_data)
+        return cls(**cast(Dict[str, Any], selected_data))
 
     def save(self, *, config: Configuration) -> None:
         """Save the Worker Bootstrap to the Worker Agent state persistence file"""
@@ -185,6 +188,9 @@ class WorkerBootstrap:
     log_config: Optional[WorkerLogConfig] = None
     """The log configuration for the Worker"""
 
+    host_config: Optional[WorkerHostConfiguration] = None
+    """The host configuration for the Worker"""
+
 
 def bootstrap_worker(config: Configuration, *, use_existing_worker: bool = True) -> WorkerBootstrap:
     """Contains startup logic to ensure that the Worker is created and started"""
@@ -217,7 +223,7 @@ def bootstrap_worker(config: Configuration, *, use_existing_worker: bool = True)
 
     try:
         # raises: BootstrapWithoutWorkerLoad, SystemExit
-        log_config = _start_worker(
+        log_config, host_config = _start_worker(
             deadline_client=deadline_client,
             config=config,
             worker_id=worker_info.worker_id,
@@ -246,6 +252,7 @@ def bootstrap_worker(config: Configuration, *, use_existing_worker: bool = True)
         worker_info=worker_info,
         session=worker_session,
         log_config=log_config,
+        host_config=host_config,
     )
 
 
@@ -437,7 +444,7 @@ def _start_worker(
     config: Configuration,
     worker_id: str,
     has_existing_worker: bool,
-) -> Optional[WorkerLogConfig]:
+) -> Tuple[Optional[WorkerLogConfig], Optional[WorkerHostConfiguration]]:
     """Updates the Worker in the service to the STARTED state.
 
     Returns:
@@ -445,7 +452,8 @@ def _start_worker(
             contained a log configuration for the Worker Agent to use for writing
             its own logs. The returned WorkerLogConfig is the configuration that it
             should use.
-
+        Optional[WorkerHostConfiguration] -- Non-None if UpdateWorker request contains a
+            host configuration for the Worker Agent to configure the host.
     Raises:
         BootstrapWithoutWorkerLoad
         SystemExit
@@ -498,9 +506,19 @@ def _start_worker(
         )
     )
 
+    logging_config = None
     if log_config := response.get("log"):
-        return construct_worker_log_config(log_config=log_config)
-    return None
+        logging_config = construct_worker_log_config(log_config=log_config)
+
+    host_config = None
+    if response_host_config := response.get("hostConfiguration"):
+        # scriptTimeoutSeconds is technically always there from the backend.
+        host_config = WorkerHostConfiguration(
+            script_body=response_host_config.get("scriptBody", ""),
+            script_timeout_seconds=response_host_config["scriptTimeoutSeconds"],
+        )
+
+    return logging_config, host_config
 
 
 def _enforce_no_instance_profile_or_stop_worker(

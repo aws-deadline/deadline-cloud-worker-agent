@@ -45,7 +45,8 @@ The worker maintains a worker state which is a JSON representation of the follow
 ```jsonc
 {
     "worker_id": "<WORKER_ID>",
-    "instance_id": "<INSTANCE_ID>"  # OPTIONAL
+    "instance_id": "<INSTANCE_ID>",  # OPTIONAL
+    "host_configuration_succeeded": bool # OPTINAL
 }
 ```
 
@@ -58,6 +59,9 @@ This contains a unique identifier that represents the worker in your AWS Deadlin
 
 This is an optional parameter which contains an identifier of the EC2 instance running the worker, if applicable. 
 
+#### `host_configuration_succeeded`
+
+This is an optional parameter which indicates host configuration has been executed on the worker. Workers will only run once per worker.
 
 #### How the State File Affects Startup Behavior
 

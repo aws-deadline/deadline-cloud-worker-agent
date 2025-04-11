@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 from pytest import fixture, mark, param, raises
 
 from deadline_worker_agent.api_models import (
+    HostConfiguration,
     HostProperties,
     LogConfiguration,
     UpdateWorkerResponse,
@@ -28,6 +29,7 @@ from deadline_worker_agent.startup import bootstrap as bootstrap_mod
 from deadline_worker_agent.aws.deadline import (
     DeadlineRequestConditionallyRecoverableError,
     DeadlineRequestUnrecoverableError,
+    WorkerHostConfiguration,
     WorkerLogConfig,
     construct_worker_log_config,
 )
@@ -49,6 +51,8 @@ AWSLOGS_LOG_CONFIGURATION = LogConfiguration(
         LOG_CONFIG_OPTION_STREAM_NAME_KEY: CLOUDWATCH_LOG_STREAM,
     },
 )
+
+HOST_CONFIGURATION = HostConfiguration(scriptBody="echo HELLOWORLD", scriptTimeoutSeconds=456)
 
 INSTANCE_ID = "i-aaaaaaaaaaaaaaaa"
 WORKER_ID = f"worker-{32 * 'a'}"
@@ -143,6 +147,16 @@ def cloudwatch_log_group() -> str:
 @fixture
 def cloudwatch_log_stream() -> str:
     return "log-stream"
+
+
+@fixture
+def host_configuration_script() -> str:
+    return "echo Hello"
+
+
+@fixture
+def host_configuration_script_timeout() -> int:
+    return 456
 
 
 @fixture
@@ -367,6 +381,15 @@ class TestBootstrapWorker:
             cloudwatch_log_stream=cloudwatch_log_stream,
         )
 
+    @fixture
+    def worker_host_config(
+        self, host_configuration_script: str, host_configuration_script_timeout: int
+    ) -> WorkerHostConfiguration:
+        return WorkerHostConfiguration(
+            script_body=host_configuration_script,
+            script_timeout_seconds=host_configuration_script_timeout,
+        )
+
     def test_success(
         self,
         config: Configuration,
@@ -375,18 +398,20 @@ class TestBootstrapWorker:
         get_boto3_session_for_fleet_role_mock: MagicMock,
         start_worker_mock: MagicMock,
         worker_log_config: WorkerLogConfig,
+        worker_host_config: WorkerHostConfiguration,
         enforce_no_instance_profile_or_stop_worker_mock: MagicMock,
     ) -> None:
         """Test of the happy-path of bootstrap_worker()."""
         # GIVEN
         load_or_create_worker_mock.return_value = (worker_info, False)
-        start_worker_mock.return_value = worker_log_config
+        start_worker_mock.return_value = (worker_log_config, worker_host_config)
 
         # WHEN
         worker_bootstrap = bootstrap_mod.bootstrap_worker(config=config)
 
         # THEN
         assert worker_bootstrap.log_config is worker_log_config
+        assert worker_bootstrap.host_config is worker_host_config
         assert worker_bootstrap.session is get_boto3_session_for_fleet_role_mock.return_value
         assert worker_bootstrap.worker_info is worker_info
         enforce_no_instance_profile_or_stop_worker_mock.assert_called_once_with(
@@ -464,7 +489,7 @@ class TestBootstrapWorker:
         # GIVEN
         load_or_create_worker_mock.side_effect = [(worker_info, True), (worker_info, False)]
         start_worker_exception = bootstrap_mod.BootstrapWithoutWorkerLoad()
-        start_worker_mock.side_effect = [start_worker_exception, worker_log_config]
+        start_worker_mock.side_effect = [start_worker_exception, (worker_log_config, None)]
 
         # WHEN
         worker_bootstrap = bootstrap_mod.bootstrap_worker(config=config)
@@ -757,12 +782,24 @@ class TestStartWorker:
             yield mock
 
     @mark.parametrize(
-        "has_existing_worker, log_config",
+        "has_existing_worker, log_config, host_config",
         [
-            param(True, AWSLOGS_LOG_CONFIGURATION, id="has-existing-with-logs"),
-            param(False, AWSLOGS_LOG_CONFIGURATION, id="no-existing-with-logs"),
-            param(True, None, id="has-existing-no-logs"),
-            param(False, None, id="no-existing-no-logs"),
+            param(True, AWSLOGS_LOG_CONFIGURATION, None, id="has-existing-with-logs"),
+            param(False, AWSLOGS_LOG_CONFIGURATION, None, id="no-existing-with-logs"),
+            param(True, None, None, id="has-existing-no-logs"),
+            param(False, None, None, id="no-existing-no-logs"),
+            param(
+                True,
+                AWSLOGS_LOG_CONFIGURATION,
+                HOST_CONFIGURATION,
+                id="has-existing-with-host-config",
+            ),
+            param(
+                False,
+                AWSLOGS_LOG_CONFIGURATION,
+                HOST_CONFIGURATION,
+                id="no-existing-with-host-config",
+            ),
         ],
     )
     def test_success(
@@ -771,6 +808,7 @@ class TestStartWorker:
         worker_id: str,
         has_existing_worker: bool,
         log_config: Optional[LogConfiguration],
+        host_config: Optional[HostConfiguration],
         deadline_client: MagicMock,
         update_worker_mock: MagicMock,
         mock_get_host_properties: MagicMock,
@@ -782,10 +820,12 @@ class TestStartWorker:
         update_worker_response = dict[str, Any]()
         if log_config:
             update_worker_response["log"] = log_config
+        if host_config:
+            update_worker_response["hostConfiguration"] = host_config
         update_worker_mock.return_value = update_worker_response
 
         # WHEN
-        result = bootstrap_mod._start_worker(
+        log_result, host_config_result = bootstrap_mod._start_worker(
             deadline_client=deadline_client,
             config=config,
             worker_id=worker_id,
@@ -804,9 +844,18 @@ class TestStartWorker:
             host_properties=host_properties,
         )
         if not log_config:
-            assert result is None
+            assert log_result is None
         else:
-            assert result == construct_worker_log_config(log_config=log_config)
+            assert log_result == construct_worker_log_config(log_config=log_config)
+
+        if not host_config:
+            assert host_config_result is None
+        else:
+            assert host_config_result is not None
+            assert host_config_result.script_body == host_config.get("scriptBody")
+            assert host_config_result.script_timeout_seconds == host_config.get(
+                "scriptTimeoutSeconds"
+            )
 
     @mark.parametrize(
         "has_existing_worker, exception",

@@ -164,6 +164,7 @@ class WorkerLogEventOp(str, Enum):
     ID = "ID"  # The ID that the Agent is running as
     STATUS = "Status"
     DELETE = "Delete"
+    HOST_CONFIGURATION = "HostConfiguration"
 
 
 class WorkerLogEvent(BaseLogEvent):
@@ -198,6 +199,53 @@ class WorkerLogEvent(BaseLogEvent):
         dd.update(farm_id=self.farm_id, fleet_id=self.fleet_id)
         if self.worker_id:
             dd.update(worker_id=self.worker_id)
+        return self.add_exception_to_dict(dd)
+
+
+class WorkerHostConfigurationStatus(str, Enum):
+    RUNNING = "Running"
+    SUCCEEDED = "Succeeded"
+    FAILED = "Failed"
+    SKIPPED = "Skipped"
+
+
+class WorkerHostConfigurationLogEvent(WorkerLogEvent):
+    ti = "📜"
+    type = "Worker"
+    status: WorkerHostConfigurationStatus
+    exit_code: Optional[int]
+    success: Optional[bool]
+
+    def __init__(
+        self,
+        *,
+        farm_id: str,
+        fleet_id: str,
+        message: str,
+        status: WorkerHostConfigurationStatus,
+        worker_id: Optional[str] = None,
+        exit_code: Optional[int] = None,
+        success: Optional[bool] = None,
+    ) -> None:
+        self.exit_code = exit_code
+        self.success = success
+        self.status = status
+
+        super().__init__(
+            op=WorkerLogEventOp.HOST_CONFIGURATION,
+            farm_id=farm_id,
+            fleet_id=fleet_id,
+            worker_id=worker_id,
+            message=message,
+        )
+
+    def asdict(self) -> dict[str, str]:
+        dd = super().asdict()
+        dd.update(status=self.status)
+        if self.exit_code:
+            dd.update(exit_code=self.exit_code)
+        if self.success:
+            dd.update(success=self.success)
         return self.add_exception_to_dict(dd)
 
 

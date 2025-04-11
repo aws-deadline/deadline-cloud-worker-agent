@@ -25,8 +25,8 @@ from deadline_worker_agent.startup.bootstrap import (
     WorkerBootstrap,
     WorkerPersistenceInfo,
 )
-from deadline_worker_agent.aws.deadline import WorkerLogConfig
-from deadline_worker_agent.log_messages import WorkerLogEvent
+from deadline_worker_agent.aws.deadline import WorkerHostConfiguration, WorkerLogConfig
+from deadline_worker_agent.log_messages import WorkerHostConfigurationLogEvent, WorkerLogEvent
 
 entrypoint = entrypoint_mod.entrypoint
 
@@ -39,6 +39,16 @@ def cloudwatch_log_group() -> str:
 @pytest.fixture
 def cloudwatch_log_stream() -> str:
     return "cloudwatch_log_stream"
+
+
+@pytest.fixture
+def host_configuration_script() -> str:
+    return "echo Hello"
+
+
+@pytest.fixture
+def host_configuration_script_timeout() -> int:
+    return 456
 
 
 @pytest.fixture
@@ -58,6 +68,16 @@ def worker_log_config(
     return WorkerLogConfig(
         cloudwatch_log_group=cloudwatch_log_group,
         cloudwatch_log_stream=cloudwatch_log_stream,
+    )
+
+
+@pytest.fixture
+def worker_host_config(
+    host_configuration_script: str, host_configuration_script_timeout: int
+) -> WorkerHostConfiguration:
+    return WorkerHostConfiguration(
+        script_body=host_configuration_script,
+        script_timeout_seconds=host_configuration_script_timeout,
     )
 
 
@@ -88,6 +108,7 @@ def bootstrap_worker_mock(
     worker_info: WorkerPersistenceInfo,
     mock_boto_session: MagicMock,
     worker_log_config: WorkerLogConfig,
+    worker_host_config: WorkerHostConfiguration,
 ) -> Generator[MagicMock, None, None]:
     with patch.object(
         entrypoint_mod,
@@ -96,6 +117,7 @@ def bootstrap_worker_mock(
             worker_info=worker_info,
             session=mock_boto_session,
             log_config=worker_log_config,
+            host_config=worker_host_config,
         ),
     ) as bootstrap_worker_mock:
         yield bootstrap_worker_mock
@@ -175,6 +197,14 @@ def block_rich_import() -> Generator[None, None, None]:
 def block_telemetry_client() -> Generator[MagicMock, None, None]:
     with patch.object(entrypoint_mod, "record_worker_start_telemetry_event") as telem_mock:
         yield telem_mock
+
+
+@pytest.fixture(autouse=True)
+def mock_fleet_host_configuration_runner() -> Generator[MagicMock, None, None]:
+    """This mocks the HostConfigurationScriptRunner so We can test the entry point script run behavior."""
+    with patch.object(entrypoint_mod, "HostConfigurationScriptRunner") as mock_obj:
+        mock_obj.return_value.run.return_value = 0
+        yield mock_obj
 
 
 def test_calls_worker_run(
@@ -737,3 +767,141 @@ class TestCloudWatchLogStreaming:
         )
         context_mgr_enter.assert_called_once_with()
         context_mgr_exit.assert_called_once()
+
+
+@patch("deadline_worker_agent.startup.entrypoint.HOST_CONFIGURATION_FEATURE", False)
+@patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")
+@patch.object(entrypoint_mod.sys, "exit")
+def test_host_config_feature_flag_off(
+    sys_exit_mock: MagicMock,
+    telemetry_mock: MagicMock,
+    bootstrap_worker_mock: MagicMock,
+    mock_fleet_host_configuration_runner: MagicMock,
+    worker_info: WorkerPersistenceInfo,
+) -> None:
+    # Turn OFF the feature flag for this test.
+    # Given
+
+    with patch.object(entrypoint_mod, "_logger") as logger:
+        # WHEN
+        entrypoint()
+
+    # Then
+    mock_fleet_host_configuration_runner.assert_not_called()
+
+    expected = "Host Configuration Feature is not enabled."
+
+    all_args = [
+        arg.msg
+        for args, kwargs in logger.info.call_args_list
+        for arg in list(args) + list(kwargs.values())
+        if isinstance(arg, WorkerHostConfigurationLogEvent)
+    ]
+    assert len(all_args) > 0
+    assert expected in all_args
+
+
+@patch("deadline_worker_agent.startup.entrypoint.HOST_CONFIGURATION_FEATURE", True)
+@patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")
+@patch.object(entrypoint_mod.sys, "exit")
+def test_host_config_already_run_before(
+    sys_exit_mock: MagicMock,
+    telemetry_mock: MagicMock,
+    bootstrap_worker_mock: MagicMock,
+    mock_fleet_host_configuration_runner: MagicMock,
+    worker_info: WorkerPersistenceInfo,
+) -> None:
+    # Turn ON the feature flag for this test.
+    # Given
+    worker_info.host_configuration_succeeded = True
+
+    with patch.object(entrypoint_mod, "_logger") as logger:
+        # WHEN
+        entrypoint()
+
+    # Then
+    mock_fleet_host_configuration_runner.assert_not_called()
+
+    expected = "Host Configuration has been setup before. Not running config scripts."
+
+    all_args = [
+        arg.msg
+        for args, kwargs in logger.info.call_args_list
+        for arg in list(args) + list(kwargs.values())
+        if isinstance(arg, WorkerHostConfigurationLogEvent)
+    ]
+    assert len(all_args) > 0
+    assert expected in all_args
+
+
+@pytest.mark.parametrize(
+    ("has_host_config", "exit_code"),
+    (
+        pytest.param(True, 0),
+        pytest.param(True, 1),
+        pytest.param(False, 1),
+    ),
+)
+@patch("deadline_worker_agent.startup.entrypoint.HOST_CONFIGURATION_FEATURE", True)
+@patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")
+@patch.object(entrypoint_mod.sys, "exit")
+def test_fleet_host_config(
+    sys_exit_mock: MagicMock,
+    telemetry_mock: MagicMock,
+    has_host_config: bool,
+    exit_code: int,
+    bootstrap_worker_mock: MagicMock,
+    mock_fleet_host_configuration_runner: MagicMock,
+    worker_info: WorkerPersistenceInfo,
+) -> None:
+    """Tests that exceptions raised by Worker.run() are logged and the program exits with a non-zero exit code"""
+
+    # Turn ON the feature flag for this test.
+    # GIVEN
+    if has_host_config:
+        # Did the script run successfully.
+        mock_fleet_host_configuration_runner.return_value.run.return_value = exit_code
+    else:
+        # No script to run.
+        bootstrap_worker_mock.return_value.host_config = None
+
+    with patch.object(entrypoint_mod, "_logger") as logger:
+        # WHEN
+        entrypoint()
+
+    # THEN
+    if not has_host_config:
+        mock_fleet_host_configuration_runner.assert_not_called()
+        assert not worker_info.host_configuration_succeeded
+    elif exit_code == 0:
+        # Make sure we save the host configuration marker.
+        assert worker_info.host_configuration_succeeded
+
+        expected = "Worker Agent host configuration succeeded. Starting worker session loop."
+
+        all_args = [
+            arg.msg
+            for args, kwargs in logger.info.call_args_list
+            for arg in list(args) + list(kwargs.values())
+            if isinstance(arg, WorkerHostConfigurationLogEvent)
+        ]
+        assert len(all_args) > 0
+        assert expected in all_args
+
+    else:
+        # Make sure we save the host configuration marker.
+        assert not worker_info.host_configuration_succeeded
+
+        # Check logs have been added.
+        expected = (
+            "Worker Agent host configuration failed with exit code 1. Cannot run jobs, exiting."
+        )
+
+        all_args = [
+            arg.msg
+            for args, kwargs in logger.critical.call_args_list
+            for arg in list(args) + list(kwargs.values())
+            if isinstance(arg, WorkerHostConfigurationLogEvent)
+        ]
+        assert len(all_args) > 0
+        assert expected in all_args

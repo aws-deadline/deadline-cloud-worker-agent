@@ -14,7 +14,8 @@ dependencies = [
     "requests ~= 2.31",
     "boto3 >= 1.34.75",
     "deadline == 0.49.*",
-    "openjd-sessions == 0.10.*",
+    # Pinned to patch version due to Host Config Script runner usage of private OpenJD Sessions API.
+    "openjd-sessions == 0.10.1",
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",
     "tomlkit == 0.13.*",

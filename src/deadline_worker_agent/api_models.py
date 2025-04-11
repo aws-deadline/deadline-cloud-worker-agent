@@ -103,6 +103,14 @@ class AttachmentUploadAction(TypedDict):
     taskId: str
 
 
+class HostConfiguration(TypedDict):
+    scriptBody: str
+    """Host Configuration Script Body."""
+
+    scriptTimeoutSeconds: int
+    """Customer Supplied timeout."""
+
+
 class LogConfiguration(TypedDict):
     error: NotRequired[str]
     logDriver: str
@@ -414,6 +422,7 @@ class UpdateWorkerScheduleRequest(TypedDict):
 
 class UpdateWorkerResponse(TypedDict):
     log: NotRequired[LogConfiguration]
+    hostConfiguration: NotRequired[HostConfiguration]
 
 
 class IpAddresses(TypedDict):
