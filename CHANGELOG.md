@@ -1,3 +1,13 @@
+## 0.28.5 (2025-04-11)
+
+
+### Experimental
+
+These changes are experimental and only available through the use of feature flags
+
+* HOST_CONFIGURATION_FEATURE - run admin host configuration scripts once worker becomes STARTED (#601) ([`d925c65`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/d925c65a052579675443d004295c2b70f019fe9b))
+
+
 ## 0.28.4 (2025-04-03)
 
 
