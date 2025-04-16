@@ -71,7 +71,7 @@ class TestWindowsInstaller:
             start_service=False,
             fleet=deadline_resources.scaling_fleet,
         )
-    
+
     @pytest.fixture(scope="class")
     def test_job(
         self,
@@ -204,9 +204,9 @@ Get-LocalUser | Select-Object Name, Enabled | Format-Table -AutoSize
         assert test_job.task_run_status == TaskStatus.SUCCEEDED
 
     def test_deny_shutdown_on_stop(
-          self,
-          class_worker: EC2InstanceWorker,
-          test_job: Job,
+        self,
+        class_worker: EC2InstanceWorker,
+        test_job: Job,
     ) -> None:
         # Check if the job has run for the set of tests
         if test_job.task_run_status != TaskStatus.SUCCEEDED:
@@ -215,11 +215,10 @@ Get-LocalUser | Select-Object Name, Enabled | Format-Table -AutoSize
 
         LOG.info("Wait for Worker Service to begin Stopping")
         # This can take over 5 minutes
-        class_worker.wait_until_worker_stopping(
-            seconds_between_checks=25
-        )
-  
+        class_worker.wait_until_worker_stopping(seconds_between_checks=25)
+
         ec2_client = boto3.client("ec2")
+
         @backoff.on_exception(
             backoff.constant,
             Exception,
@@ -230,10 +229,10 @@ Get-LocalUser | Select-Object Name, Enabled | Format-Table -AutoSize
             instance_status = ec2_client.describe_instance_status(
                 InstanceIds=[class_worker.instance_id], IncludeAllInstances=True
             )["InstanceStatuses"][0]["InstanceState"]
-            if instance_status['Name'] != "running":
+            if instance_status["Name"] != "running":
                 LOG.warning(f"Instance is not running, current state: {instance_status['Name']}")
                 return  # Exit the function early
-            
+
             cmd_result = class_worker.send_command(
                 command="""
 $content = Get-Content "C:\\ProgramData\\Amazon\\Deadline\\Logs\\worker-agent.log"
@@ -241,9 +240,7 @@ $pattern = "NOT shutting down the host"
 $content | Select-String -Pattern $pattern
 """
             )
-            assert cmd_result.exit_code == 0, (
-                "Failed to get shutdown status from worker-agent.log"
-            )
+            assert cmd_result.exit_code == 0, "Failed to get shutdown status from worker-agent.log"
             assert "NOT shutting down the host" in cmd_result.stdout, (
                 "Worker Agent should not be shutting down the host"
             )
