@@ -15,6 +15,8 @@ from threading import Event
 from typing import Optional
 from pathlib import Path
 
+from ..aws_credentials.worker_boto3_session import WorkerBoto3Session
+
 from ..feature_flag import HOST_CONFIGURATION_FEATURE
 
 from ..api_models import WorkerStatus
@@ -40,7 +42,7 @@ from ..log_messages import (
 from ..log_sync.cloudwatch import stream_cloudwatch_logs
 from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger
 from ..worker import Worker
-from .bootstrap import bootstrap_worker
+from .bootstrap import WorkerBootstrap, bootstrap_worker
 from .host_configuration_script import HostConfigurationScriptRunner
 
 __all__ = ["entrypoint"]
@@ -168,77 +170,13 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
             # logs that we forward to CloudWatch.
             _log_agent_info()
 
-            # If there was a host config, and it was bootstrapped before, only log a message.
-            if worker_bootstrap.host_config and not HOST_CONFIGURATION_FEATURE:
-                _logger.info(
-                    WorkerHostConfigurationLogEvent(
-                        farm_id=config.farm_id,
-                        fleet_id=config.fleet_id,
-                        worker_id=worker_id,
-                        message="Host Configuration Feature is not enabled.",
-                        status=WorkerHostConfigurationStatus.SKIPPED,
-                    )
-                )
-            elif (
-                worker_bootstrap.host_config
-                and worker_bootstrap.worker_info.host_configuration_succeeded
-            ):
-                _logger.info(
-                    WorkerHostConfigurationLogEvent(
-                        farm_id=config.farm_id,
-                        fleet_id=config.fleet_id,
-                        worker_id=worker_id,
-                        message="Host Configuration has been setup before. Not running config scripts.",
-                        status=WorkerHostConfigurationStatus.SKIPPED,
-                    )
-                )
-            # Before the run looop starts, run the Host Configuration script.
-            elif worker_bootstrap.host_config:
-                _logger.info(
-                    WorkerHostConfigurationLogEvent(
-                        farm_id=config.farm_id,
-                        fleet_id=config.fleet_id,
-                        worker_id=worker_id,
-                        message="Running host configuration script.",
-                        status=WorkerHostConfigurationStatus.RUNNING,
-                    )
-                )
-                host_config_runner = HostConfigurationScriptRunner(
-                    logger=_logger,
-                    configuration=config,
-                    worker_id=worker_id,
-                    session_directory=config.worker_persistence_dir,
-                    worker_boto3_session=session,
-                    host_configuration_script=worker_bootstrap.host_config.script_body,
-                    host_configuration_timeout_seconds=worker_bootstrap.host_config.script_timeout_seconds,
-                )
-                exit_code = host_config_runner.run()
-                if exit_code == 0:
-                    _logger.info(
-                        WorkerHostConfigurationLogEvent(
-                            farm_id=config.farm_id,
-                            fleet_id=config.fleet_id,
-                            worker_id=worker_id,
-                            message="Worker Agent host configuration succeeded. Starting worker session loop.",
-                            status=WorkerHostConfigurationStatus.SUCCEEDED,
-                            exit_code=exit_code,
-                        )
-                    )
-                    # Persist host configuration has been performed.
-                    worker_bootstrap.worker_info.host_configuration_succeeded = True
-                    worker_bootstrap.worker_info.save(config=config)
-                else:
-                    _logger.critical(
-                        WorkerHostConfigurationLogEvent(
-                            farm_id=config.farm_id,
-                            fleet_id=config.fleet_id,
-                            worker_id=worker_id,
-                            message=f"Worker Agent host configuration failed with exit code {exit_code}. Cannot run jobs, exiting.",
-                            status=WorkerHostConfigurationStatus.FAILED,
-                            exit_code=exit_code,
-                        )
-                    )
-                    sys.exit(1)
+            # Run Worker Host Configuration.
+            _host_configuration(
+                config=config,
+                worker_bootstrap=worker_bootstrap,
+                worker_id=worker_id,
+                session=session,
+            )
 
             worker_sessions = Worker(
                 farm_id=config.farm_id,
@@ -491,6 +429,91 @@ def _configure_base_logging(
     rotating_file_handler.addFilter(translation_filter)
 
     return bootstrapping_handler
+
+
+def _host_configuration(
+    worker_bootstrap: WorkerBootstrap,
+    config: Configuration,
+    worker_id: str,
+    session: WorkerBoto3Session,
+) -> None:
+    """
+    Runs all business logic related to Host Configuration.
+    This method must be run within a cloudwatch stream context to stream logs.
+    If the host configuration run fails, the worker agent exits.
+    """
+
+    # If there was a host config, and it was bootstrapped before, only log a message.
+    if worker_bootstrap.host_config and not HOST_CONFIGURATION_FEATURE:
+        _logger.info(
+            WorkerHostConfigurationLogEvent(
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                worker_id=worker_id,
+                message="Host Configuration Feature is not enabled.",
+                status=WorkerHostConfigurationStatus.SKIPPED,
+            )
+        )
+        return
+    elif worker_bootstrap.host_config and worker_bootstrap.worker_info.host_configuration_succeeded:
+        _logger.info(
+            WorkerHostConfigurationLogEvent(
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                worker_id=worker_id,
+                message="Host Configuration has been setup before. Not running config scripts.",
+                status=WorkerHostConfigurationStatus.SKIPPED,
+            )
+        )
+        return
+    # Before the run loop starts, run the Host Configuration script.
+    elif worker_bootstrap.host_config:
+        _logger.info(
+            WorkerHostConfigurationLogEvent(
+                farm_id=config.farm_id,
+                fleet_id=config.fleet_id,
+                worker_id=worker_id,
+                message="Running host configuration script.",
+                status=WorkerHostConfigurationStatus.RUNNING,
+            )
+        )
+        host_config_runner = HostConfigurationScriptRunner(
+            logger=_logger,
+            configuration=config,
+            worker_id=worker_id,
+            session_directory=config.worker_persistence_dir,
+            worker_boto3_session=session,
+            host_configuration_script=worker_bootstrap.host_config.script_body,
+            host_configuration_timeout_seconds=worker_bootstrap.host_config.script_timeout_seconds,
+        )
+        exit_code = host_config_runner.run()
+        if exit_code == 0:
+            _logger.info(
+                WorkerHostConfigurationLogEvent(
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    message="Worker Agent host configuration succeeded. Starting worker session loop.",
+                    status=WorkerHostConfigurationStatus.SUCCEEDED,
+                    exit_code=exit_code,
+                )
+            )
+            # Persist host configuration has been performed.
+            worker_bootstrap.worker_info.host_configuration_succeeded = True
+            worker_bootstrap.worker_info.save(config=config)
+            return
+        else:
+            _logger.critical(
+                WorkerHostConfigurationLogEvent(
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    message=f"Worker Agent host configuration failed with exit code {exit_code}. Cannot run jobs, exiting.",
+                    status=WorkerHostConfigurationStatus.FAILED,
+                    exit_code=exit_code,
+                )
+            )
+            sys.exit(1)
 
 
 def _remove_logging_handler(handler: logging.Handler) -> None:

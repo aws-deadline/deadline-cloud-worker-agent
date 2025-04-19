@@ -285,8 +285,11 @@ Get-ChildItem env: | ForEach-Object { "$($_.Name)=$($_.Value)" }
         for log in expected_logs:
             assert any(log in m for m in messages)
 
-    def test_script_file_access(self, queue_handler: QueueHandler, tmp_path: Path):
-        """Tests the script file is only accessible by worker agent user."""
+    def test_script_and_log_file_access(self, queue_handler: QueueHandler, tmp_path: Path):
+        """
+        Tests the script file is only accessible by worker agent user.
+        On Windows, also check the log file is only accessible by worker agent user.
+        """
 
         # Given
         runner = self._create_host_configuration_script_runner(
@@ -309,10 +312,6 @@ Get-ChildItem env: | ForEach-Object { "$($_.Name)=$($_.Value)" }
             assert not mode & 0o002
             assert not mode & 0o001
         else:
-            import getpass
-            import win32con
-            import win32security
-            import ntsecuritycon
             from deadline_worker_agent.windows.win_admin_runner import _WindowsScriptRunner
 
             # Need to prepare the file permissions on Windows
@@ -323,51 +322,54 @@ Get-ChildItem env: | ForEach-Object { "$($_.Name)=$($_.Value)" }
             )
             win32_runner._prepare_file_permissions()
 
-            users_group_sid, _, _ = win32security.LookupAccountName(None, "Users")
-            current_user_sid, _, _ = win32security.LookupAccountName(None, getpass.getuser())
-            sd = win32security.GetFileSecurity(
-                str(script_file),
-                win32con.DACL_SECURITY_INFORMATION | win32con.OWNER_SECURITY_INFORMATION,
-            )
-            dacl = sd.GetSecurityDescriptorDacl()
+            # Test the script file
+            _windows_file_permissions_test(script_file)
+            # Test the log file
+            _windows_file_permissions_test(win32_runner._logfile)
 
-            users_group_permission_found: bool = False
-            administrator_group_permission_read_found: bool = False
-            administrator_group_permission_write_found: bool = False
 
-            if dacl is None:
-                assert False, "All users have access to the file."
+def _windows_file_permissions_test(file_path: str) -> None:
+    assert sys.platform == "win32"
+    import getpass
+    import win32con
+    import win32security
+    import ntsecuritycon
 
-            # Iterate through each ACE in the DACL
-            for i in range(dacl.GetAceCount()):
-                ace = dacl.GetAce(i)
-                (ace_type, ace_flags), ace_mask, sid = ace
+    users_group_sid, _, _ = win32security.LookupAccountName(None, "Users")
+    current_user_sid, _, _ = win32security.LookupAccountName(None, getpass.getuser())
+    sd = win32security.GetFileSecurity(
+        str(file_path),
+        win32con.DACL_SECURITY_INFORMATION | win32con.OWNER_SECURITY_INFORMATION,
+    )
+    dacl = sd.GetSecurityDescriptorDacl()
 
-                if sid == users_group_sid:
-                    # Check for read or write permission
-                    if (
-                        ace_mask & ntsecuritycon.FILE_GENERIC_READ
-                        == ntsecuritycon.FILE_GENERIC_READ
-                    ) or (
-                        ace_mask & ntsecuritycon.FILE_GENERIC_WRITE
-                        == ntsecuritycon.FILE_GENERIC_WRITE
-                    ):
-                        users_group_permission_found = True
-                elif sid == current_user_sid:
-                    # Check for read permission
-                    if (
-                        ace_mask & ntsecuritycon.FILE_GENERIC_READ
-                        == ntsecuritycon.FILE_GENERIC_READ
-                    ):
-                        administrator_group_permission_read_found = True
+    users_group_permission_found: bool = False
+    current_user_permission_read_found: bool = False
+    current_user_permission_write_found: bool = False
 
-                    # Check for write permission
-                    if (
-                        ace_mask & ntsecuritycon.FILE_GENERIC_WRITE
-                        == ntsecuritycon.FILE_GENERIC_WRITE
-                    ):
-                        administrator_group_permission_write_found = True
+    if dacl is None:
+        assert False, "All users have access to the file."
 
-            assert not users_group_permission_found
-            assert administrator_group_permission_read_found
-            assert administrator_group_permission_write_found
+    # Iterate through each ACE in the DACL
+    for i in range(dacl.GetAceCount()):
+        ace = dacl.GetAce(i)
+        (ace_type, ace_flags), ace_mask, sid = ace
+
+        if sid == users_group_sid:
+            # Check for read or write permission
+            if (ace_mask & ntsecuritycon.FILE_GENERIC_READ == ntsecuritycon.FILE_GENERIC_READ) or (
+                ace_mask & ntsecuritycon.FILE_GENERIC_WRITE == ntsecuritycon.FILE_GENERIC_WRITE
+            ):
+                users_group_permission_found = True
+        elif sid == current_user_sid:
+            # Check for read permission
+            if ace_mask & ntsecuritycon.FILE_GENERIC_READ == ntsecuritycon.FILE_GENERIC_READ:
+                current_user_permission_read_found = True
+
+            # Check for write permission
+            if ace_mask & ntsecuritycon.FILE_GENERIC_WRITE == ntsecuritycon.FILE_GENERIC_WRITE:
+                current_user_permission_write_found = True
+
+    assert not users_group_permission_found
+    assert current_user_permission_read_found
+    assert current_user_permission_write_found

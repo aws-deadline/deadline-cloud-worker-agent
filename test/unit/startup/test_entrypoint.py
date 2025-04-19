@@ -905,3 +905,4 @@ def test_fleet_host_config(
         ]
         assert len(all_args) > 0
         assert expected in all_args
+        sys_exit_mock.assert_called_once_with(1)
