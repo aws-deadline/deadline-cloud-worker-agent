@@ -6,7 +6,7 @@ import sys
 
 assert sys.platform == "win32"
 from logging import Logger
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Optional
 import subprocess
 import win32com.shell.shell as shell
@@ -86,26 +86,36 @@ class _WindowsScriptRunner:
             return return_code
 
     def run_powershell(self, env_vars: Optional[dict[str, Optional[str]]]) -> int:
-        """Run powershell with the constructed script
-        Returns the process exit code.
+        """Run powershell with the specified script file
+        Args:
+            env_vars: Dictionary of environment variables where values can be None
+        Returns:
+            The process exit code.
         """
-
-        # Run Powershell, tell it to run a ps1 file and output all logs to the log file.
         executable = "powershell.exe"
+        wrapper_script = PureWindowsPath(__file__).parent / "scripts" / "admin_script.ps1"
+
+        # Convert environment variables to list of strings
+        env_var_list = []
+        if env_vars:
+            for key, value in env_vars.items():
+                if value is None:
+                    env_var_list.append(f"{key}=NULL")
+                else:
+                    env_var_list.append(f"{key}={value}")
+
         ps_command = [
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
-            "-Command",
-            f"""& {{
-                $OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
-                {self._prefix_environment_variables(env_vars)}
-                . '{self._script_path}' *>&1 | Out-File -FilePath '{self._logfile}' -Encoding utf8;
-                $exitCode = $LASTEXITCODE;
-                if ($null -eq $exitCode) {{ $exitCode = if ($?) {{ 0 }} else {{ 1 }} }};
-                exit $exitCode
-            }}""",
-        ]
+            "-File",
+            str(wrapper_script),
+            "-ScriptToRun",
+            self._script_path,
+            "-LogFile",
+            self._logfile,
+        ] + env_var_list
+
         command_line = subprocess.list2cmdline(ps_command)
         return self._run(executable=executable, command=command_line)
 
@@ -119,16 +129,3 @@ class _WindowsScriptRunner:
             file_path=Path(self._script_path),
             agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
         )
-
-    @staticmethod
-    def _prefix_environment_variables(env_vars: Optional[dict[str, Optional[str]]]) -> str:
-        env_script = ""
-        if env_vars:
-            for key in env_vars.keys():
-                value = env_vars.get(key)
-                if value is not None:
-                    env_script += f"""$env:{key} = '{value}'\n"""
-                else:
-                    env_script += f"$env:{key} = $null\n"
-
-        return env_script
