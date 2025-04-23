@@ -114,7 +114,7 @@ if test "${PIP_INDEX_URL:-}" != ""; then
     echo "PIP_INDEX_URL=${PIP_INDEX_URL}" >> $TMP_ENV_FILE
 fi
 
-if test "${AWS_ENDPOINT_URL_DEADLINE}" != ""; then
+if test "${AWS_ENDPOINT_URL_DEADLINE:-}" != ""; then
     echo "AWS_ENDPOINT_URL_DEADLINE=${AWS_ENDPOINT_URL_DEADLINE}" >> $TMP_ENV_FILE
 fi
 
