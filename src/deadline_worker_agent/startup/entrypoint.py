@@ -173,6 +173,7 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
             # Run Worker Host Configuration.
             _host_configuration(
                 config=config,
+                deadline_client=deadline_client,
                 worker_bootstrap=worker_bootstrap,
                 worker_id=worker_id,
                 session=session,
@@ -432,10 +433,11 @@ def _configure_base_logging(
 
 
 def _host_configuration(
-    worker_bootstrap: WorkerBootstrap,
     config: Configuration,
-    worker_id: str,
+    deadline_client: DeadlineClient,
     session: WorkerBoto3Session,
+    worker_bootstrap: WorkerBootstrap,
+    worker_id: str,
 ) -> None:
     """
     Runs all business logic related to Host Configuration.
@@ -513,7 +515,45 @@ def _host_configuration(
                     exit_code=exit_code,
                 )
             )
-            sys.exit(1)
+            # Set this worker to stopped.
+            try:
+                update_worker(
+                    deadline_client=deadline_client,
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    status=WorkerStatus.STOPPED,
+                )
+            except Exception as e:
+                _logger.error(
+                    WorkerLogEvent(
+                        op=WorkerLogEventOp.STATUS,
+                        farm_id=config.farm_id,
+                        fleet_id=config.fleet_id,
+                        worker_id=worker_id,
+                        message="Failed to set status to STOPPED: %s" % str(e),
+                    )
+                )
+
+            # Attempt to shutdown if possible.
+            if config.no_shutdown:
+                _logger.info("NOT shutting down the host. Local configuration settings say not to.")
+                sys.exit(1)
+
+            _logger.critical(
+                WorkerHostConfigurationLogEvent(
+                    farm_id=config.farm_id,
+                    fleet_id=config.fleet_id,
+                    worker_id=worker_id,
+                    message="Worker Agent host configuration failed. Attempting host shut down.",
+                    status=WorkerHostConfigurationStatus.FAILED,
+                    exit_code=exit_code,
+                )
+            )
+            while _repeatedly_attempt_host_shutdown():
+                _host_shutdown(config=config)
+                # Sleep for 30s and then try again; hopefully we never wake up
+                sleep(30)
 
 
 def _remove_logging_handler(handler: logging.Handler) -> None:

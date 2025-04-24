@@ -835,24 +835,33 @@ def test_host_config_already_run_before(
 
 
 @pytest.mark.parametrize(
-    ("has_host_config", "exit_code"),
+    ("has_host_config", "exit_code", "can_shutdown"),
     (
-        pytest.param(True, 0),
-        pytest.param(True, 1),
-        pytest.param(False, 1),
+        pytest.param(True, 0, True, id="Has HostConfig, run success, can shutdown"),
+        pytest.param(True, 1, True, id="Has HostConfig, run failed, can shutdown"),
+        pytest.param(True, 1, False, id="Has HostConfig, run failed, cannot shutdown"),
+        pytest.param(False, 1, True, id="No Host Config"),
     ),
 )
 @patch("deadline_worker_agent.startup.entrypoint.HOST_CONFIGURATION_FEATURE", True)
+@patch.object(entrypoint_mod, "_repeatedly_attempt_host_shutdown")
 @patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")
 @patch.object(entrypoint_mod.sys, "exit")
+@patch.object(entrypoint_mod, "sleep")
 def test_fleet_host_config(
+    sleep_mock: MagicMock,
     sys_exit_mock: MagicMock,
     telemetry_mock: MagicMock,
+    mock_repeat_attempt_host_shutdown: MagicMock,
     has_host_config: bool,
     exit_code: int,
+    can_shutdown: bool,
     bootstrap_worker_mock: MagicMock,
     mock_fleet_host_configuration_runner: MagicMock,
     worker_info: WorkerPersistenceInfo,
+    configuration_load: MagicMock,
+    mock_host_shutdown: MagicMock,
+    worker_id: str,
 ) -> None:
     """Tests that exceptions raised by Worker.run() are logged and the program exits with a non-zero exit code"""
 
@@ -865,7 +874,18 @@ def test_fleet_host_config(
         # No script to run.
         bootstrap_worker_mock.return_value.host_config = None
 
-    with patch.object(entrypoint_mod, "_logger") as logger:
+    # Can the worker agent shutdown on script failure.
+    if can_shutdown:
+        configuration_load.return_value.no_shutdown = False
+        mock_repeat_attempt_host_shutdown.side_effect = [True, False]
+    else:
+        mock_repeat_attempt_host_shutdown.side_effect = [False]
+        configuration_load.return_value.no_shutdown = True
+
+    with (
+        patch.object(entrypoint_mod, "_logger") as logger,
+        patch.object(entrypoint_mod, "update_worker") as update_worker_mock,
+    ):
         # WHEN
         entrypoint()
 
@@ -905,4 +925,21 @@ def test_fleet_host_config(
         ]
         assert len(all_args) > 0
         assert expected in all_args
-        sys_exit_mock.assert_called_once_with(1)
+
+        # Make sure we called to the backend to STOPPED.
+        update_worker_mock.assert_any_call(
+            deadline_client=ANY,
+            farm_id=configuration_load.return_value.farm_id,
+            fleet_id=configuration_load.return_value.fleet_id,
+            worker_id=worker_id,
+            status=WorkerStatus.STOPPED,
+        )
+        # If it can shutdown, assert that we attempted to call the shutdown method.
+        if can_shutdown:
+            mock_host_shutdown.assert_called_once()
+            sleep_mock.assert_called_once()
+        # Otherwise, worker agent exits.
+        else:
+            sys_exit_mock.assert_called_once_with(1)
+            mock_host_shutdown.assert_not_called()
+            sleep_mock.assert_not_called()
