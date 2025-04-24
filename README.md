@@ -25,7 +25,7 @@ User Guide
 [deadline-cloud]: https://docs.aws.amazon.com/deadline-cloud/latest/userguide/what-is-deadline-cloud.html
 [manage-cmf-docs]: https://docs.aws.amazon.com/deadline-cloud/latest/userguide/manage-cmf.html
 [openjd]: https://github.com/OpenJobDescription/openjd-specifications/wiki
-[protocol]: https://github.com/aws-deadline/deadline-cloud-worker-agent/blob/release/docs/worker_api_protocol.md
+[protocol]: https://github.com/aws-deadline/deadline-cloud-worker-agent/blob/release/docs/dev/worker_api_protocol.md
 
 ## Compatibility
 
