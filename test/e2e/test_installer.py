@@ -215,7 +215,9 @@ Get-LocalUser | Select-Object Name, Enabled | Format-Table -AutoSize
 
         LOG.info("Wait for Worker Service to begin Stopping")
         # This can take over 5 minutes
-        class_worker.wait_until_worker_stopping(seconds_between_checks=25)
+        class_worker.wait_until_desired_worker_status(
+            seconds_between_checks=25, desired_status="STOPPING"
+        )
 
         ec2_client = boto3.client("ec2")
 
