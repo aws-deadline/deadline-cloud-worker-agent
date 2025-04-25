@@ -30,6 +30,7 @@ from ...api_models import (
     PathMappingRule,
     PathParameter,
     StringParameter,
+    ChunkIntParameter,
 )
 from ...config import JobsRunAsUserOverride
 from .job_entity_type import JobEntityType
@@ -37,7 +38,10 @@ from .validation import Field, validate_object
 
 
 def parameters_from_api_response(
-    params: dict[str, StringParameter | PathParameter | IntParameter | FloatParameter | str],
+    params: dict[
+        str,
+        StringParameter | PathParameter | IntParameter | FloatParameter | ChunkIntParameter | str,
+    ],
 ) -> dict[str, ParameterValue]:
     result = dict[str, ParameterValue]()
     for name, value in params.items():
@@ -53,6 +57,9 @@ def parameters_from_api_response(
         elif "path" in value:
             value = cast(PathParameter, value)
             param_value = ParameterValue(type=ParameterValueType.PATH, value=value["path"])
+        elif "chunkInt" in value:
+            value = cast(ChunkIntParameter, value)
+            param_value = ParameterValue(type=ParameterValueType.CHUNK_INT, value=value["chunkInt"])
         else:
             raise ValueError(f"Parameter {name} -- unknown form in API response: {str(value)}")
         result[name] = param_value
