@@ -124,8 +124,14 @@ class _WindowsScriptRunner:
         touch_file(
             file_path=Path(self._logfile),
             agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+            group="Administrators",
+            group_permission=FileSystemPermissionEnum.FULL_CONTROL,
+            disable_permission_inheritance=True,
         )
         touch_file(
             file_path=Path(self._script_path),
             agent_user_permission=FileSystemPermissionEnum.FULL_CONTROL,
+            group="Administrators",
+            group_permission=FileSystemPermissionEnum.FULL_CONTROL,
+            disable_permission_inheritance=True,
         )

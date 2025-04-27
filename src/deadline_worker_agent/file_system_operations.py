@@ -40,6 +40,9 @@ def touch_file(
     user_permission: Optional[FileSystemPermissionEnum] = None,
     permitted_user: Optional[SessionUser] = None,
     agent_user_permission: Optional[FileSystemPermissionEnum] = None,
+    group: Optional[str] = None,
+    group_permission: Optional[FileSystemPermissionEnum] = None,
+    disable_permission_inheritance: bool = False,
 ):
     if os.name == "nt":
         permitted_user = cast(WindowsSessionUser, permitted_user)
@@ -52,6 +55,9 @@ def touch_file(
             user=permitted_user.user if permitted_user else None,
             user_permission=user_permission,
             agent_user_permission=agent_user_permission,
+            group=group,
+            group_permission=group_permission,
+            disable_permission_inheritance=disable_permission_inheritance,
         )
 
 
@@ -84,6 +90,7 @@ def _set_windows_permissions(
     group_permission: Optional[FileSystemPermissionEnum] = None,
     agent_user_permission: Optional[FileSystemPermissionEnum] = None,
     users_group_permission: Optional[FileSystemPermissionEnum] = None,
+    disable_permission_inheritance: bool = False,
 ):
     import win32security
     import ntsecuritycon
@@ -143,6 +150,12 @@ def _set_windows_permissions(
 
     # Get the security descriptor of the object
     sd = win32security.GetFileSecurity(str(path.resolve()), win32security.DACL_SECURITY_INFORMATION)
+
+    # Disable inheritance and convert inherited ACEs to explicit ACEs
+    if disable_permission_inheritance:
+        sd.SetSecurityDescriptorControl(
+            win32security.SE_DACL_PROTECTED, win32security.SE_DACL_PROTECTED
+        )
 
     # Set the security descriptor's DACL to the newly-created DACL
     # Arguments:

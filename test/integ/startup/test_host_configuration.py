@@ -335,41 +335,82 @@ def _windows_file_permissions_test(file_path: str) -> None:
     import win32security
     import ntsecuritycon
 
-    users_group_sid, _, _ = win32security.LookupAccountName(None, "Users")
+    # Get relevant SIDs
     current_user_sid, _, _ = win32security.LookupAccountName(None, getpass.getuser())
+    administrators_sid, _, _ = win32security.LookupAccountName(None, "Administrators")
+    users_group_sid, _, _ = win32security.LookupAccountName(None, "Users")
+
+    # Get security descriptor
     sd = win32security.GetFileSecurity(
         str(file_path),
         win32con.DACL_SECURITY_INFORMATION | win32con.OWNER_SECURITY_INFORMATION,
     )
     dacl = sd.GetSecurityDescriptorDacl()
 
-    users_group_permission_found: bool = False
-    current_user_permission_read_found: bool = False
-    current_user_permission_write_found: bool = False
-
     if dacl is None:
-        assert False, "All users have access to the file."
+        assert False, "No DACL found - all users have access to the file."
 
-    # Iterate through each ACE in the DACL
+    # Track permissions for allowed entities
+    current_user_permissions = 0
+    admin_permissions = 0
+    other_sids_found = []
+
+    # Explicit check that Users group has no permissions at all
     for i in range(dacl.GetAceCount()):
         ace = dacl.GetAce(i)
         (ace_type, ace_flags), ace_mask, sid = ace
 
+        assert ace_type == ntsecuritycon.ACCESS_ALLOWED_ACE_TYPE, (
+            f"Unexpected ace type found for sid {sid}"
+        )
+
         if sid == users_group_sid:
-            # Check for read or write permission
-            if (ace_mask & ntsecuritycon.FILE_GENERIC_READ == ntsecuritycon.FILE_GENERIC_READ) or (
-                ace_mask & ntsecuritycon.FILE_GENERIC_WRITE == ntsecuritycon.FILE_GENERIC_WRITE
-            ):
-                users_group_permission_found = True
-        elif sid == current_user_sid:
-            # Check for read permission
-            if ace_mask & ntsecuritycon.FILE_GENERIC_READ == ntsecuritycon.FILE_GENERIC_READ:
-                current_user_permission_read_found = True
+            assert False, (
+                f"Users group should not have any permissions, but found ACE with mask: {ace_mask}"
+            )
 
-            # Check for write permission
-            if ace_mask & ntsecuritycon.FILE_GENERIC_WRITE == ntsecuritycon.FILE_GENERIC_WRITE:
-                current_user_permission_write_found = True
+        if sid == current_user_sid:
+            current_user_permissions |= ace_mask
+        elif sid == administrators_sid:
+            admin_permissions |= ace_mask
+        else:  # We already checked Users group
+            # Keep track of any other SIDs that have access
+            other_sids_found.append((win32security.LookupAccountSid(None, sid)[0], ace_mask))
 
-    assert not users_group_permission_found
-    assert current_user_permission_read_found
-    assert current_user_permission_write_found
+    # Check that no other SIDs have access
+    assert not other_sids_found, f"Found unexpected SIDs with access: {other_sids_found}"
+
+    # Define required permissions for current user and admin.
+    # This is the scoped down set from checking the underlying application.
+    required_permissions = (
+        ntsecuritycon.FILE_READ_DATA  # 0x1
+        | ntsecuritycon.FILE_WRITE_DATA  # 0x2
+        | ntsecuritycon.FILE_APPEND_DATA  # 0x4
+        | ntsecuritycon.FILE_READ_EA  # 0x8
+        | ntsecuritycon.FILE_WRITE_EA  # 0x10
+        | ntsecuritycon.FILE_EXECUTE  # 0x20
+        | ntsecuritycon.FILE_DELETE_CHILD  # 0x40
+        | ntsecuritycon.FILE_READ_ATTRIBUTES  # 0x80
+        | ntsecuritycon.FILE_WRITE_ATTRIBUTES  # 0x100
+        | ntsecuritycon.DELETE  # 0x10000
+        | ntsecuritycon.READ_CONTROL  # 0x20000
+        | ntsecuritycon.WRITE_DAC  # 0x40000
+        | ntsecuritycon.WRITE_OWNER  # 0x80000
+        | ntsecuritycon.SYNCHRONIZE  # 0x100000
+    )
+
+    # Check current user permissions
+    assert current_user_permissions == required_permissions, (
+        f"Current user does not have correct permissions. Has: {current_user_permissions}, "
+        f"Needs: {required_permissions}"
+    )
+
+    # Check Administrator group has required permissions.
+    assert admin_permissions == required_permissions, (
+        f"Administrator does not have correct permissions. Has: {current_user_permissions}, "
+        f"Needs: {required_permissions}"
+    )
+
+    # Check that inheritance is disabled
+    control = sd.GetSecurityDescriptorControl()
+    assert control[0] & win32security.SE_DACL_PROTECTED, "DACL should be protected from inheritance"
