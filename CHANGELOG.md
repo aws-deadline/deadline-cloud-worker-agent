@@ -1,3 +1,14 @@
+## 0.28.6 (2025-05-01)
+
+
+### Experimental
+
+These changes are experimental and only available through the use of feature flags
+
+* HOST_CONFIGURATION_FEATURE - Prevent Windows ACL inheritance for host config script and log and grant full control to Administrators ([`98dfbfc`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/98dfbfc9dbebdb02145c8413a76fe82f45635c58))
+* HOST_CONFIGURATION_FEATURE - delimit host configuration script with banners in worker logs and shutdown host on failure ([`f08bca8`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/f08bca8656488d9af992b1dca4b4969f5bdf96b6))
+
+
 ## 0.28.5 (2025-04-11)
 
 
