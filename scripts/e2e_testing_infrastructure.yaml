@@ -58,7 +58,7 @@ Outputs:
   QueueBId:
     Value: !GetAtt [SecondaryQueue, QueueId]
 
-  JobsRunAsAgentUserQueueID:
+  JobsRunAsAgentUserQueueId:
     Value: !GetAtt [JobsRunAsAgentUserQueue, QueueId]
 
   NonValidRoleQueueId:
@@ -712,6 +712,23 @@ Resources:
         - !GetAtt LinuxJobStorageProfile.StorageProfileId
         - !GetAtt LinuxFleetStorageProfile.StorageProfileId
 
+  JobsRunAsAgentUserQueue:
+    Type: AWS::Deadline::Queue
+    Properties:
+      DisplayName: JobsRunAsAgentUserQueue
+      Description: 
+        Queue configured to run jobs as the worker agent user
+        Used for testing test_override_job_user
+      FarmId: !GetAtt DeadlineFarm.FarmId
+      JobAttachmentSettings:
+        RootPrefix: Deadline
+        S3BucketName: !Ref JobAttachmentsBucket
+      JobRunAsUser:
+        RunAs: WORKER_AGENT_USER
+      RoleArn: !GetAtt QueueRole.Arn
+      AllowedStorageProfileIds:
+        - !GetAtt LinuxFleetStorageProfile.StorageProfileId
+
   NonValidRoleQueue:
     Type: AWS::Deadline::Queue
     Properties:
@@ -854,12 +871,12 @@ Resources:
       FleetId: !GetAtt LinuxManualScalingFleetx86.FleetId
       QueueId: !GetAtt SecondaryQueue.QueueId
 
-  LinuxManualFleetJobsRunAsAgentQueueQFA:
-    Type: AWS:Deadline:QueueFleetAssociation
+  LinuxManualFleetJobsRunAsAgentUserQueueQFA:
+    Type: AWS::Deadline::QueueFleetAssociation
     Properties:
       FarmId: !GetAtt DeadlineFarm.FarmId
       FleetId: !GetAtt LinuxManualScalingFleetx86.FleetId
-      QueueId: !GetAtt JobsRunAsAgentQueue.QueueId
+      QueueId: !GetAtt JobsRunAsAgentUserQueue.QueueId
 
   LinuxManualFleetNonValidRoleQueueQFA:
     Type: AWS::Deadline::QueueFleetAssociation
@@ -889,12 +906,12 @@ Resources:
       FleetId: !GetAtt WindowsManualScalingFleetx86.FleetId
       QueueId: !GetAtt SecondaryQueue.QueueId
 
-  WindowsManualFleetJobsRunAsAgentQueueQFA:
-    Type: AWS:Deadline:QueueFleetAssociation
+  WindowsManualFleetJobsRunAsAgentUserQueueQFA:
+    Type: AWS::Deadline::QueueFleetAssociation
     Properties:
       FarmId: !GetAtt DeadlineFarm.FarmId
       FleetId: !GetAtt WindowsManualScalingFleetx86.FleetId
-      QueueId: !GetAtt JobsRunAsAgentQueue.QueueId
+      QueueId: !GetAtt JobsRunAsAgentUserQueue.QueueId
 
   WindowsManualFleetNonValidRoleQueueQFA:
     Type: AWS::Deadline::QueueFleetAssociation

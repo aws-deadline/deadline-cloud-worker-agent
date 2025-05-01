@@ -110,7 +110,14 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
     job_storage_profile_id = os.environ["JOB_STORAGE_PROFILE_ID"]
 
     LOG.info(
-        f"Configured Deadline Cloud Resources, farm: {farm_id}, scaling_fleet: {scaling_fleet_id}, scaling_queue: {scaling_queue_id}, queue_a: {queue_a_id}, storage_profile_id for queue_a: {job_storage_profile_id}, queue_b: {queue_b_id}, fleet: {fleet_id}"
+        f"Configured Deadline Cloud Resources - Farm ID: {farm_id}, "
+        f"Scaling Fleet ID: {scaling_fleet_id}, "
+        f"Scaling Queue ID: {scaling_queue_id}, "
+        f"Queue A ID: {queue_a_id}, "
+        f"Queue A Storage Profile ID: {job_storage_profile_id}, "
+        f"Queue B ID: {queue_b_id}, "
+        f"Fleet ID: {fleet_id}, "
+        f"Jobs Run As Agent User Queue ID: {jobs_run_as_agent_user_queue_id}, "
     )
 
     sts_client = boto3.client("sts")

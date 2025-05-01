@@ -13,6 +13,7 @@ import os
 
 import logging
 
+from e2e.conftest import DeadlineResources
 from deadline_test_fixtures import (
     Job,
     Farm,
@@ -33,13 +34,18 @@ LOG = logging.getLogger(__name__)
 class TestWindowsJobUserOverride:
     @staticmethod
     def submit_whoami_job(
-        test_name: str, deadline_client: DeadlineClient, farm: Farm, queue: Queue
+        test_name: str,
+        deadline_client: DeadlineClient,
+        farm: Farm,
+        queue: Queue,
+        task_retries: int = 5,
     ) -> Job:
         job = Job.submit(
             client=deadline_client,
             farm=farm,
             queue=queue,
             priority=98,
+            max_retries_per_task=task_retries,
             template={
                 "specificationVersion": "jobtemplate-2023-09",
                 "name": f"whoami {test_name}",
@@ -91,6 +97,26 @@ class TestWindowsJobUserOverride:
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
+    def test_no_jobs_run_as_windows_worker_agent(
+        self,
+        deadline_client: DeadlineClient,
+        deadline_resources: DeadlineResources,
+        class_worker: EC2InstanceWorker,
+    ) -> None:
+        job = self.submit_whoami_job(
+            test_name="prevent job run as windows worker agent",
+            deadline_client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.jobs_run_as_agent_user_queue,
+            task_retries=0,
+        )
+
+        job.wait_until_complete(client=deadline_client)
+
+        assert job.task_run_status == TaskStatus.FAILED, (
+            "Job should not run as the Windows Worker Agent user."
+        )
+
     def test_config_file_user_override(
         self,
         deadline_resources,
@@ -100,7 +126,7 @@ class TestWindowsJobUserOverride:
         class_worker.stop_worker_service()
 
         cmd_result = class_worker.send_command(
-            "(Get-Content -Path C:\ProgramData\Amazon\Deadline\Config\worker.toml -Raw) -replace '# windows_job_user = \"job-user\"', 'windows_job_user = \"config-override\"' | Set-Content -Path C:\ProgramData\Amazon\Deadline\Config\worker.toml"
+            "(Get-Content -Path C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml -Raw) -replace '# windows_job_user = \"job-user\"', 'windows_job_user = \"config-override\"' | Set-Content -Path C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
         )
 
         assert cmd_result.exit_code == 0, (
@@ -131,7 +157,7 @@ class TestWindowsJobUserOverride:
 
         # reset config file
         cmd_result = class_worker.send_command(
-            "(Get-Content -Path C:\ProgramData\Amazon\Deadline\Config\worker.toml -Raw) -replace 'windows_job_user = \"config-override\"', '# windows_job_user = \"job-user\"' | Set-Content -Path C:\ProgramData\Amazon\Deadline\Config\worker.toml"
+            "(Get-Content -Path C:\\ProgramData\Amazon\\Deadline\\Config\\worker.toml -Raw) -replace 'windows_job_user = \"config-override\"', '# windows_job_user = \"job-user\"' | Set-Content -Path C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
         )
 
         assert cmd_result.exit_code == 0, f"Failed to reset config file: {cmd_result}"
@@ -142,6 +168,7 @@ class TestWindowsJobUserOverride:
         class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
     ) -> None:
+        WINDOWS_JOB_USER = "install-override"
         class_worker.stop_worker_service()
 
         cmd_result = class_worker.send_command(
@@ -150,7 +177,7 @@ class TestWindowsJobUserOverride:
             + f"--farm-id {deadline_resources.farm.id} "
             + f"--fleet-id {deadline_resources.fleet.id} "
             + "--user ssm-user "
-            + "--windows-job-user install-override"
+            + f"--windows-job-user {WINDOWS_JOB_USER}"
         )
 
         assert cmd_result.exit_code == 0, (
@@ -166,22 +193,39 @@ class TestWindowsJobUserOverride:
             deadline_resources.queue_a,
         )
 
-        job.wait_until_complete(client=deadline_client, max_retries=20)
+        # This user should also take priority over jobs run as worker agent
+        override_worker_agent_job = self.submit_whoami_job(
+            test_name="override job run as worker agent",
+            deadline_client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.jobs_run_as_agent_user_queue,
+        )
 
+        job.wait_until_complete(client=deadline_client, max_retries=20)
         job.assert_single_task_log_contains(
             deadline_client=deadline_client,
             logs_client=boto3.client(
                 "logs",
                 config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
             ),
-            expected_pattern=r"I am: install-override",
+            expected_pattern=rf"I am: {WINDOWS_JOB_USER}",
         )
-
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        override_worker_agent_job.wait_until_complete(client=deadline_client, max_retries=1)
+        override_worker_agent_job.assert_single_task_log_contains(
+            deadline_client=deadline_client,
+            logs_client=boto3.client(
+                "logs",
+                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+            ),
+            expected_pattern=rf"I am: {WINDOWS_JOB_USER}",
+        )
+        assert override_worker_agent_job.task_run_status == TaskStatus.SUCCEEDED
 
         # reset config file
         cmd_result = class_worker.send_command(
-            "(Get-Content -Path C:\ProgramData\Amazon\Deadline\Config\worker.toml -Raw) -replace 'windows_job_user = \"installer-override\"', '# windows_job_user = \"job-user\"' | Set-Content -Path C:\ProgramData\Amazon\Deadline\Config\worker.toml"
+            "(Get-Content -Path C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml -Raw) -replace 'windows_job_user = \"installer-override\"', '# windows_job_user = \"job-user\"' | Set-Content -Path C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
         )
 
         assert cmd_result.exit_code == 0, f"Failed to reset config file: {cmd_result}"
@@ -310,6 +354,33 @@ class TestLinuxJobUserOverride:
         )
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+    # DeadlineWorkerConfiguration overwrites the default worker agent user
+    # This test verifies that the job can run as the modified worker agent
+    def test_job_is_run_as_custom_worker_agent_user(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        class_worker: EC2InstanceWorker,
+    ) -> None:
+        CUSTOM_AGENT_NAME = "deadline-worker"
+
+        job = self.submit_whoami_job(
+            test_name="override linux worker agent",
+            deadline_client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.jobs_run_as_agent_user_queue,
+        )
+        job.wait_until_complete(client=deadline_client)
+
+        job.assert_single_task_log_contains(
+            deadline_client=deadline_client,
+            logs_client=boto3.client(
+                "logs",
+                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+            ),
+            expected_pattern=rf"I am: {CUSTOM_AGENT_NAME}",
+        )
 
     def test_config_file_user_override(
         self,
