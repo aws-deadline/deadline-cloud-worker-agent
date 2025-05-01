@@ -8,6 +8,7 @@ import os
 import boto3
 import json
 from typing import Optional
+from dataclasses import asdict
 
 from deadline.job_attachments import api
 from deadline.job_attachments.api.manifest import _manifest_snapshot, _manifest_merge
@@ -48,13 +49,22 @@ def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> N
         time=time.time(),
     )
 
-    api.attachment_upload(
+    # Call attachment_upload and get manifest information
+    manifest_infos = api.attachment_upload(
         manifests=manifests,
         s3_root_uri=s3_root_uri,
         boto3_session=boto3.session.Session(),
         path_mapping_rules=path_mapping_rules,
         upload_manifest_path=s3_path,
     )
+
+    # Check if manifest reporting feature is enabled via environment variable
+    manifest_reporting_enabled = (
+        os.environ.get("MANIFEST_REPORTING_FEATURE", "false").lower() == "true"
+    )
+
+    if manifest_reporting_enabled:
+        print(f"ja_upload: {json.dumps([asdict(info) for info in manifest_infos])}")
 
 
 def merge(

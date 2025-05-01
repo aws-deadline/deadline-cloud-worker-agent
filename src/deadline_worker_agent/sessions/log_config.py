@@ -1,16 +1,18 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
+
+import json
+import logging
+import re
+from collections.abc import Generator
 from contextlib import closing, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import timedelta
 from enum import Enum
 
-import json
 from pathlib import Path
-import re
-from typing import Any, Callable, ContextManager, Generator
-import logging
+from typing import Any, Callable, ContextManager
 
 from ..log_sync.cloudwatch import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,
@@ -130,11 +132,9 @@ class ActionOutputCaptureFilter(logging.Filter):
     """
 
     _FILTER_MATCHER = re.compile(
-        (
-            "^(?:"
-            f"{'|'.join(f'(?P<{re.escape(v.value)}>{re.escape(v.value)})' for v in ActionOutputMessageKind)}"
-            "): (.+)$"
-        )
+        "^(?:"
+        f"{'|'.join(f'(?P<{re.escape(v.value)}>{re.escape(v.value)})' for v in ActionOutputMessageKind)}"
+        "): (.+)$"
     )
     """Regular expression pattern used to match and extract action output messages.
 
@@ -164,7 +164,7 @@ class ActionOutputCaptureFilter(logging.Filter):
         }
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if not hasattr(record, "session_id") or getattr(record, "session_id") != self._session_id:
+        if not hasattr(record, "session_id") or record.session_id != self._session_id:
             # Not a record for us to process
             return True
         if not isinstance(record.msg, str):
@@ -197,7 +197,7 @@ class ActionOutputCaptureFilter(logging.Filter):
             try:
                 handler(message)
             except ValueError as e:
-                record.msg = record.msg + f" -- ERROR: {str(e)}"
+                record.msg = record.msg + f" -- ERROR: {e!s}"
                 # There was an error. Don't suppress the message from the log.
                 return True
 
@@ -220,8 +220,7 @@ class ActionOutputCaptureFilter(logging.Filter):
         Args:
             message (str): The message after the leading 'ja_upload: ' prefix
         """
-        # TODO - implement for UpdateWorkerSchedule reporting upload result
-        pass
+        self._callback(ActionOutputMessageKind.JA_UPLOAD, message)
 
 
 @dataclass

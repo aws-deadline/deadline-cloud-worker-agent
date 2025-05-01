@@ -1,23 +1,24 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
+
+import json
+import logging
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
-import logging
 
 import pytest
-import json
 
+import deadline_worker_agent.sessions.log_config as log_config_mod
 from deadline_worker_agent.api_models import (
     LogConfiguration as BotoLogConfiguration,
 )
 from deadline_worker_agent.sessions.log_config import (
+    ActionOutputCaptureFilter,
     LogConfiguration,
     LogProvisioningError,
-    ActionOutputCaptureFilter,
 )
-import deadline_worker_agent.sessions.log_config as log_config_mod
 
 
 class TestLogProvisioningError:
@@ -197,7 +198,7 @@ class TestActionOutputCaptureFilter:
             args=(),
             exc_info=None,
         )
-        setattr(record, "session_id", "different-session-id")
+        record.session_id = "different-session-id"
 
         # Filter the record
         result = action_output_capture_filter.filter(record)
@@ -227,7 +228,7 @@ class TestActionOutputCaptureFilter:
             args=(),
             exc_info=None,
         )
-        setattr(record, "session_id", self.session_id)
+        record.session_id = self.session_id
 
         # Filter the record
         result = action_output_capture_filter.filter(record)
@@ -256,7 +257,7 @@ class TestActionOutputCaptureFilter:
             args=(),
             exc_info=None,
         )
-        setattr(ja_snapshot_record, "session_id", self.session_id)
+        ja_snapshot_record.session_id = self.session_id
 
         ja_upload_record = logging.LogRecord(
             name="test_logger",
@@ -267,7 +268,7 @@ class TestActionOutputCaptureFilter:
             args=(),
             exc_info=None,
         )
-        setattr(ja_upload_record, "session_id", self.session_id)
+        ja_upload_record.session_id = self.session_id
 
         # Test that the filter correctly matches the patterns
         assert action_output_capture_filter.filter(ja_snapshot_record) is True
@@ -293,7 +294,7 @@ class TestActionOutputCaptureFilter:
             args=(),
             exc_info=None,
         )
-        setattr(ja_snapshot_record, "session_id", self.session_id)
+        ja_snapshot_record.session_id = self.session_id
 
         # Filter the record
         action_output_capture_filter.filter(ja_snapshot_record)
@@ -303,6 +304,25 @@ class TestActionOutputCaptureFilter:
         mock_callback.assert_called_once_with(
             log_config_mod.ActionOutputMessageKind.JA_SNAPSHOT,
             self.snapshot_result,
+        )
+
+        ja_upload_record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="ja_upload: This is an upload message",
+            args=(),
+            exc_info=None,
+        )
+        ja_upload_record.session_id = self.session_id
+
+        # Verify the callback was called with the correct arguments
+        # The third parameter is a boolean that we're not testing here
+        assert action_output_capture_filter.filter(ja_upload_record) is True
+        mock_callback.assert_called_with(
+            log_config_mod.ActionOutputMessageKind.JA_UPLOAD,
+            "This is an upload message",
         )
 
     def test_handler_error_handling(self):
@@ -325,7 +345,7 @@ class TestActionOutputCaptureFilter:
             args=(),
             exc_info=None,
         )
-        setattr(ja_snapshot_record, "session_id", self.session_id)
+        ja_snapshot_record.session_id = self.session_id
 
         # Filter the record - this should not raise an exception
         result = action_output_capture_filter.filter(ja_snapshot_record)
@@ -365,7 +385,7 @@ class TestActionOutputCaptureFilter:
                 args=(),
                 exc_info=None,
             )
-            setattr(record, "session_id", self.session_id)
+            record.session_id = self.session_id
 
             # Filter the record
             result = action_output_capture_filter.filter(record)

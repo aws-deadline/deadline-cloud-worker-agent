@@ -13,6 +13,7 @@ import pytest
 
 import deadline_worker_agent.sessions.actions as actions_module
 from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
+from deadline_worker_agent.feature_flag import MANIFEST_REPORTING_FEATURE
 from openjd.sessions import SessionUser, PathMappingRule, PathFormat
 from openjd.model import ParameterValue
 from pathlib import PurePosixPath
@@ -127,6 +128,7 @@ class TestStart:
         step_id: str,
         task_id: str,
         action_id: str,
+        session_dir: str,
     ) -> None:
         """
         Tests that AttachmentUploadAction.start() calls AssetSync functions to prepare input
@@ -143,8 +145,12 @@ class TestStart:
         )
         session.manifest_out_rel_dirs_by_source = {}
 
-        # WHEN
-        action.start(session=session, executor=executor)
+        session.working_directory = Path(session_dir)
+
+        # Mock file operations to avoid actual file access
+        with patch("os.path.exists", return_value=False):
+            # WHEN
+            action.start(session=session, executor=executor)
 
         with open(
             Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_upload.py",
@@ -184,6 +190,7 @@ class TestStart:
                 "DEADLINE_SESSIONACTION_ID": action_id,
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
+                "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
             },
             log_task_banner=False,
         )
@@ -286,6 +293,7 @@ class TestStart:
                 "DEADLINE_SESSIONACTION_ID": action_id,
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
+                "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
             },
             log_task_banner=False,
         )

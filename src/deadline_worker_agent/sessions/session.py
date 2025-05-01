@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -30,8 +31,12 @@ from deadline_worker_agent.api_models import (
     SyncInputJobAttachmentsAction,
     AttachmentDownloadAction,
     AttachmentUploadAction,
+    ManifestInfo,
 )
-from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
+from deadline_worker_agent.feature_flag import (
+    ASSET_SYNC_JOB_USER_FEATURE,
+    MANIFEST_REPORTING_FEATURE,
+)
 
 if TYPE_CHECKING:
     from ..api_models import CompletedActionStatus, EnvironmentAction, TaskRunAction
@@ -60,6 +65,7 @@ from deadline.job_attachments.models import (
     JobAttachmentS3Settings,
     ManifestProperties,
     PathFormat,
+    UploadManifestInfo,
 )
 from deadline.job_attachments.os_file_permission import (
     FileSystemPermissionSettings,
@@ -169,6 +175,7 @@ class Session:
     _retain_session_dir: bool = False
     _job_details: JobDetails
     _job_attachment_details: JobAttachmentDetails | None = None
+    _upload_manifest_list: list[UploadManifestInfo] = []
 
     # Event that is set only when this Session is not running at all
     # i.e. it has exited, or never started, its main run loop/logic.
@@ -1069,7 +1076,7 @@ class Session:
         ):
             self._action_updated_impl(action_status=action_status, now=now)
 
-    def _action_output_log_filter_callback(
+    def action_output_log_filter_callback(
         self, message_type: ActionOutputMessageKind, value: Any
     ) -> None:
         """Callback for the action output log filter
@@ -1077,6 +1084,18 @@ class Session:
         """
         if message_type == ActionOutputMessageKind.JA_SNAPSHOT:
             self.add_manifest_path(root=value["root"], path=value["manifest"])
+        if MANIFEST_REPORTING_FEATURE and message_type == ActionOutputMessageKind.JA_UPLOAD:
+            try:
+                manifest_list_data = json.loads(value)
+                self._upload_manifest_list = [
+                    UploadManifestInfo(**item) for item in manifest_list_data
+                ]
+            except (TypeError, ValueError) as e:
+                logger.error(
+                    f"Failed to parse manifest snapshot: {e}",
+                    exc_info=True,
+                )
+                self._upload_manifest_list = []
 
     def _action_updated_impl(
         self,
@@ -1140,6 +1159,42 @@ class Session:
 
         if self._output_sync_target_action is not None:
             if OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(action_status.state, None):
+                manifests_list = None
+
+                # Get job attachment details to access input manifests
+                job_attachment_details = self._job_attachment_details
+
+                if job_attachment_details:
+                    # Create a list of ManifestInfo objects with the same length as the input manifests list
+                    manifests_list = []
+
+                    # For each input manifest, find the corresponding output manifest
+                    for input_manifest in job_attachment_details.manifests:
+                        asset_root = input_manifest.root_path
+                        manifest_info = None
+
+                        for output_manifest in self._upload_manifest_list:
+                            if (
+                                output_manifest.source_path is not None
+                                and output_manifest.source_path == asset_root
+                            ):
+                                manifest_info = output_manifest
+                                break
+
+                        # Create a ManifestInfo dictionary with the appropriate values
+                        manifest_info_obj: ManifestInfo = {}
+
+                        if manifest_info and manifest_info.output_manifest_path is not None:
+                            manifest_info_obj["outputManifestPath"] = (
+                                manifest_info.output_manifest_path
+                            )
+                        if manifest_info and manifest_info.output_manifest_hash is not None:
+                            manifest_info_obj["outputManifestHash"] = (
+                                manifest_info.output_manifest_hash
+                            )
+
+                        manifests_list.append(manifest_info_obj)
+
                 # if the current action is a sync output job attachments upload action and it's completed
                 # then we can update and clear the corresponding task run sync target action
                 task_run_action = self._output_sync_target_action
@@ -1148,7 +1203,10 @@ class Session:
                 if self._action_output_log_filter:
                     OPENJD_LOG.removeFilter(self._action_output_log_filter)
 
-                self._handle_action_update(is_unsuccessful, action_status, task_run_action, now)
+                # Handle the action update
+                self._handle_action_update(
+                    is_unsuccessful, action_status, task_run_action, now, manifests_list
+                )
             else:
                 logger.debug(
                     f"SYNC_OUTPUT_JOB_ATTACHMENTS for {self._output_sync_target_action} is still running"
@@ -1176,7 +1234,7 @@ class Session:
 
                 if not self._action_output_log_filter:
                     self._action_output_log_filter = ActionOutputCaptureFilter(
-                        session_id=self.id, callback=self._action_output_log_filter_callback
+                        session_id=self.id, callback=self.action_output_log_filter_callback
                     )
 
                 OPENJD_LOG.addFilter(self._action_output_log_filter)
@@ -1198,6 +1256,7 @@ class Session:
                     self._sync_asset_outputs,
                     current_action=current_action,
                 )
+
                 on_done_with_sync_asset_outputs = partial(
                     self._on_done_with_sync_asset_outputs,
                     is_unsuccessful=is_unsuccessful,
@@ -1249,7 +1308,11 @@ class Session:
         action_status: ActionStatus,
         current_action: CurrentAction,
         now: datetime,
+        manifests: list[ManifestInfo] | None = None,
     ):
+        if manifests is None:
+            manifests = []
+
         completed_status = OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
             action_status.state, None
         )
@@ -1308,6 +1371,9 @@ class Session:
         # Only report action update when it's not attachment upload for syncing job attachment outputs,
         # progress reporting is not supported by the output upload yet.
         if not self._output_sync_target_action:
+            # Only include manifests if feature flag is enabled
+            session_manifests = manifests if MANIFEST_REPORTING_FEATURE else None
+
             self._report_action_update(
                 SessionActionStatus(
                     id=current_action.definition.id,
@@ -1316,6 +1382,7 @@ class Session:
                     end_time=now if action_status.state != ActionState.RUNNING else None,
                     update_time=now if action_status.state == ActionState.RUNNING else None,
                     completed_status=completed_status,
+                    manifests=session_manifests,
                 )
             )
 
@@ -1371,6 +1438,7 @@ class Session:
         from .actions import RunStepTaskAction
 
         assert isinstance(current_action.definition, RunStepTaskAction)
+
         upload_summary_statistics: SummaryStatistics = self._asset_sync.sync_outputs(
             s3_settings=s3_settings,
             attachments=attachments,

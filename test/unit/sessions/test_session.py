@@ -1,18 +1,20 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
+
+import os
+from collections.abc import Generator, Iterable
 from concurrent.futures import wait
 from datetime import datetime, timedelta
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from threading import Event, RLock
 from types import TracebackType
-from typing import Generator, Iterable, Literal, Optional
-from unittest.mock import patch, MagicMock, ANY
+from typing import Literal, Optional
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
-from openjd.model import ParameterValue
-import os
 
+from openjd.model import ParameterValue
 from openjd.model.v2023_09 import (
     Action,
     Environment,
@@ -27,8 +29,8 @@ from openjd.sessions import (
     ActionStatus,
     PathFormat,
     PathMappingRule,
-    SessionUser,
     PosixSessionUser,
+    SessionUser,
     WindowsSessionUser,
 )
 
@@ -36,8 +38,12 @@ from deadline_worker_agent.api_models import (
     EnvironmentAction,
     TaskRunAction,
     AttachmentUploadAction,
+    ManifestInfo,
 )
-from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
+from deadline_worker_agent.feature_flag import (
+    ASSET_SYNC_JOB_USER_FEATURE,
+    MANIFEST_REPORTING_FEATURE,
+)
 from deadline_worker_agent.sessions import Session
 import deadline_worker_agent.sessions.session as session_mod
 from deadline_worker_agent.sessions.session import (
@@ -66,12 +72,17 @@ from deadline.job_attachments.models import (
     JobAttachmentsFileSystem,
     JobAttachmentS3Settings,
     JobAttachmentsFileSystem,
+    UploadManifestInfo,
 )
 from deadline.job_attachments.os_file_permission import (
     FileSystemPermissionSettings,
     PosixFileSystemPermissionSettings,
     WindowsFileSystemPermissionSettings,
     WindowsPermissionEnum,
+)
+import deadline_worker_agent.sessions.log_config as log_config_mod
+from deadline_worker_agent.sessions.job_entities.job_attachment_details import (
+    JobAttachmentManifestProperties,
 )
 
 from deadline.job_attachments.progress_tracker import (
@@ -922,25 +933,25 @@ class TestSessionSyncAssetOutputs:
         with patch.object(session, "_asset_sync") as mock_asset_sync:
             yield mock_asset_sync
 
-    def test_sync_asset_outputs(
+    def _setup_sync_asset_outputs_test(
         self,
         action_id: str,
-        queue_id: str,
         step_id: str,
         task_id: str,
         action_start_time: datetime,
         session: Session,
         job_attachment_details: JobAttachmentDetails,
         mock_asset_sync: MagicMock,
-        mock_telemetry_event_for_sync_outputs: MagicMock,
-    ):
-        """
-        Tests that session's '_sync_asset_outputs' calls Job Attachment's method 'sync_outputs' correctly.
-        Also, asserts that 'record_sync_outputs_telemetry_event' is called once with the correct arguments.
-        """
-        # GIVEN
-        mock_ja_sync_outputs: MagicMock = mock_asset_sync.sync_outputs
-        mock_ja_sync_outputs.return_value = SummaryStatistics()
+    ) -> CurrentAction:
+        """Helper method to set up common test fixtures for sync_asset_outputs tests"""
+        # Set up sync methods
+        mock_asset_sync.sync_outputs.return_value = SummaryStatistics()
+        mock_asset_sync.sync_outputs_with_manifests.return_value = (
+            SummaryStatistics(),
+            {},
+        )
+
+        # Create current action
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
@@ -963,13 +974,48 @@ class TestSessionSyncAssetOutputs:
             ),
             start_time=action_start_time,
         )
+
+        # Set job attachment details
         session._job_attachment_details = job_attachment_details
+
+        return current_action
+
+    @pytest.mark.skipif(
+        MANIFEST_REPORTING_FEATURE,
+        reason="Only relevant when MANIFEST_REPORTING_FEATURE is not enabled",
+    )
+    def test_sync_asset_outputs_without_manifest_reporting(
+        self,
+        action_id: str,
+        queue_id: str,
+        step_id: str,
+        task_id: str,
+        action_start_time: datetime,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+        mock_asset_sync: MagicMock,
+        mock_telemetry_event_for_sync_outputs: MagicMock,
+    ):
+        """
+        Tests that session's '_sync_asset_outputs' calls Job Attachment's method 'sync_outputs' correctly
+        when MANIFEST_REPORTING_FEATURE is disabled.
+        """
+        # GIVEN
+        current_action = self._setup_sync_asset_outputs_test(
+            action_id,
+            step_id,
+            task_id,
+            action_start_time,
+            session,
+            job_attachment_details,
+            mock_asset_sync,
+        )
 
         # WHEN
         session._sync_asset_outputs(current_action=current_action)  # type: ignore
 
         # THEN
-        mock_ja_sync_outputs.assert_called_once_with(
+        mock_asset_sync.sync_outputs.assert_called_once_with(
             s3_settings=JobAttachmentS3Settings(
                 rootPrefix="job_attachments",
                 s3BucketName="job_attachments_bucket",
@@ -988,8 +1034,9 @@ class TestSessionSyncAssetOutputs:
             storage_profiles_path_mapping_rules={},
             on_uploading_files=ANY,
         )
+        mock_asset_sync.sync_outputs_with_manifests.assert_not_called()
         mock_telemetry_event_for_sync_outputs.assert_called_once_with(
-            "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            queue_id,
             SummaryStatistics(),
         )
 
@@ -1376,13 +1423,23 @@ class TestSessionActionUpdatedImpl:
         expected_next_action_message = failed_action_status.fail_message or (
             f"Previous action failed: {current_action.definition.id}"
         )
-        expected_action_update = SessionActionStatus(
-            id=action_id,
-            status=failed_action_status,
-            start_time=action_start_time,
-            completed_status="FAILED",
-            end_time=action_complete_time,
-        )
+        if MANIFEST_REPORTING_FEATURE:
+            expected_action_update = SessionActionStatus(
+                id=action_id,
+                status=failed_action_status,
+                start_time=action_start_time,
+                completed_status="FAILED",
+                end_time=action_complete_time,
+                manifests=[],
+            )
+        else:
+            expected_action_update = SessionActionStatus(
+                id=action_id,
+                status=failed_action_status,
+                start_time=action_start_time,
+                completed_status="FAILED",
+                end_time=action_complete_time,
+            )
 
         with patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs:
             # WHEN
@@ -1445,13 +1502,23 @@ class TestSessionActionUpdatedImpl:
         expected_next_action_message = failed_action_status.fail_message or (
             f"Previous action failed: {current_action.definition.id}"
         )
-        expected_action_update = SessionActionStatus(
-            id=action_id,
-            status=failed_action_status,
-            start_time=action_start_time,
-            completed_status="FAILED",
-            end_time=action_complete_time,
-        )
+        if MANIFEST_REPORTING_FEATURE:
+            expected_action_update = SessionActionStatus(
+                id=action_id,
+                status=failed_action_status,
+                start_time=action_start_time,
+                completed_status="FAILED",
+                end_time=action_complete_time,
+                manifests=[],
+            )
+        else:
+            expected_action_update = SessionActionStatus(
+                id=action_id,
+                status=failed_action_status,
+                start_time=action_start_time,
+                completed_status="FAILED",
+                end_time=action_complete_time,
+            )
 
         with patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs:
             # WHEN
@@ -1514,13 +1581,24 @@ class TestSessionActionUpdatedImpl:
         )
         session._current_action = current_action
         queue_cancel_all: MagicMock = session_action_queue.cancel_all
-        expected_action_update = SessionActionStatus(
-            id=action_id,
-            status=success_action_status,
-            start_time=action_start_time,
-            completed_status="SUCCEEDED",
-            end_time=action_complete_time,
-        )
+
+        if MANIFEST_REPORTING_FEATURE:
+            expected_action_update = SessionActionStatus(
+                id=action_id,
+                status=success_action_status,
+                start_time=action_start_time,
+                completed_status="SUCCEEDED",
+                end_time=action_complete_time,
+                manifests=[],
+            )
+        else:
+            expected_action_update = SessionActionStatus(
+                id=action_id,
+                status=success_action_status,
+                start_time=action_start_time,
+                completed_status="SUCCEEDED",
+                end_time=action_complete_time,
+            )
 
         def mock_now(*arg, **kwarg) -> datetime:
             return action_complete_time
@@ -1629,6 +1707,143 @@ class TestSessionActionUpdatedImpl:
         )
 
     @pytest.mark.skipif(
+        not ASSET_SYNC_JOB_USER_FEATURE or not MANIFEST_REPORTING_FEATURE,
+        reason="This test should be skipped if either feature is not implemented",
+    )
+    def test_success_task_run_attachment_upload_with_no_output_manifest(
+        self,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+    ) -> None:
+        # Set up a mock output sync action
+        mocked_upload_action = MagicMock()
+        # Set up a mock output sync target action
+        output_sync_target_action = MagicMock()
+
+        session._current_action = mocked_upload_action
+        session._output_sync_target_action = output_sync_target_action
+        session._job_attachment_details = job_attachment_details
+
+        # WHEN
+        # Call with a completed action status
+        completed_action_status = ActionStatus(state=ActionState.SUCCESS)
+
+        action_complete_time = datetime.now()
+
+        with (
+            patch.object(
+                session_mod,
+                "OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS",
+                {ActionState.SUCCESS: "SUCCEEDED"},
+            ),
+            patch.object(session, "_handle_action_update") as mocked_handle_action_upload,
+        ):
+            session._action_updated_impl(
+                action_status=completed_action_status,
+                now=action_complete_time,
+            )
+
+        expected_manifest_list: list[ManifestInfo] = [{}]
+
+        mocked_handle_action_upload.assert_called_once_with(
+            False,
+            completed_action_status,
+            output_sync_target_action,
+            action_complete_time,
+            expected_manifest_list,
+        )
+
+    @pytest.mark.skipif(
+        not ASSET_SYNC_JOB_USER_FEATURE or not MANIFEST_REPORTING_FEATURE,
+        reason="This test should be skipped if either feature is not implemented",
+    )
+    def test_success_task_run_attachment_upload_with_manifest(
+        self,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+    ) -> None:
+        # Set up a mock output sync action
+        mocked_upload_action = MagicMock()
+        # Set up a mock output sync target action
+        output_sync_target_action = MagicMock()
+
+        job_attachment_details.manifests.extend(
+            [
+                # Add a second asset root to the manifests. We won't get an output for this one.
+                JobAttachmentManifestProperties(root_path="no_output", root_path_format="posix"),
+                # Add a thir asset root to the manifests.
+                JobAttachmentManifestProperties(root_path="root_path2", root_path_format="posix"),
+            ]
+        )
+
+        session._current_action = mocked_upload_action
+        session._output_sync_target_action = output_sync_target_action
+        session._job_attachment_details = job_attachment_details
+        session._upload_manifest_list = [
+            # Extra manifest. It's not in job attachments details and should be
+            # omitted from the expected output.
+            UploadManifestInfo(
+                "fake_path1",
+                "fake_hash1",
+                "fake_source_path1",
+            ),
+            # Two Manifests match root paths in job attachments details
+            UploadManifestInfo(
+                "fake_path",
+                "fake_hash",
+                job_attachment_details.manifests[0].root_path,
+            ),
+            UploadManifestInfo(
+                "fake_path1",
+                "fake_hash1",
+                "root_path2",
+            ),
+        ]
+
+        # WHEN
+        # Call with a completed action status
+        completed_action_status = ActionStatus(state=ActionState.SUCCESS)
+
+        action_complete_time = datetime.now()
+
+        with (
+            patch.object(
+                session_mod,
+                "OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS",
+                {ActionState.SUCCESS: "SUCCEEDED"},
+            ),
+            patch.object(session, "_handle_action_update") as mocked_handle_action_upload,
+        ):
+            session._action_updated_impl(
+                action_status=completed_action_status,
+                now=action_complete_time,
+            )
+
+        expected_manifest_list = [
+            # manifest information for the source path that matches the root.
+            {
+                "outputManifestPath": "fake_path",
+                "outputManifestHash": "fake_hash",
+            },
+            # There was no output information for the 2nd root path. It should have an empty manifest info.
+            {},
+            # This manifest also matches a root path. We want to make sure that we're matching the order defined
+            # in job attachment details.
+            {
+                "outputManifestPath": "fake_path1",
+                "outputManifestHash": "fake_hash1",
+            },
+        ]
+
+        mocked_handle_action_upload.assert_called_once_with(
+            False,
+            completed_action_status,
+            output_sync_target_action,
+            action_complete_time,
+            expected_manifest_list,
+        )
+
+    @pytest.mark.skipif(
         ASSET_SYNC_JOB_USER_FEATURE,
         reason="This test will be re-written before releasing the asset sync job user feature",
     )
@@ -1678,13 +1893,23 @@ class TestSessionActionUpdatedImpl:
             state=ActionState.FAILED,
             fail_message=f"Failed to sync job output attachments for {current_action.definition.id}: {sync_outputs_exception_msg}",
         )
-        expected_action_update = SessionActionStatus(
-            id=action_id,
-            status=expected_fail_action_status,
-            start_time=action_start_time,
-            completed_status="FAILED",
-            end_time=action_complete_time,
-        )
+        if MANIFEST_REPORTING_FEATURE:
+            expected_action_update = SessionActionStatus(
+                id=action_id,
+                status=expected_fail_action_status,
+                start_time=action_start_time,
+                completed_status="FAILED",
+                end_time=action_complete_time,
+                manifests=[],
+            )
+        else:
+            expected_action_update = SessionActionStatus(
+                id=action_id,
+                status=expected_fail_action_status,
+                start_time=action_start_time,
+                completed_status="FAILED",
+                end_time=action_complete_time,
+            )
 
         def mock_now(*arg, **kwarg) -> datetime:
             return action_complete_time
@@ -1904,6 +2129,48 @@ class TestSessionActionUpdatedImpl:
         mock_openjd_log.removeFilter.assert_called_once_with(mock_filter)
         # Verify output sync target action was cleared
         assert session._output_sync_target_action is None
+
+    @pytest.mark.skipif(
+        not MANIFEST_REPORTING_FEATURE,
+        reason="This test only runs when MANIFEST_REPORTING_FEATURE is enabled",
+    )
+    def test_action_output_capture_filter_ja_upload_callback_invalid(
+        self,
+        session: Session,
+    ) -> None:
+        """Tests that the callback for ja_upload type correctly handles incorrectly formatted value"""
+
+        # WHEN
+        session.action_output_log_filter_callback(
+            log_config_mod.ActionOutputMessageKind.JA_UPLOAD, "NOT A VALID LIST OF MANIFEST INFOS"
+        )
+
+        assert session._upload_manifest_list == []
+
+        session.action_output_log_filter_callback(
+            log_config_mod.ActionOutputMessageKind.JA_UPLOAD, '[{"not":"real"}]'
+        )
+
+        assert session._upload_manifest_list == []
+
+    @pytest.mark.skipif(
+        not MANIFEST_REPORTING_FEATURE,
+        reason="This test only runs when MANIFEST_REPORTING_FEATURE is enabled",
+    )
+    def test_action_output_capture_filter_ja_upload_callback_valid(
+        self,
+        session: Session,
+    ) -> None:
+        """Tests that the callback for ja_upload type correctly handles properly formatted value"""
+
+        # WHEN
+        session.action_output_log_filter_callback(
+            log_config_mod.ActionOutputMessageKind.JA_UPLOAD,
+            '[{"source_path": "test", "output_manifest_path":"test", "output_manifest_hash":"test"}]',
+        )
+
+        assert len(session._upload_manifest_list) == 1
+        assert all(isinstance(item, UploadManifestInfo) for item in session._upload_manifest_list)
 
 
 @pytest.mark.usefixtures("mock_openjd_session")
@@ -2170,7 +2437,7 @@ class TestSessionCleanup:
         # THEN
         openjd_session_cleanup.assert_called_once_with()
 
-    @pytest.fixture()
+    @pytest.fixture
     def mock_asset_sync(self, session: Session) -> Generator[MagicMock, None, None]:
         with patch.object(session, "_asset_sync") as mock_asset_sync:
             yield mock_asset_sync

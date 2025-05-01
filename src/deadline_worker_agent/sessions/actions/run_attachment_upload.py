@@ -22,6 +22,7 @@ from openjd.model.v2023_09 import (
 )
 from openjd.model import ParameterValue
 
+from ...feature_flag import MANIFEST_REPORTING_FEATURE
 from ...log_messages import SessionActionLogKind
 from .openjd_action import OpenjdAction
 
@@ -190,6 +191,7 @@ class AttachmentUploadAction(OpenjdAction):
                 "DEADLINE_SESSIONACTION_ID": self._id,
                 "DEADLINE_STEP_ID": self._step_id,
                 "DEADLINE_TASK_ID": self._task_id,
+                "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
             },
             log_task_banner=False,
         )
