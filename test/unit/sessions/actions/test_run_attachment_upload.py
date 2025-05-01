@@ -7,12 +7,13 @@ import sys
 import tempfile
 import json
 from typing import TYPE_CHECKING, Generator
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch, mock_open
 
 import pytest
 
 import deadline_worker_agent.sessions.actions as actions_module
 from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
+from deadline_worker_agent.feature_flag import MANIFEST_REPORTING_FEATURE
 from openjd.sessions import SessionUser, PathMappingRule, PathFormat
 from openjd.model import ParameterValue
 from pathlib import PurePosixPath
@@ -127,6 +128,7 @@ class TestStart:
         step_id: str,
         task_id: str,
         action_id: str,
+        session_dir: str,
     ) -> None:
         """
         Tests that AttachmentUploadAction.start() calls AssetSync functions to prepare input
@@ -143,8 +145,12 @@ class TestStart:
         )
         session.manifest_out_rel_dirs_by_source = {}
 
-        # WHEN
-        action.start(session=session, executor=executor)
+        session.working_directory = Path(session_dir)
+
+        # Mock file operations to avoid actual file access
+        with patch("os.path.exists", return_value=False):
+            # WHEN
+            action.start(session=session, executor=executor)
 
         with open(
             Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_upload.py",
@@ -184,6 +190,8 @@ class TestStart:
                 "DEADLINE_SESSIONACTION_ID": action_id,
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
+                "DEADLINE_SESSION_DIR": str(session.working_directory),
+                "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
             },
             log_task_banner=False,
         )
@@ -286,6 +294,93 @@ class TestStart:
                 "DEADLINE_SESSIONACTION_ID": action_id,
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
+                "DEADLINE_SESSION_DIR": str(session.working_directory),
+                "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
             },
             log_task_banner=False,
         )
+
+    @pytest.mark.skipif(
+        not MANIFEST_REPORTING_FEATURE,
+        reason="Only relevant when MANIFEST_REPORTING_FEATURE is enabled",
+    )
+    def test_reads_manifest_information_from_file(
+        self,
+        executor: Mock,
+        session: Mock,
+        action: actions_module.AttachmentUploadAction,
+        job_details: JobDetails,
+        session_dir: str,
+        action_id: str,
+    ) -> None:
+        """
+        Tests that AttachmentUploadAction.start() correctly reads manifest information
+        from a file and updates the session with the manifest data
+        """
+        # GIVEN
+        # Setup test manifest info
+        manifest_info = {
+            "/asset/root1": {
+                "outputManifestPath": "s3://bucket/Manifests/key1",
+                "outputManifestHash": "hash1",
+            },
+            "/asset/root2": {
+                "outputManifestPath": "s3://bucket/Manifests/key2",
+                "outputManifestHash": "hash2",
+            },
+        }
+
+        # Setup job attachment details with manifests
+        job_attachment_details = MagicMock()
+        job_attachment_details.manifests = [
+            MagicMock(root_path="/asset/root1"),
+            MagicMock(root_path="/asset/root2"),
+            MagicMock(root_path="/asset/root3"),  # Root with no changes
+        ]
+        session._queue._job_entities.job_attachment_details.return_value = job_attachment_details
+
+        # Set up session working directory and create a Path object for it
+        session.working_directory = Path(session_dir)
+
+        # Create expected manifest file path
+        manifest_file_path = os.path.join(session_dir, f"manifest_info_{action_id}.json")
+
+        # Mock all necessary file operations
+        with patch(
+            "deadline_worker_agent.sessions.actions.run_attachment_upload.open",
+            mock_open(read_data="script content"),
+        ) as mock_file:
+            # Mock the specific open call for the manifest file
+            def side_effect_open(file_path, mode, *args, **kwargs):
+                if str(file_path).endswith("attachment_upload.py"):
+                    return mock_open(read_data="script content")(file_path, mode, *args, **kwargs)
+                elif str(file_path) == manifest_file_path or str(file_path).endswith(
+                    f"manifest_info_{action_id}.json"
+                ):
+                    return mock_open(read_data=json.dumps(manifest_info))(
+                        file_path, mode, *args, **kwargs
+                    )
+                return mock_open()(file_path, mode, *args, **kwargs)
+
+            mock_file.side_effect = side_effect_open
+
+            with patch("os.path.exists", return_value=True):
+                with patch("os.remove") as mock_remove:
+                    with patch("json.load", return_value=manifest_info):
+                        # WHEN
+                        action.start(session=session, executor=executor)
+
+        # THEN
+        # Verify manifest information was stored correctly
+        expected_manifests = [
+            {"outputManifestPath": "s3://bucket/Manifests/key1", "outputManifestHash": "hash1"},
+            {"outputManifestPath": "s3://bucket/Manifests/key2", "outputManifestHash": "hash2"},
+            {},  # Empty object for root3 with no changes
+        ]
+        assert len(session._manifests_for_output_sync_target_action) == len(expected_manifests)
+        for i, manifest in enumerate(session._manifests_for_output_sync_target_action):
+            for key, value in expected_manifests[i].items():
+                assert manifest.get(key) == value
+
+        # Verify os.remove was called once (without checking the exact path argument)
+        mock_remove.assert_called_once()

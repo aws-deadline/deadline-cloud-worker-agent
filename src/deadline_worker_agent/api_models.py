@@ -416,6 +416,13 @@ class BatchGetJobEntityResponse(TypedDict):
     errors: list[EntityError]
 
 
+class ManifestInfo(TypedDict):
+    """Model for manifest information."""
+
+    outputManifestPath: NotRequired[str]
+    outputManifestHash: NotRequired[str]
+
+
 class UpdatedSessionActionInfo(TypedDict):
     completedStatus: NotRequired[CompletedActionStatus]
     processExitCode: NotRequired[int]
@@ -424,6 +431,7 @@ class UpdatedSessionActionInfo(TypedDict):
     endedAt: NotRequired[datetime]
     updatedAt: NotRequired[datetime]
     progressPercent: NotRequired[float]
+    manifests: NotRequired[list[ManifestInfo]]
 
 
 class UpdateWorkerScheduleRequest(TypedDict):

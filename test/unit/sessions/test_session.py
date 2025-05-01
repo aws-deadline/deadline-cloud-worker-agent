@@ -37,7 +37,10 @@ from deadline_worker_agent.api_models import (
     TaskRunAction,
     AttachmentUploadAction,
 )
-from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
+from deadline_worker_agent.feature_flag import (
+    ASSET_SYNC_JOB_USER_FEATURE,
+    MANIFEST_REPORTING_FEATURE,
+)
 from deadline_worker_agent.sessions import Session
 import deadline_worker_agent.sessions.session as session_mod
 from deadline_worker_agent.sessions.session import (
@@ -921,25 +924,25 @@ class TestSessionSyncAssetOutputs:
         with patch.object(session, "_asset_sync") as mock_asset_sync:
             yield mock_asset_sync
 
-    def test_sync_asset_outputs(
+    def _setup_sync_asset_outputs_test(
         self,
         action_id: str,
-        queue_id: str,
         step_id: str,
         task_id: str,
         action_start_time: datetime,
         session: Session,
         job_attachment_details: JobAttachmentDetails,
         mock_asset_sync: MagicMock,
-        mock_telemetry_event_for_sync_outputs: MagicMock,
-    ):
-        """
-        Tests that session's '_sync_asset_outputs' calls Job Attachment's method 'sync_outputs' correctly.
-        Also, asserts that 'record_sync_outputs_telemetry_event' is called once with the correct arguments.
-        """
-        # GIVEN
-        mock_ja_sync_outputs: MagicMock = mock_asset_sync.sync_outputs
-        mock_ja_sync_outputs.return_value = SummaryStatistics()
+    ) -> CurrentAction:
+        """Helper method to set up common test fixtures for sync_asset_outputs tests"""
+        # Set up sync methods
+        mock_asset_sync.sync_outputs.return_value = SummaryStatistics()
+        mock_asset_sync.sync_outputs_with_manifests.return_value = (
+            SummaryStatistics(),
+            {},
+        )
+
+        # Create current action
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
@@ -962,13 +965,109 @@ class TestSessionSyncAssetOutputs:
             ),
             start_time=action_start_time,
         )
+
+        # Set job attachment details
         session._job_attachment_details = job_attachment_details
+
+        return current_action
+
+    @pytest.mark.skipif(
+        MANIFEST_REPORTING_FEATURE,
+        reason="Only relevant when MANIFEST_REPORTING_FEATURE is not enabled",
+    )
+    def test_sync_asset_outputs_without_manifest_reporting(
+        self,
+        action_id: str,
+        queue_id: str,
+        step_id: str,
+        task_id: str,
+        action_start_time: datetime,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+        mock_asset_sync: MagicMock,
+        mock_telemetry_event_for_sync_outputs: MagicMock,
+    ):
+        """
+        Tests that session's '_sync_asset_outputs' calls Job Attachment's method 'sync_outputs' correctly
+        when MANIFEST_REPORTING_FEATURE is disabled.
+        """
+        # GIVEN
+        current_action = self._setup_sync_asset_outputs_test(
+            action_id,
+            step_id,
+            task_id,
+            action_start_time,
+            session,
+            job_attachment_details,
+            mock_asset_sync,
+        )
 
         # WHEN
         session._sync_asset_outputs(current_action=current_action)  # type: ignore
 
         # THEN
-        mock_ja_sync_outputs.assert_called_once_with(
+        mock_asset_sync.sync_outputs.assert_called_once_with(
+            s3_settings=JobAttachmentS3Settings(
+                rootPrefix="job_attachments",
+                s3BucketName="job_attachments_bucket",
+            ),
+            attachments=Attachments(
+                manifests=ANY,
+                fileSystem=JobAttachmentsFileSystem.COPIED,
+            ),
+            queue_id=queue_id,
+            job_id=ANY,
+            step_id=step_id,
+            task_id=task_id,
+            session_action_id=action_id,
+            start_time=ANY,
+            session_dir=ANY,
+            storage_profiles_path_mapping_rules={},
+            on_uploading_files=ANY,
+        )
+        mock_asset_sync.sync_outputs_with_manifests.assert_not_called()
+        mock_telemetry_event_for_sync_outputs.assert_called_once_with(
+            queue_id,
+            SummaryStatistics(),
+        )
+
+    @pytest.mark.skipif(
+        not MANIFEST_REPORTING_FEATURE,
+        reason="Only relevant when MANIFEST_REPORTING_FEATURE is not enabled",
+    )
+    def test_sync_asset_outputs_with_manifest_reporting(
+        self,
+        action_id: str,
+        queue_id: str,
+        step_id: str,
+        task_id: str,
+        action_start_time: datetime,
+        session: Session,
+        job_attachment_details: JobAttachmentDetails,
+        mock_asset_sync: MagicMock,
+        mock_telemetry_event_for_sync_outputs: MagicMock,
+    ):
+        """
+        Tests that session's '_sync_asset_outputs' calls Job Attachment's method 'sync_outputs_with_manifests'
+        correctly when MANIFEST_REPORTING_FEATURE is enabled.
+        """
+        # GIVEN
+        current_action = self._setup_sync_asset_outputs_test(
+            action_id,
+            step_id,
+            task_id,
+            action_start_time,
+            session,
+            job_attachment_details,
+            mock_asset_sync,
+        )
+
+        # WHEN
+        session._sync_asset_outputs(current_action=current_action)  # type: ignore
+
+        # THEN
+        mock_asset_sync.sync_outputs.assert_not_called()
+        mock_asset_sync.sync_outputs_with_manifests.assert_called_once_with(
             s3_settings=JobAttachmentS3Settings(
                 rootPrefix="job_attachments",
                 s3BucketName="job_attachments_bucket",
@@ -988,7 +1087,7 @@ class TestSessionSyncAssetOutputs:
             on_uploading_files=ANY,
         )
         mock_telemetry_event_for_sync_outputs.assert_called_once_with(
-            "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            queue_id,
             SummaryStatistics(),
         )
 

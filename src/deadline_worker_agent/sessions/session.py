@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -30,8 +31,12 @@ from deadline_worker_agent.api_models import (
     SyncInputJobAttachmentsAction,
     AttachmentDownloadAction,
     AttachmentUploadAction,
+    ManifestInfo,
 )
-from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
+from deadline_worker_agent.feature_flag import (
+    ASSET_SYNC_JOB_USER_FEATURE,
+    MANIFEST_REPORTING_FEATURE,
+)
 
 if TYPE_CHECKING:
     from ..api_models import CompletedActionStatus, EnvironmentAction, TaskRunAction
@@ -157,6 +162,7 @@ class Session:
     _stop: Event
     _output_sync_target_action: CurrentAction | None = None
     _current_action: CurrentAction | None = None
+    _manifests_for_output_sync_target_action: list[ManifestInfo] | None = None
     _current_action_lock: RLock
     _stop_current_action_result: Literal["INTERRUPTED", "FAILED"] = "FAILED"
     _stop_grace_time: timedelta | None = None
@@ -1127,11 +1133,57 @@ class Session:
 
         if self._output_sync_target_action is not None:
             if OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(action_status.state, None):
+                manifests_list = None
+
+                # Use the manifests if available and feature flag is enabled
+                if MANIFEST_REPORTING_FEATURE:
+                    manifest_info_file = (
+                        self.working_directory
+                        / f"manifest_info_{self._output_sync_target_action.definition.id}.json"
+                    )
+                    if os.path.exists(manifest_info_file):
+                        try:
+                            with open(manifest_info_file, "r") as f:
+                                manifest_info_dict = json.load(f)
+                            # Clean up the file
+                            os.remove(manifest_info_file)
+
+                            # Get job attachment details to access input manifests
+                            job_attachment_details = self._job_attachment_details
+
+                            if job_attachment_details:
+                                # Create a list of ManifestInfo objects with the same length as the input manifests list
+                                manifests_list = []
+
+                                # For each input manifest, find the corresponding output manifest
+                                for input_manifest in job_attachment_details.manifests:
+                                    asset_root = input_manifest.root_path
+                                    manifest_info = manifest_info_dict.get(asset_root, {})
+
+                                    # Create a ManifestInfo dictionary with the appropriate values
+                                    manifest_info_obj: ManifestInfo = {}
+                                    if "outputManifestPath" in manifest_info:
+                                        manifest_info_obj["outputManifestPath"] = manifest_info[
+                                            "outputManifestPath"
+                                        ]
+                                    if "outputManifestHash" in manifest_info:
+                                        manifest_info_obj["outputManifestHash"] = manifest_info[
+                                            "outputManifestHash"
+                                        ]
+
+                                    manifests_list.append(manifest_info_obj)
+                        except Exception as e:
+                            logger.error(f"Failed to read manifest information: {e}")
+
                 # if the current action is a sync output job attachments upload action and it's completed
                 # then we can update and clear the corresponding task run sync target action
                 task_run_action = self._output_sync_target_action
                 self._output_sync_target_action = None
-                self._handle_action_update(is_unsuccessful, action_status, task_run_action, now)
+
+                # Handle the action update
+                self._handle_action_update(
+                    is_unsuccessful, action_status, task_run_action, now, manifests_list
+                )
             else:
                 logger.debug(
                     f"SYNC_OUTPUT_JOB_ATTACHMENTS for {self._output_sync_target_action} is still running"
@@ -1168,10 +1220,23 @@ class Session:
                 self.logger.info("----------------------------------------------")
                 self.logger.info("Uploading output files to Job Attachments")
                 self.logger.info("----------------------------------------------")
-                future: Future = self._executor.submit(
-                    self._sync_asset_outputs,
-                    current_action=current_action,
-                )
+
+                # Create a future for the asset sync operation
+                future = None
+                if MANIFEST_REPORTING_FEATURE:
+                    manifest_future: Future[list[ManifestInfo]] = self._executor.submit(
+                        self._sync_asset_outputs,
+                        current_action=current_action,
+                    )
+                    future = manifest_future
+                else:
+                    # If feature flag is disabled, use the old method signature
+                    standard_future: Future = self._executor.submit(
+                        self._sync_asset_outputs,
+                        current_action=current_action,
+                    )
+                    future = standard_future
+
                 on_done_with_sync_asset_outputs = partial(
                     self._on_done_with_sync_asset_outputs,
                     is_unsuccessful=is_unsuccessful,
@@ -1188,13 +1253,20 @@ class Session:
 
     def _on_done_with_sync_asset_outputs(
         self,
-        future: Future[None],
+        future: Future[list[ManifestInfo]],
         is_unsuccessful: bool,
         action_status: ActionStatus,
         current_action: CurrentAction,
     ):
+        manifests: Optional[list[ManifestInfo]] = None
         try:
-            future.result()
+            # Extract manifests from future result only if feature flag is enabled
+            if MANIFEST_REPORTING_FEATURE:
+                # Extract manifests from future result
+                manifests = future.result()
+            else:
+                # Just get the result to check for exceptions, but don't use manifests
+                future.result()
         except Exception as e:
             # Log and fail the task run action if we are unable to sync output job attachments
             fail_message = (
@@ -1215,7 +1287,10 @@ class Session:
                 self._action_update_lock,
                 self._current_action_lock,
             ):
-                self._handle_action_update(is_unsuccessful, action_status, current_action, now)
+                # Pass manifests to _handle_action_update
+                self._handle_action_update(
+                    is_unsuccessful, action_status, current_action, now, manifests
+                )
 
     def _handle_action_update(
         self,
@@ -1223,6 +1298,7 @@ class Session:
         action_status: ActionStatus,
         current_action: CurrentAction,
         now: datetime,
+        manifests: list[ManifestInfo] | None = None,
     ):
         completed_status = OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
             action_status.state, None
@@ -1282,6 +1358,9 @@ class Session:
         # Only report action update when it's not attachment upload for syncing job attachment outputs,
         # progress reporting is not supported by the output upload yet.
         if not self._output_sync_target_action:
+            # Only include manifests if feature flag is enabled
+            session_manifests = manifests if MANIFEST_REPORTING_FEATURE else None
+
             self._report_action_update(
                 SessionActionStatus(
                     id=current_action.definition.id,
@@ -1290,6 +1369,7 @@ class Session:
                     end_time=now if action_status.state != ActionState.RUNNING else None,
                     update_time=now if action_status.state == ActionState.RUNNING else None,
                     completed_status=completed_status,
+                    manifests=session_manifests,
                 )
             )
 
@@ -1298,15 +1378,19 @@ class Session:
         self,
         *,
         current_action: CurrentAction,
-    ) -> None:
-        """Sync the outputs after a TASK_RUN if using Job Attachments"""
+    ) -> list[ManifestInfo]:
+        """Sync the outputs after a TASK_RUN if using Job Attachments
+
+        Returns:
+            A list of manifest dictionaries containing output manifest information
+        """
         if not (queue_settings := self._job_details.job_attachment_settings):
-            return
+            return []
         if not (job_attachment_details := self._job_attachment_details):
-            return
+            return []
         if self._asset_sync is None:
             # Shouldn't get here, but let's be defensive.
-            return
+            return []
 
         # assist type check
         assert queue_settings.root_prefix is not None
@@ -1345,26 +1429,72 @@ class Session:
         from .actions import RunStepTaskAction
 
         assert isinstance(current_action.definition, RunStepTaskAction)
-        upload_summary_statistics: SummaryStatistics = self._asset_sync.sync_outputs(
-            s3_settings=s3_settings,
-            attachments=attachments,
-            queue_id=self._queue_id,
-            job_id=self._queue._job_id,
-            step_id=current_action.definition.step_id,  # type: ignore[arg-type]
-            task_id=current_action.definition.task_id,
-            session_action_id=current_action.definition.id,
-            start_time=current_action.start_time.timestamp(),
-            session_dir=self._session.working_directory,
-            storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
-            on_uploading_files=self._notifier_callback,
-        )
+
+        # Use different sync method based on feature flag
+        if MANIFEST_REPORTING_FEATURE:
+            upload_summary_statistics, manifest_info_dict = (
+                self._asset_sync.sync_outputs_with_manifests(  # type: ignore[attr-defined]
+                    s3_settings=s3_settings,
+                    attachments=attachments,
+                    queue_id=self._queue_id,
+                    job_id=self._queue._job_id,
+                    step_id=current_action.definition.step_id,  # type: ignore[arg-type]
+                    task_id=current_action.definition.task_id,
+                    session_action_id=current_action.definition.id,
+                    start_time=current_action.start_time.timestamp(),
+                    session_dir=self._session.working_directory,
+                    storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
+                    on_uploading_files=self._notifier_callback,
+                )
+            )
+        else:
+            # Use the original sync_outputs method if feature flag is disabled
+            upload_summary_statistics = self._asset_sync.sync_outputs(
+                s3_settings=s3_settings,
+                attachments=attachments,
+                queue_id=self._queue_id,
+                job_id=self._queue._job_id,
+                step_id=current_action.definition.step_id,  # type: ignore[arg-type]
+                task_id=current_action.definition.task_id,
+                session_action_id=current_action.definition.id,
+                start_time=current_action.start_time.timestamp(),
+                session_dir=self._session.working_directory,
+                storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
+                on_uploading_files=self._notifier_callback,
+            )
+            # Create empty dict for manifest_info_dict when feature is disabled
+            manifest_info_dict = {}
 
         self.logger.info(f"Summary Statistics for file uploads:\n{upload_summary_statistics}")
+
+        # Create a list of ManifestInfo objects with the same length as the input manifests list
+        manifests_list: list[ManifestInfo] = []
+
+        # Only process manifests if feature flag is enabled
+        if (
+            MANIFEST_REPORTING_FEATURE
+            and job_attachment_details
+            and job_attachment_details.manifests
+        ):
+            for manifest_properties in job_attachment_details.manifests:
+                asset_root = manifest_properties.root_path
+                manifest_info = manifest_info_dict.get(asset_root, {})
+
+                # Create a ManifestInfo dictionary with the appropriate values
+                manifest_info_obj: ManifestInfo = {}
+                if "outputManifestPath" in manifest_info:
+                    manifest_info_obj["outputManifestPath"] = manifest_info["outputManifestPath"]
+                if "outputManifestHash" in manifest_info:
+                    manifest_info_obj["outputManifestHash"] = manifest_info["outputManifestHash"]
+
+                manifests_list.append(manifest_info_obj)
 
         # Send the summary stats of output syncing through the telemetry client.
         record_sync_outputs_telemetry_event(self._queue_id, upload_summary_statistics)
 
         self.logger.info("Finished syncing outputs using Job Attachments")
+
+        return manifests_list
 
     def run_task(
         self,

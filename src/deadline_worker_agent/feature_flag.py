@@ -9,3 +9,6 @@ ASSET_SYNC_JOB_USER_FEATURE = (
 )
 
 HOST_CONFIGURATION_FEATURE = os.environ.get("HOST_CONFIGURATION_FEATURE", "false").lower() == "true"
+
+# Feature flag for output manifest reporting
+MANIFEST_REPORTING_FEATURE = os.environ.get("MANIFEST_REPORTING_FEATURE", "false").lower() == "true"

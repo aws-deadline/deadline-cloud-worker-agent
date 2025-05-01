@@ -32,13 +32,38 @@ python attachment_upload.py \
 
 def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> None:
     s3_path = f"{os.environ.get('DEADLINE_FARM_ID')}/{os.environ.get('DEADLINE_QUEUE_ID')}/{os.environ.get('DEADLINE_JOB_ID')}/{os.environ.get('DEADLINE_STEP_ID')}/{os.environ.get('DEADLINE_TASK_ID')}/{os.environ.get('DEADLINE_SESSIONACTION_ID')}"
-    api.attachment_upload(
+
+    # Call attachment_upload and get manifest information
+    manifest_info = api.attachment_upload(
         manifests=manifests,
         s3_root_uri=s3_root_uri,
         boto3_session=boto3.session.Session(),
         path_mapping_rules=path_mapping_rules,
         upload_manifest_path=s3_path,
     )
+
+    # Check if manifest reporting feature is enabled via environment variable
+    manifest_reporting_enabled = (
+        os.environ.get("MANIFEST_REPORTING_FEATURE", "false").lower() == "true"
+    )
+
+    if manifest_reporting_enabled:
+        try:
+            # Write manifest information to a file in the session directory
+            session_action_id = os.environ.get("DEADLINE_SESSIONACTION_ID")
+            session_dir = os.environ.get("DEADLINE_SESSION_DIR", "/sessions")
+            output_file = os.path.join(session_dir, f"manifest_info_{session_action_id}.json")
+
+            with open(output_file, "w") as f:
+                json.dump(manifest_info, f)
+
+            # Ensure the file is readable by the Worker Agent
+            os.chmod(output_file, 0o644)
+
+            print(f"Wrote manifest information to {output_file}: {manifest_info}")
+        except Exception as e:
+            print(f"Failed to write manifest information: {e}")
+            # Continue with the upload process even if writing the manifest information fails
 
 
 def merge(

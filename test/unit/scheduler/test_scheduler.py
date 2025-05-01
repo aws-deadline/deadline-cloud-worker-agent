@@ -8,6 +8,9 @@ from typing import Generator, Optional
 from unittest.mock import ANY, MagicMock, Mock, call, patch
 import logging
 
+from deadline_worker_agent.api_models import ManifestInfo
+from deadline_worker_agent.feature_flag import MANIFEST_REPORTING_FEATURE
+
 from openjd.sessions import (
     ActionState,
     ActionStatus,
@@ -704,6 +707,41 @@ class TestSchedulerSync:
             assert status_as_boto.get("processExitCode", "ABSENT") == "ABSENT"
         else:
             assert status_as_boto.get("processExitCode", "FAIL") == expected_result
+
+    @pytest.mark.skipif(
+        not MANIFEST_REPORTING_FEATURE,
+        reason="Only relevant when MANIFEST_REPORTING_FEATURE is enabled",
+    )
+    def test_updated_action_to_boto_with_empty_manifests(self, scheduler: WorkerScheduler) -> None:
+        # GIVEN
+        manifests = [
+            ManifestInfo(
+                outputManifestPath="s3://bucket/path/to/manifest1", outputManifestHash="hash1"
+            ),
+            ManifestInfo(),  # Empty manifest for asset root with no changes
+            ManifestInfo(
+                outputManifestPath="s3://bucket/path/to/manifest3", outputManifestHash="hash3"
+            ),
+        ]
+        action_status = SessionActionStatus(
+            id="1234", status=ActionStatus(state=ActionState.SUCCESS), manifests=manifests
+        )
+
+        # WHEN
+        status_as_boto = scheduler._updated_action_to_boto(action_status)
+
+        # THEN
+        assert "manifests" in status_as_boto
+        assert len(status_as_boto["manifests"]) == 3
+        assert status_as_boto["manifests"][0] == {
+            "outputManifestPath": "s3://bucket/path/to/manifest1",
+            "outputManifestHash": "hash1",
+        }
+        assert status_as_boto["manifests"][1] == {}
+        assert status_as_boto["manifests"][2] == {
+            "outputManifestPath": "s3://bucket/path/to/manifest3",
+            "outputManifestHash": "hash3",
+        }
 
 
 class TestCreateNewSessions:

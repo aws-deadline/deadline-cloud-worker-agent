@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from openjd.sessions import ActionStatus
 
 if TYPE_CHECKING:
-    from ..api_models import CompletedActionStatus
+    from ..api_models import CompletedActionStatus, ManifestInfo
 
 
 @dataclass(frozen=True)
@@ -19,3 +19,4 @@ class SessionActionStatus:
     start_time: datetime | None = None
     end_time: datetime | None = None
     completed_status: CompletedActionStatus | None = None
+    manifests: list[ManifestInfo] | None = None
