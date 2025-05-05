@@ -56,7 +56,7 @@ class TestWindowsInstaller:
     DEFAULT_JOB_USER = "job-user"
     ADMIN_SID = "S-1-5-32-544"
 
-    WHOAMI_COMMAND = 'Write-Output "Jobs Run As: $((whoami).split(\'\\\')[1])"'
+    WHOAMI_COMMAND = "Write-Output \"Jobs Run As: $((whoami).split('\\')[1])\""
 
     @pytest.fixture(scope="class")
     def worker_config(
