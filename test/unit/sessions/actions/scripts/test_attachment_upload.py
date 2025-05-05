@@ -1,11 +1,16 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, ANY
 import pytest
 import tempfile
 import os
 
-from deadline_worker_agent.sessions.actions.scripts.attachment_upload import main, parse_args, merge
+from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
+    main,
+    parse_args,
+    merge,
+    snapshot,
+)
 
 
 @pytest.fixture
@@ -24,6 +29,22 @@ def valid_args(path_mapping_file_path: str):
         "s3://test-bucket/path",
         "--manifest-map",
         '{"root1": ["/path/to/manifest1"]}',
+        "--include-dirs-map",
+        "{}",
+    ]
+
+
+@pytest.fixture
+def valid_args_with_snapshot_include_dirs(path_mapping_file_path: str):
+    return [
+        "--path-mapping",
+        path_mapping_file_path,
+        "--s3-uri",
+        "s3://test-bucket/path",
+        "--manifest-map",
+        '{"root1": ["/path/to/manifest1"]}',
+        "--include-dirs-map",
+        '{"root1": ["/path/to/include/dir1", "/path/to/include/dir2"]}',
     ]
 
 
@@ -36,6 +57,8 @@ def valid_args_merge(path_mapping_file_path: str):
         "s3://test-bucket/path",
         "--manifest-map",
         '{"root1": ["/path/to/manifest1", "/path/to/manifest2"]}',
+        "--include-dirs-map",
+        "{}",
     ]
 
 
@@ -74,13 +97,13 @@ class TestAttachmentUpload:
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.merge")
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.snapshot")
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.upload")
-    def test_main_with_manifests(
+    def test_main_with_manifests_and_include_dirs(
         self,
         mock_upload: Mock,
         mock_snapshot: Mock,
         mock_merge: Mock,
         path_mapping_file_path: str,
-        valid_args: dict,
+        valid_args_with_snapshot_include_dirs: dict,
     ):
         # Setup mock for merge to return some manifests
         mock_merge.return_value = {"root1": "/path/to/manifest1"}
@@ -88,15 +111,18 @@ class TestAttachmentUpload:
         # Setup mock for snapshot to return some manifests
         mock_snapshot.return_value = ["manifest1", "manifest2"]
 
-        # Run main with test arguments
-        main(valid_args)
+        # Run main with test arguments that include include_dirs_by_root
+        main(valid_args_with_snapshot_include_dirs)
 
         mock_merge.assert_called_once_with(
             manifest_paths_by_root={"root1": ["/path/to/manifest1"]},
         )
 
-        # Verify snapshot was called with correct arguments
-        mock_snapshot.assert_called_once_with(manifest_path_by_root={"root1": "/path/to/manifest1"})
+        # Verify snapshot was called with correct arguments including the include_dirs_by_root
+        mock_snapshot.assert_called_once_with(
+            manifest_path_by_root={"root1": "/path/to/manifest1"},
+            include_dirs_by_root={"root1": ["/path/to/include/dir1", "/path/to/include/dir2"]},
+        )
 
         # Verify upload was called with correct arguments
         mock_upload.assert_called_once_with(
@@ -131,7 +157,9 @@ class TestAttachmentUpload:
         )
 
         # Verify snapshot was called with correct arguments
-        mock_snapshot.assert_called_once_with(manifest_path_by_root=merged_manifest_path_by_root)
+        mock_snapshot.assert_called_once_with(
+            manifest_path_by_root=merged_manifest_path_by_root, include_dirs_by_root={}
+        )
 
         # Verify upload was called with correct arguments
         mock_upload.assert_called_once_with(
@@ -180,3 +208,66 @@ class TestAttachmentUpload:
 
         assert result == expected
         assert mock_manifest_merge.call_count == 1
+
+        # Verify _manifest_merge was called with the correct arguments
+        mock_manifest_merge.assert_called_once_with(
+            root="/root1",
+            manifest_files=["/path/to/manifest1", "/path/to/manifest2"],
+            destination=os.path.join(os.getcwd(), "manifest"),
+            name=ANY,  # Use mock.ANY to ignore the exact name
+        )
+        # Then check that the name contains the expected parts
+        name = mock_manifest_merge.call_args.kwargs["name"]
+        assert name.startswith("merge-")
+        assert "manifest1" in name
+        assert "manifest2" in name
+
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
+    def test__manifest_snapshot_diff_include(self, mock_manifest_snapshot: Mock):
+        # Setup mock for _manifest_snapshot to return some manifests
+        mock_manifest_snapshot.side_effect = [
+            Mock(
+                manifest="/path/to/result1",
+            ),
+            Mock(
+                manifest="/path/to/result2",
+            ),
+        ]
+
+        # Define test input data
+        manifest_path_by_root = {
+            "/root1": "/path/to/base/manifest1",
+            "/root2": "/path/to/base/manifest2",
+        }
+
+        include_dirs_by_root = {
+            "/root1": ["/path/to/include/dir1", "/path/to/include/dir2"],
+            "/root2": ["/path/to/include/dir3"],
+        }
+
+        # Call the function under test
+        result = snapshot(manifest_path_by_root, include_dirs_by_root)
+
+        # Verify the results
+        assert result == ["/path/to/result1", "/path/to/result2"]
+
+        # Verify _manifest_snapshot was called with the correct arguments
+        assert mock_manifest_snapshot.call_count == 2
+
+        # Check first call
+        mock_manifest_snapshot.assert_any_call(
+            root="/root1",
+            destination=os.path.join(os.getcwd(), "diff"),
+            name=f"output-{os.path.basename('/path/to/base/manifest1')}",
+            diff="/path/to/base/manifest1",
+            include=["/path/to/include/dir1/**", "/path/to/include/dir2/**"],
+        )
+
+        # Check second call
+        mock_manifest_snapshot.assert_any_call(
+            root="/root2",
+            destination=os.path.join(os.getcwd(), "diff"),
+            name=f"output-{os.path.basename('/path/to/base/manifest2')}",
+            diff="/path/to/base/manifest2",
+            include=["/path/to/include/dir3/**"],
+        )

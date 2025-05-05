@@ -48,13 +48,16 @@ def merge(manifest_paths_by_root: dict[str, list[str]]) -> dict[str, str]:
         if len(paths) == 1:
             merged_manifests[root] = paths[0]
         else:
+            file_name_list = [os.path.basename(path) for path in paths]
+            # generating the name while keepign the original hash
+            name = "_".join(set("_".join(file_name_list).split("_")))
             output: Optional[ManifestMerge] = _manifest_merge(
                 root=root,
                 # paths to manifest files to be merged
                 manifest_files=paths,
                 # directory to put the generated merged manifests
                 destination=str(manifest_path),
-                name="merge",
+                name=f"merge-{name}",
             )
             if output:
                 merged_manifests[output.manifest_root] = output.local_manifest_path
@@ -62,12 +65,15 @@ def merge(manifest_paths_by_root: dict[str, list[str]]) -> dict[str, str]:
     return merged_manifests
 
 
-def snapshot(manifest_path_by_root: dict[str, str]) -> list[str]:
+def snapshot(
+    manifest_path_by_root: dict[str, str], include_dirs_by_root: dict[str, list[str]]
+) -> list[str]:
     output_path = os.path.join(os.getcwd(), "diff")
     manifests = list()
 
     for root, path in manifest_path_by_root.items():
         # TODO - use the public api for manifest snapshot once that's final and made public
+        include_dirs = [subdir + "/**" for subdir in include_dirs_by_root.get(root, [])]
         manifest: Optional[ManifestSnapshot] = _manifest_snapshot(
             root=root,
             # directory to put the generated diff manifests
@@ -77,6 +83,7 @@ def snapshot(manifest_path_by_root: dict[str, str]) -> list[str]:
             name=f"output-{os.path.basename(path)}",
             # this path to manifest servers as a base for the snapshot, generate only difference since this manifest
             diff=path,
+            include=include_dirs,
         )
         if manifest:
             manifests.append(manifest.manifest)
@@ -89,6 +96,7 @@ def parse_args(args):
     parser.add_argument("-pm", "--path-mapping", type=str, help="", required=True)
     parser.add_argument("-s3", "--s3-uri", type=str, help="", required=True)
     parser.add_argument("-mm", "--manifest-map", type=json.loads, required=True)
+    parser.add_argument("-idm", "--include-dirs-map", type=json.loads, required=False)
     return parser.parse_args(args)
 
 
@@ -102,7 +110,10 @@ def main(args=None):
 
     manifest_path_by_root = merge(manifest_paths_by_root=parsed_args.manifest_map)
 
-    manifests = snapshot(manifest_path_by_root=manifest_path_by_root)
+    manifests = snapshot(
+        manifest_path_by_root=manifest_path_by_root,
+        include_dirs_by_root=parsed_args.include_dirs_map,
+    )
 
     if manifests:
         print("\nStarting upload...")
