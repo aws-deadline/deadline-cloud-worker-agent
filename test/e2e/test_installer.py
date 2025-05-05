@@ -56,7 +56,7 @@ class TestWindowsInstaller:
     DEFAULT_JOB_USER = "job-user"
     ADMIN_SID = "S-1-5-32-544"
 
-    WHOAMI_COMMAND = '((whoami).split("\\")[1])'
+    WHOAMI_COMMAND = 'Write-Output "Jobs Run As: $((whoami).split(\'\\\')[1])"'
 
     @pytest.fixture(scope="class")
     def worker_config(
@@ -198,7 +198,7 @@ Get-LocalUser | Select-Object Name, Enabled | Format-Table -AutoSize
                 "logs",
                 config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
             ),
-            expected_pattern=f"{self.DEFAULT_JOB_USER}",
+            expected_pattern=rf"Jobs Run As: {self.DEFAULT_JOB_USER}",
         )
 
         assert test_job.task_run_status == TaskStatus.SUCCEEDED
