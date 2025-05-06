@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from dateutil.tz import tzlocal
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
+import logging
 
 from pytest import fixture, mark, param, raises
 
@@ -154,6 +155,58 @@ class TestTemporaryCredentials:
             mock_validate.assert_not_called()
             mock_from_file_format.assert_not_called()
             assert result is None
+
+    def test_from_cache_read_error_with_convert_cache_key(self) -> None:
+        # GIVEN
+        cache = MagicMock()
+        cache_key = "cache key"
+        cache.__contains__.return_value = True
+        cache.__getitem__.side_effect = KeyError("worker-id")
+        # Mock the _convert_cache_key method to return a specific path
+        cache._convert_cache_key.return_value = "/path/to/cache/file.json"
+
+        # WHEN
+        from deadline_worker_agent.log_messages import (
+            AwsCredentialsLogEvent,
+            AwsCredentialsLogEventOp,
+        )
+
+        with (
+            patch.object(
+                logging.getLogger("deadline_worker_agent.aws_credentials.temporary_credentials"),
+                "error",
+            ) as mock_error_log,
+            patch.object(
+                logging.getLogger("deadline_worker_agent.aws_credentials.temporary_credentials"),
+                "info",
+            ) as mock_info_log,
+        ):
+            result = TemporaryCredentials.from_cache(
+                cache=cache,
+                cache_key=cache_key,
+            )
+
+        # THEN
+        assert result is None
+        cache.__delitem__.assert_called_once_with(cache_key)
+        # Verify _convert_cache_key was called with the cache_key
+        cache._convert_cache_key.assert_called_once_with(cache_key)
+
+        # Verify the error log message uses AwsCredentialsLogEvent with correct parameters
+        mock_error_log.assert_called_once()
+        log_event = mock_error_log.call_args[0][0]
+        assert isinstance(log_event, AwsCredentialsLogEvent)
+        assert log_event.subtype == AwsCredentialsLogEventOp.LOAD.value
+        assert log_event.resource == "/path/to/cache/file.json"
+        assert "Error reading AWS Credentials from cache file" in log_event.msg
+
+        # Verify the info log message about deleting the corrupted file
+        mock_info_log.assert_called_once()
+        delete_log_event = mock_info_log.call_args[0][0]
+        assert isinstance(delete_log_event, AwsCredentialsLogEvent)
+        assert delete_log_event.subtype == AwsCredentialsLogEventOp.DELETE.value
+        assert delete_log_event.resource == "/path/to/cache/file.json"
+        assert "Deleted corrupted AWS Credentials cache file" in delete_log_event.msg
 
     def test_to_deadline(
         self,

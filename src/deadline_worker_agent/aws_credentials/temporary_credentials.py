@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional, Type
 import logging
+import json
 
 from typing_extensions import TypedDict
 
 from botocore.credentials import JSONFileCache
 
 from ..api_models import AwsCredentials
+from ..log_messages import AwsCredentialsLogEvent, AwsCredentialsLogEventOp
 
 _logger = logging.getLogger(__name__)
 
@@ -63,17 +65,45 @@ class TemporaryCredentials:
         cache_key: str,
     ) -> Optional[TemporaryCredentials]:
         """Obtains temporary credentials from a botocore JSONFileCache"""
-        if cache_key not in cache:
+        try:
+            if cache_key not in cache:
+                return None
+
+            result = cache[cache_key]
+        except (json.JSONDecodeError, KeyError) as e:
+            # Handle corrupted cache file
+            full_filename = cache._convert_cache_key(cache_key)
+            _logger.error(
+                AwsCredentialsLogEvent(
+                    op=AwsCredentialsLogEventOp.LOAD,
+                    resource=full_filename,
+                    message=f"Error reading AWS Credentials from cache file: {str(e)}",
+                )
+            )
+            # Delete the corrupted cache entry to allow fresh credentials to be obtained
+            del cache[cache_key]
+            _logger.info(
+                AwsCredentialsLogEvent(
+                    op=AwsCredentialsLogEventOp.DELETE,
+                    resource=full_filename,
+                    message="Deleted corrupted AWS Credentials cache file",
+                )
+            )
             return None
-        result = cache[cache_key]
+
         try:
             credentials = cls.validate_file_credentials(result)
         except Exception as e:
             full_filename = cache._convert_cache_key(cache_key)
             _logger.error(
-                "Error reading AWS Credentials from cache file (%s): %s", full_filename, str(e)
+                AwsCredentialsLogEvent(
+                    op=AwsCredentialsLogEventOp.LOAD,
+                    resource=full_filename,
+                    message=f"Error reading AWS Credentials from cache file: {str(e)}",
+                )
             )
             return None
+
         return cls.from_file_format(credentials)
 
     def to_deadline(self) -> AwsCredentials:
