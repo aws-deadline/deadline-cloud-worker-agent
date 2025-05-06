@@ -160,9 +160,9 @@ class TestStart:
                             "{{ Session.PathMappingRulesFile }}",
                             "-s3",
                             s3_settings.to_s3_root_uri(),
-                            "-mm",
+                            "-mp",
                             json.dumps(session.manifest_paths_by_root),
-                            "-idm",
+                            "-od",
                             json.dumps({}),
                         ],
                     )
@@ -239,7 +239,7 @@ class TestStart:
         ]
 
         # Expected include directories map after mapping
-        expected_include_dirs_map = {
+        expected_out_rel_dirs_map = {
             "/dest/path1": ["output_dir1", "output_dir2"],
             "/dest/path2": ["output_dir3"],
         }
@@ -262,10 +262,10 @@ class TestStart:
                             "{{ Session.PathMappingRulesFile }}",
                             "-s3",
                             s3_settings.to_s3_root_uri(),
-                            "-mm",
+                            "-mp",
                             json.dumps(session.manifest_paths_by_root),
-                            "-idm",
-                            json.dumps(expected_include_dirs_map),
+                            "-od",
+                            json.dumps(expected_out_rel_dirs_map),
                         ],
                     )
                 ),

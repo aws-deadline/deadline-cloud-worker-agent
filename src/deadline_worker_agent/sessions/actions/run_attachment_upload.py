@@ -68,7 +68,7 @@ class AttachmentUploadAction(OpenjdAction):
     def set_step_script(
         self,
         manifest_paths_by_root: dict[str, list[str]],
-        include_dirs_by_root: dict[str, list[str]],
+        out_rel_dirs_by_root: dict[str, list[str]],
         s3_settings: JobAttachmentS3Settings,
     ) -> None:
         """Sets the step script for the action
@@ -87,10 +87,10 @@ class AttachmentUploadAction(OpenjdAction):
             "{{ Session.PathMappingRulesFile }}",
             "-s3",
             s3_settings.to_s3_root_uri(),
-            "-mm",
+            "-mp",
             json.dumps(manifest_paths_by_root),
-            "-idm",
-            json.dumps(include_dirs_by_root),
+            "-od",
+            json.dumps(out_rel_dirs_by_root),
         ]
 
         executable_path = Path(sys.executable)
@@ -170,14 +170,14 @@ class AttachmentUploadAction(OpenjdAction):
 
         manifest_paths_by_root = session.manifest_paths_by_root
         out_rel_dirs_by_source = session.manifest_out_rel_dirs_by_source
-        mapped_include_by_root: dict[str, list[str]] = self._get_include_local(
-            include_by_source=out_rel_dirs_by_source,
+        out_rel_dirs_by_root: dict[str, list[str]] = self._get_out_rel_dirs_by_root(
+            out_rel_dirs_by_source=out_rel_dirs_by_source,
             path_mapping_list=session.openjd_session._path_mapping_rules,
         )
 
         self.set_step_script(
             manifest_paths_by_root=manifest_paths_by_root,
-            include_dirs_by_root=mapped_include_by_root,
+            out_rel_dirs_by_root=out_rel_dirs_by_root,
             s3_settings=s3_settings,
         )
 
@@ -193,25 +193,27 @@ class AttachmentUploadAction(OpenjdAction):
             log_task_banner=False,
         )
 
-    def _get_include_local(
+    def _get_out_rel_dirs_by_root(
         self,
-        include_by_source: dict[str, list[str]],
+        out_rel_dirs_by_source: dict[str, list[str]],
         path_mapping_list: Optional[list[PathMappingRule]],
     ) -> dict[str, list[str]]:
         """Gets the include local path for a given path mapping
 
         Parameters
         ----------
-        include_by_source : dict[str, list[str]]
+        out_rel_dirs_by_root : dict[str, list[str]]
             A dictionary mapping root paths to include paths
         path_mapping : PathMapping
             The path mapping to get the include local path for
         """
-        include_local: dict[str, list[str]] = dict()
+        out_rel_dirs_by_root: dict[str, list[str]] = dict()
         for path_mapping in path_mapping_list or []:
-            out_dirs: Optional[list[str]] = include_by_source.get(str(path_mapping.source_path))
+            out_dirs: Optional[list[str]] = out_rel_dirs_by_source.get(
+                str(path_mapping.source_path)
+            )
 
             if out_dirs is not None:
-                include_local[str(path_mapping.destination_path)] = out_dirs
+                out_rel_dirs_by_root[str(path_mapping.destination_path)] = out_dirs
 
-        return include_local
+        return out_rel_dirs_by_root

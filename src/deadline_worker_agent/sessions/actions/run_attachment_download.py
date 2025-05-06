@@ -207,6 +207,7 @@ class AttachmentDownloadAction(OpenjdAction):
                     outputRelativeDirectories=ja_manifest_properties.output_relative_directories,
                 )
                 manifest_properties_list.append(manifest_properties)
+                # process the defined outputRelativeDirectories and pass on to attachment upload
                 session.add_manifest_out_rel_dirs(
                     source=ja_manifest_properties.root_path,
                     out_rel_dirs=self._get_output_dirs(manifest_properties),

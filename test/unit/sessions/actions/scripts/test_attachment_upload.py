@@ -27,9 +27,9 @@ def valid_args(path_mapping_file_path: str):
         path_mapping_file_path,
         "--s3-uri",
         "s3://test-bucket/path",
-        "--manifest-map",
+        "--manifest-paths-by-root",
         '{"root1": ["/path/to/manifest1"]}',
-        "--include-dirs-map",
+        "--out-rel-dirs-by-root",
         "{}",
     ]
 
@@ -41,9 +41,9 @@ def valid_args_with_snapshot_include_dirs(path_mapping_file_path: str):
         path_mapping_file_path,
         "--s3-uri",
         "s3://test-bucket/path",
-        "--manifest-map",
+        "--manifest-paths-by-root",
         '{"root1": ["/path/to/manifest1"]}',
-        "--include-dirs-map",
+        "--out-rel-dirs-by-root",
         '{"root1": ["/path/to/include/dir1", "/path/to/include/dir2"]}',
     ]
 
@@ -55,9 +55,9 @@ def valid_args_merge(path_mapping_file_path: str):
         path_mapping_file_path,
         "--s3-uri",
         "s3://test-bucket/path",
-        "--manifest-map",
+        "--manifest-paths-by-root",
         '{"root1": ["/path/to/manifest1", "/path/to/manifest2"]}',
-        "--include-dirs-map",
+        "--out-rel-dirs-by-root",
         "{}",
     ]
 
@@ -68,14 +68,14 @@ class TestAttachmentUpload:
         args = parse_args(valid_args)
         assert args.path_mapping == path_mapping_file_path
         assert args.s3_uri == "s3://test-bucket/path"
-        assert args.manifest_map == {"root1": ["/path/to/manifest1"]}
+        assert args.manifest_paths_by_root == {"root1": ["/path/to/manifest1"]}
 
     def test_parse_args_missing_required(self, path_mapping_file_path: str):
         # Test missing required argument
         invalid_args = [
             "--path-mapping",
             path_mapping_file_path,
-            "--manifest-map",
+            "--manifest-paths-by-root",
             '{"root1": "/path/to/manifest1"}',
         ]
         with pytest.raises(SystemExit):
@@ -88,7 +88,7 @@ class TestAttachmentUpload:
             path_mapping_file_path,
             "--s3-uri",
             "s3://test-bucket/path",
-            "--manifest-map",
+            "--manifest-paths-by-root",
             "invalid-json",
         ]
         with pytest.raises(SystemExit):
@@ -111,17 +111,17 @@ class TestAttachmentUpload:
         # Setup mock for snapshot to return some manifests
         mock_snapshot.return_value = ["manifest1", "manifest2"]
 
-        # Run main with test arguments that include include_dirs_by_root
+        # Run main with test arguments that include out_rel_dirs_by_root
         main(valid_args_with_snapshot_include_dirs)
 
         mock_merge.assert_called_once_with(
             manifest_paths_by_root={"root1": ["/path/to/manifest1"]},
         )
 
-        # Verify snapshot was called with correct arguments including the include_dirs_by_root
+        # Verify snapshot was called with correct arguments including the out_rel_dirs_by_root
         mock_snapshot.assert_called_once_with(
             manifest_path_by_root={"root1": "/path/to/manifest1"},
-            include_dirs_by_root={"root1": ["/path/to/include/dir1", "/path/to/include/dir2"]},
+            out_rel_dirs_by_root={"root1": ["/path/to/include/dir1", "/path/to/include/dir2"]},
         )
 
         # Verify upload was called with correct arguments
@@ -158,7 +158,7 @@ class TestAttachmentUpload:
 
         # Verify snapshot was called with correct arguments
         mock_snapshot.assert_called_once_with(
-            manifest_path_by_root=merged_manifest_path_by_root, include_dirs_by_root={}
+            manifest_path_by_root=merged_manifest_path_by_root, out_rel_dirs_by_root={}
         )
 
         # Verify upload was called with correct arguments
@@ -240,13 +240,13 @@ class TestAttachmentUpload:
             "/root2": "/path/to/base/manifest2",
         }
 
-        include_dirs_by_root = {
+        out_rel_dirs_by_root = {
             "/root1": ["/path/to/include/dir1", "/path/to/include/dir2"],
             "/root2": ["/path/to/include/dir3"],
         }
 
         # Call the function under test
-        result = snapshot(manifest_path_by_root, include_dirs_by_root)
+        result = snapshot(manifest_path_by_root, out_rel_dirs_by_root)
 
         # Verify the results
         assert result == ["/path/to/result1", "/path/to/result2"]
