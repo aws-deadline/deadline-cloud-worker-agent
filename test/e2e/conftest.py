@@ -33,6 +33,7 @@ class DeadlineResources:
     farm: Farm = field(init=False)
     queue_a: Queue = field(init=False)
     queue_b: Queue = field(init=False)
+    jobs_run_as_agent_user_queue: Queue = field(init=False)
     non_valid_role_queue: Queue = field(init=False)
     fleet: Fleet = field(init=False)
     scaling_queue: Queue = field(init=False)
@@ -42,6 +43,7 @@ class DeadlineResources:
     farm_id: InitVar[str]
     queue_a_id: InitVar[str]
     queue_b_id: InitVar[str]
+    jobs_run_as_agent_user_queue_id: InitVar[str]
     non_valid_role_queue_id: InitVar[str]
     fleet_id: InitVar[str]
     scaling_queue_id: InitVar[str]
@@ -53,6 +55,7 @@ class DeadlineResources:
         farm_id: str,
         queue_a_id: str,
         queue_b_id: str,
+        jobs_run_as_agent_user_queue_id: str,
         non_valid_role_queue_id: str,
         fleet_id: str,
         scaling_queue_id: str,
@@ -62,6 +65,11 @@ class DeadlineResources:
         object.__setattr__(self, "farm", Farm(id=farm_id))
         object.__setattr__(self, "queue_a", Queue(id=queue_a_id, farm=self.farm))
         object.__setattr__(self, "queue_b", Queue(id=queue_b_id, farm=self.farm))
+        object.__setattr__(
+            self,
+            "jobs_run_as_agent_user_queue",
+            Queue(id=jobs_run_as_agent_user_queue_id, farm=self.farm),
+        )
         object.__setattr__(
             self, "non_valid_role_queue", Queue(id=non_valid_role_queue_id, farm=self.farm)
         )
@@ -80,6 +88,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         FARM_ID: ID of the Deadline farm to use.
         QUEUE_A_ID: ID of a non scaling Deadline queue to use for tests.
         QUEUE_B_ID: ID of a non scaling Deadline queue to use for tests.
+        JOBS_RUN_AS_AGENT_USER_QUEUE_ID: ID of a Queue configured to run jobs as the worker agent user
         NON_VALID_ROLE_QUEUE_ID: ID of a non scaling Deadline queue with a role that cannot read the S3 bucket to use for tests
         FLEET_ID: ID of a non scaling Deadline fleet to use for tests.
         SCALING_QUEUE_ID: ID of the Deadline scaling queue to use.
@@ -92,6 +101,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
     farm_id = os.environ["FARM_ID"]
     queue_a_id = os.environ["QUEUE_A_ID"]
     queue_b_id = os.environ["QUEUE_B_ID"]
+    jobs_run_as_agent_user_queue_id = os.environ["JOBS_RUN_AS_AGENT_USER_QUEUE_ID"]
     non_valid_role_queue_id = os.environ["NON_VALID_ROLE_QUEUE_ID"]
     fleet_id = os.environ["FLEET_ID"]
 
@@ -100,7 +110,14 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
     job_storage_profile_id = os.environ["JOB_STORAGE_PROFILE_ID"]
 
     LOG.info(
-        f"Configured Deadline Cloud Resources, farm: {farm_id}, scaling_fleet: {scaling_fleet_id}, scaling_queue: {scaling_queue_id}, queue_a: {queue_a_id}, storage_profile_id for queue_a: {job_storage_profile_id}, queue_b: {queue_b_id}, fleet: {fleet_id}"
+        f"Configured Deadline Cloud Resources - Farm ID: {farm_id}, "
+        f"Scaling Fleet ID: {scaling_fleet_id}, "
+        f"Scaling Queue ID: {scaling_queue_id}, "
+        f"Queue A ID: {queue_a_id}, "
+        f"Queue A Storage Profile ID: {job_storage_profile_id}, "
+        f"Queue B ID: {queue_b_id}, "
+        f"Fleet ID: {fleet_id}, "
+        f"Jobs Run As Agent User Queue ID: {jobs_run_as_agent_user_queue_id}, "
     )
 
     sts_client = boto3.client("sts")
@@ -111,6 +128,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         farm_id=farm_id,
         queue_a_id=queue_a_id,
         queue_b_id=queue_b_id,
+        jobs_run_as_agent_user_queue_id=jobs_run_as_agent_user_queue_id,
         non_valid_role_queue_id=non_valid_role_queue_id,
         fleet_id=fleet_id,
         scaling_queue_id=scaling_queue_id,
