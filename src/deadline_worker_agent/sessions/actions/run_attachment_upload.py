@@ -202,7 +202,7 @@ class AttachmentUploadAction(OpenjdAction):
 
         Parameters
         ----------
-        out_rel_dirs_by_root : dict[str, list[str]]
+        out_rel_dirs_by_source : dict[str, list[str]]
             A dictionary mapping root paths to include paths
         path_mapping : PathMapping
             The path mapping to get the include local path for

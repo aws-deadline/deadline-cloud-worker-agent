@@ -25,7 +25,8 @@ Example usage:
 python attachment_upload.py \
     -pm /sessions/session-f63c206fb5f04c04aa17821001aa3847fajfm5x4/path_mapping.json \
     -s3 s3://test-job-attachment/DeadlineCloud \
-    -mm '{"/sessions/session-e0317487a6cd470084b1c6fd85c789e6ank4lmh5/assetroot-a7714e87e776d9f1c179": "/sessions/session-e0317487a6cd470084b1c6fd85c789e6ank4lmh5/manifests/0bb7eb91fdf8780c4a7e6174de6dfc5e_manifest"}'
+    -mp '{"/sessions/session-e0317487a6cd470084b1c6fd85c789e6ank4lmh5/assetroot-a7714e87e776d9f1c179": "/sessions/session-e0317487a6cd470084b1c6fd85c789e6ank4lmh5/manifests/0bb7eb91fdf8780c4a7e6174de6dfc5e_manifest"}'
+    -od '{"/sessions/session-e0317487a6cd470084b1c6fd85c789e6ank4lmh5/assetroot-a7714e87e776d9f1c179": ["out_dir"]}'
 """
 
 
@@ -40,27 +41,34 @@ def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> N
     )
 
 
-def merge(manifest_paths_by_root: dict[str, list[str]]) -> dict[str, str]:
+def merge(
+    manifest_paths_by_root: dict[str, list[str]], path_mapping_rules_file: str
+) -> dict[str, str]:
     manifest_path = os.path.join(os.getcwd(), "manifest")
     merged_manifests = dict()
+    with open(path_mapping_rules_file, "r") as file:
+        path_mapping_rules = json.load(file).get("path_mapping_rules", [])
+
+    path_mapping_dest_to_src = dict()
+    for rule in path_mapping_rules:
+        path_mapping_dest_to_src[rule["destination_path"]] = rule["source_path"]
 
     for root, paths in manifest_paths_by_root.items():
         if len(paths) == 1:
             merged_manifests[root] = paths[0]
         else:
-            file_name_list = [os.path.basename(path) for path in paths]
-            # generating the name while keeping the original hash from submission source root
-            name = "_".join(set("_".join(file_name_list).split("_")))
             output: Optional[ManifestMerge] = _manifest_merge(
-                root=root,
+                # map to the source path so the upload can correspond the correct path hash
+                root=path_mapping_dest_to_src[root],
                 # paths to manifest files to be merged
                 manifest_files=paths,
                 # directory to put the generated merged manifests
                 destination=str(manifest_path),
-                name=f"merge-{name}",
+                name="merge",
             )
             if output:
-                merged_manifests[output.manifest_root] = output.local_manifest_path
+                # use to the local destination path to snapshot the correct diff
+                merged_manifests[root] = output.local_manifest_path
 
     return merged_manifests
 
@@ -108,7 +116,10 @@ def main(args=None):
 
     parsed_args = parse_args(args)
 
-    merged_manifest_path_by_root = merge(manifest_paths_by_root=parsed_args.manifest_paths_by_root)
+    merged_manifest_path_by_root = merge(
+        manifest_paths_by_root=parsed_args.manifest_paths_by_root,
+        path_mapping_rules_file=parsed_args.path_mapping,
+    )
 
     manifests = snapshot(
         manifest_path_by_root=merged_manifest_path_by_root,

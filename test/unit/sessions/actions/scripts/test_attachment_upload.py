@@ -1,9 +1,10 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from unittest.mock import patch, Mock, ANY
+from unittest.mock import patch, Mock
 import pytest
 import tempfile
 import os
+import json
 
 from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
     main,
@@ -17,6 +18,15 @@ from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
 def path_mapping_file_path():
     with tempfile.TemporaryDirectory() as tmpdir_path:
         path_mapping_file_path: str = os.path.join(tmpdir_path, "mapping.json")
+        # Write the path mapping rules to the file
+        path_mapping_rules = {
+            "path_mapping_rules": [
+                {"destination_path": "/root1", "source_path": "/source_root1"},
+                {"destination_path": "/root2", "source_path": "/source_root2"},
+            ]
+        }
+        with open(path_mapping_file_path, "w") as f:
+            json.dump(path_mapping_rules, f)
         yield path_mapping_file_path
 
 
@@ -116,6 +126,7 @@ class TestAttachmentUpload:
 
         mock_merge.assert_called_once_with(
             manifest_paths_by_root={"root1": ["/path/to/manifest1"]},
+            path_mapping_rules_file=path_mapping_file_path,
         )
 
         # Verify snapshot was called with correct arguments including the out_rel_dirs_by_root
@@ -154,6 +165,7 @@ class TestAttachmentUpload:
 
         mock_merge.assert_called_once_with(
             manifest_paths_by_root={"root1": ["/path/to/manifest1", "/path/to/manifest2"]},
+            path_mapping_rules_file=path_mapping_file_path,
         )
 
         # Verify snapshot was called with correct arguments
@@ -172,7 +184,12 @@ class TestAttachmentUpload:
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.snapshot")
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.upload")
     def test_main_no_manifests(
-        self, mock_upload: Mock, mock_snapshot: Mock, mock_merge: Mock, valid_args: dict
+        self,
+        mock_upload: Mock,
+        mock_snapshot: Mock,
+        mock_merge: Mock,
+        valid_args: dict,
+        path_mapping_file_path: str,
     ):
         # Setup mock for merge to return some manifests
         mock_merge.return_value = dict()
@@ -183,6 +200,12 @@ class TestAttachmentUpload:
         # Run main with test arguments
         main(valid_args)
 
+        # Verify merge was called with correct arguments
+        mock_merge.assert_called_once_with(
+            manifest_paths_by_root={"root1": ["/path/to/manifest1"]},
+            path_mapping_rules_file=path_mapping_file_path,
+        )
+
         # Verify snapshot was called
         mock_snapshot.assert_called_once()
 
@@ -190,11 +213,10 @@ class TestAttachmentUpload:
         mock_upload.assert_not_called()
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_merge")
-    def test_merge_multiple_manifests(self, mock_manifest_merge: Mock):
+    def test_merge_multiple_manifests(self, mock_manifest_merge: Mock, path_mapping_file_path: str):
         # Test case where a root has multiple manifests
         mock_manifest_merge.side_effect = [
-            Mock(manifest_root="/root1", local_manifest_path="/merged/manifest/path"),
-            Mock(manifest_root="/root2", local_manifest_path="/path/to/single_manifest"),
+            Mock(manifest_root="/source_root1", local_manifest_path="/merged/manifest/path"),
         ]
 
         input_data = {
@@ -202,7 +224,7 @@ class TestAttachmentUpload:
             "/root2": ["/path/to/single_manifest"],
         }
 
-        result = merge(input_data)
+        result = merge(input_data, path_mapping_file_path)
 
         expected = {"/root1": "/merged/manifest/path", "/root2": "/path/to/single_manifest"}
 
@@ -211,16 +233,11 @@ class TestAttachmentUpload:
 
         # Verify _manifest_merge was called with the correct arguments
         mock_manifest_merge.assert_called_once_with(
-            root="/root1",
+            root="/source_root1",  # Should use the source path from mapping
             manifest_files=["/path/to/manifest1", "/path/to/manifest2"],
             destination=os.path.join(os.getcwd(), "manifest"),
-            name=ANY,  # Use mock.ANY to ignore the exact name
+            name="merge",
         )
-        # Then check that the name contains the expected parts
-        name = mock_manifest_merge.call_args.kwargs["name"]
-        assert name.startswith("merge-")
-        assert "manifest1" in name
-        assert "manifest2" in name
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
     def test__manifest_snapshot_diff_include(self, mock_manifest_snapshot: Mock):
