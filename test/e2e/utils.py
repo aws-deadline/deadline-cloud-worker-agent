@@ -6,6 +6,7 @@ from deadline.job_attachments._aws.deadline import get_queue
 from deadline.job_attachments import download
 from deadline_test_fixtures import (
     DeadlineClient,
+    EC2InstanceWorker,
     Job,
     Farm,
     Queue,
@@ -187,3 +188,31 @@ def is_worker_stopped(
     )
     worker_status = get_worker_response["status"]
     return worker_status == "STOPPED"
+
+
+def get_shutdown_on_stop_status_from_toml(
+    worker: EC2InstanceWorker,
+) -> str:
+    if os.environ["OPERATING_SYSTEM"] == "linux":
+        cmd_result = worker.send_command(
+            command="""
+grep -E \
+  '^(# shutdown_on_stop =|shutdown_on_stop =)' \
+  /etc/amazon/deadline/worker.toml
+"""
+        )
+        assert cmd_result.exit_code == 0, "Failed to execute Linux command on .toml"
+        assert "shutdown_on_stop" in cmd_result.stdout, "shutdown_on_stop not found in .toml"
+        return cmd_result.stdout.strip()
+    elif os.environ["OPERATING_SYSTEM"] == "windows":
+        cmd_result = worker.send_command(
+            command="""
+$content = Get-Content "C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
+$content | Select-String -Pattern "^# shutdown_on_stop =|^shutdown_on_stop ="
+"""
+        )
+        assert cmd_result.exit_code == 0, "Failed to execute Windows command on .toml"
+        assert "shutdown_on_stop" in cmd_result.stdout, "shutdown_on_stop not found in .toml"
+        return cmd_result.stdout.strip()
+    else:
+        raise Exception(f"Unsupported operating system: {os.environ['OPERATING_SYSTEM']}")

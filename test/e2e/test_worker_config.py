@@ -21,7 +21,11 @@ from deadline_test_fixtures import (
     OperatingSystem,
 )
 
-from e2e.utils import submit_custom_job, submit_sleep_job
+from e2e.utils import (
+    get_shutdown_on_stop_status_from_toml,
+    submit_custom_job,
+    submit_sleep_job,
+)
 from e2e.conftest import DeadlineResources
 
 LOG = logging.getLogger(__name__)
@@ -173,13 +177,19 @@ class TestWorkerConfiguration:
         )["InstanceStatuses"][0]["InstanceState"]
         assert instance_status["Name"] == "running"
 
+        assert (
+            get_shutdown_on_stop_status_from_toml(worker=worker_in_autoscaling_fleet_with_shut_down)
+            == "shutdown_on_stop = true"
+        ), "Shutdown on stop should be enabled"
+
         job.wait_until_complete(client=deadline_client)
 
         # Check that the worker instance has been shut down
+        # Should not take more than 10 minutes to stop
         @backoff.on_exception(
             backoff.constant,
             Exception,
-            max_time=800,
+            max_time=600,
             interval=30,
         )
         def check_instance_stopping() -> None:
