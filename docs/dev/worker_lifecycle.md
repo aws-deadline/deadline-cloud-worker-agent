@@ -193,7 +193,395 @@ sequenceDiagram
 
 ## Running Phase
 
-Coming soon&hellip;
+The running phase is the main operational phase of the worker life-cycle. In this phase, the worker
+agent:
+
+*   processes sessions
+*   synchronizes the worker's assigned schedule and reports status/progress with the AWS Deadline
+    Cloud service
+
+The `Worker` class serves as the central coordinator for multiple long-running components.
+
+```mermaid
+flowchart TD
+    %% Running Phase
+    start([from **Startup** phase]) --> |Concurrent| refreshCreds[Refresh AWS Credentials]
+    start --> |Concurrent| logMetrics[Log Host Metrics]
+    start --> |Concurrent| updateSchedule[Update Schedule]
+    updateSchedule --> |Create| sessions[Sessions]
+    updateSchedule --> |Assign actions| sessions
+    updateSchedule --> |Cancel actions| sessions
+    updateSchedule --> |End| sessions
+    sessions --> |Report status| updateSchedule
+    start --> |Concurrent| monitorSignals[Monitor OS Signals]
+    start --> |Concurrent| monitorEC2[Monitor EC2 Instance]
+
+    updateSchedule --> |Stop| shutdown([To **Shutdown** phase])
+    monitorSignals --> |Signal received| shutdown
+    monitorEC2 --> |Instance termination imminent| shutdown
+    
+    %% Styling
+    classDef runningPhase fill:#d8f0d8,stroke:#2d862d,color:#000
+    classDef startEnd fill:#EEEEEE,stroke:#444444,color:#000
+
+    class refreshCreds,logMetrics,updateSchedule,monitorSignals,monitorEC2,sessions runningPhase
+    class start,shutdown startEnd
+```
+
+### Worker Components
+
+The `Worker` class manages several key components that run concurrently:
+
+1. **AWS Credentials Refresher**
+   - Implemented in the `AwsCredentialsRefresher` class
+   - Rotates the worker credentials by periodically invoking the `AssumeFleetRoleForWorker` API
+   - Ensures the worker always has valid credentials for API calls
+   - Persists refreshed credentials to disk for recovery scenarios
+
+2. **Host Metrics Logger**
+   - Samples host metrics such as CPU, memory, and disk usage
+   - Logs these metrics at regular intervals
+   - Provides visibility into worker resource utilization
+   - Helps identify performance bottlenecks or resource constraints
+
+3. **Worker Scheduler**
+   - Responsible for scheduling worker sessions through `UpdateWorkerSchedule` API requests
+   - Manages the lifecycle of sessions assigned to the worker
+   - Creates and terminates session objects as needed
+   - Reports session status and progress to the Deadline Cloud API
+
+4. **OS Signal Handlers**
+   - Traps operating system signals (`SIGTERM`, `SIGINT`, etc.)
+   - Initiates graceful worker drains when signals are received
+   - Ensures proper cleanup of resources during shutdown
+   - Prevents abrupt termination of active sessions
+
+5. **EC2 Instance Monitoring**
+   - Active when running on EC2 and Instance Metadata Service (IMDS) is available
+   - Monitors for spot instance interruptions
+   - Detects Auto Scaling Group (ASG) lifecycle events
+   - Initiates worker-initiated drains when termination events are detected
+   - Provides graceful handling of cloud infrastructure events
+
+### New Session Assignment
+
+The `WorkerScheduler` class is responsible for periodically making `UpdateWorkerSchedule` API
+requests to Deadline Cloud. The API response includes a list of currently assigned sessions. When
+the worker observes a newly assigned session, the `WorkerScheduler` initiates the following sequence
+of actions to setup the new session:
+
+```mermaid
+sequenceDiagram
+    box lightyellow AWS
+        participant Deadline as Deadline Cloud Service
+    end
+    participant DeadlineClient
+    participant WorkerScheduler
+
+    WorkerScheduler->>DeadlineClient: update_worker_schedule()
+    DeadlineClient->>Deadline: UpdateWorkerSchedule API call
+    Deadline-->>DeadlineClient: Response with assignedSessions
+    DeadlineClient-->>WorkerScheduler: Return assigned sessions
+
+    loop For each new session
+    
+        create participant SessionActionQueue
+        WorkerScheduler->>SessionActionQueue: Create
+        WorkerScheduler->>SessionActionQueue: Enqueue actions
+        create participant Session
+        WorkerScheduler->>Session: Create
+
+        WorkerScheduler->>WorkerScheduler: Add session to active sessions
+        WorkerScheduler->>Session: run() in concurrent future
+    end
+```
+
+### Session Action Initiation
+
+As seen in the **New Session Assignment** section above, the scheduler creates a new thread for each
+session. This thread has the following responsibilities:
+
+*   If the session is not currently running any action, attempt to dequeue the next action from the
+    session's `SessionActionQueue` and initiate it.
+    
+*   Monitor for a signal from the scheduler's thread that the session has completed.
+    *   If so, exit the loop
+
+This diagram illustrates how a session action is dequeued and initiated:
+
+```mermaid
+sequenceDiagram
+    participant WorkerScheduler
+    participant SessionActionQueue
+    participant Session
+
+    loop While not shutdown
+
+        Session->>SessionActionQueue: dequeue()
+        SessionActionQueue->>Session: Next session action
+        
+        alt Environment Action
+            Session->>Session: enter_environment() or exit_environment()
+        else Task Run Action
+            Session->>Session: run_task()
+        else Sync Input Job Attachments Action
+            Session->>Session: sync_input_job_attachments()
+        end
+        
+        create participant SessionAction as Session Action
+        Session->>SessionAction: Create sessionAction
+        SessionAction->>SessionAction: Execute action
+        Note over SessionAction: Action execution in progress
+        SessionAction->>Session: Notify status RUNNING
+        Session->>WorkerScheduler: Set action status to RUNNING
+
+        note over SessionAction: To "Session Action Completion" section below
+        note over WorkerScheduler: To "Session Action Assignment" below
+        note over WorkerScheduler: To "Session Completion" below
+    end
+```
+
+### Session Action Completion
+
+This diagram shows what happens when a session action completes:
+
+```mermaid
+sequenceDiagram
+    participant SessionAction as Session Action
+    participant Session
+    participant WorkerScheduler
+    participant DeadlineClient
+    box lightyellow AWS
+        participant Deadline as Deadline Deadline Cloud Service
+    end
+
+    note over SessionAction: From "Session Action Initiation" section above
+    
+    SessionAction->>SessionAction: Action execution completes
+    
+    alt Successful Completion
+        SessionAction->>Session: Report SUCCEEDED with exit code 0
+        Session->>WorkerScheduler: Notify action completion (SUCCEEDED)
+    else Failed Completion
+        destroy SessionAction
+        SessionAction->>Session: Report FAILED with non-zero exit code
+        alt Session action was previously canceled by worker agent
+            Session->>WorkerScheduler: Notify action completion (CANCELED)
+        else Session action was interrupted by worker agent
+            Session->>WorkerScheduler: Notify action completion (INTERRUPTED)
+        else
+            Session->>WorkerScheduler: Notify action completion (FAILED)
+        end
+    end
+    
+    opt Unsuccessful session action completion OR No queued actions
+        WorkerScheduler->>DeadlineClient: Immediate update_worker_schedule() call
+        DeadlineClient->>Deadline: UpdateWorkerSchedule API call
+        Deadline-->>DeadlineClient: Response with new actions (if any)
+        DeadlineClient-->>WorkerScheduler: Return response
+        WorkerScheduler->>Session: Enqueue new actions
+    end
+```
+
+### Session Action Assignment
+
+This diagram shows how updates to the session actions assigned by the Deadline Cloud service are dispatched from the `WorkerScheduler` to the `Session` and then to the `SessionActionqueue`. This happens each time the scheduler receives an `UpdateWorkerSchedule` API response. The response can include a mix of previously assigned session actions (no action), new session actions, and session action cancelation (see next section):
+
+```mermaid
+sequenceDiagram
+    box lightyellow AWS
+        participant Deadline as Deadline Cloud Service
+    end
+    participant DeadlineClient
+    participant WorkerScheduler
+    participant Session
+    participant SessionActionQueue
+
+    WorkerScheduler->>DeadlineClient: update_worker_schedule()
+    DeadlineClient->>Deadline: UpdateWorkerSchedule API call
+    Deadline-->>DeadlineClient: Response with new session actions
+    DeadlineClient-->>WorkerScheduler: Return response
+
+    loop Each assigned session
+        WorkerScheduler->>Session: Update assigned actions
+        Session->>SessionActionQueue: Update assigned actions
+    end
+
+    note over Session,SessionActionQueue: To "Session Action Initiation" section
+
+    loop Each canceled session action
+        WorkerScheduler->>Session: cancel_action()
+        Session->>SessionAction: Cancel
+    end
+    note over SessionAction: See "Session Action Completion" section above
+```
+
+### Session Completion
+
+This diagram shows what happens when a session is terminated because it no longer appears in the UpdateWorkerSchedule response:
+
+```mermaid
+sequenceDiagram
+    box lightyellow AWS
+        participant Deadline as Deadline Cloud Service
+    end
+    participant DeadlineClient
+    participant WorkerScheduler
+    participant Session
+    participant ActionRunner
+    
+    WorkerScheduler->>DeadlineClient: update_worker_schedule()
+    DeadlineClient->>Deadline: UpdateWorkerSchedule API call
+    Deadline-->>DeadlineClient: Response (session ID missing)
+    DeadlineClient-->>WorkerScheduler: Return response
+    
+    WorkerScheduler->>WorkerScheduler: Detect session no longer in response
+    WorkerScheduler->>Session: stop()
+    
+    alt Active Action
+        Session->>ActionRunner: Cancel active action
+        ActionRunner->>ActionRunner: Terminate process
+        ActionRunner->>Session: Report CANCELED
+        Session->>WorkerScheduler: Notify action cancellation
+    end
+    
+    Session->>Session: Clean up resources
+    Session->>Session: Remove working directory
+    Session->>WorkerScheduler: Session terminated
+    WorkerScheduler->>WorkerScheduler: Remove session from active sessions
+```
+
+### Worker Interruption
+
+This diagram shows what happens when the worker agent is interrupted by either an operating system
+signal (`SIGTERM` on Linux, `CTRL_BREAK` or service stoppage on Windows), an EC2 spot interruption,
+or an EC2 auto-scaling lifecycle status change.
+
+```mermaid
+sequenceDiagram
+    participant OS as Operating System
+    participant EC2 as EC2 IMDS
+    participant Worker
+    participant WorkerScheduler
+    participant Session
+    participant DeadlineClient
+    box lightyellow AWS
+        participant Deadline as Deadline Cloud Service
+    end
+
+    note over Worker: From "Startup" section above.
+    
+    alt OS Signal Interruption
+        OS->>Worker: SIGTERM/SIGINT
+        Worker->>Worker: Set shutdown flag
+    else EC2 Spot Interruption or ASG Lifecycle Status Event
+        Worker->>EC2: Poll for termination notice
+        EC2-->>Worker: Termination notice received
+        Worker->>Worker: Set shutdown flag
+    end
+    
+    Worker->>DeadlineClient: update_worker() with STOPPING status
+    DeadlineClient->>Deadline: UpdateWorker API call
+    Deadline->>DeadlineClient: 
+    DeadlineClient->>Worker: 
+    Worker->>WorkerScheduler: Initiate shutdown
+    loop for each session
+        WorkerScheduler->>Session: Interrupt
+        Session->>WorkerScheduler: 
+    end
+    WorkerScheduler->>Worker: 
+    note over Worker: To "Shutdown Phase" section below
+```
+
+### Service-Initiated Shutdown
+
+When a worker is part of a service-managed fleet (SMF) or an auto-scaling customer-managed fleet (CMF), the service may determine that the worker is no longer necessary based on auto-scaling decisions. In this case, the worker receives a signal to shut down its host through the `UpdateWorkerSchedule` API response.
+
+```mermaid
+sequenceDiagram
+    participant WorkerScheduler
+    participant DeadlineClient
+    box lightyellow AWS
+        participant Deadline as Deadline Cloud Service
+    end
+    
+    WorkerScheduler->>DeadlineClient: update_worker_schedule()
+    DeadlineClient->>Deadline: UpdateWorkerSchedule API call
+    Deadline-->>DeadlineClient: Response with desiredStatus=STOPPED
+    DeadlineClient-->>WorkerScheduler: Return response with shutdown signal
+    
+    WorkerScheduler->>WorkerScheduler: Detect desiredStatus=STOPPED
+    Note over WorkerScheduler: Service only sends STOPPED when no sessions are assigned
+    
+    WorkerScheduler->>WorkerScheduler: Set shutdown flag
+    WorkerScheduler->>WorkerScheduler: Exit scheduler loop
+    
+    note over WorkerScheduler: Transition to Shutdown Phase
+```
+
+Key aspects of service-initiated shutdown:
+
+1.  **Shutdown Signal Detection**
+    -   The worker receives an `UpdateWorkerSchedule` response with `desiredStatus=STOPPED`
+    -   This indicates the service has determined the worker should be terminated
+
+2.  **Preconditions**
+    -   The service only sends the shutdown signal when there are no remaining sessions assigned to the worker
+    -   This ensures no work is interrupted by the shutdown
+
+3.  **Graceful Termination**
+    -   Upon receiving the shutdown signal, the worker initiates its normal shutdown sequence
+    -   If the worker agent is configured to shutdown the host, it will:
+        -   The worker updates its status to `STOPPING`
+        -   Repeatedly attempt to shutdown the host machine
+    -   Otherwise, the worker updates its status to `STOPPED`
+    -   All resources are properly cleaned up before the process exits
+
+4.  **Auto-scaling Integration**
+    -   For SMFs, this allows AWS to manage the fleet size automatically
+    -   For auto-scaling CMFs, this enables dynamic scaling based on workload demands
+    -   The worker agent cooperates with the service to ensure smooth scaling operations
+
+This service-initiated shutdown mechanism enables efficient resource utilization by allowing the service to scale down worker capacity when it's not needed, while ensuring that no work is interrupted in the process.
+
+### Key Components and Operations
+
+1.  **Worker Heartbeat**
+
+    The worker must regularly "hearbeat" to the service. This heartbeat is through regular
+    `UpdateWorkerSchedule` API requests to the worker. The worker must make requests within the
+    polling interval returned in the `updateIntervalSeconds` response field of the
+    `UpdateWorkerSchedule` API.
+
+2.  **Session Assignment**
+    -   The worker polls for session assignments using the  `UpdateWorkerSchedule` API
+    -   Polling frequency is controlled by `updateIntervalSeconds` returned by the service
+    -   When a session is assigned, the worker creates a `Session` object
+    -   Job entities required for running sessions are retrieved from the service using the
+        `BatchGetJobEntity` API
+
+3.  **Session Execution**
+    -   Sessions are executed through the `Session.run()` method
+    -   Each session creates a number of threads in the worker agent
+        -   One for initiating actions
+        -   One for running the current session action
+        -   One for uploading logs to CloudWatch
+    -   Progress and status are reported to the service via the `WorkerScheduler`
+    -   Immediate `UpdateWorkerSchedule` calls are made for failed actions or when no actions are queued
+    -   For successful actions with queued actions, the worker continues processing without an immediate API call
+
+4.  **EC2 Shutdown Monitoring**
+    -   The worker monitors for EC2 instance termination notifications
+        -   spot interruptions
+        -   Auto-scaling lifecycle status events
+    -   The `Worker._monitor_ec2_shutdown()` method handles this monitoring in its own thread
+
+5.  **Error Handling**
+    -   Transient API errors (429, 5xx) are retried with exponential backoff
+    -   Unrecoverable errors cause the worker agent to drain its running sessions and exit
+        the program
+    -   Session failures are handled gracefully and the worker reports them through
+        `UpdateWorkerSchedule`
 
 ## Shutdown Phase
 
@@ -203,6 +591,6 @@ Coming soon&hellip;
 
 After understanding the worker agent lifecycle, we recommend exploring:
 
-- [Session Lifecycle](session_lifecycle.md) - Comprehensive overview of how sessions are executed
-- [Architecture](architecture.md) - Overview of the worker agent architecture and components
-- [Worker API Protocol](worker_api_protocol.md) - Documentation of the API interactions with the Deadline Cloud service
+-   [Session Lifecycle](session_lifecycle.md) - Comprehensive overview of how sessions are executed
+-   [Architecture](architecture.md) - Overview of the worker agent architecture and components
+-   [Worker API Protocol](worker_api_protocol.md) - Documentation of the API interactions with the Deadline Cloud service
