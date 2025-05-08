@@ -257,9 +257,9 @@ The `Worker` class manages several key components that run concurrently:
    - Prevents abrupt termination of active sessions
 
 5. **EC2 Instance Monitoring**
-   - Active when running on EC2 and Instance Metadata Service (IMDS) is available
-   - Monitors for spot instance interruptions
-   - Detects Auto Scaling Group (ASG) lifecycle events
+   - Active when running on EC2 and [Instance Metadata Service (IMDS)][imds] is available
+   - Polls IMDS to monitor for upcoming spot instance interruptions
+   - Polls IMDS to monitor for upcoming Auto Scaling Group (ASG) lifecycle events
    - Initiates worker-initiated drains when termination events are detected
    - Provides graceful handling of cloud infrastructure events
 
@@ -352,7 +352,7 @@ sequenceDiagram
     participant WorkerScheduler
     participant DeadlineClient
     box lightyellow AWS
-        participant Deadline as Deadline Deadline Cloud Service
+        participant Deadline as Deadline Cloud Service
     end
 
     note over SessionAction: From "Session Action Initiation" section above
@@ -571,10 +571,13 @@ This service-initiated shutdown mechanism enables efficient resource utilization
     -   For successful actions with queued actions, the worker continues processing without an immediate API call
 
 4.  **EC2 Shutdown Monitoring**
-    -   The worker monitors for EC2 instance termination notifications
-        -   spot interruptions
+    -   The worker monitors for notifications of upcoming EC2 instance termination by polling EC2 [Instance Metadata Service (IMDS)][imds].
+        Notifications polled include:
+        -   EC2 spot interruptions
         -   Auto-scaling lifecycle status events
     -   The `Worker._monitor_ec2_shutdown()` method handles this monitoring in its own thread
+
+[imds]: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html
 
 5.  **Error Handling**
     -   Transient API errors (429, 5xx) are retried with exponential backoff
@@ -585,7 +588,163 @@ This service-initiated shutdown mechanism enables efficient resource utilization
 
 ## Shutdown Phase
 
-Coming soon&hellip;
+The shutdown phase begins when the worker agent receives a termination signal (either worker-initiated or service-initiated) and ends when the process exits.
+
+```mermaid
+flowchart TD
+    %% Shutdown Phase
+    monitorSignals[Monitor OS Signals] -->|Signal received| shutdown
+    monitorEC2[Monitor EC2 Instance] -->|Upcoming termination detected| shutdown
+    updateSchedule[Update Schedule] --> |Stop| shutdown
+
+    subgraph shutdown[**Shutdown Phase**]
+    
+        start([start]) --> drainSessions[Drain Active Sessions]
+        drainSessions --> checkShutdownHost{Host Shutdown Configured AND Stopped by Service?}
+        
+        checkShutdownHost -->|Yes| setStopping[Set status <code>STOPPING</code>]
+        setStopping --> shutdownHost[Attempt Host Shutdown]
+        shutdownHost --> |Unsuccessful| heartbeat
+        heartbeat --> shutdownHost
+        checkShutdownHost -->|No| setStopped[Set status <code>STOPPED</code>]
+
+        setStopped --> terminate([end])
+        shutdownHost --> |Successful| terminate
+    end
+
+    
+    %% Styling
+    classDef default color:#000
+    classDef runningPhase fill:#d8f0d8,stroke:#2d862d
+    classDef shutdownPhase fill:#ffe6cc,stroke:#cc7a00
+    classDef startEnd fill:#EEEEEE,stroke:#444444
+    class monitorSignals,monitorEC2,updateSchedule runningPhase
+    class drainSessions,cleanup,reportFinalStatus,checkShutdownHost,setStopping,shutdownHost,heartbeat,setStopped shutdownPhase
+    class start,terminate startEnd
+```
+
+The following diagram provides a more detailed look into the sequence of interactions between the various components:
+
+```mermaid
+sequenceDiagram
+    participant Entrypoint
+    participant Worker
+    participant WorkerScheduler
+    participant Session
+    participant DeadlineClient
+    box lightyellow AWS
+        participant Deadline as Deadline Cloud Service
+    end
+    participant Host as Host System
+    
+    activate Worker
+    
+    alt Worker-Initiated Shutdown
+        note over Worker: From OS signal or EC2 interruption
+        Worker->>Worker: Set shutdown flag
+    else Service-Initiated Shutdown
+        note over WorkerScheduler: From UpdateWorkerSchedule with desiredStatus=STOPPED
+        WorkerScheduler->>Worker: Signal shutdown
+        Worker->>Worker: Set shutdown flag
+    end
+    
+    Worker->>DeadlineClient: update_worker(status=STOPPING)
+    DeadlineClient->>Deadline: UpdateWorker
+    Deadline->>DeadlineClient: 
+    DeadlineClient->>Worker: 
+    Worker->>WorkerScheduler: Initiate shutdown
+
+    alt Worker-Initiated Shutdown (has active sessions)
+        loop Active sessions
+            opt Has running action
+                WorkerScheduler->>Session: Stop active
+                Session->>Session: Cancel active action
+            end
+            Session->>WorkerScheduler: Report session actions
+
+            destroy Session
+            WorkerScheduler->>Session: Complete
+        end
+    else Service-Initiated Shutdown (no active sessions)
+        note over WorkerScheduler: Service only sends STOPPED when no sessions are assigned
+        
+        loop Until host shutdown or timeout
+            Worker->>Host: Attempt to shutdown host
+            alt Host shutdown successful
+                Host->>Host: Begin shutdown sequence
+                note over Host: Worker process will be terminated by OS
+            else Host shutdown failed
+                Worker->>DeadlineClient: Continue heartbeating with status=STOPPING
+                DeadlineClient->>Deadline: UpdateWorkerSchedule
+                Deadline->>DeadlineClient: 
+                DeadlineClient->>Worker: 
+                note over Worker: Wait for next attempt interval
+            end
+        end
+    end
+
+    destroy WorkerScheduler
+    WorkerScheduler->>Worker: Exit
+    
+    Worker->>DeadlineClient: update_worker(status=STOPPED)
+    DeadlineClient->>Deadline: UpdateWorker
+    Deadline->>DeadlineClient: 
+    DeadlineClient->>Worker: 
+    deactivate Worker
+    destroy Worker
+    Worker->>Entrypoint: Return
+    Entrypoint->>Entrypoint: Exit process
+```
+
+### Key Steps
+
+1.  **Shutdown Initiation**
+    -   Worker-initiated: Triggered by one of the following (see **Running Phase** section above):
+        -   OS signals (`SIGTERM` / `SIGINT`)
+        -   EC2 Spot interruption notices from IMDS
+        -   Auto Scaling Group (ASG) lifecycle events
+    -   Service-initiated: Triggered by `UpdateWorkerSchedule` response with `desiredStatus=STOPPED`
+
+2.  **Worker State Update**
+    -   The worker makes an `UpdateWorker` API request to change the worker status:
+    -   For service-initiated shutdowns, the worker status is is set to `STOPPING`
+    -   For worker-initiated shutdowns, the worker status is is set to `STOPPED`
+
+3.  **Session Handling**
+    -   For worker-initiated shutdown: Active sessions are identified and stopped using
+        `Session.stop()`. If there is a running action, it is canceled and an immediate
+        `UpdateWorkerSchedule` API request is made reporting the action with `completedStatus` of
+        `INTERRUPTED`.
+    -   For service-initiated shutdown: No active sessions should be present (service precondition)
+
+4.  **Resource Cleanup**
+    -   Temporary files and directories are cleaned up
+    -   Thread pools are shut down
+
+5.  **Host Shutdown Attempts (Service-Initiated Only)**
+    -   The worker attempts to shut down the host machine
+    -   If successful, the OS will terminate the worker process as part of the shutdown sequence
+    -   If unsuccessful, the worker continues to:
+        -   Maintain `STOPPING` status
+        -   Heartbeat to the service using an `UpdateWorkerSchedule` API request
+        -   Periodically retry the host shutdown
+   -    This continues until either the host shuts down or a timeout is reached
+
+6. **Process Termination**
+   
+   The worker agent process exits with an appropriate exit code depending on the circumstance
+   for program termination:
+
+    -   `0` &mdash; for successful exit. This can happen if
+        -   The worker agent was ran interactively and a keyboard interrupt (e.g. `CTRL` + `C` on Linux)
+            caused the worker agent to exit.
+        -   The worker agent detected an upcoming EC2 spot interruption or auto-scaling group
+            life-cycle status event change and exited 
+    -   Non-zero &mdash; for "unsuccessful" exits. This can happen if:
+        -   The worker encountered an unhandled exception
+        -   The worker was shutdown by an OS signal
+            -   This includes when the worker agent shuts down the host. The operating system will
+                send a signal to the process.
 
 ## Next Steps
 
