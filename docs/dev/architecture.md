@@ -33,11 +33,43 @@ Coming soon&hellip;
 
 ## 3. Code Organization
 
-Coming soon&hellip;
+The worker agent codebase is organized into several key directories:
+
+```
+deadline-cloud-worker-agent/
+├── src/
+│   └── deadline_worker_agent/  # Main source code
+│       ├── aws/                # AWS service APIs
+│       │   └── deadline/       # AWS Deadline Cloud APIs
+│       ├── aws_credentials/    # AWS credentials management
+│       ├── boto/               # Boto3 and botocore configuration and shim layer
+│       ├── config/             # Configuration handling
+│       ├── installer/          # Worker agent installation logic
+│       ├── linux/              # Linux-specific code
+│       ├── log_sync/           # Log synchronization
+│       ├── scheduler/          # Worker scheduler
+│       ├── sessions/           # Session management
+│       │   ├── actions/        # Session actions
+│       │   │   └── scripts/    # Helper scripts for actions
+│       │   └── job_entities/   # Job entity handling
+│       ├── startup/            # Startup and shutdown phase
+│       └── windows/            # Windows-specific code
+├── pipeline/                   # CI/CD pipeline scripts
+├── scripts/                    # Utility scripts for development and testing
+├── tests/
+│   ├── e2e/                    # End-to-end tests
+│   ├── integration/            # Integration tests
+│   └── unit/                   # Unit tests
+└── docs/                       # Documentation
+```
 
 ### 3.1. Key Files
 
-Coming soon&hellip;
+The key source files relative to `src/deadlne_worker_agent/` are:
+- `startup/entrypoint.py` &mdash; The main code entrypoint
+- `worker.py` &mdash; Contains the `Worker` class which handles OS signals, host metrics logging, EC2 monitoring, and creates/monitors/manages of a `WorkerScheduler` instance.
+- `scheduler/scheduler.py` &mdash; Contains the `WorkerScheduler` class responsible for managing the worker's schedule in coordination with the Deadline Cloud service
+- `sessions/session.py` &mdash; Contains the `Session` class that manages and individual session's life-cycle
 
 ## 4. Thread Model and Concurrency
 
