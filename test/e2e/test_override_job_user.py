@@ -193,14 +193,6 @@ class TestWindowsJobUserOverride:
             deadline_resources.queue_a,
         )
 
-        # This user should also take priority over jobs run as worker agent
-        override_worker_agent_job = self.submit_whoami_job(
-            test_name="override job run as worker agent",
-            deadline_client=deadline_client,
-            farm=deadline_resources.farm,
-            queue=deadline_resources.jobs_run_as_agent_user_queue,
-        )
-
         job.wait_until_complete(client=deadline_client, max_retries=20)
         job.assert_single_task_log_contains(
             deadline_client=deadline_client,
@@ -212,7 +204,15 @@ class TestWindowsJobUserOverride:
         )
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
-        override_worker_agent_job.wait_until_complete(client=deadline_client, max_retries=1)
+        # This user should also take priority over jobs run as worker agent
+        override_worker_agent_job = self.submit_whoami_job(
+            test_name="override job run as worker agent",
+            deadline_client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.jobs_run_as_agent_user_queue,
+        )
+
+        override_worker_agent_job.wait_until_complete(client=deadline_client, max_retries=20)
         override_worker_agent_job.assert_single_task_log_contains(
             deadline_client=deadline_client,
             logs_client=boto3.client(

@@ -7,17 +7,28 @@ attacker position in a supposed different security boundary.
 """
 
 import logging
+import boto3
+import botocore
 import pytest
 import os
 
-from deadline_test_fixtures import CommandResult, DeadlineWorkerConfiguration, EC2InstanceWorker
+from deadline_test_fixtures import (
+    CommandResult,
+    DeadlineClient,
+    DeadlineWorkerConfiguration,
+    EC2InstanceWorker,
+    Job,
+    TaskStatus,
+)
+
+from .conftest import DeadlineResources
 
 
 @pytest.mark.skipif(
     os.environ["OPERATING_SYSTEM"] == "windows",
     reason="Linux specific test",
 )
-def test_access_worker_credential_file_from_job(
+def test_access_worker_credential_file_from_job_linux(
     session_worker: EC2InstanceWorker,
     worker_config: DeadlineWorkerConfiguration,
 ) -> None:
@@ -53,6 +64,97 @@ def test_access_worker_credential_file_from_job(
 
     # THEN
     assert result.exit_code != 0
+
+
+@pytest.mark.skipif(
+    os.environ["OPERATING_SYSTEM"] != "windows",
+    reason="Windows specific test",
+)
+def test_access_worker_credential_file_from_job_windows(
+    session_worker: EC2InstanceWorker,
+    deadline_resources: DeadlineResources,
+    deadline_client: DeadlineClient,
+) -> None:
+    # GIVEN
+    powershell_script = """
+Write-Host "Current user: $(whoami)"
+Write-Host "Attempting to read worker credentials from cache directory..."
+
+# Attempt to read worker credential files from the cache directory
+try {
+    # Look for JSON files in the credentials directory
+    $credFiles = Get-ChildItem -Path "$env:ProgramData\\Amazon\\Deadline\\Cache\\credentials" -Filter *.json -ErrorAction Stop
+    
+    if ($credFiles) {
+        foreach ($file in $credFiles) {
+            Write-Host "Found credential file: $($file.FullName)"
+            # Attempt to read the file contents - will throw if access is denied
+            $content = Get-Content $file.FullName -ErrorAction Stop
+            Write-Host "Successfully read file contents"
+        }
+    } else {
+        Write-Host "No credential files found in the cache directory"
+        exit 1
+    }
+} catch {
+    Write-Host "Error accessing credential files: $_"
+    exit 1
+}
+
+# Additional environment information
+Write-Host "Environment variables:"
+Get-ChildItem env: | Format-Table -AutoSize
+
+Write-Host "Worker ID from environment: $env:DEADLINE_WORKER_ID"
+"""
+    logs_client = boto3.client(
+        "logs",
+        config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+    )
+
+    # WHEN
+    job: Job = Job.submit(
+        client=deadline_client,
+        farm=deadline_resources.farm,
+        queue=deadline_resources.queue_a,
+        priority=98,
+        max_retries_per_task=0,
+        template={
+            "specificationVersion": "jobtemplate-2023-09",
+            "name": "Windows Worker Credentials Read Test",
+            "steps": [
+                {
+                    "name": "Read Windows Worker Credentials",
+                    "script": {
+                        "embeddedFiles": [
+                            {
+                                "name": "read_credentials",
+                                "type": "TEXT",
+                                "filename": "read_credentials.ps1",
+                                "data": powershell_script,
+                            },
+                        ],
+                        "actions": {
+                            "onRun": {
+                                "command": "powershell",
+                                "args": ["-File", "{{Task.File.read_credentials}}"],
+                            },
+                        },
+                    },
+                },
+            ],
+        },
+    )
+    # Wait until the job is completed
+    job.wait_until_complete(client=deadline_client)
+
+    # THEN
+    assert job.task_run_status == TaskStatus.FAILED
+    job.assert_single_task_log_contains(
+        deadline_client=deadline_client,
+        expected_pattern="Error accessing credential files: ",
+        logs_client=logs_client,
+    )
 
 
 def expect_ssm_success(
