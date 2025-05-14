@@ -8,7 +8,7 @@ pytest ~= 8.3
 pytest-cov == 6.1.*
 pytest-timeout == 2.3.*
 pytest-xdist == 3.6.*
-rich == 13.9.*
+rich == 14.0.*
 types-python-dateutil ~= 2.9
 mypy ~= 1.15
 types-requests ~= 2.31; python_version < "3.10"
