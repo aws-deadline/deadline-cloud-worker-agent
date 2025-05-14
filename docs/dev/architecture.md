@@ -25,19 +25,134 @@ Coming soon&hellip;
 
 ## 2. Software Architecture
 
-Coming soon&hellip;
+The worker agent is composed of several interconnected components that work together to manage the worker lifecycle and execute sessions:
+
+```mermaid
+---
+config:
+    flowchart:
+        curve: stepAfter
+---
+flowchart-elk TD
+    entrypoint --> |resolves| config[Configuration];
+    entrypoint --> |creates/starts/runs| worker[Worker];
+    worker --> |uses| config;
+    worker --> |creates/monitors| scheduler[WorkerScheduler];
+    scheduler --> |API requests| Deadline[Deadline Cloud];
+    scheduler --> |creates/manages| session[Session];
+    session --> |maintains| queue[SessionActionqueue];
+    session --> |starts/monitors| action[Session Action];
+    session --> |reports| scheduler;
+    worker --> |API requests| CWL;
+    action --> |stdout| session;
+    session --> |API requests| CWL[CloudWatch Logs];
+
+    subgraph **Legend**
+        direction LR
+        legendClass[Class]
+        legendFunction[Function]
+        legendProcess[Process]
+        legendService[AWS Service]
+    end
+    
+    classDef default color:#000;
+    classDef Function fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef Service fill:#ff9,stroke:#333,stroke-width:1px;
+    classDef Process fill:#dfd,stroke:#333,stroke-width:1px;
+    classDef Class fill:#59e,stroke:#000;
+    class legendFunction,entrypoint Function;
+    class legendProcess,action Process;
+    class legendClass,worker,session,scheduler,config,queue Class;
+    class legendService,CWL,Deadline Service
+```
+
+- **Entrypoint**: The main code entrypoint that loads configuration, initializes the worker resource,
+  sets up the components managing the worker life-cycle, and handles program exit.
+- **Configuration**: The program configuration resolved from command-line arguments, environment variables, and a config file.
+- **Worker**: Sets up the scheduler and monitoring for operating system, EC2 interruptions, and host metrics.
+- **WorkerScheduler**: Synchronizes with Deadline Cloud APIs to manage session life-cycles assigned by the service and report their status and progress back to the service. Monitors for service-initiated shutdowns.
+- **Session**: Manages the execution of individual sessions, including setup, monitoring, and cleanup.
+- **SessionActionDefinition**: Defines the interface for session actions that can be executed within a session.
+- **AWS Deadline Cloud Service**: The AWS Deadline Cloud service API endpoints
+- **CloudWatch Logs** The Amazon CloudWatch service API endpoints
 
 ### 2.1. Class Diagram
 
-Coming soon&hellip;
+The following diagram illustrates key classes in the worker agent and their relationships:
+
+```mermaid
+---
+config:
+    class:
+      hideEmptyMembersBox: true
+---
+classDiagram
+    entrypoint --> Configuration : creates
+    entrypoint --> Worker : creates
+    entrypoint --> CloudWatchLogStreamThread : creates
+    Worker --> WorkerScheduler : creates
+    Worker --> AwsCredentialsRefresher : creates
+    WorkerScheduler --> Session : creates and manages
+    WorkerScheduler --> AwsCredentialsRefresher : creates per queue
+    Session --> SessionActionQueue : uses
+    Session --> SessionActionDefinition : runs
+    Session --> CloudWatchLogStreamThread : creates
+    SessionActionQueue o-- "0..*" SessionActionDefinition : contains
+    SessionActionDefinition <|-- OpenjdAction : extends
+    SessionActionDefinition <|-- SyncInputJobAttachmentsAction : extends
+    OpenjdAction <|-- RunStepTask : extends
+    OpenjdAction <|-- EnterEnvironment : extends
+    OpenjdAction <|-- ExitEnvironment : extends
+    OpenjdAction <|-- AttachmentDownloadAction : extends
+    OpenjdAction <|-- AttachmentUploadAction : extends
+    
+    class SessionActionDefinition{
+        <<abstract>>
+    }
+    class OpenjdAction{
+        <<abstract>>
+    }
+```
 
 ## 3. Code Organization
 
-Coming soon&hellip;
+The worker agent codebase is organized into several key directories:
+
+```
+deadline-cloud-worker-agent/
+├── src/
+│   └── deadline_worker_agent/  # Main source code
+│       ├── aws/                # AWS service APIs
+│       │   └── deadline/       # AWS Deadline Cloud APIs
+│       ├── aws_credentials/    # AWS credentials management
+│       ├── boto/               # Boto3 and botocore configuration and shim layer
+│       ├── config/             # Configuration handling
+│       ├── installer/          # Worker agent installation logic
+│       ├── linux/              # Linux-specific code
+│       ├── log_sync/           # Log synchronization
+│       ├── scheduler/          # Worker scheduler
+│       ├── sessions/           # Session management
+│       │   ├── actions/        # Session actions
+│       │   │   └── scripts/    # Helper scripts for actions
+│       │   └── job_entities/   # Job entity handling
+│       ├── startup/            # Startup and shutdown phase
+│       └── windows/            # Windows-specific code
+├── pipeline/                   # CI/CD pipeline scripts
+├── scripts/                    # Utility scripts for development and testing
+├── tests/
+│   ├── e2e/                    # End-to-end tests
+│   ├── integration/            # Integration tests
+│   └── unit/                   # Unit tests
+└── docs/                       # Documentation
+```
 
 ### 3.1. Key Files
 
-Coming soon&hellip;
+The key source files relative to `src/deadlne_worker_agent/` are:
+- `startup/entrypoint.py` &mdash; The main code entrypoint
+- `worker.py` &mdash; Contains the `Worker` class which handles OS signals, host metrics logging, EC2 monitoring, and creates/monitors/manages of a `WorkerScheduler` instance.
+- `scheduler/scheduler.py` &mdash; Contains the `WorkerScheduler` class responsible for managing the worker's schedule in coordination with the Deadline Cloud service
+- `sessions/session.py` &mdash; Contains the `Session` class that manages and individual session's life-cycle
 
 ## 4. Thread Model and Concurrency
 
