@@ -303,7 +303,7 @@ def create_worker(
         try:
             worker.start()
         except Exception as e:
-            LOG.exception(f"Failed to start worker: {e}")
+            LOG.error(f"Failed to start worker: {e}")
             LOG.info("Stopping worker because it failed to start")
             stop_worker(request, worker)
             raise

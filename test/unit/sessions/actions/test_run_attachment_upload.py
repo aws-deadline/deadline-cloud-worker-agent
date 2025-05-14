@@ -13,8 +13,9 @@ import pytest
 
 import deadline_worker_agent.sessions.actions as actions_module
 from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
-from openjd.sessions import SessionUser
+from openjd.sessions import SessionUser, PathMappingRule, PathFormat
 from openjd.model import ParameterValue
+from pathlib import PurePosixPath
 from openjd.model.v2023_09 import (
     EmbeddedFileTypes as EmbeddedFileTypes_2023_09,
     EmbeddedFileText as EmbeddedFileText_2023_09,
@@ -116,7 +117,7 @@ class TestStart:
 
         return session
 
-    def test_attachment_upload_action_start(
+    def test_attachment_upload_action_start_base(
         self,
         executor: Mock,
         session: Mock,
@@ -140,6 +141,7 @@ class TestStart:
             s3BucketName=job_details.job_attachment_settings.s3_bucket_name,
             rootPrefix=job_details.job_attachment_settings.root_prefix,
         )
+        session.manifest_out_rel_dirs_by_source = {}
 
         # WHEN
         action.start(session=session, executor=executor)
@@ -158,8 +160,112 @@ class TestStart:
                             "{{ Session.PathMappingRulesFile }}",
                             "-s3",
                             s3_settings.to_s3_root_uri(),
-                            "-mm",
+                            "-mp",
                             json.dumps(session.manifest_paths_by_root),
+                            "-od",
+                            json.dumps({}),
+                        ],
+                    )
+                ),
+                embeddedFiles=[
+                    EmbeddedFileText_2023_09(
+                        name="AttachmentUpload",
+                        type=EmbeddedFileTypes_2023_09.TEXT,
+                        filename="upload.py",
+                        data=f.read(),
+                    )
+                ],
+            )
+
+        session.run_task.assert_called_once_with(
+            step_script=action._step_script,
+            task_parameter_values=dict[str, ParameterValue](),
+            os_env_vars={
+                "DEADLINE_SESSIONACTION_ID": action_id,
+                "DEADLINE_STEP_ID": step_id,
+                "DEADLINE_TASK_ID": task_id,
+            },
+            log_task_banner=False,
+        )
+
+    def test_attachment_upload_action_start_with_include_dirs(
+        self,
+        executor: Mock,
+        session: Mock,
+        action: actions_module.AttachmentUploadAction,
+        job_details: JobDetails,
+        python_path: str,
+        step_id: str,
+        task_id: str,
+        action_id: str,
+    ) -> None:
+        """
+        Tests that AttachmentUploadAction.start() correctly handles include directories
+        and passes them to the attachment_upload script
+        """
+        # GIVEN
+        assert job_details.job_attachment_settings is not None
+        assert job_details.job_attachment_settings.s3_bucket_name is not None
+        assert job_details.job_attachment_settings.root_prefix is not None
+
+        s3_settings = JobAttachmentS3Settings(
+            s3BucketName=job_details.job_attachment_settings.s3_bucket_name,
+            rootPrefix=job_details.job_attachment_settings.root_prefix,
+        )
+
+        # Setup session with output directories
+        session.manifest_out_rel_dirs_by_source = {
+            "/source/path1": ["output_dir1", "output_dir2"],
+            "/source/path2": ["output_dir3"],
+        }
+
+        # Setup path mapping rules
+        session.openjd_session._path_mapping_rules = [
+            PathMappingRule(
+                source_path_format=PathFormat.POSIX,
+                source_path=PurePosixPath("/source/path1"),
+                destination_path=PurePosixPath("/dest/path1"),
+            ),
+            PathMappingRule(
+                source_path_format=PathFormat.POSIX,
+                source_path=PurePosixPath("/source/path2"),
+                destination_path=PurePosixPath("/dest/path2"),
+            ),
+            PathMappingRule(
+                source_path_format=PathFormat.POSIX,
+                source_path=PurePosixPath("/source/path3"),
+                destination_path=PurePosixPath("/dest/path3"),
+            ),
+        ]
+
+        # Expected include directories map after mapping
+        expected_out_rel_dirs_map = {
+            "/dest/path1": ["output_dir1", "output_dir2"],
+            "/dest/path2": ["output_dir3"],
+        }
+
+        # WHEN
+        action.start(session=session, executor=executor)
+
+        # THEN
+        with open(
+            Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_upload.py",
+            "r",
+        ) as f:
+            assert action._step_script == StepScript_2023_09(
+                actions=StepActions_2023_09(
+                    onRun=Action_2023_09(
+                        command=python_path,
+                        args=[
+                            "{{ Task.File.AttachmentUpload }}",
+                            "-pm",
+                            "{{ Session.PathMappingRulesFile }}",
+                            "-s3",
+                            s3_settings.to_s3_root_uri(),
+                            "-mp",
+                            json.dumps(session.manifest_paths_by_root),
+                            "-od",
+                            json.dumps(expected_out_rel_dirs_map),
                         ],
                     )
                 ),

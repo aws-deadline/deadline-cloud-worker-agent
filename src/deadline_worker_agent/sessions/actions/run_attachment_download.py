@@ -6,7 +6,7 @@ from concurrent.futures import (
 )
 import os
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from logging import LoggerAdapter
 from typing import Any, TYPE_CHECKING, Optional
 from dataclasses import asdict
@@ -197,17 +197,25 @@ class AttachmentDownloadAction(OpenjdAction):
 
         manifest_properties_list: list[ManifestProperties] = []
         if not step_dependencies:
-            for manifest_properties in session._job_attachment_details.manifests:
-                manifest_properties_list.append(
-                    ManifestProperties(
-                        rootPath=manifest_properties.root_path,
-                        fileSystemLocationName=manifest_properties.file_system_location_name,
-                        rootPathFormat=PathFormat(manifest_properties.root_path_format),
-                        inputManifestPath=manifest_properties.input_manifest_path,
-                        inputManifestHash=manifest_properties.input_manifest_hash,
-                        outputRelativeDirectories=manifest_properties.output_relative_directories,
-                    )
+            for ja_manifest_properties in session._job_attachment_details.manifests:
+                manifest_properties: ManifestProperties = ManifestProperties(
+                    rootPath=ja_manifest_properties.root_path,
+                    fileSystemLocationName=ja_manifest_properties.file_system_location_name,
+                    rootPathFormat=PathFormat(ja_manifest_properties.root_path_format),
+                    inputManifestPath=ja_manifest_properties.input_manifest_path,
+                    inputManifestHash=ja_manifest_properties.input_manifest_hash,
+                    outputRelativeDirectories=ja_manifest_properties.output_relative_directories,
                 )
+                manifest_properties_list.append(manifest_properties)
+                # process the defined outputRelativeDirectories and pass on to attachment upload
+                session.add_manifest_out_rel_dirs(
+                    source=ja_manifest_properties.root_path,
+                    out_rel_dirs=self._get_output_dirs(manifest_properties),
+                )
+
+            self._logger.debug(
+                f"Finished processing outputRelativeDirectories: {session.manifest_out_rel_dirs_by_source}",
+            )
 
         attachments = Attachments(
             manifests=manifest_properties_list,
@@ -291,6 +299,27 @@ class AttachmentDownloadAction(OpenjdAction):
             task_parameter_values=dict[str, ParameterValue](),
             log_task_banner=False,
         )
+
+    @staticmethod
+    def _get_output_dirs(
+        manifest_properties: ManifestProperties,
+    ) -> list[str]:
+        output_dirs: list[str] = []
+        source_path_format = manifest_properties.rootPathFormat
+        current_path_format = PathFormat.get_host_path_format()
+
+        for output_dir in manifest_properties.outputRelativeDirectories or []:
+            if source_path_format != current_path_format:
+                if source_path_format == PathFormat.WINDOWS:
+                    # Convert Windows path to fit the current platform format
+                    output_dir = str(Path(PureWindowsPath(output_dir)))
+                elif source_path_format == PathFormat.POSIX:
+                    # Convert Windows path to fit the current platform format
+                    output_dir = str(Path(PurePosixPath(output_dir)))
+
+            output_dirs.append(output_dir)
+
+        return output_dirs
 
     def _start_vfs(
         self,

@@ -4,53 +4,7 @@ This documentation provides guidance on developer workflows for working with the
 
 ## Code Organization
 
-### `src/deadline_worker_agent`
-
-This is the root of the source code. The primary code files where most of the changes would be made exist in this root directory.
-
-Files of note include:
-
-*   `worker.py`
-
-    `Worker` class implementation containing the main thread's event loop that runs after the Worker has been bootstrapped. This is the original implementation of the Worker Agent that uses `UpdateWorkerSchedule` and `NotifyProgress` which are APIs that are unaware of Worker Sessions.
-
-## `src/deadline_worker_agent/boto`
-
-This contains logic for boto3 and botocore.
-
-### `src/deadline_worker_agent/config`
-
-This Python sub-package contains modules for the worker agent's configuration settings system.
-
-### `src/deadline_worker_agent/startup`
-
-This contains logic for the startup phase in the Worker Agent's lifecycle.
-
-### `src/deadline_worker_agent/log_sync`
-
-This Python sub-package contains code responsible for synchronizing logs emitted by AWS Deadline Cloud tasks to their destination(s) in S3 and CloudWatch Logs, and synchronizing logs emitted by agent to CloudWatch Logs.
-
-### `src/deadline_worker_agent/scheduler`
-
-This contains an impementation of the Worker Agent's scheduler. This works with the AWS Deadline Cloud farm's scheduler via `UpdateWorkerSchedule` to synchronize the assignment, completion, and status reporting of work.
-
-### `src/deadline_worker_agent/sessions`
-
-This contains the logic and APIs for managing the life-cycle of a Worker session. The primary class contained in this package, the `Session` class, is responsible for taking actions from the `SessionActionQueue` and running them within the Open Job Description session.
-
-### `src/deadline_worker_agent/sessions/actions`
-
-This package contains classes corresponding to each action and the logic for running them within the `Session`.
-
-### `src/deadline_worker_agent/sessions/job_entities`
-
-This package contains code responsible for fetching the job entities required for running Worker session actions. This coordinates efficient use of the `BatchGetJobEntity` API and provides a high-level API for asynchronously requesting (optionally in a batch) and waiting for fetched the entities.
-
-### `src/deadline_worker_agent/installer`
-
-This contains the logic for the `install_deadline_worker` entrypoint which provisions OS users, groups, sudoers rule, and file-system
-directories used by the Worker Agent. Finally it configures a systemd service on Linux systems that runs the Worker Agent
-on boot and restarts the process if it crashes unexpectedly.
+See [code organization](./docs/dev/architecture.md#3-code-organization).
 
 ## Build / Test
 

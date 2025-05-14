@@ -207,6 +207,7 @@ class Session:
         self._env = env
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._manifest_paths_by_root = dict()
+        self._manifest_out_rel_dirs_by_source: dict[str, list[str]] = dict()
 
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
@@ -255,6 +256,7 @@ class Session:
 
     @property
     def manifest_paths_by_root(self) -> dict[str, list[str]]:
+        """Job Attachments manifest local path list to its local root mapping"""
         return self._manifest_paths_by_root
 
     def add_manifest_path(self, root: str, path: str):
@@ -262,6 +264,17 @@ class Session:
             self._manifest_paths_by_root[root].append(path)
         else:
             self._manifest_paths_by_root[root] = [path]
+
+    @property
+    def manifest_out_rel_dirs_by_source(self) -> dict[str, list[str]]:
+        return self._manifest_out_rel_dirs_by_source
+
+    def add_manifest_out_rel_dirs(self, source: str, out_rel_dirs: list[str]):
+        """Job Attachments output relative directories list to its submission source mapping"""
+        if self._manifest_out_rel_dirs_by_source.get(source):
+            self._manifest_out_rel_dirs_by_source[source].extend(out_rel_dirs)
+        else:
+            self._manifest_out_rel_dirs_by_source[source] = out_rel_dirs
 
     def _warm_job_entities_cache(self) -> None:
         """Attempts to cache the job entities response for all
