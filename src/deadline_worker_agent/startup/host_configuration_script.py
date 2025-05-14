@@ -90,6 +90,7 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
             startup_directory=session_directory,
             callback=self._action_callback,
         )
+        self._print_section_banner = False
 
     def _script_file_name(self) -> str:
         return "host_configuration.ps1" if sys.platform == "win32" else "host_configuration.sh"
@@ -133,12 +134,21 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
             return 0
 
         script_file_path = self._write_script_file()
+
+        self._log_section_banner(
+            logger=self._logger_adapter, section_title="Running Host Configuration Script"
+        )
+
         with FileContext(script_file_path) as _:
             if sys.platform == "win32":
                 exit_code = self._run_win32(script_file_path)
             else:
                 exit_code = self._run_posix()
 
+        self._log_section_banner(
+            logger=self._logger_adapter,
+            section_title=f"Finished running Host Configuration Script, exit code: {exit_code}",
+        )
         return exit_code
 
     def _run_posix(self) -> int:
@@ -146,22 +156,29 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
         Run the host configuration script on posix.
         returns the exit code.
         """
-        # Now that we have a script, run it.
-        command = ["./host_configuration.sh"]
+        if sys.platform != "win32":
+            # Now that we have a script, run it.
+            command = ["./host_configuration.sh"]
 
-        self._action_event.clear()
-        self._run(command)
+            self._action_event.clear()
+            self._run(command)
 
-        # Wait for the completion event.
-        # Async callback prints out a message based on run state.
-        self._action_event.wait()
+            # Wait for the completion event.
+            # Async callback prints out a message based on run state.
+            self._action_event.wait()
 
-        if self._action_state is ActionState.SUCCESS and self.exit_code == 0:
-            return self.exit_code
-        else:
-            return self.exit_code if self.exit_code is not None else -1
+            if self._action_state is ActionState.SUCCESS and self.exit_code == 0:
+                return self.exit_code
+            else:
+                return self.exit_code if self.exit_code is not None else -1
+
+        assert False, "This method should never be run in Win32"
 
     def _run_win32(self, script_file_path: str) -> int:
+        """
+        Run the host configuration script on Windows.
+        returns the exit code.
+        """
         if sys.platform == "win32":
             win32_runner = _WindowsScriptRunner(
                 script_path=script_file_path,
@@ -202,3 +219,13 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
         """This method is inherited from the base class and only used for posix."""
         # Action cancellation. In this case, we terminate the child.
         self._cancel(TerminateCancelMethod(), time_limit, mark_action_failed)
+
+    def _log_section_banner(self, logger: LoggerAdapter, section_title: str) -> None:
+        logger.info("")
+        logger.info(
+            "============================================================================================"
+        )
+        logger.info(f"--------- {section_title} ---------")
+        logger.info(
+            "============================================================================================"
+        )
