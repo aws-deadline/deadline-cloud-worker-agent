@@ -22,7 +22,7 @@ dependencies = [
     "typing_extensions ~= 4.8",
     "psutil >= 5.9,< 8.0",
     "pydantic >= 2.10, < 3",
-    "pywin32 == 308; platform_system == 'Windows'",
+    "pywin32 == 310; platform_system == 'Windows'",
     "requests == 2.32.*",
 ]
 requires-python = ">=3.9"
