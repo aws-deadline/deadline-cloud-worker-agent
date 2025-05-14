@@ -1322,6 +1322,20 @@ class TestSessionActionUpdatedImpl:
         with patch.object(session, "_report_action_update") as mock_report_action_update:
             yield mock_report_action_update
 
+    @pytest.fixture
+    def mock_action_output_log_filter(self) -> Generator[MagicMock, None, None]:
+        """Returns a patched mock for ActionOutputCaptureFilter"""
+        with patch(
+            "deadline_worker_agent.sessions.session.ActionOutputCaptureFilter"
+        ) as mock_filter:
+            yield mock_filter
+
+    @pytest.fixture
+    def mock_openjd_log(self) -> Generator[MagicMock, None, None]:
+        """Returns a patched mock for OPENJD_LOG"""
+        with patch("deadline_worker_agent.sessions.session.OPENJD_LOG") as mock_log:
+            yield mock_log
+
     def test_failed_enter_env(
         self,
         action_id: str,
@@ -1779,6 +1793,112 @@ class TestSessionActionUpdatedImpl:
         )
         assert mock_mod_logger.info.call_args.args[0].status == "CANCELED"
         assert mock_mod_logger.info.call_args.args[0].action_id == current_action.definition.id
+
+    @pytest.mark.skipif(
+        not ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test only runs when ASSET_SYNC_JOB_USER_FEATURE is enabled",
+    )
+    def test_action_output_capture_filter_integration_on_output_sync_creation(
+        self,
+        action_id: str,
+        session: Session,
+        action_start_time: datetime,
+        step_id: str,
+        success_action_status: ActionStatus,
+        task_id: str,
+        mock_action_output_log_filter: MagicMock,
+        mock_openjd_log: MagicMock,
+    ) -> None:
+        """Tests that ActionOutputCaptureFilter is properly integrated when a task run succeeds"""
+        # GIVEN
+        current_action = CurrentAction(
+            definition=RunStepTaskAction(
+                details=StepDetails(
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command="echo",
+                                    args=["hello"],
+                                ),
+                            ),
+                        ),
+                    ),
+                    step_id=step_id,
+                ),
+                id=action_id,
+                task_id=task_id,
+                task_parameter_values=dict[str, ParameterValue](),
+            ),
+            start_time=action_start_time,
+        )
+        session._current_action = current_action
+        mock_filter_instance = MagicMock()
+        mock_action_output_log_filter.return_value = mock_filter_instance
+
+        # WHEN
+        session._action_updated_impl(
+            action_status=success_action_status,
+            now=datetime.now(),
+        )
+
+        # THEN
+        # Verify filter was created with correct parameters
+        mock_action_output_log_filter.assert_called_once()
+        _, kwargs = mock_action_output_log_filter.call_args
+        assert kwargs["session_id"] == session.id
+        assert callable(kwargs["callback"])
+
+        # Verify filter was added to OPENJD_LOG
+        mock_openjd_log.addFilter.assert_called_once_with(mock_filter_instance)
+
+        # Verify output sync target action was set
+        assert session._output_sync_target_action == current_action
+        assert session._current_action is None
+
+    @pytest.mark.skipif(
+        not ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test only runs when ASSET_SYNC_JOB_USER_FEATURE is enabled",
+    )
+    def test_action_output_filter_removed_on_output_sync_completion(
+        self,
+        session: Session,
+        mock_openjd_log: MagicMock,
+    ) -> None:
+        """Tests that ActionOutputCaptureFilter is removed when output sync completes"""
+        # GIVEN
+        # Set up a mock filter
+        mock_filter = MagicMock()
+        session._action_output_log_filter = mock_filter
+
+        # Set up a mock output sync action
+        mocked_upload_action = MagicMock()
+        # Set up a mock output sync target action
+        output_sync_target_action = MagicMock()
+
+        session._current_action = mocked_upload_action
+        session._output_sync_target_action = output_sync_target_action
+
+        # WHEN
+        # Call with a completed action status
+        completed_action_status = ActionStatus(state=ActionState.SUCCESS)
+
+        with patch.object(
+            session_mod,
+            "OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS",
+            {ActionState.SUCCESS: "SUCCEEDED"},
+        ):
+            session._action_updated_impl(
+                action_status=completed_action_status,
+                now=datetime.now(),
+            )
+
+        # THEN
+        # Verify filter was removed
+        mock_openjd_log.removeFilter.assert_called_once_with(mock_filter)
+        # Verify output sync target action was cleared
+        assert session._output_sync_target_action is None
 
 
 @pytest.mark.usefixtures("mock_openjd_session")
