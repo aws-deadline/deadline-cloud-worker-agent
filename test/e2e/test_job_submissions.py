@@ -32,13 +32,21 @@ import uuid
 import os
 import configparser
 import tempfile
-from e2e.utils import wait_for_job_output, submit_sleep_job, submit_custom_job
+from e2e.utils import (
+    wait_for_job_output,
+    submit_sleep_job,
+    submit_custom_job,
+    submit_job_from_bundle,
+    verify_output_dir_matches,
+)
 
 
 LOG = logging.getLogger(__name__)
 
 
 class TestJobSubmission:
+    JOB_OUTPUT_PATH = os.path.join(os.getcwd(), "job_output")
+
     def test_success(
         self,
         deadline_resources,
@@ -1900,6 +1908,49 @@ class TestJobSubmission:
         job.wait_until_complete(client=deadline_client)
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "windows",
+        reason="Linux specific job bundle to test job attachments dependency data flow",
+    )
+    def test_worker_job_attachments_dep_data_flow_linux(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
+    ) -> None:
+        job_bundle_path: str = os.path.join(
+            os.path.dirname(__file__),
+            "job_attachment_bundle",
+            "dep_data_flow",
+        )
+
+        job = submit_job_from_bundle(
+            deadline_client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            bundle_path=job_bundle_path,
+        )
+
+        job.wait_until_complete(client=deadline_client)
+        assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        # Get job output path
+        os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
+        output_root_path = tempfile.mkdtemp(dir=self.JOB_OUTPUT_PATH, prefix="dep_data_flow_linux")
+        output_path: dict[str, list[str]] = wait_for_job_output(
+            job=job,
+            deadline_client=deadline_client,
+            deadline_resources=deadline_resources,
+            output_root_path=output_root_path,
+        )
+        LOG.info(f"output_path dict is: {output_path}")
+
+        # Verify the final output file exists and contains expected content
+        verify_output_dir_matches(
+            reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/dep_data_flow/correct_output",
+            output_dir_path=output_root_path + "/data_dir",
+        )
 
     @pytest.mark.skip(reason="Queue role permissions are failing the test during E2E test runs")
     def test_worker_fails_job_attachment_sync_when_non_valid_queue_role(
