@@ -5,6 +5,7 @@ import filecmp
 import json
 import yaml
 
+from glob import glob
 from typing import Any, Dict, Optional, List
 from configparser import ConfigParser
 from deadline.job_attachments._aws.deadline import get_queue
@@ -48,13 +49,19 @@ def wait_for_job_output(
     )
     output_paths_by_root = job_output_downloader.get_output_paths_by_root()
     LOG.info(f"Output paths by root: {job_output_downloader.outputs_by_root}")
+
     # Download file and place it into the output_paths_by_root
     if output_root_path is not None:
+        if len(output_paths_by_root) != 1:
+            raise NotImplementedError(
+                f"Currently do not support more than one root paths, provided {output_paths_by_root.keys()}"
+            )
+
         job_output_downloader.set_root_path(
             list(output_paths_by_root.keys())[0], os.path.abspath(output_root_path)
         )
-    job_output_downloader.download_job_output()
 
+    job_output_downloader.download_job_output()
     return output_paths_by_root
 
 
@@ -109,14 +116,15 @@ def submit_job_from_bundle(
     farm: Farm,
     queue: Queue,
     bundle_path: str,
+    template_file_name: str = "template",
     job_attachments_file_system: str = "COPIED",
     queue_parameter_definitions: List[dict] = [],
     max_retries_per_task: Optional[int] = None,
 ) -> Job:
     bundle_path = os.path.normpath(bundle_path)
     LOG.info(f"Submitting bundle {bundle_path} to farm {farm.id} and queue {queue.id}")
-    yaml_path = bundle_path + "/template.yaml"
-    json_path = bundle_path + "/template.json"
+    yaml_path = f"{bundle_path}/{template_file_name}.yaml"
+    json_path = f"{bundle_path}/{template_file_name}.json"
     if os.path.isfile(yaml_path):
         with open(yaml_path) as f:
             job_template = yaml.safe_load(f.read())
@@ -125,7 +133,7 @@ def submit_job_from_bundle(
             job_template = json.loads(f.read())
     else:
         LOG.error(
-            f"Was expecting to find either template.yaml or template.json in directory {bundle_path} but found none."
+            f"Was expecting to find either {template_file_name}.yaml or {template_file_name}.json in directory {bundle_path} but found none."
         )
         raise FileNotFoundError
 
@@ -178,8 +186,8 @@ def verify_output_dir_matches(
     LOG.info(
         f"Comparing output files in reference directory {reference_dir_path} to the output in {output_dir_path}"
     )
-    reference_files = get_all_files_in_dir_rel_path(reference_dir_path)
-    output_files = get_all_files_in_dir_rel_path(output_dir_path)
+    reference_files = recursively_list_files_as_relative_paths(reference_dir_path)
+    output_files = recursively_list_files_as_relative_paths(output_dir_path)
 
     if convert_line_endings:
         # replacement strings
@@ -214,16 +222,29 @@ def verify_output_dir_matches(
     assert len(errors) == 0, "Number of errors is non-zero"
 
 
-def get_all_files_in_dir_rel_path(dir_path: str) -> List[str]:
-    files = []
+def recursively_list_files_as_relative_paths(dir_path: str) -> List[str]:
+    """
+    Get all files in a directory and its subdirectories, returning paths relative to dir_path.
+    Uses glob for more efficient file discovery.
 
-    for filedir_path, _, file_names in os.walk(dir_path):
-        for f in file_names:
-            fullpath = filedir_path + "/" + f
-            relpath = os.path.relpath(fullpath, dir_path)
-            files.append(relpath)
+    Args:
+        dir_path: The directory path to search
 
-    return files
+    Returns:
+        A list of file paths relative to dir_path
+    """
+
+    rel_files = [
+        # Convert absolute paths to relative paths
+        os.path.relpath(f, dir_path)
+        # Use ** pattern for recursive search through all subdirectories
+        # The recursive=True parameter enables ** to match directories at any level
+        for f in glob(os.path.join(dir_path, "**"), recursive=True)
+        # Filter out directories, keep only files
+        if os.path.isfile(f)
+    ]
+
+    return rel_files
 
 
 def submit_custom_job(
