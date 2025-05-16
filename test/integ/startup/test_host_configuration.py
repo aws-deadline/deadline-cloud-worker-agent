@@ -285,6 +285,45 @@ Get-ChildItem env: | ForEach-Object { "$($_.Name)=$($_.Value)" }
         for log in expected_logs:
             assert any(log in m for m in messages)
 
+    @pytest.mark.skipif(
+        sys.platform != "win32",
+        reason="Windows specific test",
+    )
+    def test_windows_log_file_already_exists(
+        self, message_queue: SimpleQueue, queue_handler: QueueHandler, tmp_path: Path
+    ):
+        # Given
+        script = "echo HelloWorld\r\nexit 0"
+        expected_logs = ["HelloWorld"]
+        timeout = 300
+
+        runner = self._create_host_configuration_script_runner(
+            script=script,
+            timeout=timeout,
+            tmp=tmp_path,
+            queue_handler=queue_handler,
+        )
+
+        # Pre-create the log file
+        log_content = "FOO_BAR_QUX"
+        log_path = os.path.join(tmp_path, "host_configuration.log")
+        with open(log_path, "w+") as fp:
+            fp.write(log_content)
+
+        # When
+        exit_code = runner.run()
+        run_success = exit_code == 0
+
+        # Then
+        assert run_success
+        messages = collect_queue_messages(message_queue)
+
+        for log in expected_logs:
+            assert any(log in m for m in messages)
+
+        # Make sure the pre-created log content is not found.
+        assert not any(log_content in m for m in messages)
+
     def test_script_and_log_file_access(self, queue_handler: QueueHandler, tmp_path: Path):
         """
         Tests the script file is only accessible by worker agent user.
