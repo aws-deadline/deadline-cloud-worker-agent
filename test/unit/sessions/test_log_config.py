@@ -193,7 +193,7 @@ class TestActionOutputCaptureFilter:
             level=logging.INFO,
             pathname="",
             lineno=0,
-            msg="Test message with non-matching session_id",
+            msg=f"ja_snapshot: {json.dumps(self.snapshot_result)}",
             args=(),
             exc_info=None,
         )

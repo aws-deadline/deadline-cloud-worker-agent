@@ -122,6 +122,13 @@ class ActionOutputMessageKind(Enum):
 
 
 class ActionOutputCaptureFilter(logging.Filter):
+    """A logging filter that captures and processes action output messages.
+
+    This filter intercepts log messages that match specific patterns related to ActionOutputMessageKind
+    and processes them through appropriate handlers. It only processes messages from the specified
+    session ID and passes the extracted data to the provided callback function.
+    """
+
     _FILTER_MATCHER = re.compile(
         (
             "^(?:"
@@ -129,6 +136,11 @@ class ActionOutputCaptureFilter(logging.Filter):
             "): (.+)$"
         )
     )
+    """Regular expression pattern used to match and extract action output messages.
+
+    The pattern matches strings that start with one of the ActionOutputMessageKind values
+    followed by a colon and space, then captures the remaining content.
+    """
 
     _callback: Callable[[ActionOutputMessageKind, Any], None]
     """Callback to invoke when one of the Open Job Description update messages is detected."""
@@ -162,6 +174,8 @@ class ActionOutputCaptureFilter(logging.Filter):
 
         match = ActionOutputCaptureFilter._FILTER_MATCHER.match(record.msg)
         if match and match.lastindex is not None:
+            # successfully matched one of the patterns
+            # and can extract the message content from the last capturing group
             message = match.group(match.lastindex)
             # Note: keys of match.groupdict() are the names of named groups in the regex
             matched_named_groups = tuple(k for k, v in match.groupdict().items() if v is not None)
