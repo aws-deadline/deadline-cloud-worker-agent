@@ -17,15 +17,85 @@ This guide provides developers with a comprehensive overview of the worker agent
 
 ## 1. High-Level Architecture
 
-Coming soon&hellip;
+The AWS Deadline Cloud Worker Agent is a critical component of AWS Deadline Cloud, responsible for running jobs on worker hosts. The diagram below illustrates where the worker agent fits in the larger AWS Deadline Cloud architecture:
+
+![High-Level Architecture](./images/high_level_architecture.drawio.svg)  
+<small>*Diagram can be edited using draw.io*</small>
+
+The architecture consists of several key components/concepts:
+
+*   **AWS Deadline Cloud Service** &mdash; The central service that manages job scheduling and worker coordination.
+
+*   **Worker Host** &mdash; A compute host machine modeled by a worker resource in Deadline Cloud. The type of host machine is abstract. Examples of worker hosts include:
+
+    *   EC2 instances
+    *   physical on-premise servers
+    *   virtual machines
+    *   containers
+
+*   **Worker Agent** &mdash; A software component that runs on worker hosts. The worker agent communicates with the Deadline Cloud service using the [Worker API Protocol](./worker_api_protocol.md) and is responsible for managing the [worker life-cycle](./worker_lifecycle.md), the [session life-cycle](./session_lifecycle.md) for assigned worker sessions, and reporting the progres/status of the ongoing sessions back to Deadline Cloud.
+
+*   **Session** &mdash; A stateful context maintained by workers where work for the submitted jobs are ran. The worker agent runs an extension of
+    [Open Description (OpenJD)][openjd] sessions specific to AWS Deadline Cloud.
+
+[openjd]: https://github.com/OpenJobDescription/openjd-specifications/wiki
+
+*   **Fleet** &mdash; A group of workers with similar host characteristics (e.g. operating system, compute resources, pre-installed software, etc&hellip;)
+
+    There are two different types of fleets in Deadline Cloud:
+
+    *   **Customer-Managed Fleet (CMF)** &mdash; Worker hosts managed by customers, running the worker agent software. These fleets can be located in EC2, on-premise, or in a co-located data center.
+
+    *   **Service-Managed Fleet (SMF)** &mdash; Worker hosts managed by the Deadline Cloud service, with the worker agent pre-installed.
+
+*   **Client Applications** &mdash; Software that interfaces with AWS Deadline Cloud APIs to submit/monitor/manage jobs and to download their outputs. Some examples include the Deadline Cloud monitor and the Deadline command-line interface. In general, this can include any application that interacts with the Deadline Cloud APIs.
+
+*   **Additional AWS Services**
+
+    *   **CloudWatch Logs** &mdash; Used to stream the worker agent application logs and session logs for remote monitoring.
+
+    *   **S3** &mdash; Used to transfer [job attachments][job-attachments] between client applications and workers
+
+[job-attachments]: https://docs.aws.amazon.com/deadline-cloud/latest/userguide/storage-job-attachments.html
 
 ### 1.1. Responsibilities
 
-Coming soon&hellip;
+The AWS Deadline Cloud Worker Agent has the following key responsibilities:
+
+-   **Worker Management**:
+    -   Maintain the worker through its [life-cycle](./worker_lifecycle.md)
+    -   Create a worker resource in Deadline Cloud if required
+    -   Maintain the worker status and keep the worker's schedule in sync with Deadline Cloud by
+        following the [Worker API protocol](./worker_api_protocol.md). This protocol defines the required behavior of any worker agent implementation.
+    -   Handle graceful shutdown and interruption scenarios
+
+-   **Session Management**:
+    -   Maintain the session through its [life-cycle](./session_lifecycle.md) for all assigned sessions
+    -   Establish new sessions assigned by Deadline Cloud
+    -   Run the actions in the order assigned by Deadline Cloud
+    -   Report session status and progress back to the service
+    -   Handle session action failures and interruptions
+
+-   **Security and Authentication**:
+    -   Retrieve and rotate temporary worker and queue AWS credentials
+    -   Provide secure access of the assumed queue role to sessions for the queue
+    -   Maintain least-privilege access of files and directories involved
+    -   Uphold security boundaries between
+        -   the worker agent and sessions
+        -   sessions for jobs in different queues
+
+-   **Host Monitoring**:
+    -   Track host metrics (CPU, memory, disk usage)
+    -   Monitor for EC2 spot interruptions, ASG lifecycle events, and operating system
+        signals sent to the process
+
+-   **Logging**:
+    -   Stream worker agent logs to CloudWatch Logs
+    -   Capture session output and stream to CloudWatch logs
 
 ## 2. Software Architecture
 
-The worker agent is composed of several interconnected components that work together to manage the worker lifecycle and execute sessions:
+The worker agent is composed of several interconnected components that work together to manage the worker lifecycle and run sessions:
 
 ```mermaid
 ---
@@ -71,8 +141,8 @@ flowchart-elk TD
 - **Configuration**: The program configuration resolved from command-line arguments, environment variables, and a config file.
 - **Worker**: Sets up the scheduler and monitoring for operating system, EC2 interruptions, and host metrics.
 - **WorkerScheduler**: Synchronizes with Deadline Cloud APIs to manage session life-cycles assigned by the service and report their status and progress back to the service. Monitors for service-initiated shutdowns.
-- **Session**: Manages the execution of individual sessions, including setup, monitoring, and cleanup.
-- **SessionActionDefinition**: Defines the interface for session actions that can be executed within a session.
+- **Session**: Manages the running of individual sessions, including setup, monitoring, and cleanup.
+- **SessionActionDefinition**: Defines the interface for session actions that can be run within a session.
 - **AWS Deadline Cloud Service**: The AWS Deadline Cloud service API endpoints
 - **CloudWatch Logs** The Amazon CloudWatch service API endpoints
 
@@ -185,7 +255,7 @@ The worker agent operates using a multi-threaded architecture to efficiently man
 
 5. **Per-Session Threads**:
    - Created for each active session
-   - Starts session actions and monitors their execution
+   - Starts and monitors session actions
    - Reports session progress and status to the service
    - Handles session completion, cancellation, or failure scenarios
    - Manages session-specific resources
@@ -199,7 +269,7 @@ The worker agent operates using a multi-threaded architecture to efficiently man
 7. **Session Action Thread**:
    - Created when starting a session action
    - Launches the subprocess for the session action
-   - Monitors the subprocess execution
+   - Monitors the running subprocess
    - Forwards standard output from the subprocess to Python logging events
    - Captures OpenJobDescription standard output protocol events
 
@@ -288,7 +358,7 @@ sequenceDiagram
             PST->>PST: Monitor session action
             
             SAT->>SAT: Launch subprocess
-            SAT->>SAT: Monitor subprocess execution
+            SAT->>SAT: Monitor running subprocess
             destroy SAT
             SAT->>PST: Report action completion
         end
