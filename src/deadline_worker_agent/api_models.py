@@ -73,13 +73,19 @@ class FloatParameter(TypedDict):
     float: str
 
 
+class ChunkIntParameter(TypedDict):
+    chunkInt: str
+
+
 class TaskRunAction(TypedDict):
     sessionActionId: str
     actionType: StepActionType
     taskId: str
     stepId: str
     parameters: NotRequired[
-        dict[str, StringParameter | PathParameter | IntParameter | FloatParameter]
+        dict[
+            str, StringParameter | PathParameter | IntParameter | FloatParameter | ChunkIntParameter
+        ]
     ]
 
 
@@ -296,7 +302,15 @@ class JobDetailsData(JobDetailsIdentifierFields):
     """The Open Job Description job template schema version"""
 
     parameters: NotRequired[
-        dict[str, StringParameter | PathParameter | IntParameter | FloatParameter | str]
+        dict[
+            str,
+            StringParameter
+            | PathParameter
+            | IntParameter
+            | FloatParameter
+            | ChunkIntParameter
+            | str,
+        ]
     ]
     """The job parameters"""
 

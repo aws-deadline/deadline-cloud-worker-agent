@@ -769,39 +769,6 @@ class TestCloudWatchLogStreaming:
         context_mgr_exit.assert_called_once()
 
 
-@patch("deadline_worker_agent.startup.entrypoint.HOST_CONFIGURATION_FEATURE", False)
-@patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")
-@patch.object(entrypoint_mod.sys, "exit")
-def test_host_config_feature_flag_off(
-    sys_exit_mock: MagicMock,
-    telemetry_mock: MagicMock,
-    bootstrap_worker_mock: MagicMock,
-    mock_fleet_host_configuration_runner: MagicMock,
-    worker_info: WorkerPersistenceInfo,
-) -> None:
-    # Turn OFF the feature flag for this test.
-    # Given
-
-    with patch.object(entrypoint_mod, "_logger") as logger:
-        # WHEN
-        entrypoint()
-
-    # Then
-    mock_fleet_host_configuration_runner.assert_not_called()
-
-    expected = "Host Configuration Feature is not enabled."
-
-    all_args = [
-        arg.msg
-        for args, kwargs in logger.info.call_args_list
-        for arg in list(args) + list(kwargs.values())
-        if isinstance(arg, WorkerHostConfigurationLogEvent)
-    ]
-    assert len(all_args) > 0
-    assert expected in all_args
-
-
-@patch("deadline_worker_agent.startup.entrypoint.HOST_CONFIGURATION_FEATURE", True)
 @patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")
 @patch.object(entrypoint_mod.sys, "exit")
 def test_host_config_already_run_before(
@@ -843,7 +810,6 @@ def test_host_config_already_run_before(
         pytest.param(False, 1, True, id="No Host Config"),
     ),
 )
-@patch("deadline_worker_agent.startup.entrypoint.HOST_CONFIGURATION_FEATURE", True)
 @patch.object(entrypoint_mod, "_repeatedly_attempt_host_shutdown")
 @patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")
 @patch.object(entrypoint_mod.sys, "exit")

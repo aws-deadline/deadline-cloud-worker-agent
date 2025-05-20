@@ -43,9 +43,9 @@ class _WindowsScriptRunner:
         """Run the executable with command. Tails the prescribed log file until process exit.
         Returns the process exit code.
         """
-        self._prepare_file_permissions()
+        with FileContext(file_path=self._logfile, delete_existing=True) as _:
+            self._prepare_file_permissions()
 
-        with FileContext(self._logfile) as _:
             # Run the command, allow the window to show.
             # https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-shellexecuteinfoa
             try:

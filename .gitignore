@@ -9,6 +9,7 @@
 /doc/_apidoc/
 /build
 /dist
+/job_output
 
 __pycache__/
 

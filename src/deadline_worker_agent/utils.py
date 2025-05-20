@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import MutableMapping
 import os
+from pathlib import Path
 from types import TracebackType
 from typing import Any, Callable, Generic, Iterator, TypeVar
 
@@ -61,10 +62,13 @@ class MappingWithCallbacks(MutableMapping, Generic[_K, _V]):
 class FileContext:
     """File context, ensures a file is deleted."""
 
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, delete_existing: bool = False):
         self._file_path = file_path
+        self._delete_existing = delete_existing
 
     def __enter__(self):
+        if self._delete_existing:
+            Path(self._file_path).unlink(missing_ok=True)
         return self._file_path
 
     def __exit__(

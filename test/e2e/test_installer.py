@@ -21,6 +21,7 @@ from deadline_test_fixtures import (
     DeadlineClient,
     DeadlineWorkerConfiguration,
     EC2InstanceWorker,
+    WindowsInstanceWorkerBase,
     Job,
     TaskStatus,
 )
@@ -53,6 +54,7 @@ class TestWindowsInstaller:
     # Names for tests
     CUSTOM_AGENT_NAME = "custom-agent-worker"
     DEFAULT_AGENT_NAME = "deadline-worker"
+    WINDOWS_SECRET = "WindowsPasswordSecret"
     DEFAULT_JOB_USER = "job-user"
     ADMIN_SID = "S-1-5-32-544"
 
@@ -67,6 +69,7 @@ class TestWindowsInstaller:
         return dataclasses.replace(
             worker_config,
             agent_user=self.CUSTOM_AGENT_NAME,
+            windows_user_secret=self.WINDOWS_SECRET,
             allow_shutdown=False,
             start_service=False,
             fleet=deadline_resources.scaling_fleet,
@@ -85,6 +88,23 @@ class TestWindowsInstaller:
             queue=deadline_resources.scaling_queue,
             run_script=self.WHOAMI_COMMAND,
         )
+
+    @pytest.fixture(scope="class")
+    def completed_job(
+        self,
+        class_worker: EC2InstanceWorker,
+        deadline_client: DeadlineClient,
+        test_job: Job,
+    ) -> Job:
+        """Fixture that ensures the test job is completed before running tests."""
+        LOG.info("Ensuring job is completed before running tests")
+        if test_job.task_run_status != TaskStatus.SUCCEEDED:
+            LOG.info("Job hasn't been completed, starting the worker service")
+            class_worker.start_worker_service()
+            test_job.wait_until_complete(client=deadline_client)
+
+        assert test_job.task_run_status == TaskStatus.SUCCEEDED, "Job did not complete successfully"
+        return test_job
 
     # Shared Class Methods
     @staticmethod
@@ -181,6 +201,30 @@ Get-LocalUser | Select-Object Name, Enabled | Format-Table -AutoSize
             f"Default worker agent user {self.DEFAULT_AGENT_NAME} should not exist"
         )
 
+    def test_worker_agent_credentials(
+        self,
+        class_worker: WindowsInstanceWorkerBase,
+    ) -> None:
+        LOG.info("Verifying the worker agent credentials")
+
+        verify_credentials_command = f"""
+Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+$contextType = [System.DirectoryServices.AccountManagement.ContextType]::Machine
+$principalContext = New-Object System.DirectoryServices.AccountManagement.PrincipalContext($contextType)
+
+$username = "{self.CUSTOM_AGENT_NAME}"
+
+$isValid = $principalContext.ValidateCredentials($username, "$({class_worker.get_windows_user_secret_cmd(secret_id=self.WINDOWS_SECRET)})")
+
+if ($isValid) {{
+    Write-Host "Credentials are valid."
+}}
+"""
+        check_creds_result = class_worker.send_command(command=verify_credentials_command)
+        assert "Credentials are valid." in check_creds_result.stdout, (
+            "Worker agent credentials validation failed."
+        )
+
     def test_custom_agent_runs_job_as_user(
         self,
         class_worker: EC2InstanceWorker,
@@ -206,13 +250,8 @@ Get-LocalUser | Select-Object Name, Enabled | Format-Table -AutoSize
     def test_deny_shutdown_on_stop(
         self,
         class_worker: EC2InstanceWorker,
-        test_job: Job,
+        completed_job: Job,
     ) -> None:
-        # Check if the job has run for the set of tests
-        if test_job.task_run_status != TaskStatus.SUCCEEDED:
-            LOG.info("Job hasn't been completed, start the worker service")
-            class_worker.start_worker_service()
-
         LOG.info("Wait for Worker Service to begin Stopping")
         # This can take over 5 minutes
         class_worker.wait_until_desired_worker_status(

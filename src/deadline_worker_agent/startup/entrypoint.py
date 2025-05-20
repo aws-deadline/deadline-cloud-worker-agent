@@ -17,8 +17,6 @@ from pathlib import Path
 
 from ..aws_credentials.worker_boto3_session import WorkerBoto3Session
 
-from ..feature_flag import HOST_CONFIGURATION_FEATURE
-
 from ..api_models import WorkerStatus
 from ..aws.deadline import (
     update_worker,
@@ -446,18 +444,7 @@ def _host_configuration(
     """
 
     # If there was a host config, and it was bootstrapped before, only log a message.
-    if worker_bootstrap.host_config and not HOST_CONFIGURATION_FEATURE:
-        _logger.info(
-            WorkerHostConfigurationLogEvent(
-                farm_id=config.farm_id,
-                fleet_id=config.fleet_id,
-                worker_id=worker_id,
-                message="Host Configuration Feature is not enabled.",
-                status=WorkerHostConfigurationStatus.SKIPPED,
-            )
-        )
-        return
-    elif worker_bootstrap.host_config and worker_bootstrap.worker_info.host_configuration_succeeded:
+    if worker_bootstrap.host_config and worker_bootstrap.worker_info.host_configuration_succeeded:
         _logger.info(
             WorkerHostConfigurationLogEvent(
                 farm_id=config.farm_id,
