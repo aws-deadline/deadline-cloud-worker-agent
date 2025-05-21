@@ -6,6 +6,7 @@ import sys
 import time
 import os
 import boto3
+from datetime import datetime, timezone
 import json
 from typing import Optional
 
@@ -31,7 +32,21 @@ python attachment_upload.py \
 
 
 def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> None:
-    s3_path = f"{os.environ.get('DEADLINE_FARM_ID')}/{os.environ.get('DEADLINE_QUEUE_ID')}/{os.environ.get('DEADLINE_JOB_ID')}/{os.environ.get('DEADLINE_STEP_ID')}/{os.environ.get('DEADLINE_TASK_ID')}/{os.environ.get('DEADLINE_SESSIONACTION_ID')}"
+    current_dt = datetime.now(timezone.utc)
+    iso_string = current_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+    s3_path = (
+        f"{os.environ.get('DEADLINE_FARM_ID')}/"
+        f"{os.environ.get('DEADLINE_QUEUE_ID')}/"
+        f"{os.environ.get('DEADLINE_JOB_ID')}/"
+        f"{os.environ.get('DEADLINE_STEP_ID')}/"
+        f"{os.environ.get('DEADLINE_TASK_ID')}/"
+        # datetime is required to account for multiple sessionactions for the same task
+        # download would take the latest session action based on timestamp
+        f"{iso_string}_"
+        f"{os.environ.get('DEADLINE_SESSIONACTION_ID')}"
+    )
+
     api.attachment_upload(
         manifests=manifests,
         s3_root_uri=s3_root_uri,
