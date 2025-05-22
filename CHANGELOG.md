@@ -1,3 +1,22 @@
+## 0.28.7 (2025-05-21)
+
+
+### Features
+* Host Configuration feature launch (#636) ([`dd2071d`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/dd2071d1d01d6cd811531bc1d689c114a7e760e5))
+* Add initial support for chunkInt parameter type (#606) ([`4c517b4`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/4c517b4a37c35ee4cc8c1ba79bfc6bc1cb29f250))
+
+### Bug Fixes
+* Worker agent exits on startup if host config log pre-exists with non-UTF8 contents (#634) ([`6466c4f`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/6466c4fbd509867f877a17af1a4a95693590808b))
+* Worker Agent crashes on corrupted cached credentials (#614) ([`7f1ec05`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/7f1ec05d86035febd68daffa603d8da404b8854a))
+
+### Experimental
+
+These changes are experimental and only available through the use of feature flags
+
+* ASSET_SYNC_JOB_USER_FEATURE - outputs would fail to upload with `NonValidInputError` when merging multiple manifests (#612) ([`4c12664`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/4c126648a657df83e065c77274c965b8d0ad283e))
+* ASSET_SYNC_JOB_USER_FEATURE - input files that were modified during a task run were mistakenly uploaded as output (#612) ([`4c12664`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/4c126648a657df83e065c77274c965b8d0ad283e))
+
+
 ## 0.28.6 (2025-05-01)
 
 
