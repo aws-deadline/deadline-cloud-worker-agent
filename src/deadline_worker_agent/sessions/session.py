@@ -1069,6 +1069,15 @@ class Session:
         ):
             self._action_updated_impl(action_status=action_status, now=now)
 
+    def _action_output_log_filter_callback(
+        self, message_type: ActionOutputMessageKind, value: Any
+    ) -> None:
+        """Callback for the action output log filter
+        This callback is called when the output log filter is triggered.
+        """
+        if message_type == ActionOutputMessageKind.JA_SNAPSHOT:
+            self.add_manifest_path(root=value["root"], path=value["manifest"])
+
     def _action_updated_impl(
         self,
         *,
@@ -1104,15 +1113,6 @@ class Session:
         now : datetime
             The time the action was updated
         """
-
-        def action_output_log_filter_callback(
-            message_type: ActionOutputMessageKind, value: Any
-        ) -> None:
-            """Callback for the action output log filter
-            This callback is called when the output log filter is triggered.
-            """
-            if message_type == ActionOutputMessageKind.JA_SNAPSHOT:
-                self.add_manifest_path(root=value["root"], path=value["manifest"])
 
         # avoid circular import
         from .actions import RunStepTaskAction
@@ -1175,7 +1175,7 @@ class Session:
 
                 if not self._action_output_log_filter:
                     self._action_output_log_filter = ActionOutputCaptureFilter(
-                        session_id=self.id, callback=action_output_log_filter_callback
+                        session_id=self.id, callback=self._action_output_log_filter_callback
                     )
 
                 OPENJD_LOG.addFilter(self._action_output_log_filter)
