@@ -1105,6 +1105,15 @@ class Session:
             The time the action was updated
         """
 
+        def action_output_log_filter_callback(
+            message_type: ActionOutputMessageKind, value: Any
+        ) -> None:
+            """Callback for the action output log filter
+            This callback is called when the output log filter is triggered.
+            """
+            if message_type == ActionOutputMessageKind.JA_SNAPSHOT:
+                self.add_manifest_path(root=value["root"], path=value["manifest"])
+
         # avoid circular import
         from .actions import RunStepTaskAction
 
@@ -1163,15 +1172,6 @@ class Session:
                     stepId=current_action.definition.step_id,
                     taskId=current_action.definition.task_id,
                 )
-
-                def action_output_log_filter_callback(
-                    message_type: ActionOutputMessageKind, value: Any
-                ) -> None:
-                    """Callback for the action output log filter
-                    This callback is called when the output log filter is triggered.
-                    """
-                    if message_type == ActionOutputMessageKind.JA_SNAPSHOT:
-                        self.add_manifest_path(root=value["root"], path=value["manifest"])
 
                 if not self._action_output_log_filter:
                     self._action_output_log_filter = ActionOutputCaptureFilter(
