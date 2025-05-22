@@ -6,13 +6,12 @@ import sys
 import time
 import os
 import boto3
-from datetime import datetime, timezone
 import json
 from typing import Optional
 
 from deadline.job_attachments import api
 from deadline.job_attachments.api.manifest import _manifest_snapshot, _manifest_merge
-from deadline.job_attachments.models import ManifestSnapshot, ManifestMerge
+from deadline.job_attachments.models import ManifestSnapshot, ManifestMerge, JobAttachmentS3Settings
 
 """
 A small script to
@@ -32,19 +31,21 @@ python attachment_upload.py \
 
 
 def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> None:
-    current_dt = datetime.now(timezone.utc)
-    iso_string = current_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    # Helper function to get environment variable or raise error if missing
+    def get_env_or_raise(name):
+        value = os.environ.get(name)
+        if value is None:
+            raise ValueError(f"Required environment variable '{name}' is not set")
+        return value
 
-    s3_path = (
-        f"{os.environ.get('DEADLINE_FARM_ID')}/"
-        f"{os.environ.get('DEADLINE_QUEUE_ID')}/"
-        f"{os.environ.get('DEADLINE_JOB_ID')}/"
-        f"{os.environ.get('DEADLINE_STEP_ID')}/"
-        f"{os.environ.get('DEADLINE_TASK_ID')}/"
-        # datetime is required to account for multiple sessionactions for the same task
-        # download would take the latest session action based on timestamp
-        f"{iso_string}_"
-        f"{os.environ.get('DEADLINE_SESSIONACTION_ID')}"
+    s3_path = JobAttachmentS3Settings.partial_session_action_manifest_prefix(
+        farm_id=get_env_or_raise("DEADLINE_FARM_ID"),
+        queue_id=get_env_or_raise("DEADLINE_QUEUE_ID"),
+        job_id=get_env_or_raise("DEADLINE_JOB_ID"),
+        step_id=get_env_or_raise("DEADLINE_STEP_ID"),
+        task_id=get_env_or_raise("DEADLINE_TASK_ID"),
+        session_action_id=get_env_or_raise("DEADLINE_SESSIONACTION_ID"),
+        time=time.time(),
     )
 
     api.attachment_upload(

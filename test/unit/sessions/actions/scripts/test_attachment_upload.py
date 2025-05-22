@@ -292,14 +292,12 @@ class TestAttachmentUpload:
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.api.attachment_upload")
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.boto3.session.Session")
-    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.datetime")
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.time")
     def test_upload_with_environment_variables(
-        self, mock_datetime, mock_boto3_session, mock_attachment_upload
+        self, mock_time, mock_boto3_session, mock_attachment_upload
     ):
         # Setup mock for datetime
-        mock_now = Mock()
-        mock_now.strftime.return_value = "2025-01-01T12:00:00.000000Z"
-        mock_datetime.now.return_value = mock_now
+        mock_time.time.return_value = 1747952223.4090126
 
         # Setup mock for boto3 session
         mock_session = Mock()
@@ -325,7 +323,7 @@ class TestAttachmentUpload:
             upload(s3_root_uri, path_mapping_rules, manifests)
 
             # Expected S3 path based on environment variables and datetime
-            expected_s3_path = "farm-123/queue-456/job-789/step-012/task-345/2025-01-01T12:00:00.000000Z_sessionaction-678"
+            expected_s3_path = "farm-123/queue-456/job-789/step-012/task-345/2025-05-22T22:17:03.409012Z_sessionaction-678"
 
             # Verify attachment_upload was called with correct arguments
             mock_attachment_upload.assert_called_once_with(
