@@ -110,6 +110,7 @@ def snapshot(
         )
         if manifest:
             manifests.append(manifest.manifest)
+            print(f"ja_snapshot: {json.dumps({'root': root, 'manifest': manifest.manifest})}")
 
     return manifests
 

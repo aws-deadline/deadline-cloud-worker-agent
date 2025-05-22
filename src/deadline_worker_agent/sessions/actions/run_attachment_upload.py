@@ -169,6 +169,7 @@ class AttachmentUploadAction(OpenjdAction):
         )
 
         manifest_paths_by_root = session.manifest_paths_by_root
+        # outputRelativeDirectories by source provided by job manifests
         out_rel_dirs_by_source = session.manifest_out_rel_dirs_by_source
         out_rel_dirs_by_root: dict[str, list[str]] = self._get_out_rel_dirs_by_root(
             out_rel_dirs_by_source=out_rel_dirs_by_source,

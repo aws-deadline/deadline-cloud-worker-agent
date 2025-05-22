@@ -7,11 +7,16 @@ from unittest.mock import MagicMock, patch
 import logging
 
 import pytest
+import json
 
 from deadline_worker_agent.api_models import (
     LogConfiguration as BotoLogConfiguration,
 )
-from deadline_worker_agent.sessions.log_config import LogConfiguration, LogProvisioningError
+from deadline_worker_agent.sessions.log_config import (
+    LogConfiguration,
+    LogProvisioningError,
+    ActionOutputCaptureFilter,
+)
 import deadline_worker_agent.sessions.log_config as log_config_mod
 
 
@@ -152,3 +157,219 @@ class TestLogConfiguration:
 
         # THEN
         assert raise_ctx.value.message == log_provision_error_msg
+
+
+class TestActionOutputCaptureFilter:
+    """Tests for the ActionOutputCaptureFilter class"""
+
+    def setup_method(self):
+        """Set up test fixtures"""
+        self.logger = logging.getLogger("test_logger")
+        self.logger.setLevel(logging.INFO)
+        # Clear any existing handlers
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
+        # Create a handler that will capture log records
+        self.log_handler = logging.StreamHandler()
+        self.logger.addHandler(self.log_handler)
+        # Default session ID for tests
+        self.session_id = "test-session-id"
+        self.snapshot_result = {"root": "test-root", "manifest": "test-manifest"}
+
+    def test_filter_with_session_id_mismatch(self):
+        """Test that the filter ignores records with non-matching session_id"""
+        # Create a mock callback
+        mock_callback = MagicMock()
+
+        # Create the filter with the callback
+        action_output_capture_filter = ActionOutputCaptureFilter(
+            session_id=self.session_id, callback=mock_callback
+        )
+        self.log_handler.addFilter(action_output_capture_filter)
+
+        # Create a log record with non-matching session_id
+        record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg=f"ja_snapshot: {json.dumps(self.snapshot_result)}",
+            args=(),
+            exc_info=None,
+        )
+        setattr(record, "session_id", "different-session-id")
+
+        # Filter the record
+        result = action_output_capture_filter.filter(record)
+
+        # Verify the filter returns True but doesn't process the message
+        assert result is True
+        mock_callback.assert_not_called()
+
+    def test_filter_with_non_string_message(self):
+        """Test that the filter handles non-string messages correctly"""
+        # Create a mock callback
+        mock_callback = MagicMock()
+
+        # Create the filter with the callback
+        action_output_capture_filter = ActionOutputCaptureFilter(
+            session_id=self.session_id, callback=mock_callback
+        )
+        self.log_handler.addFilter(action_output_capture_filter)
+
+        # Create a log record with a non-string message
+        record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg={"key": "value"},  # Non-string message
+            args=(),
+            exc_info=None,
+        )
+        setattr(record, "session_id", self.session_id)
+
+        # Filter the record
+        result = action_output_capture_filter.filter(record)
+
+        # Verify the filter returns True but doesn't process the message
+        assert result is True
+        mock_callback.assert_not_called()
+
+    def test_filter_regex_pattern_matching(self):
+        """Test that the filter correctly matches the regex pattern for ActionOutputMessageKind"""
+        # Create a mock callback
+        mock_callback = MagicMock()
+
+        # Create the filter with the callback
+        action_output_capture_filter = ActionOutputCaptureFilter(
+            session_id=self.session_id, callback=mock_callback
+        )
+
+        # Create log records with the ActionOutputMessageKind values as prefixes
+        ja_snapshot_record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg=f"ja_snapshot: {json.dumps(self.snapshot_result)}",
+            args=(),
+            exc_info=None,
+        )
+        setattr(ja_snapshot_record, "session_id", self.session_id)
+
+        ja_upload_record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="ja_upload: This is an upload message",
+            args=(),
+            exc_info=None,
+        )
+        setattr(ja_upload_record, "session_id", self.session_id)
+
+        # Test that the filter correctly matches the patterns
+        assert action_output_capture_filter.filter(ja_snapshot_record) is True
+        assert action_output_capture_filter.filter(ja_upload_record) is True
+
+    def test_filter_regex_pattern_matching_with_handler(self):
+        """Test that the filter correctly processes messages with the regex pattern and calls the handler"""
+        # Create a mock callback
+        mock_callback = MagicMock()
+
+        # Create the filter with the callback
+        action_output_capture_filter = ActionOutputCaptureFilter(
+            session_id=self.session_id, callback=mock_callback
+        )
+
+        # Create a log record with the ja_snapshot prefix
+        ja_snapshot_record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg=f"ja_snapshot: {json.dumps(self.snapshot_result)}",
+            args=(),
+            exc_info=None,
+        )
+        setattr(ja_snapshot_record, "session_id", self.session_id)
+
+        # Filter the record
+        action_output_capture_filter.filter(ja_snapshot_record)
+
+        # Verify the callback was called with the correct arguments
+        # The third parameter is a boolean that we're not testing here
+        mock_callback.assert_called_once_with(
+            log_config_mod.ActionOutputMessageKind.JA_SNAPSHOT,
+            self.snapshot_result,
+        )
+
+    def test_handler_error_handling(self):
+        """Test that errors in handlers are properly handled"""
+        # Create a mock callback that raises an exception
+        mock_callback = MagicMock(side_effect=ValueError("Test error"))
+
+        # Create the filter with the callback
+        action_output_capture_filter = ActionOutputCaptureFilter(
+            session_id=self.session_id, callback=mock_callback
+        )
+
+        # Create a log record with the ja_snapshot prefix
+        ja_snapshot_record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg=f"ja_snapshot: {json.dumps(self.snapshot_result)}",
+            args=(),
+            exc_info=None,
+        )
+        setattr(ja_snapshot_record, "session_id", self.session_id)
+
+        # Filter the record - this should not raise an exception
+        result = action_output_capture_filter.filter(ja_snapshot_record)
+
+        # Verify the filter returns True and the error is appended to the message
+        assert result is True
+        assert "ERROR:" in ja_snapshot_record.msg
+
+    def test_multiple_matched_groups_handling(self):
+        """Test handling of multiple matched groups in the regex pattern"""
+        # Create a mock callback
+        mock_callback = MagicMock()
+
+        # Create the filter with the callback and a patched _FILTER_MATCHER that would match multiple groups
+        with patch.object(ActionOutputCaptureFilter, "_FILTER_MATCHER") as mock_matcher:
+            # Configure the mock to simulate multiple matched groups
+            mock_match = MagicMock()
+            mock_match.lastindex = 2
+            mock_match.group.return_value = "Test message"
+            mock_match.groupdict.return_value = {
+                "ja_snapshot": "ja_snapshot",
+                "ja_upload": "ja_upload",
+            }
+            mock_matcher.match.return_value = mock_match
+
+            action_output_capture_filter = ActionOutputCaptureFilter(
+                session_id=self.session_id, callback=mock_callback
+            )
+
+            # Create a log record
+            record = logging.LogRecord(
+                name="test_logger",
+                level=logging.INFO,
+                pathname="",
+                lineno=0,
+                msg="ja_snapshot: ja_upload: Test message",
+                args=(),
+                exc_info=None,
+            )
+            setattr(record, "session_id", self.session_id)
+
+            # Filter the record
+            result = action_output_capture_filter.filter(record)
+
+            # Verify the filter returns True but doesn't process the message due to multiple matches
+            assert result is True
+            mock_callback.assert_not_called()

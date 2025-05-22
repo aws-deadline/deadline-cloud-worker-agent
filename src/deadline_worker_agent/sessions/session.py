@@ -83,6 +83,7 @@ from ..log_messages import (
     SessionActionLogEvent,
     SessionActionLogEventSubtype,
 )
+from .log_config import ActionOutputCaptureFilter, ActionOutputMessageKind
 
 # TODO: Un-comment this when pipelined actions can be reported as NEVER_ATTEMPTED before the
 # currently canceling action is completed
@@ -175,6 +176,8 @@ class Session:
 
     _manifest_paths_by_root: dict[str, list[str]] = dict()
 
+    _action_output_log_filter: Optional[ActionOutputCaptureFilter]
+
     logger: LoggerAdapter
 
     def __init__(
@@ -233,6 +236,7 @@ class Session:
         # 2. It is already set up to not propagate to the agent log; and
         # 3. We're already capturing it to send to cloudwatch.
         self.logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": self._id})
+        self._action_output_log_filter = None
 
     @property
     def openjd_session(self) -> OPENJDSession:
@@ -1065,6 +1069,15 @@ class Session:
         ):
             self._action_updated_impl(action_status=action_status, now=now)
 
+    def _action_output_log_filter_callback(
+        self, message_type: ActionOutputMessageKind, value: Any
+    ) -> None:
+        """Callback for the action output log filter
+        This callback is called when the output log filter is triggered.
+        """
+        if message_type == ActionOutputMessageKind.JA_SNAPSHOT:
+            self.add_manifest_path(root=value["root"], path=value["manifest"])
+
     def _action_updated_impl(
         self,
         *,
@@ -1131,6 +1144,10 @@ class Session:
                 # then we can update and clear the corresponding task run sync target action
                 task_run_action = self._output_sync_target_action
                 self._output_sync_target_action = None
+
+                if self._action_output_log_filter:
+                    OPENJD_LOG.removeFilter(self._action_output_log_filter)
+
                 self._handle_action_update(is_unsuccessful, action_status, task_run_action, now)
             else:
                 logger.debug(
@@ -1145,7 +1162,8 @@ class Session:
             and self._asset_sync is not None
         ):
             if ASSET_SYNC_JOB_USER_FEATURE:
-                # create attachment upload action and insert to the front of queue
+                # Finished task run for a run step task action.
+                # This session has attachment, create attachment upload action and insert to the front of queue
 
                 assert current_action.definition.step_id is not None
                 action = AttachmentUploadAction(
@@ -1154,6 +1172,13 @@ class Session:
                     stepId=current_action.definition.step_id,
                     taskId=current_action.definition.task_id,
                 )
+
+                if not self._action_output_log_filter:
+                    self._action_output_log_filter = ActionOutputCaptureFilter(
+                        session_id=self.id, callback=self._action_output_log_filter_callback
+                    )
+
+                OPENJD_LOG.addFilter(self._action_output_log_filter)
 
                 self._queue.insert_front(action=action)
                 self._output_sync_target_action = self._current_action
