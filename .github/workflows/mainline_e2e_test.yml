@@ -37,8 +37,7 @@ jobs:
     secrets: inherit
     with:
       repository: ${{ github.event.repository.name }}
-      branch: mainline
-      environment: mainline
+      environment: release
       os: linux
     concurrency:
       group: linuxe2e
@@ -52,8 +51,7 @@ jobs:
     secrets: inherit
     with:
       repository: ${{ github.event.repository.name }}
-      branch: mainline
-      environment: mainline
+      environment: release
       os: windows
     concurrency:
       group: windowse2e

@@ -1,5 +1,5 @@
 name: "Release: Publish"
-run-name: "Release: ${{ github.event.head_commit.message }}"
+run-name: "Release: ${{ github.event.head_commit.message || inputs.tag }}"
 
 on:
   push:
@@ -7,22 +7,131 @@ on:
       - mainline
     paths:
       - CHANGELOG.md
+  workflow_dispatch:
+    inputs:
+      tag:
+        required: true
+        type: string
+        description: Specify a tag to re-run a release.
 
 concurrency:
   group: release
 
+permissions:
+  contents: read
+
 jobs:
-  Publish:
-    name: Publish Release
+  TagRelease:
+    uses: aws-deadline/.github/.github/workflows/reusable_tag_release.yml@mainline
+    secrets: inherit
+    with:
+      tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
+  
+  UnitIntegTests:
+    needs: [TagRelease]
+    name: Unit and Integration Tests
+    uses: ./.github/workflows/code_quality.yml
+    with:
+      tag: ${{ needs.TagRelease.outputs.tag }}
+
+  LinuxE2ETests:
+    needs: [TagRelease, UnitIntegTests]
+    name: Linux E2E Test
+    permissions:
+      id-token: write
+      contents: read
+    uses: aws-deadline/.github/.github/workflows/reusable_e2e_test.yml@mainline
+    secrets: inherit
+    with:
+      repository: ${{ github.event.repository.name }}
+      environment: release
+      os: linux
+      tag: ${{ needs.TagRelease.outputs.tag }}
+    concurrency:
+      group: linuxe2e
+
+  WindowsE2ETests:
+    needs: [TagRelease, UnitIntegTests]
+    name: Windows E2E Test
+    permissions:
+      id-token: write
+      contents: read
+    uses: aws-deadline/.github/.github/workflows/reusable_e2e_test.yml@mainline
+    secrets: inherit
+    with:
+      repository: ${{ github.event.repository.name }}
+      environment: release
+      os: windows
+      tag: ${{ needs.TagRelease.outputs.tag }}
+    concurrency:
+      group: windowse2e
+
+  PreRelease:
+    needs: [TagRelease, WindowsE2ETests, LinuxE2ETests]
+    uses: aws-deadline/.github/.github/workflows/reusable_prerelease.yml@mainline
     permissions:
       id-token: write
       contents: write
-    uses: aws-deadline/.github/.github/workflows/reusable_publish.yml@mainline
     secrets: inherit
+    with:
+        tag: ${{ needs.TagRelease.outputs.tag }}
+   
+  # Updates the release branch to the latest tagged release for running canaries
+  PushToReleaseBranch:
+    runs-on: ubuntu-latest
+    needs: [TagRelease, PreRelease]
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.CI_TOKEN }}
+          
+      - name: Configure Git
+        run: |
+          git config user.name ${{ secrets.USER }}
+          git config user.email ${{ secrets.EMAIL }}
+          
+      - name: Update Release Branch
+        run: |
+          # Fetch all branches and tags
+          git fetch --all --tags
+          
+          # Checkout the tag we're releasing
+          git checkout ${{ needs.TagRelease.outputs.tag }}
+          
+          # Create or reset the release branch to point to this tag
+          git branch -f release ${{ needs.TagRelease.outputs.tag }}
+          
+          # Push the updated release branch
+          git push origin release --force
+
+  Release:
+      needs: [TagRelease, PreRelease, PushToReleaseBranch]
+      uses: aws-deadline/.github/.github/workflows/reusable_release.yml@mainline
+      permissions:
+        id-token: write
+        contents: write
+      secrets: inherit
+      with:
+          tag: ${{ needs.TagRelease.outputs.tag }}
+  
+  Publish:
+    needs: [TagRelease, Release]
+    uses: aws-deadline/.github/.github/workflows/reusable_publish_python.yml@mainline
+    permissions:
+      id-token: write
+    secrets: inherit
+    with:
+        tag: ${{ needs.TagRelease.outputs.tag }}
+
   # PyPI does not support reusable workflows yet
   # # See https://github.com/pypi/warehouse/issues/11096
   PublishToPyPI:
-    needs: Publish
+    needs: [TagRelease, Publish]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -31,7 +140,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: release
+          ref: ${{ needs.TagRelease.outputs.tag }}
           fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@v5

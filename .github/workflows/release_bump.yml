@@ -14,46 +14,7 @@ on:
         - major
 
 jobs:
-  UnitIntegTests:
-    name: Unit and Integration Tests
-    uses: ./.github/workflows/code_quality.yml
-    with:
-      branch: mainline
-
-  LinuxE2ETests:
-    needs: UnitIntegTests
-    name: Linux E2E Test
-    permissions:
-      id-token: write
-      contents: read
-    uses: aws-deadline/.github/.github/workflows/reusable_e2e_test.yml@mainline
-    secrets: inherit
-    with:
-      repository: ${{ github.event.repository.name }}
-      branch: mainline
-      environment: mainline
-      os: linux
-    concurrency:
-      group: linuxe2e
-
-  WindowsE2ETests:
-    needs: UnitIntegTests
-    name: Windows E2E Test
-    permissions:
-      id-token: write
-      contents: read
-    uses: aws-deadline/.github/.github/workflows/reusable_e2e_test.yml@mainline
-    secrets: inherit
-    with:
-      repository: ${{ github.event.repository.name }}
-      branch: mainline
-      environment: mainline
-      os: windows
-    concurrency:
-      group: windowse2e
-
   Bump:
-    needs: [UnitIntegTests, LinuxE2ETests, WindowsE2ETests]
     name: Version Bump
     uses: aws-deadline/.github/.github/workflows/reusable_bump.yml@mainline
     secrets: inherit
