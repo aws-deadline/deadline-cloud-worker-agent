@@ -435,24 +435,43 @@ def provision_directories(
     logging.info(f"Done provisioning root directory ({deadline_dir})")
 
     deadline_log_subdir = os.path.join(deadline_dir, "Logs")
-    logging.info(f"Provisioning log directory ({deadline_log_subdir})")
-    os.makedirs(deadline_log_subdir, exist_ok=True)
-    logging.info(f"Done provisioning log directory ({deadline_log_subdir})")
+    if os.path.exists(deadline_log_subdir):
+        logging.warning(
+            f"Log directory already exists, permissions maybe inherited for all users to view files in this directory. ({deadline_log_subdir})"
+        )
+    else:
+        logging.info(f"Provisioning log directory ({deadline_log_subdir})")
+        os.makedirs(deadline_log_subdir, exist_ok=True)
+        logging.info(f"Done provisioning log directory ({deadline_log_subdir})")
 
     deadline_persistence_subdir = os.path.join(deadline_dir, "Cache")
-    logging.info(f"Provisioning persistence directory ({deadline_persistence_subdir})")
-    os.makedirs(deadline_persistence_subdir, exist_ok=True)
-    logging.info(f"Done provisioning persistence directory ({deadline_persistence_subdir})")
+    if os.path.exists(deadline_persistence_subdir):
+        logging.warning(
+            f"Persistence directory already exists, permissions maybe inherited for all users to view files in this directory. ({deadline_persistence_subdir})"
+        )
+    else:
+        logging.info(f"Provisioning persistence directory ({deadline_persistence_subdir})")
+        os.makedirs(deadline_persistence_subdir, exist_ok=True)
+        logging.info(f"Done provisioning persistence directory ({deadline_persistence_subdir})")
 
     deadline_persistence_queues_subdir = os.path.join(deadline_persistence_subdir, "queues")
-    logging.info(f"Provisioning persistence directory ({deadline_persistence_queues_subdir})")
+    logging.info(
+        f"Provisioning persistence queues directory ({deadline_persistence_queues_subdir})"
+    )
     os.makedirs(deadline_persistence_queues_subdir, exist_ok=True)
-    logging.info(f"Done provisioning persistence directory ({deadline_persistence_queues_subdir})")
+    logging.info(
+        f"Done provisioning persistence queues directory ({deadline_persistence_queues_subdir})"
+    )
 
     deadline_config_subdir = os.path.join(deadline_dir, "Config")
-    logging.info(f"Provisioning config directory ({deadline_config_subdir})")
-    os.makedirs(deadline_config_subdir, exist_ok=True)
-    logging.info(f"Done provisioning config directory ({deadline_config_subdir})")
+    if os.path.exists(deadline_config_subdir):
+        logging.warning(
+            f"Config directory already exists, permissions maybe inherited for all users to view files in this directory. ({deadline_config_subdir})"
+        )
+    else:
+        logging.info(f"Provisioning config directory ({deadline_config_subdir})")
+        os.makedirs(deadline_config_subdir, exist_ok=True)
+        logging.info(f"Done provisioning config directory ({deadline_config_subdir})")
 
     logging.info(f"Porvisioning session root directory ({session_root_dir})")
     os.makedirs(session_root_dir, exist_ok=True)
