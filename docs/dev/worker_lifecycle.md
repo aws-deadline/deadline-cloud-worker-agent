@@ -6,7 +6,7 @@ This document explains the lifecycle of the AWS Deadline Cloud Worker Agent, inc
 
 The worker agent goes through three main phases during its lifecycle:
 
-1. **Startup Phase**: Initialization, configuration loading, and worker registration
+1. **Startup Phase**: Initialization, configuration loading, host configuration, and worker registration
 2. **Running Phase**: Main operational loop, handling sessions and reporting status
 3. **Shutdown Phase**: Graceful termination, cleanup, status change, and host shutdown
 
@@ -43,6 +43,7 @@ is ready to accept sessions. The startup phase consists of:
 *   creating a worker resource (if necessary) or determining the existing worker resource
 *   ensuring the worker has valid AWS credentials for the worker
 *   ensuring the worker is in the `STARTED` status
+*   execute Host Configuration scripts with elevated priviledge as root (Linux) or Administrator (Windows)
 
 The diagram below illustrates the startup phase as a flow chart:
 
@@ -72,13 +73,14 @@ flowchart TD
     end
     
     updateWorker --> initRemoteLogging[Initialize remote log forwarding]
-    initRemoteLogging --> next([to **Running** phase])
+    initRemoteLogging --> hostConfiguration[Host Configuraton Script to Configure Worker]
+    hostConfiguration --> next([to **Running** phase])
     
     %% Styling
     classDef startupPhase fill:#c9e6ff,stroke:#0066cc,color:#000
     classDef startEnd fill:#EEEEEE,stroke:#444444,color:#000
 
-    class loadConfig,initLogging,checkState,loadState,createWorker,checkCreds,useExistingCreds,getNewCreds,persistState,persistCreds,updateWorker,initWorker,initRemoteLogging startupPhase
+    class loadConfig,initLogging,checkState,loadState,createWorker,checkCreds,useExistingCreds,getNewCreds,persistState,persistCreds,updateWorker,initWorker,hostConfiguration,initRemoteLogging startupPhase
     class start,next startEnd
 ```
 
@@ -88,7 +90,7 @@ The following diagram provides a more detailed look into the sequence of interac
 sequenceDiagram
     participant Entrypoint
     participant Bootstrap
-
+    
     activate Entrypoint
     Entrypoint->>Entrypoint: Resolve configuration
     Entrypoint->>Entrypoint: Configure local logging
@@ -127,11 +129,24 @@ sequenceDiagram
         Bootstrap->>Bootstrap: Persist AWS credentials to disk
     end
 
-    Bootstrap->>DeadlineClient: update_workerstatus=STARTED)
+    Bootstrap->>DeadlineClient: update_worker(status=STARTED)
     DeadlineClient->>AWS: UpdateWorker(status=STARTED)
     AWS->>DeadlineClient: 
     DeadlineClient->>Bootstrap: 
     Bootstrap->>Entrypoint: 
+    alt Has Host Configuration script configured for Fleet
+        participant WorkerOS as Operating System
+    
+        Entrypoint->>WorkerOS: Run HostConfiguration script
+        WorkerOS->>Entrypoint: Exit Code
+        alt Exit code != 0 
+            Entrypoint->>DeadlineClient: update_worker(status=STOPPED)
+            DeadlineClient->>AWS: UpdateWorker(status=STOPPED)
+            AWS->>DeadlineClient: 
+            DeadlineClient-->>Entrypoint: 
+            Entrypoint->>Entrypoint: Host Shutdown 
+        end
+    end
     
     deactivate Bootstrap
 
@@ -189,6 +204,20 @@ sequenceDiagram
 4.  **Worker Initialization**
     -   The `Worker` class is instantiated with valid worker IAM credentials and the worker ID in
         the `STARTED` status
+
+    -  **If a worker's fleet is configured with Host Configuration scripts:**
+
+        - The script body is returned from Deadline upon successfully transtioning to `STARTED` status from `UpdateWorker` API request
+        - The script is written to disk
+        - The script is executed in an elevated shell using root on Linux and Adminsitrator on Windows
+
+            **If the script exit code is 0 (success):**
+            - Worker transitions to the next phase.
+
+            **If the script exit code is not 0 (failed):**
+            - The Worker status is updated to `STOPPED` by making an `UpdateWorker` API request
+            - The Worker Host is Shutdown if applicable and exits.
+
     -   The `Worker.run()` method is called which is the transition into the **Running** phase
 
 ## Running Phase
