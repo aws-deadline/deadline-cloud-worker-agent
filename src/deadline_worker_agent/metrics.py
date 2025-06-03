@@ -21,11 +21,13 @@ class HostMetricsLogger:
     interval_s: float
     _timer: Timer | None
     _prev_network: Any | None
+    _prev_disk_counters: Any | None
 
     def __init__(self, logger: Logger, interval_s: float) -> None:
         assert interval_s > 0, "interval_s must be a positive number"
         self._timer = None
         self._prev_network = None
+        self._prev_disk_counters = None
         self.logger = logger
         self.interval_s = interval_s
 
@@ -64,8 +66,20 @@ class HostMetricsLogger:
                 # TODO: Support disk speed on NetBSD and OpenBSD
                 disk_read = disk_write = "NOT_SUPPORTED"
             else:
-                disk_read = str(round(disk_counters.read_bytes / self.interval_s))
-                disk_write = str(round(disk_counters.write_bytes / self.interval_s))
+                if self._prev_disk_counters:
+                    disk_read_bps = round(
+                        (disk_counters.read_bytes - self._prev_disk_counters.read_bytes)
+                        / self.interval_s
+                    )
+                    disk_write_bps = round(
+                        (disk_counters.write_bytes - self._prev_disk_counters.write_bytes)
+                        / self.interval_s
+                    )
+                else:
+                    disk_read_bps = disk_write_bps = 0
+                disk_read = str(disk_read_bps)
+                disk_write = str(disk_write_bps)
+            self._prev_disk_counters = disk_counters
 
             # We need to poll network IO to get rate
             if network is None:

@@ -244,7 +244,7 @@ class DeadlineClient:
         return UpdateWorkerScheduleResponse(
             assignedSessions=mapped_sessions,
             cancelSessionActions=response["cancelSessionActions"],
-            desiredWorkerStatus=response.get("desiredWorkerStatus", None),
+            desiredWorkerStatus=response.get("desiredWorkerStatus", None),  # type: ignore
             updateIntervalSeconds=response["updateIntervalSeconds"],
         )
 
