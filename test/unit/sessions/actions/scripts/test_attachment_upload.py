@@ -11,6 +11,7 @@ from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
     parse_args,
     merge,
     snapshot,
+    upload,
 )
 
 
@@ -288,3 +289,47 @@ class TestAttachmentUpload:
             diff="/path/to/base/manifest2",
             include=["/path/to/include/dir3/**"],
         )
+
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.api.attachment_upload")
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.boto3.session.Session")
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.time")
+    def test_upload_with_environment_variables(
+        self, mock_time, mock_boto3_session, mock_attachment_upload
+    ):
+        # Setup mock for datetime
+        mock_time.time.return_value = 1747952223.4090126
+
+        # Setup mock for boto3 session
+        mock_session = Mock()
+        mock_boto3_session.return_value = mock_session
+
+        # Setup environment variables
+        with patch.dict(
+            os.environ,
+            {
+                "DEADLINE_FARM_ID": "farm-123",
+                "DEADLINE_QUEUE_ID": "queue-456",
+                "DEADLINE_JOB_ID": "job-789",
+                "DEADLINE_STEP_ID": "step-012",
+                "DEADLINE_TASK_ID": "task-345",
+                "DEADLINE_SESSIONACTION_ID": "sessionaction-678",
+            },
+        ):
+            # Call the function under test
+            manifests = ["manifest1", "manifest2"]
+            s3_root_uri = "s3://test-bucket/path"
+            path_mapping_rules = "/path/to/mapping.json"
+
+            upload(s3_root_uri, path_mapping_rules, manifests)
+
+            # Expected S3 path based on environment variables and datetime
+            expected_s3_path = "farm-123/queue-456/job-789/step-012/task-345/2025-05-22T22:17:03.409012Z_sessionaction-678"
+
+            # Verify attachment_upload was called with correct arguments
+            mock_attachment_upload.assert_called_once_with(
+                manifests=manifests,
+                s3_root_uri=s3_root_uri,
+                boto3_session=mock_session,
+                path_mapping_rules=path_mapping_rules,
+                upload_manifest_path=expected_s3_path,
+            )
