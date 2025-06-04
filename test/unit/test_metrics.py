@@ -4,7 +4,8 @@ from __future__ import annotations
 from collections import namedtuple
 
 import logging
-from typing import Any, Generator
+import subprocess
+from typing import Any, Dict, Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -88,6 +89,12 @@ class TestHostMetricsLogger:
         )
         mock_timer_cls.return_value.start.assert_called_once()
 
+    @pytest.fixture
+    def mock_subprocess(self) -> Generator[MagicMock, None, None]:
+        with patch.object(metrics_mod, "subprocess") as mock:
+            mock.CalledProcessError = subprocess.CalledProcessError
+            yield mock
+
     def test_log_metrics_sets_timer(
         self,
         host_metrics_logger: HostMetricsLogger,
@@ -102,6 +109,105 @@ class TestHostMetricsLogger:
 
         # THEN
         mock_set_timer.assert_called_once()
+
+    # GPU test scenarios
+    @pytest.mark.parametrize(
+        "metrics_output,expected_metrics",
+        [
+            pytest.param(
+                "75, 2000, 8192, 25\n50, 1000, 8192, 12",
+                {
+                    "gpu-utilization-percent": "62.5",
+                    "gpu-memory-used-mib": "3000",
+                    "gpu-memory-total-mib": "16384",
+                    "gpu-memory-used-percent": "18.3",
+                    "gpu-memory-utilization-percent": "18.5",
+                },
+                id="multiple_gpus",
+            ),
+            pytest.param("", {}, id="no_gpus"),
+            pytest.param("Failed to get metrics", {}, id="malformed_output"),
+            pytest.param("N/A, 2000, 8192, 25", {}, id="missing_values"),
+            pytest.param("2000, 8192, 25", {}, id="omitted_values"),
+            pytest.param(
+                "100, 8192, 8192, 100",
+                {
+                    "gpu-utilization-percent": "100.0",
+                    "gpu-memory-used-mib": "8192",
+                    "gpu-memory-total-mib": "8192",
+                    "gpu-memory-used-percent": "100.0",
+                    "gpu-memory-utilization-percent": "100.0",
+                },
+                id="full_utlization",
+            ),
+        ],
+    )
+    def test_get_gpu_metrics(
+        self,
+        metrics_output,
+        expected_metrics,
+        host_metrics_logger,
+        mock_subprocess,
+    ):
+        """Parametrized test for GPU metrics collection with different scenarios"""
+        # GIVEN
+        mock_subprocess.check_output.side_effect = [metrics_output]
+
+        # WHEN
+        gpu_metrics = host_metrics_logger._get_gpu_metrics()
+
+        # THEN
+        # Check if the expected metrics are present
+        for key, value in expected_metrics.items():
+            assert gpu_metrics.get(key) == value
+        if expected_metrics:
+            assert not host_metrics_logger._host_has_no_gpu
+
+        # Special case checks
+        if metrics_output is None:
+            assert gpu_metrics == {}
+
+        # Verify subprocess calls
+        query_str = "utilization.gpu,memory.used,memory.total,utilization.memory"
+        mock_subprocess.check_output.assert_called_with(
+            ["nvidia-smi", f"--query-gpu={query_str}", "--format=csv,noheader,nounits"],
+            stderr=mock_subprocess.PIPE,
+            universal_newlines=True,
+        )
+
+    @pytest.mark.parametrize(
+        "exception,expected_result",
+        [
+            pytest.param(FileNotFoundError("nvidia-smi not found"), {}, id="file_not_found"),
+            pytest.param(
+                subprocess.CalledProcessError(1, "nvidia-smi"), {}, id="called_process_error"
+            ),
+            pytest.param(Exception("Unexpected error"), {}, id="unexpected_error"),
+        ],
+    )
+    def test_get_gpu_metrics_exceptions(
+        self, exception, expected_result, host_metrics_logger, mock_subprocess
+    ):
+        """Test GPU metrics collection with various exceptions"""
+        # GIVEN
+        mock_subprocess.check_output.side_effect = exception
+
+        # WHEN
+        gpu_metrics = host_metrics_logger._get_gpu_metrics()
+
+        # THEN
+        assert gpu_metrics == expected_result
+        assert host_metrics_logger._host_has_no_gpu
+
+        # Test that subsequent calls do not attempt to query GPU metrics
+        # GIVEN
+        mock_subprocess.check_output.reset_mock()
+
+        # WHEN (again)
+        host_metrics_logger._get_gpu_metrics()
+
+        # THEN
+        mock_subprocess.check_output.assert_not_called()
 
     class TestLogMetrics:
         @pytest.fixture(autouse=True)
@@ -306,6 +412,69 @@ class TestHostMetricsLogger:
             assert isinstance(log_line, MetricsLogEvent)
             assert log_line.metrics.get("network-sent-bytes-per-second", "") == "NOT_AVAILABLE"
             assert log_line.metrics.get("network-recv-bytes-per-second", "") == "NOT_AVAILABLE"
+
+        @pytest.mark.parametrize(
+            "gpu_metrics,gpu_available",
+            [
+                (
+                    {
+                        "gpu-utilization-percent": "62.5",
+                        "gpu-memory-used-mib": "3000",
+                        "gpu-memory-total-mib": "16384",
+                        "gpu-memory-used-percent": "18.3",
+                        "gpu-memory-utilization-percent": "18.5",
+                    },
+                    True,
+                ),
+                (
+                    {},
+                    False,
+                ),
+            ],
+            ids=["gpu_metrics_available", "no_gpu_device"],
+        )
+        def test_logs_gpu_metrics(
+            self,
+            host_metrics_logger: HostMetricsLogger,
+            logger: MagicMock,
+            gpu_metrics: Dict[str, str],
+            gpu_available: bool,
+        ):
+            # GIVEN
+            # gpu_metrics is provided by the parametrize decorator
+
+            # WHEN
+            with (
+                patch.object(host_metrics_logger, "_get_gpu_metrics", return_value=gpu_metrics),
+                patch.object(host_metrics_logger, "_set_timer"),
+            ):
+                host_metrics_logger.log_metrics()
+
+            # THEN
+            log_line = get_first_and_only_call_arg(logger.info)
+            assert isinstance(log_line, MetricsLogEvent)
+
+            if gpu_available:
+                # Verify GPU metrics are included in the logged metrics
+                for key, value in gpu_metrics.items():
+                    assert log_line.metrics.get(key, "") == value
+
+                # Verify each metric specifically
+                assert log_line.metrics.get("gpu-utilization-percent") == "62.5"
+                assert log_line.metrics.get("gpu-memory-used-mib") == "3000"
+                assert log_line.metrics.get("gpu-memory-total-mib") == "16384"
+                assert log_line.metrics.get("gpu-memory-used-percent") == "18.3"
+                assert log_line.metrics.get("gpu-memory-utilization-percent") == "18.5"
+            else:
+                # Verify no GPU metrics are included when no GPU device is found
+                for key in [
+                    "gpu-utilization-percent",
+                    "gpu-memory-used-mib",
+                    "gpu-memory-total-mib",
+                    "gpu-memory-used-percent",
+                    "gpu-memory-utilization-percent",
+                ]:
+                    assert key not in log_line.metrics
 
         def test_log_metrics_correct_encoding(
             self,

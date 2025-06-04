@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from logging import Logger, getLogger
 from threading import Timer
-from typing import Any
+from typing import Any, Dict
 
 import os
 import psutil
+import subprocess
 
 from .log_messages import MetricsLogEvent, MetricsLogEventSubtype
 
@@ -22,6 +23,7 @@ class HostMetricsLogger:
     _timer: Timer | None
     _prev_network: Any | None
     _prev_disk_counters: Any | None
+    _host_has_no_gpu: bool | None = None
 
     def __init__(self, logger: Logger, interval_s: float) -> None:
         assert interval_s > 0, "interval_s must be a positive number"
@@ -40,6 +42,80 @@ class HostMetricsLogger:
             self._timer.cancel()
             self._timer = None
 
+    def _get_gpu_metrics(self) -> Dict[str, str]:
+        """
+        Get GPU metrics using nvidia-smi.
+
+        Returns:
+            Dict[str, str]: A dictionary of GPU metrics or empty dict if nvidia-smi is not available.
+        """
+        if self._host_has_no_gpu:
+            return {}
+
+        gpu_metrics = {}
+
+        try:
+            # Query GPU metrics for all GPUs
+            metrics_to_query = [
+                "utilization.gpu",
+                "memory.used",
+                "memory.total",
+                "utilization.memory",
+            ]
+
+            query_str = ",".join(metrics_to_query)
+
+            # Query GPU metrics
+            output = subprocess.check_output(
+                ["nvidia-smi", f"--query-gpu={query_str}", "--format=csv,noheader,nounits"],
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+            )
+
+            # Variables to sum metrics across GPUs
+            gpu_util_sum = mem_used_sum = mem_total_sum = mem_util_sum = valid_gpu_count = 0.0
+
+            # Process each GPU
+            for line in output.strip().split("\n"):
+                try:
+                    gpu_util, mem_used, mem_total, mem_util = (
+                        float(v.strip()) for v in line.split(",")
+                    )
+                except ValueError:
+                    module_logger.debug(
+                        "nvidia-smi output was not able to be parsed into GPU utilization metrics"
+                    )
+                    continue
+
+                mem_used_sum += mem_used
+                mem_total_sum += mem_total
+                mem_util_sum += mem_util
+                gpu_util_sum += gpu_util
+                valid_gpu_count += 1
+
+            # Calculate consolidated metrics
+            if valid_gpu_count > 0:
+                avg_gpu_util = round(gpu_util_sum / valid_gpu_count, 1)
+                gpu_metrics["gpu-utilization-percent"] = str(avg_gpu_util)
+
+                gpu_metrics["gpu-memory-used-mib"] = str(int(mem_used_sum))
+                gpu_metrics["gpu-memory-total-mib"] = str(int(mem_total_sum))
+                avg_mem_used_percent = round((mem_used_sum / mem_total_sum) * 100, 1)
+                gpu_metrics["gpu-memory-used-percent"] = str(avg_mem_used_percent)
+
+                avg_mem_util = round(mem_util_sum / valid_gpu_count, 1)
+                gpu_metrics["gpu-memory-utilization-percent"] = str(avg_mem_util)
+        except FileNotFoundError:
+            module_logger.debug("nvidia-smi not found, skipping GPU metrics collection")
+        except subprocess.CalledProcessError:
+            module_logger.debug("Error running nvidia-smi, skipping GPU metrics collection")
+        except Exception as e:
+            module_logger.debug(f"Unexpected error collecting GPU metrics: {e}")
+        if not gpu_metrics:
+            self._host_has_no_gpu = True
+
+        return gpu_metrics
+
     def log_metrics(self):
         """
         Queries information about the host machine and logs the information as a space-delimited
@@ -52,6 +128,7 @@ class HostMetricsLogger:
             disk = psutil.disk_usage(os.sep)
             disk_counters = psutil.disk_io_counters(nowrap=True)
             network = psutil.net_io_counters(nowrap=True)
+            gpu_metrics = self._get_gpu_metrics()
         except Exception as e:
             module_logger.warning(
                 f"Failed to get host metrics. Skipping host metrics log message. Error: {e}"
@@ -113,6 +190,9 @@ class HostMetricsLogger:
                 "disk-read-bytes-per-second": disk_read,
                 "disk-write-bytes-per-second": disk_write,
             }
+
+            # Add GPU metrics to stats
+            stats.update(gpu_metrics)
 
             self.logger.info(MetricsLogEvent(subtype=MetricsLogEventSubtype.SYSTEM, metrics=stats))
         finally:
