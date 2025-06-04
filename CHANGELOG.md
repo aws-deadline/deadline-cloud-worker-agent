@@ -1,3 +1,14 @@
+## 0.28.8 (2025-06-04)
+
+
+
+### Bug Fixes
+* Disk Read/Write Bytes per Second Metrics Would Always Increase (#653) ([`e56a58a`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/e56a58a7b04a772bf844904486714f3dad5619d4))
+
+### Experimental
+These changes are experimental and only available through the use of feature flags
+* ASSET_SYNC_JOB_USER_FEATURE - Job Attachments would repeatedly upload output from previous tasks in the same session (#631) ([`a0c504a`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/a0c504a8e011a661a4f348ed83a6a4373d1669c0))
+
 ## 0.28.7 (2025-05-21)
 
 

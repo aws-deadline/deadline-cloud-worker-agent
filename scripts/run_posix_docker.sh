@@ -98,7 +98,7 @@ fi
 
 # Note: If you add any environment variables, then also add them to the exports in
 # testing_containers/posix_ldap_multiuser/run.sh
-TMP_ENV_FILE=$(mktemp -p $(pwd))
+TMP_ENV_FILE=$(mktemp -p "$(pwd)")
 for var in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_DEFAULT_REGION FARM_ID FLEET_ID
 do
     if test "${!var:-}" == "";
@@ -106,24 +106,23 @@ do
         echo "ERROR: Environment variable ${var} must be set"
         exit 1
     fi
-    echo -n "${var}=" >> $TMP_ENV_FILE
-    printenv ${var} >> $TMP_ENV_FILE
+    echo -n "${var}=" >> "$TMP_ENV_FILE"
+    printenv ${var} >> "$TMP_ENV_FILE"
 done
 
 if test "${PIP_INDEX_URL:-}" != ""; then
-    echo "PIP_INDEX_URL=${PIP_INDEX_URL}" >> $TMP_ENV_FILE
+    echo "PIP_INDEX_URL=${PIP_INDEX_URL}" >> "$TMP_ENV_FILE"
 fi
 
 if test "${AWS_ENDPOINT_URL_DEADLINE:-}" != ""; then
-    echo "AWS_ENDPOINT_URL_DEADLINE=${AWS_ENDPOINT_URL_DEADLINE}" >> $TMP_ENV_FILE
+    echo "AWS_ENDPOINT_URL_DEADLINE=${AWS_ENDPOINT_URL_DEADLINE}" >> "$TMP_ENV_FILE"
 fi
-
 docker run --rm \
     --name test_worker_agent \
-    -v $(pwd):/code:ro \
-    -v ${HOME}/.aws:/aws \
-    --env-file ${TMP_ENV_FILE} \
+    -v "$(pwd)":/code:ro \
+    -v "${HOME}"/.aws:/aws \
+    --env-file "${TMP_ENV_FILE}" \
     ${ARGS} \
-    ${CONTAINER_IMAGE_TAG}:latest 
+    ${CONTAINER_IMAGE_TAG}:latest
 
-rm -f ${TMP_ENV_FILE}
+rm -f "${TMP_ENV_FILE}"

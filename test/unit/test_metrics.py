@@ -14,6 +14,18 @@ from deadline_worker_agent.metrics import HostMetricsLogger
 import deadline_worker_agent.metrics as metrics_mod
 from deadline_worker_agent.log_messages import MetricsLogEvent
 
+dioc = namedtuple(
+    "dioc",
+    [
+        "read_count",
+        "write_count",
+        "read_bytes",
+        "write_bytes",
+        "read_time",
+        "write_time",
+    ],
+)
+
 
 @pytest.fixture(autouse=True)
 def mock_psutil_module() -> Generator[MagicMock, None, None]:
@@ -135,18 +147,7 @@ class TestHostMetricsLogger:
             return nioc(123, 321, 100, 300, 2, 3, 1, 0)
 
         @pytest.fixture
-        def disk_io_counters(self) -> tuple:
-            dioc = namedtuple(
-                "dioc",
-                [
-                    "read_count",
-                    "write_count",
-                    "read_bytes",
-                    "write_bytes",
-                    "read_time",
-                    "write_time",
-                ],
-            )
+        def disk_io_counters(self) -> dioc:
             return dioc(123, 321, 123123, 321321, 100, 200)
 
         @pytest.fixture(autouse=True)
@@ -207,11 +208,43 @@ class TestHostMetricsLogger:
             assert log_line.metrics.get("total-disk-used-percent", "") == "0.2"
             assert log_line.metrics.get("user-disk-available-bytes", "") == "75"
 
-        def test_logs_disk_rate(self, log_line: str):
+        def test_logs_disk_rate(
+            self,
+            host_metrics_logger: HostMetricsLogger,
+            logger: MagicMock,
+            disk_io_counters: dioc,
+        ):
+            # GIVEN
+            # First call to set up previous disk counters
+            with patch.object(host_metrics_logger, "_set_timer"):
+                host_metrics_logger.log_metrics()
+
+            # Reset the logger mock to clear the first call
+            logger.reset_mock()
+
+            # Increase read_bytes by 1000 and write_bytes by 2000
+            new_counters = dioc(
+                read_count=disk_io_counters.read_count,
+                write_count=disk_io_counters.write_count,
+                read_bytes=disk_io_counters.read_bytes + 1000,
+                write_bytes=disk_io_counters.write_bytes + 2000,
+                read_time=disk_io_counters.read_time,
+                write_time=disk_io_counters.write_time,
+            )
+
+            # WHEN
+            with patch.object(metrics_mod, "psutil") as mock_psutil:
+                mock_psutil.disk_io_counters.return_value = new_counters
+
+                with patch.object(host_metrics_logger, "_set_timer"):
+                    host_metrics_logger.log_metrics()
+
             # THEN
+            log_line = get_first_and_only_call_arg(logger.info)
             assert isinstance(log_line, MetricsLogEvent)
-            assert log_line.metrics.get("disk-read-bytes-per-second", "") == "123123"
-            assert log_line.metrics.get("disk-write-bytes-per-second", "") == "321321"
+            # Should report the difference divided by interval (which is 1 second)
+            assert log_line.metrics.get("disk-read-bytes-per-second", "") == "1000"
+            assert log_line.metrics.get("disk-write-bytes-per-second", "") == "2000"
 
         def test_logs_network_rate(self, log_line: str):
             # THEN

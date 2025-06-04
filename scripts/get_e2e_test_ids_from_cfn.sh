@@ -7,7 +7,7 @@ OS=""
 while [[ "${1:-}" != "" ]]; do
     case $1 in
         -h|--help)
-            echo "Usage: $(basename $0) --os (Linux | Windows)"
+            echo "Usage: $(basename "$0") --os (Linux | Windows)"
             exit 1
             ;;
         --os)
@@ -34,7 +34,7 @@ while [[ "${1:-}" != "" ]]; do
 done
 
 if test "$OS" = ""; then
-    echo "Usage: $(basename $0) --os (Linux | Windows)"
+    echo "Usage: $(basename "$0") --os (Linux | Windows)"
     exit 1
 fi
 
@@ -53,32 +53,32 @@ STACK_OUTPUTS=$(
 cat << EOF
 export BYO_BOOTSTRAP=true
 export OPERATING_SYSTEM=$(echo $OS | tr '[:upper:]' '[:lower:]')
-export SUBNET_ID=$(echo ${STACK_OUTPUTS} | jq -r '.SubnetId')
-export SECURITY_GROUP_ID=$(echo ${STACK_OUTPUTS} | jq -r '.SecurityGroupId')
+export SUBNET_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.SubnetId')
+export SECURITY_GROUP_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.SecurityGroupId')
 export WORKER_INSTANCE_TYPE=t3.large
 
-export CODEARTIFACT_ACCOUNT_ID=$(echo ${STACK_OUTPUTS} | jq -r '.Account')
-export CODEARTIFACT_REGION=$(echo ${STACK_OUTPUTS} | jq -r '.Region')
-export CODEARTIFACT_DOMAIN=$(echo ${STACK_OUTPUTS} | jq -r '.CodeArtifactDomainName')
-export CODEARTIFACT_REPOSITORY=$(echo ${STACK_OUTPUTS} | jq -r '.CodeArtifactRepositoryName')
+export CODEARTIFACT_ACCOUNT_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.Account')
+export CODEARTIFACT_REGION=$(echo "${STACK_OUTPUTS}" | jq -r '.Region')
+export CODEARTIFACT_DOMAIN=$(echo "${STACK_OUTPUTS}" | jq -r '.CodeArtifactDomainName')
+export CODEARTIFACT_REPOSITORY=$(echo "${STACK_OUTPUTS}" | jq -r '.CodeArtifactRepositoryName')
 
 export CREDENTIAL_VENDING_PRINCIPAL=credentials.deadline.amazonaws.com
 
-export BOOTSTRAP_BUCKET_NAME=$(echo ${STACK_OUTPUTS} | jq -r '.FixturesBucketName')
-export JOB_ATTACHMENTS_BUCKET=$(echo ${STACK_OUTPUTS} | jq -r '.JobAttachmentsBucket')
+export BOOTSTRAP_BUCKET_NAME=$(echo "${STACK_OUTPUTS}" | jq -r '.FixturesBucketName')
+export JOB_ATTACHMENTS_BUCKET=$(echo "${STACK_OUTPUTS}" | jq -r '.JobAttachmentsBucket')
 
-export SESSION_ROLE=$(echo ${STACK_OUTPUTS} | jq -r '.QueueRoleArn')
-export BOOTSTRAP_ROLE_ARN=$(echo ${STACK_OUTPUTS} | jq -r ".${OS}HostRoleArn")
-export WORKER_INSTANCE_PROFILE_NAME=$(echo ${STACK_OUTPUTS} | jq -r ".${OS}WorkerInstanceProfileName")
-export WORKER_ROLE_ARN=$(echo ${STACK_OUTPUTS} | jq -r ".${OS}WorkerRoleArn")
+export SESSION_ROLE=$(echo "${STACK_OUTPUTS}" | jq -r '.QueueRoleArn')
+export BOOTSTRAP_ROLE_ARN=$(echo "${STACK_OUTPUTS}" | jq -r ".${OS}HostRoleArn")
+export WORKER_INSTANCE_PROFILE_NAME=$(echo "${STACK_OUTPUTS}" | jq -r ".${OS}WorkerInstanceProfileName")
+export WORKER_ROLE_ARN=$(echo "${STACK_OUTPUTS}" | jq -r ".${OS}WorkerRoleArn")
 
-export FARM_ID=$(echo ${STACK_OUTPUTS} | jq -r '.FarmId')
-export QUEUE_A_ID=$(echo ${STACK_OUTPUTS} | jq -r '.QueueAId')
-export QUEUE_B_ID=$(echo ${STACK_OUTPUTS} | jq -r '.QueueBId')
-export JOBS_RUN_AS_AGENT_USER_QUEUE_ID=$(echo ${STACK_OUTPUTS} | jq -r '.JobsRunAsAgentUserQueueId')
-export NON_VALID_ROLE_QUEUE_ID=$(echo ${STACK_OUTPUTS} | jq -r '.NonValidRoleQueueId')
-export FLEET_ID=$(echo ${STACK_OUTPUTS} | jq -r ".${OS}ManualFleetX86Id")
-export SCALING_QUEUE_ID=$(echo ${STACK_OUTPUTS} | jq -r '.ScalingQueueId')
-export SCALING_FLEET_ID=$(echo ${STACK_OUTPUTS} | jq -r ".${OS}AutoFleetX86Id")
-export JOB_STORAGE_PROFILE_ID=$(echo ${STACK_OUTPUTS} | jq -r '.LinuxJobStorageProfileId')
+export FARM_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.FarmId')
+export QUEUE_A_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.QueueAId')
+export QUEUE_B_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.QueueBId')
+export JOBS_RUN_AS_AGENT_USER_QUEUE_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.JobsRunAsAgentUserQueueId')
+export NON_VALID_ROLE_QUEUE_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.NonValidRoleQueueId')
+export FLEET_ID=$(echo "${STACK_OUTPUTS}" | jq -r ".${OS}ManualFleetX86Id")
+export SCALING_QUEUE_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.ScalingQueueId')
+export SCALING_FLEET_ID=$(echo "${STACK_OUTPUTS}" | jq -r ".${OS}AutoFleetX86Id")
+export JOB_STORAGE_PROFILE_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.LinuxJobStorageProfileId')
 EOF

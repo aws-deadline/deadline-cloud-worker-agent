@@ -17,8 +17,14 @@ unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 
-export ASSUME_ROLE=$(aws sts assume-role --role-arn $1 --role-session-name WorkerAgentAssumeRole)
-export AWS_ACCESS_KEY_ID=$(printenv ASSUME_ROLE | jq -r '.Credentials''.AccessKeyId')
-export AWS_SECRET_ACCESS_KEY=$(printenv ASSUME_ROLE | jq -r '.Credentials''.SecretAccessKey')
-export AWS_SESSION_TOKEN=$(printenv ASSUME_ROLE | jq -r '.Credentials''.SessionToken')
+ASSUME_ROLE=$(aws sts assume-role --role-arn "$1" --role-session-name WorkerAgentAssumeRole)
+AWS_ACCESS_KEY_ID=$(printenv ASSUME_ROLE | jq -r '.Credentials''.AccessKeyId')
+AWS_SECRET_ACCESS_KEY=$(printenv ASSUME_ROLE | jq -r '.Credentials''.SecretAccessKey')
+AWS_SESSION_TOKEN=$(printenv ASSUME_ROLE | jq -r '.Credentials''.SessionToken')
+
+export ASSUME_ROLE
+export AWS_ACCESS_KEY_ID
+export AWS_SECRET_ACCESS_KEY
+export AWS_SESSION_TOKEN
+
 unset ASSUME_ROLE
