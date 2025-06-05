@@ -1,3 +1,10 @@
+## 0.28.9 (2025-06-05)
+
+
+### Experimental
+These changes are experimental and only available through the use of feature flags
+* ASSET_SYNC_JOB_USER_FEATURE - Job output download takes old session action output when there is a rerun (#641) ([`d42efc5`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/d42efc52f30ef56a6b24e6d6c529deb74c7adc3b))
+
 ## 0.28.8 (2025-06-04)
 
 
