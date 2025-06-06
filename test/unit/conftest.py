@@ -357,7 +357,7 @@ def job_attachment_manifest_properties(
     return JobAttachmentManifestProperties(
         root_path="/foo/bar",
         root_path_format="posix",
-        file_system_location_name="",
+        file_system_location_name="test-location",
         input_manifest_path=f"{queue_job_attachment_settings.root_prefix}/Manifests/{farm_id}/{queue_id}/Inputs/0000/0123_input.xxh128",
         input_manifest_hash="inputmanifesthash",
         output_relative_directories=[job_attachment_output_directory],
