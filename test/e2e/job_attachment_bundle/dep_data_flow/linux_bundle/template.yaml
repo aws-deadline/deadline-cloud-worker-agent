@@ -24,6 +24,11 @@ parameterDefinitions:
   default: "8-11"
 steps:
 - name: Step1
+  hostRequirements:
+    attributes:
+    - name: attr.worker.os.family
+      anyOf:
+      - linux
   script:
     actions:
       onRun:
@@ -69,6 +74,11 @@ steps:
 
           echo Finished $STEP!
 - name: Step1-2
+  hostRequirements:
+    attributes:
+    - name: attr.worker.os.family
+      anyOf:
+      - linux
   dependencies:
   - dependsOn: Step1
   parameterSpace:
@@ -129,6 +139,11 @@ steps:
           ls -lR
           echo Finished $STEP!
 - name: Step1-2-3
+  hostRequirements:
+    attributes:
+    - name: attr.worker.os.family
+      anyOf:
+      - linux
   dependencies:
   - dependsOn: Step1-2
   script:
@@ -178,6 +193,11 @@ steps:
 
           echo Finished $STEP!
 - name: Step1-2-4
+  hostRequirements:
+    attributes:
+    - name: attr.worker.os.family
+      anyOf:
+      - linux
   dependencies:
   - dependsOn: Step1-2
   script:
@@ -227,6 +247,11 @@ steps:
 
           echo Finished $STEP!
 - name: Step1-2-34-5
+  hostRequirements:
+    attributes:
+    - name: attr.worker.os.family
+      anyOf:
+      - linux
   dependencies:
   - dependsOn: Step1-2-3
   - dependsOn: Step1-2-4
