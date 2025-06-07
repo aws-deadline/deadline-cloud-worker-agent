@@ -122,18 +122,12 @@ class TestStart:
             mock.return_value = TestStart.DIR_NAME
             yield mock
 
-    @pytest.fixture
-    def session_local_root_dir(self, session) -> str:
-        return str(session.working_directory.joinpath(TestStart.DIR_NAME))
-
     def test_attachment_download_action_start(
         self,
         executor: Mock,
         session: Mock,
-        mock_get_unique_dest_dir_name: Mock,
         action: actions_module.AttachmentDownloadAction,
         session_dir: Path,
-        session_local_root_dir: str,
         mock_asset_sync: MagicMock,
         job_details: JobDetails,
         python_path: str,
@@ -215,7 +209,6 @@ class TestStart:
         mock_get_unique_dest_dir_name: Mock,
         action: actions_module.AttachmentDownloadAction,
         session_dir: Path,
-        session_local_root_dir: str,
         mock_asset_sync: MagicMock,
         job_details: JobDetails,
         python_path: str,
@@ -242,7 +235,7 @@ class TestStart:
         # Verify _get_unique_dest_dir_name was called with the root path
         mock_get_unique_dest_dir_name.assert_called_once_with("/foo/bar")
 
-        # # Check that the method was called
+        # Check that the method was called
         assert mock_asset_sync._aggregate_asset_root_manifests.call_count == 1
         # Get the call arguments
         call_args = mock_asset_sync._aggregate_asset_root_manifests.call_args
@@ -254,7 +247,7 @@ class TestStart:
         assert call_args[1]["job_id"] == TestStart.JOB_ID
         assert call_args[1]["step_dependencies"] == []
         assert call_args[1]["storage_profiles_path_mapping_rules"] == {
-            "/foo/bar": session_local_root_dir
+            "/foo/bar": str(session.working_directory.joinpath(TestStart.DIR_NAME))
         }
 
         mock_asset_sync.generate_dynamic_path_mapping.assert_called_once_with(
