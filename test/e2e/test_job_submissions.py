@@ -1920,9 +1920,7 @@ class TestJobSubmission:
         session_worker: EC2InstanceWorker,
     ) -> None:
         job_bundle_path: str = os.path.join(
-            os.path.dirname(__file__),
-            "job_attachment_bundle",
-            "dep_data_flow",
+            os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "linux_bundle"
         )
 
         job = submit_job_from_bundle(
@@ -1938,6 +1936,49 @@ class TestJobSubmission:
         # Get job output path
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
         output_root_path = tempfile.mkdtemp(dir=self.JOB_OUTPUT_PATH, prefix="dep_data_flow_linux")
+        output_path: dict[str, list[str]] = wait_for_job_output(
+            job=job,
+            deadline_client=deadline_client,
+            deadline_resources=deadline_resources,
+            output_root_path=output_root_path,
+        )
+        LOG.info(f"output_path dict is: {output_path}")
+
+        # Verify the final output file exists and contains expected content
+        verify_output_dir_matches(
+            reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/dep_data_flow/correct_output",
+            output_dir_path=output_root_path + "/data_dir",
+        )
+
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "linux",
+        reason="Windows specific job bundle to test job attachments dependency data flow",
+    )
+    def test_worker_job_attachments_dep_data_flow_windows(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
+    ) -> None:
+        job_bundle_path: str = os.path.join(
+            os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "windows_bundle"
+        )
+
+        job = submit_job_from_bundle(
+            deadline_client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            bundle_path=job_bundle_path,
+        )
+
+        job.wait_until_complete(client=deadline_client)
+        assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        # Get job output path
+        os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
+        output_root_path = tempfile.mkdtemp(
+            dir=self.JOB_OUTPUT_PATH, prefix="dep_data_flow_windows"
+        )
         output_path: dict[str, list[str]] = wait_for_job_output(
             job=job,
             deadline_client=deadline_client,

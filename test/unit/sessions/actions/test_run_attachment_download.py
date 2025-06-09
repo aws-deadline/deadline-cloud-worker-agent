@@ -53,7 +53,7 @@ def session_dir(session_id: str):
     with tempfile.TemporaryDirectory() as tmpdir_path:
         session_dir: str = os.path.join(tmpdir_path, session_id)
         os.makedirs(session_dir)
-        yield session_dir
+        yield Path(session_dir)
 
 
 @pytest.fixture
@@ -86,12 +86,13 @@ class TestStart:
 
     QUEUE_ID = "queue-test"
     JOB_ID = "job-test"
+    DIR_NAME = "unique_dir_name"
 
     @pytest.fixture
     def session(
         self,
         session_id: str,
-        session_dir: str,
+        session_dir: Path,
         job_details: JobDetails,
         job_user: SessionUser,
         job_attachment_details: JobAttachmentDetails,
@@ -113,12 +114,20 @@ class TestStart:
         with patch.object(session, "_asset_sync") as mock_asset_sync:
             yield mock_asset_sync
 
+    @pytest.fixture
+    def mock_get_unique_dest_dir_name(self):
+        with patch(
+            "deadline_worker_agent.sessions.actions.run_attachment_download._get_unique_dest_dir_name"
+        ) as mock:
+            mock.return_value = TestStart.DIR_NAME
+            yield mock
+
     def test_attachment_download_action_start(
         self,
         executor: Mock,
         session: Mock,
         action: actions_module.AttachmentDownloadAction,
-        session_dir: str,
+        session_dir: Path,
         mock_asset_sync: MagicMock,
         job_details: JobDetails,
         python_path: str,
@@ -147,7 +156,7 @@ class TestStart:
             attachments=ANY,
             step_dependencies=[],
             dynamic_mapping_rules=ANY,
-            storage_profiles_path_mapping_rules={},
+            storage_profiles_path_mapping_rules=ANY,
         )
         mock_asset_sync.generate_dynamic_path_mapping.assert_called_once_with(
             session_dir=session_dir,
@@ -155,7 +164,7 @@ class TestStart:
         )
         mock_asset_sync._check_and_write_local_manifests.assert_called_once_with(
             merged_manifests_by_root=ANY,
-            manifest_write_dir=session_dir,
+            manifest_write_dir=str(session_dir),
             manifest_name_suffix="job",
         )
 
@@ -191,4 +200,62 @@ class TestStart:
             step_script=action._step_script,
             task_parameter_values=dict[str, ParameterValue](),
             log_task_banner=False,
+        )
+
+    def test_attachment_download_action_start_path_mapping(
+        self,
+        executor: Mock,
+        session: Mock,
+        mock_get_unique_dest_dir_name: Mock,
+        action: actions_module.AttachmentDownloadAction,
+        session_dir: Path,
+        mock_asset_sync: MagicMock,
+        job_details: JobDetails,
+        python_path: str,
+    ) -> None:
+        """
+        Tests that AttachmentDownloadAction.start() prepare path mapping rules
+        and pass to AssetSync
+        """
+        # GIVEN
+        assert job_details.job_attachment_settings is not None
+        assert job_details.job_attachment_settings.s3_bucket_name is not None
+        assert job_details.job_attachment_settings.root_prefix is not None
+
+        assert not job_details.path_mapping_rules
+
+        # WHEN
+        action.start(session=session, executor=executor)
+        s3_settings = JobAttachmentS3Settings(
+            s3BucketName=job_details.job_attachment_settings.s3_bucket_name,
+            rootPrefix=job_details.job_attachment_settings.root_prefix,
+        )
+
+        # THEN
+        # Verify _get_unique_dest_dir_name was called with the root path
+        mock_get_unique_dest_dir_name.assert_called_once_with("/foo/bar")
+
+        # Check that the method was called
+        assert mock_asset_sync._aggregate_asset_root_manifests.call_count == 1
+        # Get the call arguments
+        call_args = mock_asset_sync._aggregate_asset_root_manifests.call_args
+
+        # Check specific arguments individually
+        assert call_args[1]["session_dir"] == Path(session_dir)
+        assert call_args[1]["s3_settings"] == s3_settings
+        assert call_args[1]["queue_id"] == TestStart.QUEUE_ID
+        assert call_args[1]["job_id"] == TestStart.JOB_ID
+        assert call_args[1]["step_dependencies"] == []
+        assert call_args[1]["storage_profiles_path_mapping_rules"] == {
+            "/foo/bar": str(session.working_directory.joinpath(TestStart.DIR_NAME))
+        }
+
+        mock_asset_sync.generate_dynamic_path_mapping.assert_called_once_with(
+            session_dir=Path(session_dir),
+            attachments=ANY,
+        )
+        mock_asset_sync._check_and_write_local_manifests.assert_called_once_with(
+            merged_manifests_by_root=ANY,
+            manifest_write_dir=str(session_dir),
+            manifest_name_suffix="job",
         )

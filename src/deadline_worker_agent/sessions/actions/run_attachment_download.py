@@ -26,6 +26,7 @@ from deadline.job_attachments.os_file_permission import (
     WindowsFileSystemPermissionSettings,
     WindowsPermissionEnum,
 )
+from deadline.job_attachments._utils import _get_unique_dest_dir_name
 
 from openjd.sessions import (
     LOG as OPENJD_LOG,
@@ -236,6 +237,27 @@ class AttachmentDownloadAction(OpenjdAction):
             )
         )
 
+        # TODO - update and formalize path mapping logic
+        # Temporary patch to generate path mapping for manifests with fileSystemLocationName
+        generated_path_mapping: dict[str, PathMappingRule] = dict()
+        if not storage_profiles_path_mapping_rules_dict:
+            # if the given path mapping rules from job detail does not exist and fileSystemLocationName exists
+            # map that to local session directory and make sure the mapping is persisted
+            for manifest_properties in attachments.manifests:
+                if manifest_properties.fileSystemLocationName:
+                    dir_name: str = _get_unique_dest_dir_name(manifest_properties.rootPath)
+                    local_root = str(session.working_directory.joinpath(dir_name))
+                    generated_path_mapping[manifest_properties.rootPath] = PathMappingRule(
+                        source_path_format=manifest_properties.rootPathFormat.value,
+                        source_path=manifest_properties.rootPath,
+                        destination_path=local_root,
+                    )
+            # Add to existing storage_profiles_path_mapping_rules_dict for job attachment to map path
+            for path_mapping in generated_path_mapping.values():
+                storage_profiles_path_mapping_rules_dict.update(
+                    {path_mapping.source_path: path_mapping.destination_path}
+                )
+
         # Aggregate manifests (with step step dependency handling)
         merged_manifests_by_root: dict[str, BaseAssetManifest] = (
             session._asset_sync._aggregate_asset_root_manifests(
@@ -259,6 +281,7 @@ class AttachmentDownloadAction(OpenjdAction):
             # successfully launched VFS
             return
 
+        dynamic_mapping_rules.update(generated_path_mapping)
         job_attachment_path_mappings = list([asdict(r) for r in dynamic_mapping_rules.values()])
 
         # Open Job Description session implementation details -- path mappings are sorted.

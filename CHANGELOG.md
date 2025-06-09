@@ -1,3 +1,14 @@
+## 0.28.10 (2025-06-09)
+
+
+
+### Features
+* Add GPU Utilization Metrics in Worker Host Metric Logging (#657) ([`99b30b8`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/99b30b8c3ad67ab5ecd401089079833fec4a78f1))
+
+### Experimental
+These changes are experimental and only available through the use of feature flags
+* ASSET_SYNC_JOB_USER_FEATURE - Error sync inputs due to no path mapping rule found for the source path (#661) ([`f7ee2a0`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/f7ee2a0f3202b097bc383224c5ea22392ff0d8fc))
+
 ## 0.28.9 (2025-06-05)
 
 
