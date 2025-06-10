@@ -60,6 +60,7 @@ from deadline.job_attachments.models import (
     JobAttachmentS3Settings,
     ManifestProperties,
     PathFormat,
+    JobAttachmentsFileSystem,
 )
 from deadline.job_attachments.os_file_permission import (
     FileSystemPermissionSettings,
@@ -1161,7 +1162,12 @@ class Session:
             and isinstance(current_action.definition, RunStepTaskAction)
             and self._asset_sync is not None
         ):
-            if ASSET_SYNC_JOB_USER_FEATURE:
+            if (
+                ASSET_SYNC_JOB_USER_FEATURE
+                and self._job_attachment_details
+                and self._job_attachment_details.job_attachments_file_system
+                == JobAttachmentsFileSystem.COPIED.value
+            ):
                 # Finished task run for a run step task action.
                 # This session has attachment, create attachment upload action and insert to the front of queue
 
