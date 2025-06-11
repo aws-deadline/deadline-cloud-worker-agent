@@ -19,6 +19,9 @@ from openjd.model.v2023_09 import (
     Action as Action_2023_09,
     StepScript as StepScript_2023_09,
     StepActions as StepActions_2023_09,
+    ArgString,
+    CommandString,
+    DataString,
 )
 from openjd.model import ParameterValue
 
@@ -82,15 +85,15 @@ class AttachmentUploadAction(OpenjdAction):
         """
 
         args = [
-            "{{ Task.File.AttachmentUpload }}",
-            "-pm",
-            "{{ Session.PathMappingRulesFile }}",
-            "-s3",
-            s3_settings.to_s3_root_uri(),
-            "-mp",
-            json.dumps(manifest_paths_by_root),
-            "-od",
-            json.dumps(out_rel_dirs_by_root),
+            ArgString("{{ Task.File.AttachmentUpload }}"),
+            ArgString("-pm"),
+            ArgString("{{ Session.PathMappingRulesFile }}"),
+            ArgString("-s3"),
+            ArgString(s3_settings.to_s3_root_uri()),
+            ArgString("-mp"),
+            ArgString(json.dumps(manifest_paths_by_root)),
+            ArgString("-od"),
+            ArgString(json.dumps(out_rel_dirs_by_root)),
         ]
 
         executable_path = Path(sys.executable)
@@ -103,7 +106,7 @@ class AttachmentUploadAction(OpenjdAction):
             self._step_script = StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
-                        command=str(python_path),
+                        command=CommandString(str(python_path)),
                         args=args,
                     )
                 ),
@@ -112,7 +115,7 @@ class AttachmentUploadAction(OpenjdAction):
                         name="AttachmentUpload",
                         filename="upload.py",
                         type=EmbeddedFileTypes_2023_09.TEXT,
-                        data=data,
+                        data=DataString(data),
                     )
                 ],
             )

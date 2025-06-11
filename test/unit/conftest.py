@@ -24,6 +24,10 @@ from openjd.model import (
     SpecificationRevision,
     TemplateSpecificationVersion,
 )
+from openjd.model.v2023_09 import (
+    CommandString,
+    ArgString,
+)
 from openjd.sessions import (
     PathMappingRule,
     SessionUser,
@@ -205,12 +209,12 @@ def job_run_as_user_overrides(job_user: SessionUser) -> JobsRunAsUserOverride:
 
 @pytest.fixture
 def command():
-    return "echo"
+    return CommandString("echo")
 
 
 @pytest.fixture
 def on_run_args():
-    return ["on run"]
+    return [ArgString("on run")]
 
 
 @pytest.fixture
