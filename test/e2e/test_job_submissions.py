@@ -1913,11 +1913,20 @@ class TestJobSubmission:
         os.environ["OPERATING_SYSTEM"] == "windows",
         reason="Linux specific job bundle to test job attachments dependency data flow",
     )
+    @pytest.mark.parametrize(
+        "file_system",
+        [
+            "COPIED",
+            # Worker E2E test doesn't run VFS, but this helps verify VIRTUAL fallback and job run successfully
+            "VIRTUAL",
+        ],
+    )
     def test_worker_job_attachments_dep_data_flow_linux(
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         session_worker: EC2InstanceWorker,
+        file_system: str,
     ) -> None:
         job_bundle_path: str = os.path.join(
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "linux_bundle"
@@ -1928,6 +1937,8 @@ class TestJobSubmission:
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             bundle_path=job_bundle_path,
+            job_attachments_file_system=file_system,
+            max_retries_per_task=0,
         )
 
         job.wait_until_complete(client=deadline_client)
@@ -1935,7 +1946,9 @@ class TestJobSubmission:
 
         # Get job output path
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
-        output_root_path = tempfile.mkdtemp(dir=self.JOB_OUTPUT_PATH, prefix="dep_data_flow_linux")
+        output_root_path = tempfile.mkdtemp(
+            dir=self.JOB_OUTPUT_PATH, prefix=f"dep_data_flow_linux-{file_system}"
+        )
         output_path: dict[str, list[str]] = wait_for_job_output(
             job=job,
             deadline_client=deadline_client,
