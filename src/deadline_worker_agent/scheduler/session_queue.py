@@ -10,6 +10,7 @@ from typing import Any, Callable, Iterable, Generic, Literal, TypeVar, TYPE_CHEC
 
 from openjd.model import UnsupportedSchema
 from openjd.sessions import ActionState, ActionStatus
+from deadline.job_attachments.models import JobAttachmentsFileSystem
 
 from ..feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 from ..api_models import (
@@ -177,7 +178,11 @@ class SessionActionQueue:
                     ),
                 )
             elif action_type == "SYNC_INPUT_JOB_ATTACHMENTS":
-                if ASSET_SYNC_JOB_USER_FEATURE:
+                if (
+                    ASSET_SYNC_JOB_USER_FEATURE
+                    and self._job_entities.job_attachment_details().job_attachments_file_system
+                    == JobAttachmentsFileSystem.COPIED.value
+                ):
                     action_definition = cast(AttachmentDownloadActionApiModel, action_definition)
                 else:
                     action_definition = cast(

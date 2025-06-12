@@ -65,6 +65,7 @@ from deadline.job_attachments.models import (
     Attachments,
     JobAttachmentsFileSystem,
     JobAttachmentS3Settings,
+    JobAttachmentsFileSystem,
 )
 from deadline.job_attachments.os_file_permission import (
     FileSystemPermissionSettings,
@@ -1570,6 +1571,11 @@ class TestSessionActionUpdatedImpl:
         """Tests that if a task run succeeds (the Open Job Description action), that job attachment output
         sync is performed, and AFTER that, the action success is returned."""
         # GIVEN
+        session._job_attachment_details = MagicMock()
+        session._job_attachment_details.job_attachments_file_system = (
+            JobAttachmentsFileSystem.COPIED.value
+        )
+
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
@@ -1811,6 +1817,11 @@ class TestSessionActionUpdatedImpl:
     ) -> None:
         """Tests that ActionOutputCaptureFilter is properly integrated when a task run succeeds"""
         # GIVEN
+        session._job_attachment_details = MagicMock()
+        session._job_attachment_details.job_attachments_file_system = (
+            JobAttachmentsFileSystem.COPIED.value
+        )
+
         current_action = CurrentAction(
             definition=RunStepTaskAction(
                 details=StepDetails(
