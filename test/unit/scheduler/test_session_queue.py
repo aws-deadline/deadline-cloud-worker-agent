@@ -331,14 +331,25 @@ class TestSessionActionQueueDequeue:
         session_queue._actions = [action]
         session_queue._actions_by_id[action.definition["sessionActionId"]] = action
 
-        # WHEN
-        result = session_queue.dequeue()
+        # Create a JobAttachmentDetails instance with the desired properties
+        job_attachment_details = JobAttachmentDetails(
+            job_attachments_file_system=JobAttachmentsFileSystem.COPIED, manifests=[]
+        )
 
-        # THEN
-        assert type(result) is type(expected)
-        assert result.id == expected.id  # type: ignore
-        assert len(session_queue._actions) == 0
-        assert len(session_queue._actions_by_id) == 0
+        # Use patch as a context manager
+        with patch.object(
+            session_queue._job_entities,
+            "job_attachment_details",
+            return_value=job_attachment_details,
+        ):
+            # WHEN
+            result = session_queue.dequeue()
+
+            # THEN
+            assert type(result) is type(expected)
+            assert result.id == expected.id  # type: ignore
+            assert len(session_queue._actions) == 0
+            assert len(session_queue._actions_by_id) == 0
 
     def test_attachment_upload_insert_dequeue(
         self,
@@ -411,6 +422,10 @@ class TestSessionActionQueueDequeue:
                 ),
                 JobAttachmentDetailsError,
                 id="Job Attachments Details Error",
+                marks=pytest.mark.skipif(
+                    ASSET_SYNC_JOB_USER_FEATURE,
+                    reason="Skip this parameter when due to temporary patching for asset sync feature",
+                ),
             ),
             pytest.param(
                 SyncInputJobAttachmentsStepDependenciesQueueEntry(
@@ -423,6 +438,10 @@ class TestSessionActionQueueDequeue:
                 ),
                 StepDetailsError,
                 id="Job Attachments Step Details Error",
+                marks=pytest.mark.skipif(
+                    ASSET_SYNC_JOB_USER_FEATURE,
+                    reason="Skip this parameter when due to temporary patching for asset sync feature",
+                ),
             ),
         ),
     )

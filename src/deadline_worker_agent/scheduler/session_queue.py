@@ -369,7 +369,11 @@ class SessionActionQueue:
                     )
                 elif action_type == "SYNC_INPUT_JOB_ATTACHMENTS":
                     action = cast(AttachmentDownloadActionApiModel, action)
-                    if ASSET_SYNC_JOB_USER_FEATURE:
+                    if (
+                        ASSET_SYNC_JOB_USER_FEATURE
+                        and self._job_entities.job_attachment_details().job_attachments_file_system
+                        == JobAttachmentsFileSystem.COPIED.value
+                    ):
                         action = cast(AttachmentDownloadActionApiModel, action)
                         if "stepId" not in action:
                             queue_entry = AttachmentDownloadActionQueueEntry(
@@ -531,7 +535,12 @@ class SessionActionQueue:
 
             elif action_type == "SYNC_INPUT_JOB_ATTACHMENTS":
                 action_definition = action_queue_entry.definition
-                if ASSET_SYNC_JOB_USER_FEATURE:
+                if (
+                    ASSET_SYNC_JOB_USER_FEATURE
+                    # Temporary fallback until the VFS integration for the new code path is complete
+                    and self._job_entities.job_attachment_details().job_attachments_file_system
+                    == JobAttachmentsFileSystem.COPIED.value
+                ):
                     action_definition = cast(AttachmentDownloadActionApiModel, action_definition)
                     if "stepId" not in action_definition:
                         action_queue_entry = cast(
