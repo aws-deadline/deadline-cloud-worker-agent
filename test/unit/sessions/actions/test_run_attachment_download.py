@@ -12,7 +12,7 @@ import pytest
 
 import deadline_worker_agent.sessions.actions as actions_module
 from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
-from openjd.sessions import SessionUser
+from openjd.sessions import SessionUser, PosixSessionUser
 from openjd.model import ParameterValue
 from openjd.model.v2023_09 import (
     EmbeddedFileTypes as EmbeddedFileTypes_2023_09,
@@ -23,7 +23,12 @@ from openjd.model.v2023_09 import (
 )
 
 import deadline_worker_agent.sessions.session as session_mod
-from deadline.job_attachments.models import JobAttachmentS3Settings
+from deadline.job_attachments.models import (
+    Attachments,
+    JobAttachmentS3Settings,
+    JobAttachmentsFileSystem,
+)
+from deadline.job_attachments.asset_manifests import BaseAssetManifest
 
 if TYPE_CHECKING:
     from deadline_worker_agent.sessions.job_entities import JobAttachmentDetails
@@ -81,38 +86,39 @@ def action(
     )
 
 
+@pytest.fixture
+def session(
+    session_id: str,
+    session_dir: Path,
+    job_details: JobDetails,
+    job_user: SessionUser,
+    job_attachment_details: JobAttachmentDetails,
+    mock_openjd_session_cls: Mock,
+) -> Mock:
+    session = Mock()
+    session.id = session_id
+    session._job_details = job_details
+    session._job_attachment_details = job_attachment_details
+    session._os_user = job_user
+    session.openjd_session = mock_openjd_session_cls
+    session.working_directory = session_dir
+    session._queue_id = TestStart.QUEUE_ID
+    session._queue._job_id = TestStart.JOB_ID
+    return session
+
+
+@pytest.fixture(autouse=True)
+def mock_asset_sync(session: Mock) -> Generator[MagicMock, None, None]:
+    with patch.object(session, "_asset_sync") as mock_asset_sync:
+        yield mock_asset_sync
+
+
 class TestStart:
     """Tests for AttachmentDownloadAction.start()"""
 
     QUEUE_ID = "queue-test"
     JOB_ID = "job-test"
     DIR_NAME = "unique_dir_name"
-
-    @pytest.fixture
-    def session(
-        self,
-        session_id: str,
-        session_dir: Path,
-        job_details: JobDetails,
-        job_user: SessionUser,
-        job_attachment_details: JobAttachmentDetails,
-        mock_openjd_session_cls: Mock,
-    ) -> Mock:
-        session = Mock()
-        session.id = session_id
-        session._job_details = job_details
-        session._job_attachment_details = job_attachment_details
-        session._os_user = job_user
-        session.openjd_session = mock_openjd_session_cls
-        session.working_directory = session_dir
-        session._queue_id = TestStart.QUEUE_ID
-        session._queue._job_id = TestStart.JOB_ID
-        return session
-
-    @pytest.fixture(autouse=True)
-    def mock_asset_sync(self, session: Mock) -> Generator[MagicMock, None, None]:
-        with patch.object(session, "_asset_sync") as mock_asset_sync:
-            yield mock_asset_sync
 
     @pytest.fixture
     def mock_get_unique_dest_dir_name(self):
@@ -259,3 +265,188 @@ class TestStart:
             manifest_write_dir=str(session_dir),
             manifest_name_suffix="job",
         )
+
+
+class TestVFS:
+    def test_start_vfs_success(
+        self,
+        executor: Mock,
+        session: Mock,
+        action: actions_module.AttachmentDownloadAction,
+        session_dir: Path,
+        mock_asset_sync: MagicMock,
+        job_details: JobDetails,
+    ) -> None:
+        """
+        Tests that _start_vfs successfully launches VFS when all conditions are met
+        """
+
+        # Mock platform to be non-Windows
+        with patch("sys.platform", "linux"):
+            # Set up session with required attributes for VFS
+            session._os_user = PosixSessionUser(user="test-user", group="test-group")
+            session._env = {"AWS_PROFILE": "test-profile"}
+
+            # Create attachments with VIRTUAL file system
+            attachments = Attachments(
+                manifests=[], fileSystem=JobAttachmentsFileSystem.VIRTUAL.value
+            )
+
+            # Mock merged_manifests_by_root
+            merged_manifests_by_root: dict[str, BaseAssetManifest] = dict()
+
+            # Create S3 settings
+            s3_settings = JobAttachmentS3Settings(
+                s3BucketName="test-bucket", rootPrefix="test-prefix"
+            )
+
+            # WHEN
+            result = action._start_vfs(
+                session=session,
+                attachments=attachments,
+                merged_manifests_by_root=merged_manifests_by_root,
+                s3_settings=s3_settings,
+            )
+
+            # THEN
+            assert result is True
+            mock_asset_sync._launch_vfs.assert_called_once_with(
+                s3_settings=s3_settings,
+                session_dir=session_dir,
+                fs_permission_settings=ANY,
+                merged_manifests_by_root=merged_manifests_by_root,
+                os_env_vars=session._env,
+            )
+
+    def test_start_vfs_windows_platform(
+        self,
+        executor: Mock,
+        session: Mock,
+        action: actions_module.AttachmentDownloadAction,
+        session_dir: Path,
+        mock_asset_sync: MagicMock,
+        job_details: JobDetails,
+    ) -> None:
+        """
+        Tests that _start_vfs returns False on Windows platform
+        """
+        # Mock platform to be Windows
+        with patch("sys.platform", "win32"):
+            # Set up session with required attributes
+            session._os_user = PosixSessionUser(user="test-user", group="test-group")
+            session._env = {"AWS_PROFILE": "test-profile"}
+
+            # Create attachments with VIRTUAL file system
+            attachments = Attachments(
+                manifests=[], fileSystem=JobAttachmentsFileSystem.VIRTUAL.value
+            )
+
+            # Mock merged_manifests_by_root
+            merged_manifests_by_root: dict[str, BaseAssetManifest] = dict()
+
+            # Create S3 settings
+            s3_settings = JobAttachmentS3Settings(
+                s3BucketName="test-bucket", rootPrefix="test-prefix"
+            )
+
+            # WHEN
+            result = action._start_vfs(
+                session=session,
+                attachments=attachments,
+                merged_manifests_by_root=merged_manifests_by_root,
+                s3_settings=s3_settings,
+            )
+
+            # THEN
+            assert result is False
+            mock_asset_sync._launch_vfs.assert_not_called()
+
+    def test_start_vfs_non_virtual_filesystem(
+        self,
+        executor: Mock,
+        session: Mock,
+        action: actions_module.AttachmentDownloadAction,
+        session_dir: Path,
+        mock_asset_sync: MagicMock,
+        job_details: JobDetails,
+    ) -> None:
+        """
+        Tests that _start_vfs returns False when file system is not VIRTUAL
+        """
+        # Mock platform to be non-Windows
+        with patch("sys.platform", "linux"):
+            # Set up session with required attributes
+            session._os_user = PosixSessionUser(user="test-user", group="test-group")
+            session._env = {"AWS_PROFILE": "test-profile"}
+
+            # Create attachments with COPIED file system
+            attachments = Attachments(
+                manifests=[], fileSystem=JobAttachmentsFileSystem.COPIED.value
+            )
+
+            # Mock merged_manifests_by_root
+            merged_manifests_by_root: dict[str, BaseAssetManifest] = dict()
+
+            # Create S3 settings
+            s3_settings = JobAttachmentS3Settings(
+                s3BucketName="test-bucket", rootPrefix="test-prefix"
+            )
+
+            # WHEN
+            result = action._start_vfs(
+                session=session,
+                attachments=attachments,
+                merged_manifests_by_root=merged_manifests_by_root,
+                s3_settings=s3_settings,
+            )
+
+            # THEN
+            assert result is False
+            mock_asset_sync._launch_vfs.assert_not_called()
+
+    def test_start_vfs_missing_aws_profile(
+        self,
+        executor: Mock,
+        session: Mock,
+        action: actions_module.AttachmentDownloadAction,
+        session_dir: Path,
+        mock_asset_sync: MagicMock,
+        job_details: JobDetails,
+    ) -> None:
+        """
+        Tests that _start_vfs returns False when AWS_PROFILE is missing
+        """
+        # GIVEN
+        from deadline.job_attachments.models import JobAttachmentsFileSystem, Attachments
+        from openjd.sessions import PosixSessionUser
+
+        # Mock platform to be non-Windows
+        with patch("sys.platform", "linux"):
+            # Set up session with required attributes but missing AWS_PROFILE
+            session._os_user = PosixSessionUser(user="test-user", group="test-group")
+            session._env = {}  # No AWS_PROFILE
+
+            # Create attachments with VIRTUAL file system
+            attachments = Attachments(
+                manifests=[], fileSystem=JobAttachmentsFileSystem.VIRTUAL.value
+            )
+
+            # Mock merged_manifests_by_root
+            merged_manifests_by_root: dict[str, BaseAssetManifest] = dict()
+
+            # Create S3 settings
+            s3_settings = JobAttachmentS3Settings(
+                s3BucketName="test-bucket", rootPrefix="test-prefix"
+            )
+
+            # WHEN
+            result = action._start_vfs(
+                session=session,
+                attachments=attachments,
+                merged_manifests_by_root=merged_manifests_by_root,
+                s3_settings=s3_settings,
+            )
+
+            # THEN
+            assert result is False
+            mock_asset_sync._launch_vfs.assert_not_called()

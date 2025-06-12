@@ -1572,9 +1572,6 @@ class TestSessionActionUpdatedImpl:
         sync is performed, and AFTER that, the action success is returned."""
         # GIVEN
         session._job_attachment_details = MagicMock()
-        session._job_attachment_details.job_attachments_file_system = (
-            JobAttachmentsFileSystem.COPIED.value
-        )
 
         current_action = CurrentAction(
             definition=RunStepTaskAction(
@@ -1818,9 +1815,6 @@ class TestSessionActionUpdatedImpl:
         """Tests that ActionOutputCaptureFilter is properly integrated when a task run succeeds"""
         # GIVEN
         session._job_attachment_details = MagicMock()
-        session._job_attachment_details.job_attachments_file_system = (
-            JobAttachmentsFileSystem.COPIED.value
-        )
 
         current_action = CurrentAction(
             definition=RunStepTaskAction(

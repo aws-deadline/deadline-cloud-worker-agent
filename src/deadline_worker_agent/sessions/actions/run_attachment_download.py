@@ -272,15 +272,6 @@ class AttachmentDownloadAction(OpenjdAction):
             )
         )
 
-        if self._start_vfs(
-            session=session,
-            attachments=attachments,
-            merged_manifests_by_root=merged_manifests_by_root,
-            s3_settings=s3_settings,
-        ):
-            # successfully launched VFS
-            return
-
         dynamic_mapping_rules.update(generated_path_mapping)
         job_attachment_path_mappings = list([asdict(r) for r in dynamic_mapping_rules.values()])
 
@@ -312,16 +303,37 @@ class AttachmentDownloadAction(OpenjdAction):
         for root_name, root_path in manifest_paths_by_root.items():
             session.add_manifest_path(root=root_name, path=root_path)
 
-        self.set_step_script(
-            manifests=manifest_paths_by_root.values(),  # type: ignore
+        #  Try to launch VFS if needed once all files are prepared
+        if self._start_vfs(
+            session=session,
+            attachments=attachments,
+            merged_manifests_by_root=merged_manifests_by_root,
             s3_settings=s3_settings,
-        )
-        assert self._step_script is not None
-        session.run_task(
-            step_script=self._step_script,
-            task_parameter_values=dict[str, ParameterValue](),
-            log_task_banner=False,
-        )
+        ):
+            # successfully launched VFS, LINUX only, for the session to proceed
+            session.run_task(
+                step_script=StepScript_2023_09(
+                    actions=StepActions_2023_09(
+                        onRun=Action_2023_09(
+                            command="echo",
+                            args=["VFS launched successfully for VIRTUAL"],
+                        )
+                    ),
+                ),
+                task_parameter_values=dict[str, ParameterValue](),
+                log_task_banner=False,
+            )
+        else:
+            self.set_step_script(
+                manifests=manifest_paths_by_root.values(),  # type: ignore
+                s3_settings=s3_settings,
+            )
+            assert self._step_script is not None
+            session.run_task(
+                step_script=self._step_script,
+                task_parameter_values=dict[str, ParameterValue](),
+                log_task_banner=False,
+            )
 
     @staticmethod
     def _get_output_dirs(
@@ -378,8 +390,8 @@ class AttachmentDownloadAction(OpenjdAction):
             attachments.fileSystem == JobAttachmentsFileSystem.VIRTUAL.value
             and sys.platform != "win32"
             and fs_permission_settings is not None
-            and os.environ is not None
-            and "AWS_PROFILE" in os.environ
+            and session._env is not None
+            and "AWS_PROFILE" in session._env
             and isinstance(fs_permission_settings, PosixFileSystemPermissionSettings)
         ):
             assert session._asset_sync is not None
@@ -388,7 +400,7 @@ class AttachmentDownloadAction(OpenjdAction):
                 session_dir=session.working_directory,
                 fs_permission_settings=fs_permission_settings,
                 merged_manifests_by_root=merged_manifests_by_root,
-                os_env_vars=dict(os.environ),
+                os_env_vars=dict(session._env),
             )
             return True
 
