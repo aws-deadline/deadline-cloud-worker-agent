@@ -1,3 +1,12 @@
+## 1.0.0 (2025-06-13)
+
+
+
+### Bug Fixes
+* **experimental**: ASSET_SYNC_JOB_USER_FEATURE does not attempt to launch VFS (#669) ([`59e3d4a`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/59e3d4a2b011a8b0267a8dbf534d37737790ad0a))
+* **experimental**: mixed action types between old and new sync for ASSET_SYNC_JOB_USER_FEATURE (#665) ([`1ded50b`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/1ded50be2e1ec973815dbfcefe77ab29e0e3b2d1))
+* **experimental**: vfs not launching for ASSET_SYNC_JOB_USER_FEATURE (#664) ([`da77e98`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/da77e984ee12cddd4d2188329864864995fbcb62))
+
 ## 0.28.10 (2025-06-09)
 
 
