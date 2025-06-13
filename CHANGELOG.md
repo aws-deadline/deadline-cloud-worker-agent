@@ -1,3 +1,11 @@
+## 0.28.11 (2025-06-13)
+
+
+
+### experimental
+These changes are experimental and only available through the use of feature flags
+* ASSET_SYNC_JOB_USER_FEATURE - VFS not launching for Job Attachment VIRTUAL (#669) ([`59e3d4a`](https://github.com/aws-deadline/deadline-cloud-worker-agent/
+
 ## 0.28.10 (2025-06-09)
 
 
