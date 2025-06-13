@@ -268,6 +268,7 @@ class TestStart:
 
 
 class TestVFS:
+    @pytest.mark.skipif(sys.platform == "win32", reason="Test not supported on Windows")
     def test_start_vfs_success(
         self,
         executor: Mock,
@@ -333,7 +334,6 @@ class TestVFS:
         # Mock platform to be Windows
         with patch("sys.platform", "win32"):
             # Set up session with required attributes
-            session._os_user = PosixSessionUser(user="test-user", group="test-group")
             session._env = {"AWS_PROFILE": "test-profile"}
 
             # Create attachments with VIRTUAL file system
@@ -361,6 +361,7 @@ class TestVFS:
             assert result is False
             mock_asset_sync._launch_vfs.assert_not_called()
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Test not supported on Windows")
     def test_start_vfs_non_virtual_filesystem(
         self,
         executor: Mock,
@@ -404,6 +405,7 @@ class TestVFS:
             assert result is False
             mock_asset_sync._launch_vfs.assert_not_called()
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Test not supported on Windows")
     def test_start_vfs_missing_aws_profile(
         self,
         executor: Mock,
@@ -416,10 +418,6 @@ class TestVFS:
         """
         Tests that _start_vfs returns False when AWS_PROFILE is missing
         """
-        # GIVEN
-        from deadline.job_attachments.models import JobAttachmentsFileSystem, Attachments
-        from openjd.sessions import PosixSessionUser
-
         # Mock platform to be non-Windows
         with patch("sys.platform", "linux"):
             # Set up session with required attributes but missing AWS_PROFILE
