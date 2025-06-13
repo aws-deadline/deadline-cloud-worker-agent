@@ -310,13 +310,15 @@ class AttachmentDownloadAction(OpenjdAction):
             merged_manifests_by_root=merged_manifests_by_root,
             s3_settings=s3_settings,
         ):
-            # successfully launched VFS, LINUX only, for the session to proceed
+            # Successfully launched VFS, running a echo step with openjd
+            # for the session to proceed to the next action
+            # LINUX and VIRTUAL only
             session.run_task(
                 step_script=StepScript_2023_09(
                     actions=StepActions_2023_09(
                         onRun=Action_2023_09(
                             command="echo",
-                            args=["VFS launched successfully for VIRTUAL"],
+                            args=["Job Attachments mode VIRTUAL, VFS launched"],
                         )
                     ),
                 ),
@@ -400,7 +402,7 @@ class AttachmentDownloadAction(OpenjdAction):
                 session_dir=session.working_directory,
                 fs_permission_settings=fs_permission_settings,
                 merged_manifests_by_root=merged_manifests_by_root,
-                os_env_vars=dict(session._env),
+                os_env_vars=dict(session._env),  # type: ignore
             )
             return True
 
