@@ -1076,7 +1076,7 @@ class Session:
         ):
             self._action_updated_impl(action_status=action_status, now=now)
 
-    def action_output_log_filter_callback(
+    def _action_output_log_filter_callback(
         self, message_type: ActionOutputMessageKind, value: Any
     ) -> None:
         """Callback for the action output log filter
@@ -1184,11 +1184,11 @@ class Session:
                         # Create a ManifestInfo dictionary with the appropriate values
                         manifest_info_obj: ManifestInfo = {}
 
-                        if manifest_info and manifest_info.output_manifest_path is not None:
+                        if manifest_info:
                             manifest_info_obj["outputManifestPath"] = (
                                 manifest_info.output_manifest_path
                             )
-                        if manifest_info and manifest_info.output_manifest_hash is not None:
+
                             manifest_info_obj["outputManifestHash"] = (
                                 manifest_info.output_manifest_hash
                             )
@@ -1234,7 +1234,7 @@ class Session:
 
                 if not self._action_output_log_filter:
                     self._action_output_log_filter = ActionOutputCaptureFilter(
-                        session_id=self.id, callback=self.action_output_log_filter_callback
+                        session_id=self.id, callback=self._action_output_log_filter_callback
                     )
 
                 OPENJD_LOG.addFilter(self._action_output_log_filter)
@@ -1310,7 +1310,10 @@ class Session:
         now: datetime,
         manifests: list[ManifestInfo] | None = None,
     ):
-        if manifests is None:
+        # avoid circular import
+        from .actions import RunStepTaskAction
+
+        if manifests is None and isinstance(current_action.definition, RunStepTaskAction):
             manifests = []
 
         completed_status = OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(

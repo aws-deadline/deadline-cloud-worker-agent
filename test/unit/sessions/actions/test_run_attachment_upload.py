@@ -23,6 +23,9 @@ from openjd.model.v2023_09 import (
     Action as Action_2023_09,
     StepScript as StepScript_2023_09,
     StepActions as StepActions_2023_09,
+    ArgString,
+    CommandString,
+    DataString,
 )
 
 import deadline_worker_agent.sessions.session as session_mod
@@ -159,17 +162,17 @@ class TestStart:
             assert action._step_script == StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
-                        command=python_path,
+                        command=CommandString(python_path),
                         args=[
-                            "{{ Task.File.AttachmentUpload }}",
-                            "-pm",
-                            "{{ Session.PathMappingRulesFile }}",
-                            "-s3",
-                            s3_settings.to_s3_root_uri(),
-                            "-mp",
-                            json.dumps(session.manifest_paths_by_root),
-                            "-od",
-                            json.dumps({}),
+                            ArgString("{{ Task.File.AttachmentUpload }}"),
+                            ArgString("-pm"),
+                            ArgString("{{ Session.PathMappingRulesFile }}"),
+                            ArgString("-s3"),
+                            ArgString(s3_settings.to_s3_root_uri()),
+                            ArgString("-mp"),
+                            ArgString(json.dumps(session.manifest_paths_by_root)),
+                            ArgString("-od"),
+                            ArgString(json.dumps({})),
                         ],
                     )
                 ),
@@ -178,7 +181,7 @@ class TestStart:
                         name="AttachmentUpload",
                         type=EmbeddedFileTypes_2023_09.TEXT,
                         filename="upload.py",
-                        data=f.read(),
+                        data=DataString(f.read()),
                     )
                 ],
             )
@@ -262,17 +265,17 @@ class TestStart:
             assert action._step_script == StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
-                        command=python_path,
+                        command=CommandString(python_path),
                         args=[
-                            "{{ Task.File.AttachmentUpload }}",
-                            "-pm",
-                            "{{ Session.PathMappingRulesFile }}",
-                            "-s3",
-                            s3_settings.to_s3_root_uri(),
-                            "-mp",
-                            json.dumps(session.manifest_paths_by_root),
-                            "-od",
-                            json.dumps(expected_out_rel_dirs_map),
+                            ArgString("{{ Task.File.AttachmentUpload }}"),
+                            ArgString("-pm"),
+                            ArgString("{{ Session.PathMappingRulesFile }}"),
+                            ArgString("-s3"),
+                            ArgString(s3_settings.to_s3_root_uri()),
+                            ArgString("-mp"),
+                            ArgString(json.dumps(session.manifest_paths_by_root)),
+                            ArgString("-od"),
+                            ArgString(json.dumps(expected_out_rel_dirs_map)),
                         ],
                     )
                 ),
@@ -281,7 +284,7 @@ class TestStart:
                         name="AttachmentUpload",
                         type=EmbeddedFileTypes_2023_09.TEXT,
                         filename="upload.py",
-                        data=f.read(),
+                        data=DataString(f.read()),
                     )
                 ],
             )

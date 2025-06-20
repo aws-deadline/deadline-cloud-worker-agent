@@ -20,6 +20,9 @@ from openjd.model.v2023_09 import (
     Action as Action_2023_09,
     StepScript as StepScript_2023_09,
     StepActions as StepActions_2023_09,
+    ArgString,
+    CommandString,
+    DataString,
 )
 
 import deadline_worker_agent.sessions.session as session_mod
@@ -181,14 +184,14 @@ class TestStart:
             assert action._step_script == StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
-                        command=python_path,
+                        command=CommandString(python_path),
                         args=[
-                            "{{ Task.File.AttachmentDownload }}",
-                            "-pm",
-                            "{{ Session.PathMappingRulesFile }}",
-                            "-s3",
-                            s3_settings.to_s3_root_uri(),
-                            "-m",
+                            ArgString("{{ Task.File.AttachmentDownload }}"),
+                            ArgString("-pm"),
+                            ArgString("{{ Session.PathMappingRulesFile }}"),
+                            ArgString("-s3"),
+                            ArgString(s3_settings.to_s3_root_uri()),
+                            ArgString("-m"),
                         ],
                     )
                 ),
@@ -197,7 +200,7 @@ class TestStart:
                         name="AttachmentDownload",
                         type=EmbeddedFileTypes_2023_09.TEXT,
                         filename="download.py",
-                        data=f.read(),
+                        data=DataString(f.read()),
                     )
                 ],
             )

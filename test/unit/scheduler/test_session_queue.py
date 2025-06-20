@@ -20,6 +20,7 @@ from openjd.model.v2023_09 import (
     StepScript,
     StepActions,
     StepTemplate,
+    CommandString,
 )
 import pytest
 
@@ -71,10 +72,11 @@ from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 
 
 _TEST_ENVIRONMENT_SCRIPT = EnvironmentScript(
-    actions=EnvironmentActions(onEnter=Action(command="test"))
+    actions=EnvironmentActions(onEnter=Action(command=CommandString("test")))
 )
 _TEST_STEP_TEMPLATE = StepTemplate(
-    name="TestStep", script=StepScript(actions=StepActions(onRun=Action(command="test.exe")))
+    name="TestStep",
+    script=StepScript(actions=StepActions(onRun=Action(command=CommandString("test.exe")))),
 )
 
 

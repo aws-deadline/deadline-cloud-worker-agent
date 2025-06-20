@@ -41,6 +41,9 @@ from openjd.model.v2023_09 import (
     Action as Action_2023_09,
     StepScript as StepScript_2023_09,
     StepActions as StepActions_2023_09,
+    CommandString,
+    ArgString,
+    DataString,
 )
 from openjd.model import ParameterValue
 
@@ -97,14 +100,14 @@ class AttachmentDownloadAction(OpenjdAction):
             The job attachment S3 settings
         """
         args = [
-            "{{ Task.File.AttachmentDownload }}",
-            "-pm",
-            "{{ Session.PathMappingRulesFile }}",
-            "-s3",
-            s3_settings.to_s3_root_uri(),
-            "-m",
+            ArgString("{{ Task.File.AttachmentDownload }}"),
+            ArgString("-pm"),
+            ArgString("{{ Session.PathMappingRulesFile }}"),
+            ArgString("-s3"),
+            ArgString(s3_settings.to_s3_root_uri()),
+            ArgString("-m"),
+            *[ArgString(manifest) for manifest in manifests],
         ]
-        args.extend(manifests)
 
         executable_path = Path(sys.executable)
         python_path = executable_path.parent / executable_path.name.lower().replace(
@@ -115,7 +118,7 @@ class AttachmentDownloadAction(OpenjdAction):
             self._step_script = StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
-                        command=str(python_path),
+                        command=CommandString(str(python_path)),
                         args=args,
                     )
                 ),
@@ -124,7 +127,7 @@ class AttachmentDownloadAction(OpenjdAction):
                         name="AttachmentDownload",
                         filename="download.py",
                         type=EmbeddedFileTypes_2023_09.TEXT,
-                        data=f.read(),
+                        data=DataString(f.read()),
                     )
                 ],
             )
@@ -317,8 +320,8 @@ class AttachmentDownloadAction(OpenjdAction):
                 step_script=StepScript_2023_09(
                     actions=StepActions_2023_09(
                         onRun=Action_2023_09(
-                            command="echo",
-                            args=["Job Attachments mode VIRTUAL, VFS launched"],
+                            command=CommandString("echo"),
+                            args=[ArgString("Job Attachments mode VIRTUAL, VFS launched")],
                         )
                     ),
                 ),

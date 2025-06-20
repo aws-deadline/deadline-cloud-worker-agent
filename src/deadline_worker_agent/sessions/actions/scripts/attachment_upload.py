@@ -64,6 +64,8 @@ def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> N
     )
 
     if manifest_reporting_enabled:
+        # ja_upload: is a key word that is detected in the worker agent log filter
+        # We're printing the manifest info to the logs so that we can re-load it as a manifest info in the worker agent process
         print(f"ja_upload: {json.dumps([asdict(info) for info in manifest_infos])}")
 
 

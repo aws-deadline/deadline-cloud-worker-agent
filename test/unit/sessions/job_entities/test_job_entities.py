@@ -19,6 +19,7 @@ from openjd.model.v2023_09 import (
     StepActions,
     StepScript,
     StepTemplate,
+    CommandString,
 )
 from openjd.sessions import PosixSessionUser, WindowsSessionUser, SessionUser
 
@@ -434,7 +435,7 @@ class TestDetails:
                     "script": {
                         "actions": {
                             "onEnter": {
-                                "command": "test",
+                                "command": CommandString("test"),
                             },
                         }
                     },
@@ -449,7 +450,7 @@ class TestDetails:
             environment=Environment(
                 name=env_name,
                 script=EnvironmentScript(
-                    actions=EnvironmentActions(onEnter=Action(command="test"))
+                    actions=EnvironmentActions(onEnter=Action(command=CommandString("test")))
                 ),
             )
         )
@@ -521,7 +522,7 @@ class TestDetails:
                 template={
                     "actions": {
                         "onRun": {
-                            "command": "test.exe",
+                            "command": CommandString("test.exe"),
                         },
                     }
                 },
@@ -536,7 +537,9 @@ class TestDetails:
         expected_details = StepDetails(
             step_template=StepTemplate(
                 name="Placeholder",
-                script=StepScript(actions=StepActions(onRun=Action(command="test.exe"))),
+                script=StepScript(
+                    actions=StepActions(onRun=Action(command=CommandString("test.exe")))
+                ),
             ),
             step_id=step_id,
             dependencies=[dependency],
@@ -574,7 +577,7 @@ class TestDetails:
                     "script": {
                         "actions": {
                             "onRun": {
-                                "command": "test.exe",
+                                "command": CommandString("test.exe"),
                             },
                         },
                     },
@@ -590,7 +593,9 @@ class TestDetails:
         expected_details = StepDetails(
             step_template=StepTemplate(
                 name="Test",
-                script=StepScript(actions=StepActions(onRun=Action(command="test.exe"))),
+                script=StepScript(
+                    actions=StepActions(onRun=Action(command=CommandString("test.exe")))
+                ),
             ),
             step_id=step_id,
             dependencies=[dependency],
@@ -775,7 +780,7 @@ class TestCaching:
                 "script": {
                     "actions": {
                         "onEnter": {
-                            "command": "test",
+                            "command": CommandString("test"),
                         },
                     }
                 },

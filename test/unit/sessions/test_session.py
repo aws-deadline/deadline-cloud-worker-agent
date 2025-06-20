@@ -23,6 +23,9 @@ from openjd.model.v2023_09 import (
     StepActions,
     StepScript,
     StepTemplate,
+    CommandString,
+    ArgListType,
+    ArgString,
 )
 from openjd.sessions import (
     ActionState,
@@ -207,8 +210,8 @@ def run_step_task_action(
     action_id: str,
     step_id: str,
     task_id: str,
-    command: str,
-    on_run_args: list[str],
+    command: CommandString,
+    on_run_args: ArgListType,
 ) -> RunStepTaskAction:
     """A fixture that provides a RunStepTaskAction"""
     return RunStepTaskAction(
@@ -246,7 +249,7 @@ def enter_env_action(
                 script=EnvironmentScript(
                     actions=EnvironmentActions(
                         onEnter=Action(
-                            command="test",
+                            command=CommandString("test"),
                         ),
                     ),
                 ),
@@ -960,8 +963,8 @@ class TestSessionSyncAssetOutputs:
                         script=StepScript(
                             actions=StepActions(
                                 onRun=Action(
-                                    command="echo",
-                                    args=["hello"],
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
                                 ),
                             ),
                         ),
@@ -1407,7 +1410,7 @@ class TestSessionActionUpdatedImpl:
                         script=EnvironmentScript(
                             actions=EnvironmentActions(
                                 onEnter=Action(
-                                    command="test",
+                                    command=CommandString("test"),
                                 ),
                             ),
                         ),
@@ -1483,8 +1486,8 @@ class TestSessionActionUpdatedImpl:
                         script=StepScript(
                             actions=StepActions(
                                 onRun=Action(
-                                    command="echo",
-                                    args=["hello"],
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
                                 ),
                             ),
                         ),
@@ -1565,8 +1568,8 @@ class TestSessionActionUpdatedImpl:
                         script=StepScript(
                             actions=StepActions(
                                 onRun=Action(
-                                    command="echo",
-                                    args=["hello"],
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
                                 ),
                             ),
                         ),
@@ -1659,8 +1662,8 @@ class TestSessionActionUpdatedImpl:
                         script=StepScript(
                             actions=StepActions(
                                 onRun=Action(
-                                    command="echo",
-                                    args=["hello"],
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
                                 ),
                             ),
                         ),
@@ -1871,8 +1874,8 @@ class TestSessionActionUpdatedImpl:
                         script=StepScript(
                             actions=StepActions(
                                 onRun=Action(
-                                    command="echo",
-                                    args=["hello"],
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
                                 ),
                             ),
                         ),
@@ -2049,8 +2052,8 @@ class TestSessionActionUpdatedImpl:
                         script=StepScript(
                             actions=StepActions(
                                 onRun=Action(
-                                    command="echo",
-                                    args=["hello"],
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
                                 ),
                             ),
                         ),
@@ -2141,13 +2144,13 @@ class TestSessionActionUpdatedImpl:
         """Tests that the callback for ja_upload type correctly handles incorrectly formatted value"""
 
         # WHEN
-        session.action_output_log_filter_callback(
+        session._action_output_log_filter_callback(
             log_config_mod.ActionOutputMessageKind.JA_UPLOAD, "NOT A VALID LIST OF MANIFEST INFOS"
         )
 
         assert session._upload_manifest_list == []
 
-        session.action_output_log_filter_callback(
+        session._action_output_log_filter_callback(
             log_config_mod.ActionOutputMessageKind.JA_UPLOAD, '[{"not":"real"}]'
         )
 
@@ -2164,7 +2167,7 @@ class TestSessionActionUpdatedImpl:
         """Tests that the callback for ja_upload type correctly handles properly formatted value"""
 
         # WHEN
-        session.action_output_log_filter_callback(
+        session._action_output_log_filter_callback(
             log_config_mod.ActionOutputMessageKind.JA_UPLOAD,
             '[{"source_path": "test", "output_manifest_path":"test", "output_manifest_hash":"test"}]',
         )
