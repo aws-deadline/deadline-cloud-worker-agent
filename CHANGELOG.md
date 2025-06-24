@@ -1,5 +1,6 @@
 ## 0.28.12 (2025-06-24)
 
+
 ### Dependencies
 * Update openjd-sessions requirement from ==0.10.2 to ==0.10.3 (#668) ([`a19e03e`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/a19e03ebd522c6c0ad815522bd3c39b8ae553f97))
 
