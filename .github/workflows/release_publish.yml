@@ -48,7 +48,7 @@ jobs:
       os: linux
       tag: ${{ needs.TagRelease.outputs.tag }}
     concurrency:
-      group: linuxe2e
+      group: linuxe2erelease
 
   WindowsE2ETests:
     needs: [TagRelease, UnitIntegTests]
@@ -64,7 +64,7 @@ jobs:
       os: windows
       tag: ${{ needs.TagRelease.outputs.tag }}
     concurrency:
-      group: windowse2e
+      group: windowse2erelease
 
   PreRelease:
     needs: [TagRelease, WindowsE2ETests, LinuxE2ETests]
