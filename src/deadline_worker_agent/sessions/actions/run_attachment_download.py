@@ -125,7 +125,6 @@ class AttachmentDownloadAction(OpenjdAction):
                 embeddedFiles=[
                     EmbeddedFileText_2023_09(
                         name="AttachmentDownload",
-                        filename="download.py",
                         type=EmbeddedFileTypes_2023_09.TEXT,
                         data=DataString(f.read()),
                     )

@@ -3026,3 +3026,164 @@ echo -n $(cat {{Param.DataDir}}/files/test_input_file)Hello > {{Param.DataDir}}/
             )
 
             job.wait_until_complete(client=deadline_client)
+
+    def test_job_submission_asset_sync_behaviour_expected_without_errors(
+        self,
+        deadline_resources,
+        session_worker: EC2InstanceWorker,
+        deadline_client: DeadlineClient,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """
+        Verify that asset sync as job user works as expected,
+        with manifest cleanup, job attachments, and embedded files working properly.
+        """
+        upload_py_content = """#!/usr/bin/env python3
+print("Upload script executed successfully")"""
+
+        download_py_content = """#!/usr/bin/env python3
+import os
+print("Download script executed successfully")
+output_path = os.path.join(r"{{ Param.DataDir }}", "output.txt")
+with open(output_path, "w") as f:
+    f.write("Job attachments working")"""
+
+        # Create job bundle with attachments
+        job_bundle_path = os.path.join(tmp_path, "job_bundle")
+
+        os.makedirs(job_bundle_path, exist_ok=True)
+
+        # Create input file for job attachments
+        input_file = os.path.join(job_bundle_path, "input.txt")
+        with open(input_file, "w") as f:
+            f.write("Test input data")
+
+        job_parameters = [
+            {"name": "DataDir", "value": job_bundle_path},
+        ]
+
+        with open(os.path.join(job_bundle_path, "template.json"), "w") as template_file:
+            template_file.write(
+                json.dumps(
+                    {
+                        "specificationVersion": "jobtemplate-2023-09",
+                        "name": "Test Job with Job Attachments and Embedded Files",
+                        "parameterDefinitions": [
+                            {
+                                "name": "DataDir",
+                                "type": "PATH",
+                                "dataFlow": "INOUT",
+                            },
+                        ],
+                        "steps": [
+                            {
+                                "hostRequirements": {
+                                    "attributes": [
+                                        {
+                                            "name": "attr.worker.os.family",
+                                            "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                        }
+                                    ]
+                                },
+                                "name": "Step0",
+                                "script": {
+                                    "actions": {
+                                        "onRun": (
+                                            {
+                                                "command": "bash",
+                                                "args": [
+                                                    "-c",
+                                                    "python3 {{ Task.File.upload }} && python3 {{ Task.File.download }}",
+                                                ],
+                                            }
+                                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                                            else {
+                                                "command": "powershell",
+                                                "args": [
+                                                    "-Command",
+                                                    "python {{ Task.File.upload }}; python {{ Task.File.download }}",
+                                                ],
+                                            }
+                                        ),
+                                    },
+                                    "embeddedFiles": [
+                                        {
+                                            "name": "upload",
+                                            "type": "TEXT",
+                                            "runnable": True,
+                                            "filename": "upload.py",
+                                            "data": upload_py_content,
+                                        },
+                                        {
+                                            "name": "download",
+                                            "type": "TEXT",
+                                            "runnable": True,
+                                            "filename": "download.py",
+                                            "data": download_py_content,
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                    }
+                )
+            )
+
+        config = configparser.ConfigParser()
+        set_setting("defaults.farm_id", deadline_resources.farm.id, config)
+        set_setting("defaults.queue_id", deadline_resources.queue_a.id, config)
+
+        job_id = api.create_job_from_job_bundle(
+            job_bundle_path,
+            job_parameters,
+            priority=98,
+            config=config,
+            queue_parameter_definitions=[],
+        )
+        assert job_id is not None
+
+        job_details = Job.get_job_details(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            job_id=job_id,
+        )
+        job = Job(
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            template={},
+            **job_details,
+        )
+
+        LOG.info(f"Waiting for job {job.id} to complete")
+        job.wait_until_complete(client=deadline_client)
+        LOG.info(f"Job result: {job}")
+
+        assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        logs_client = boto3.client(
+            "logs",
+            config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+        )
+
+        job.assert_single_task_log_contains(
+            deadline_client=deadline_client,
+            logs_client=logs_client,
+            expected_pattern=r"Upload script executed successfully",
+        )
+
+        job.assert_single_task_log_contains(
+            deadline_client=deadline_client,
+            logs_client=logs_client,
+            expected_pattern=r"Download script executed successfully",
+        )
+
+        # Verify job attachments output
+        output_path = wait_for_job_output(
+            job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
+        )
+        output_file = os.path.join(list(output_path.keys())[0], "output.txt")
+        with open(output_file, "r") as f:
+            assert f.read() == "Job attachments working"
+
+        ## TODO: add verification that manifest cleanup completes successfully

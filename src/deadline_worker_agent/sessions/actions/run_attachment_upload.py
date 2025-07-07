@@ -114,7 +114,6 @@ class AttachmentUploadAction(OpenjdAction):
                 embeddedFiles=[
                     EmbeddedFileText_2023_09(
                         name="AttachmentUpload",
-                        filename="upload.py",
                         type=EmbeddedFileTypes_2023_09.TEXT,
                         data=DataString(data),
                     )

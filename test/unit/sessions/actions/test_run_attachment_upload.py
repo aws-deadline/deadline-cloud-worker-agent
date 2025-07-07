@@ -180,7 +180,6 @@ class TestStart:
                     EmbeddedFileText_2023_09(
                         name="AttachmentUpload",
                         type=EmbeddedFileTypes_2023_09.TEXT,
-                        filename="upload.py",
                         data=DataString(f.read()),
                     )
                 ],
@@ -283,7 +282,6 @@ class TestStart:
                     EmbeddedFileText_2023_09(
                         name="AttachmentUpload",
                         type=EmbeddedFileTypes_2023_09.TEXT,
-                        filename="upload.py",
                         data=DataString(f.read()),
                     )
                 ],

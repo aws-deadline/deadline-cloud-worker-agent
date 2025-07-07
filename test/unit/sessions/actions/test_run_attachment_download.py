@@ -199,7 +199,6 @@ class TestStart:
                     EmbeddedFileText_2023_09(
                         name="AttachmentDownload",
                         type=EmbeddedFileTypes_2023_09.TEXT,
-                        filename="download.py",
                         data=DataString(f.read()),
                     )
                 ],
