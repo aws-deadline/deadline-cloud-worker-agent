@@ -16,19 +16,24 @@ from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
 
 
 @pytest.fixture
-def path_mapping_file_path():
+def tmpdir_path():
     with tempfile.TemporaryDirectory() as tmpdir_path:
-        path_mapping_file_path: str = os.path.join(tmpdir_path, "mapping.json")
-        # Write the path mapping rules to the file
-        path_mapping_rules = {
-            "path_mapping_rules": [
-                {"destination_path": "/root1", "source_path": "/source_root1"},
-                {"destination_path": "/root2", "source_path": "/source_root2"},
-            ]
-        }
-        with open(path_mapping_file_path, "w") as f:
-            json.dump(path_mapping_rules, f)
-        yield path_mapping_file_path
+        yield tmpdir_path
+
+
+@pytest.fixture
+def path_mapping_file_path(tmpdir_path):
+    path_mapping_file_path: str = os.path.join(tmpdir_path, "mapping.json")
+    # Write the path mapping rules to the file
+    path_mapping_rules = {
+        "path_mapping_rules": [
+            {"destination_path": "/root1", "source_path": "/source_root1"},
+            {"destination_path": "/root2", "source_path": "/source_root2"},
+        ]
+    }
+    with open(path_mapping_file_path, "w") as f:
+        json.dump(path_mapping_rules, f)
+    yield path_mapping_file_path
 
 
 @pytest.fixture
@@ -241,33 +246,76 @@ class TestAttachmentUpload:
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
-    def test__manifest_snapshot_diff_include(self, mock_manifest_snapshot: Mock):
+    def test_manifest_snapshot_diff_include(self, mock_manifest_snapshot: Mock, tmpdir_path: str):
+        # Create the result files that will be returned by the mock
+        result1_path = os.path.join(tmpdir_path, "result1")
+        result2_path = os.path.join(tmpdir_path, "result2")
+
+        # Write some content to the result files
+        with open(result1_path, "w") as f:
+            f.write("This is result1 content")
+
+        with open(result2_path, "w") as f:
+            f.write("This is result2 content")
+
         # Setup mock for _manifest_snapshot to return some manifests
         mock_manifest_snapshot.side_effect = [
             Mock(
-                manifest="/path/to/result1",
+                manifest=result1_path,
             ),
             Mock(
-                manifest="/path/to/result2",
+                manifest=result2_path,
             ),
         ]
 
+        # Create base directory and files
+        base_dir = os.path.join(tmpdir_path, "base")
+        os.makedirs(base_dir, exist_ok=True)
+
+        hash1_job_path = os.path.join(base_dir, "hash1_job")
+        with open(hash1_job_path, "w") as f:
+            f.write("hash1_job content")
+
+        merge_hash2_path = os.path.join(base_dir, "merge-hash2-timestamp.manifest")
+        with open(merge_hash2_path, "w") as f:
+            f.write("merge-hash2-timestamp.manifest content")
+
         # Define test input data
         manifest_path_by_root = {
-            "/root1": "/path/to/base/manifest1",
-            "/root2": "/path/to/base/manifest2",
+            "/root1": hash1_job_path,
+            "/root2": merge_hash2_path,
         }
 
+        # Create include directories
+        include_dir1 = os.path.join(tmpdir_path, "include", "dir1")
+        include_dir2 = os.path.join(tmpdir_path, "include", "dir2")
+        include_dir3 = os.path.join(tmpdir_path, "include", "dir3")
+
         out_rel_dirs_by_root = {
-            "/root1": ["/path/to/include/dir1", "/path/to/include/dir2"],
-            "/root2": ["/path/to/include/dir3"],
+            "/root1": [include_dir1, include_dir2],
+            "/root2": [include_dir3],
         }
 
         # Call the function under test
         result = snapshot(manifest_path_by_root, out_rel_dirs_by_root)
 
         # Verify the results
-        assert result == ["/path/to/result1", "/path/to/result2"]
+        expected_results = [
+            os.path.join(tmpdir_path, "hash1_output"),
+            os.path.join(tmpdir_path, "hash2_output"),
+        ]
+        assert result == expected_results
+
+        # Verify that the files in expected_results actually exist on disk
+        for file_path in expected_results:
+            assert os.path.exists(file_path), f"File {file_path} does not exist on disk"
+            assert os.path.isfile(file_path), f"Path {file_path} is not a file"
+            with open(file_path, "r") as f:
+                content = f.read()
+                reusult = "result1" if "hash1" in file_path else "result2"
+                assert f"This is {reusult} content" in content, (
+                    f"File {file_path} doesn't contain expected content"
+                )
 
         # Verify _manifest_snapshot was called with the correct arguments
         assert mock_manifest_snapshot.call_count == 2
@@ -276,18 +324,18 @@ class TestAttachmentUpload:
         mock_manifest_snapshot.assert_any_call(
             root="/root1",
             destination=os.path.join(os.getcwd(), "diff"),
-            name=f"output-{os.path.basename('/path/to/base/manifest1')}",
-            diff="/path/to/base/manifest1",
-            include=["/path/to/include/dir1/**", "/path/to/include/dir2/**"],
+            name=f"output-{os.path.basename(hash1_job_path)}",
+            diff=hash1_job_path,
+            include=[f"{include_dir1}/**", f"{include_dir2}/**"],
         )
 
         # Check second call
         mock_manifest_snapshot.assert_any_call(
             root="/root2",
             destination=os.path.join(os.getcwd(), "diff"),
-            name=f"output-{os.path.basename('/path/to/base/manifest2')}",
-            diff="/path/to/base/manifest2",
-            include=["/path/to/include/dir3/**"],
+            name=f"output-{os.path.basename(merge_hash2_path)}",
+            diff=merge_hash2_path,
+            include=[f"{include_dir3}/**"],
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.api.attachment_upload")

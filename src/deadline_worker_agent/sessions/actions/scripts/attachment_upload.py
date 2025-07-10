@@ -108,6 +108,7 @@ def snapshot(
     manifests = list()
 
     for root, path in manifest_path_by_root.items():
+        input_manifest_file_name = os.path.basename(path)
         # TODO - use the public api for manifest snapshot once that's final and made public
         include_dirs = [subdir + "/**" for subdir in out_rel_dirs_by_root.get(root, [])]
         manifest: Optional[ManifestSnapshot] = _manifest_snapshot(
@@ -122,8 +123,25 @@ def snapshot(
             include=include_dirs,
         )
         if manifest:
-            manifests.append(manifest.manifest)
-            print(f"ja_snapshot: {json.dumps({'root': root, 'manifest': manifest.manifest})}")
+            if "merge" in input_manifest_file_name:
+                # This is a merged manifest that has merge-{rootHash}-{timestamp}.manifest name format
+                output_manifest_prefix = input_manifest_file_name.split("-")[1]
+            elif "job" or "step" in input_manifest_file_name:
+                # This is a input manifest that has {rootHash}_job or {rootHash}_step name format
+                output_manifest_prefix = input_manifest_file_name.split("_")[0]
+            else:
+                # Fallback to use the current file name
+                output_manifest_prefix = os.path.basename(manifest.manifest)
+
+            directory = os.path.dirname(manifest.manifest)
+            # `output` as postfix is used for job download to discover output manifests
+            new_file_path = os.path.join(directory, f"{output_manifest_prefix}_output")
+            # Rename the file since the file name will be used as manifest s3 object name for upload
+            os.rename(manifest.manifest, new_file_path)
+
+            manifests.append(new_file_path)
+            # Log handling IPC to communicate between job user and worker agent user
+            print(f"ja_snapshot: {json.dumps({'root': root, 'manifest': new_file_path})}")
 
     return manifests
 
