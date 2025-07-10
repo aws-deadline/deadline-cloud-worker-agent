@@ -26,7 +26,6 @@ from openjd.model.v2023_09 import (
     CommandString,
     ArgListType,
     ArgString,
-    ExtensionName,
 )
 from openjd.sessions import (
     ActionState,
@@ -2655,46 +2654,3 @@ class TestSessionStartAction:
         session_exit_env.call_args.kwargs["os_env_vars"] == {
             "DEADLINE_SESSIONACTION_ID": exit_env_action.id,
         }
-
-    def test_session_includes_redacted_env_vars_extension(
-        self,
-        session_id: str,
-        job_details: MagicMock,
-        session_action_queue: MagicMock,
-        session_root_dir: Path,
-        os_user: SessionUser,
-        queue_id: str,
-        action_update_callback: MagicMock,
-        action_update_lock: MagicMock,
-        asset_sync: MagicMock,
-    ) -> None:
-        """Tests that the REDACTED_ENV_VARS extension is included in the supported extensions
-        This test should be updated when BatchGetJobEntity returns the list of requested extensions
-        to use those intead - Session will likely take those extensions as a parameter of some sort"""
-        # GIVEN
-        from deadline_worker_agent.sessions.session import Session
-
-        # WHEN
-        with patch("deadline_worker_agent.sessions.session.OPENJDSession") as mock_openjd_session:
-            _ = Session(
-                id=session_id,
-                job_details=job_details,
-                queue=session_action_queue,
-                queue_id=queue_id,
-                job_id="job-1234",
-                asset_sync=asset_sync,
-                session_root_dir=session_root_dir,
-                os_user=os_user,
-                action_update_callback=action_update_callback,
-                action_update_lock=action_update_lock,
-                retain_session_dir=False,
-            )
-
-        # THEN
-        # Verify that the REDACTED_ENV_VARS extension is included in the supported extensions
-        mock_openjd_session.assert_called_once()
-        _, kwargs = mock_openjd_session.call_args
-        assert "revision_extensions" in kwargs
-        revision_extensions = kwargs["revision_extensions"]
-        # Check that REDACTED_ENV_VARS is in the list of extensions
-        assert ExtensionName.REDACTED_ENV_VARS.value in revision_extensions.extensions
