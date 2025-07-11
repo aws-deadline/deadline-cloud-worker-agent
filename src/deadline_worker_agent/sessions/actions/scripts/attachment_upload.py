@@ -72,7 +72,8 @@ def upload(s3_root_uri: str, path_mapping_rules: str, manifests: list[str]) -> N
 def merge(
     manifest_paths_by_root: dict[str, list[str]], path_mapping_rules_file: str
 ) -> dict[str, str]:
-    manifest_path = os.path.join(os.getcwd(), "manifest")
+    print(f"Starting merge for {manifest_paths_by_root}")
+    manifest_path = os.path.join(os.getcwd(), "merge")
     merged_manifests = dict()
     with open(path_mapping_rules_file, "r") as file:
         path_mapping_rules = json.load(file).get("path_mapping_rules", [])
@@ -104,7 +105,8 @@ def merge(
 def snapshot(
     manifest_path_by_root: dict[str, str], out_rel_dirs_by_root: dict[str, list[str]]
 ) -> list[str]:
-    output_path = os.path.join(os.getcwd(), "diff")
+    # Retaining interim diff manifest files to be safe until we confirm the override behavior works as expected.
+    output_path = os.path.join(os.getcwd(), f"diff-{int(time.time() * 1000)}")
     manifests = list()
 
     for root, path in manifest_path_by_root.items():
@@ -115,8 +117,7 @@ def snapshot(
             root=root,
             # directory to put the generated diff manifests
             destination=str(output_path),
-            # `output` is used for job download to discover output manifests
-            # manifest file name need to contain the hash of root path for attachment CLI path mapping
+            # TODO - name as part of the name for the fallback below, can be removed once other branches are verified
             name=f"output-{os.path.basename(path)}",
             # this path to manifest servers as a base for the snapshot, generate only difference since this manifest
             diff=path,

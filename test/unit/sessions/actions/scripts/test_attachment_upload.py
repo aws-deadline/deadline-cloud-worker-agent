@@ -241,12 +241,19 @@ class TestAttachmentUpload:
         mock_manifest_merge.assert_called_once_with(
             root="/source_root1",  # Should use the source path from mapping
             manifest_files=["/path/to/manifest1", "/path/to/manifest2"],
-            destination=os.path.join(os.getcwd(), "manifest"),
+            destination=os.path.join(os.getcwd(), "merge"),
             name="merge",
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
-    def test_manifest_snapshot_diff_include(self, mock_manifest_snapshot: Mock, tmpdir_path: str):
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.time")
+    def test_manifest_snapshot_diff_include(
+        self, mock_time: Mock, mock_manifest_snapshot: Mock, tmpdir_path: str
+    ):
+        # Freeze time to a specific timestamp
+        frozen_timestamp = 1625097600.0  # 2021-07-01 00:00:00 UTC
+        mock_time.time.return_value = frozen_timestamp
+
         # Create the result files that will be returned by the mock
         result1_path = os.path.join(tmpdir_path, "result1")
         result2_path = os.path.join(tmpdir_path, "result2")
@@ -320,10 +327,17 @@ class TestAttachmentUpload:
         # Verify _manifest_snapshot was called with the correct arguments
         assert mock_manifest_snapshot.call_count == 2
 
+        # Verify time.time() was called to generate the timestamp for the diff directory
+        mock_time.time.assert_called_once()
+
+        # Verify the diff directory name contains the expected timestamp (milliseconds)
+        expected_timestamp_ms = int(frozen_timestamp * 1000)
+        expected_diff_dir = os.path.join(os.getcwd(), f"diff-{expected_timestamp_ms}")
+
         # Check first call
         mock_manifest_snapshot.assert_any_call(
             root="/root1",
-            destination=os.path.join(os.getcwd(), "diff"),
+            destination=expected_diff_dir,
             name=f"output-{os.path.basename(hash1_job_path)}",
             diff=hash1_job_path,
             include=[f"{include_dir1}/**", f"{include_dir2}/**"],
@@ -332,7 +346,7 @@ class TestAttachmentUpload:
         # Check second call
         mock_manifest_snapshot.assert_any_call(
             root="/root2",
-            destination=os.path.join(os.getcwd(), "diff"),
+            destination=expected_diff_dir,
             name=f"output-{os.path.basename(merge_hash2_path)}",
             diff=merge_hash2_path,
             include=[f"{include_dir3}/**"],
