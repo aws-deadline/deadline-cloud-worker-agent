@@ -8,7 +8,7 @@ import boto3
 from deadline.job_attachments import api
 
 """
-A small script to download job output using attachment download.
+A small script to download job attachments to the worker using attachment download.
 This is available in deadline-cloud as python API and AWS Deadline Cloud CLI.
 
 Example usage:

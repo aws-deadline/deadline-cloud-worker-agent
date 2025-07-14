@@ -9,7 +9,7 @@ import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from logging import LoggerAdapter
 from typing import Any, TYPE_CHECKING, Optional
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
 from deadline.job_attachments.asset_manifests import BaseAssetManifest
 from deadline.job_attachments.models import (
@@ -55,6 +55,12 @@ if TYPE_CHECKING:
     from ..job_entities import JobAttachmentDetails, StepDetails
 
 
+@dataclass
+class ManifestEntry:
+    manifest_name: str
+    manifest: BaseAssetManifest
+
+
 class AttachmentDownloadAction(OpenjdAction):
     """Action to synchronize input job attachments for a AWS Deadline Cloud Session
 
@@ -89,16 +95,21 @@ class AttachmentDownloadAction(OpenjdAction):
         self._step_details = step_details
         self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
-    def set_step_script(self, manifests: list[str], s3_settings: JobAttachmentS3Settings) -> None:
+    def set_step_script(
+        self,
+        manifest_names_and_content_by_root: dict[str, ManifestEntry],
+        s3_settings: JobAttachmentS3Settings,
+    ) -> None:
         """Sets the step script for the action
 
         Parameters
         ----------
-        manifests : list[str]
-            The job attachment manifest paths
+        manifest_names_and_content_by_root : dict[str, ManifestEntry]
+            The embedded manifest files
         s3_settings : JobAttachmentS3Settings
             The job attachment S3 settings
         """
+
         args = [
             ArgString("{{ Task.File.AttachmentDownload }}"),
             ArgString("-pm"),
@@ -106,7 +117,10 @@ class AttachmentDownloadAction(OpenjdAction):
             ArgString("-s3"),
             ArgString(s3_settings.to_s3_root_uri()),
             ArgString("-m"),
-            *[ArgString(manifest) for manifest in manifests],
+            *[
+                ArgString(f"{{{{ Task.File.{manifest_entry.manifest_name} }}}}")
+                for manifest_entry in manifest_names_and_content_by_root.values()
+            ],
         ]
 
         executable_path = Path(sys.executable)
@@ -114,22 +128,35 @@ class AttachmentDownloadAction(OpenjdAction):
             "pythonservice.exe", "python.exe"
         )
 
+        embedded_files = []
         with open(Path(__file__).parent / "scripts" / "attachment_download.py", "r") as f:
-            self._step_script = StepScript_2023_09(
-                actions=StepActions_2023_09(
-                    onRun=Action_2023_09(
-                        command=CommandString(str(python_path)),
-                        args=args,
-                    )
-                ),
-                embeddedFiles=[
-                    EmbeddedFileText_2023_09(
-                        name="AttachmentDownload",
-                        type=EmbeddedFileTypes_2023_09.TEXT,
-                        data=DataString(f.read()),
-                    )
-                ],
+            embedded_files.append(
+                EmbeddedFileText_2023_09(
+                    name="AttachmentDownload",
+                    type=EmbeddedFileTypes_2023_09.TEXT,
+                    data=DataString(f.read()),
+                )
             )
+
+        for manifest_entry in manifest_names_and_content_by_root.values():
+            embedded_files.append(
+                EmbeddedFileText_2023_09(
+                    name=manifest_entry.manifest_name,
+                    filename=manifest_entry.manifest_name,
+                    type=EmbeddedFileTypes_2023_09.TEXT,
+                    data=DataString(manifest_entry.manifest.encode()),
+                )
+            )
+
+        self._step_script = StepScript_2023_09(
+            actions=StepActions_2023_09(
+                onRun=Action_2023_09(
+                    command=CommandString(str(python_path)),
+                    args=args,
+                )
+            ),
+            embeddedFiles=embedded_files,
+        )
 
     def __eq__(self, other: Any) -> bool:
         return (
@@ -296,48 +323,71 @@ class AttachmentDownloadAction(OpenjdAction):
             key=lambda rule: -len(rule.source_path.parts)
         )
 
-        manifest_paths_by_root = session._asset_sync._check_and_write_local_manifests(
-            merged_manifests_by_root=merged_manifests_by_root,
-            manifest_write_dir=str(session.working_directory),
-            manifest_name_suffix="step" if self._step_details else "job",
-        )
-        # Set the manifests by root mapping to session for attachment upload to determine output
-        for root_name, root_path in manifest_paths_by_root.items():
-            session.add_manifest_path(root=root_name, path=root_path)
-
-        #  Try to launch VFS if needed once all files are prepared
-        if self._start_vfs(
-            session=session,
-            attachments=attachments,
-            merged_manifests_by_root=merged_manifests_by_root,
-            s3_settings=s3_settings,
-        ):
-            # Successfully launched VFS, running a echo step with openjd
-            # for the session to proceed to the next action
-            # LINUX and VIRTUAL only
-            session.run_task(
-                step_script=StepScript_2023_09(
-                    actions=StepActions_2023_09(
-                        onRun=Action_2023_09(
-                            command=CommandString("echo"),
-                            args=[ArgString("Job Attachments mode VIRTUAL, VFS launched")],
-                        )
-                    ),
-                ),
-                task_parameter_values=dict[str, ParameterValue](),
-                log_task_banner=False,
+        ## If file system is Virtual, try to launch VFS after writing manifests to local paths
+        if attachments.fileSystem == JobAttachmentsFileSystem.VIRTUAL.value:
+            manifest_paths_by_root = session._asset_sync._check_and_write_local_manifests(
+                merged_manifests_by_root=merged_manifests_by_root,
+                manifest_write_dir=str(session.working_directory),
+                manifest_name_suffix="step" if self._step_details else "job",
             )
-        else:
-            self.set_step_script(
-                manifests=manifest_paths_by_root.values(),  # type: ignore
+            # Set the manifests by root mapping to session for attachment upload to determine output
+            for root_name, root_path in manifest_paths_by_root.items():
+                session.add_manifest_path(root=root_name, path=root_path)
+            #  Try to launch VFS if needed once all files are prepared
+            if self._start_vfs(
+                session=session,
+                attachments=attachments,
+                merged_manifests_by_root=merged_manifests_by_root,
                 s3_settings=s3_settings,
+            ):
+                # Successfully launched VFS, running a echo step with openjd
+                # for the session to proceed to the next action
+                # LINUX and VIRTUAL only
+                session.run_task(
+                    step_script=StepScript_2023_09(
+                        actions=StepActions_2023_09(
+                            onRun=Action_2023_09(
+                                command=CommandString("echo"),
+                                args=[ArgString("Job Attachments mode VIRTUAL, VFS launched")],
+                            )
+                        ),
+                    ),
+                    task_parameter_values=dict[str, ParameterValue](),
+                    log_task_banner=False,
+                )
+                return
+
+        ## Fallback to copied if not using VFS or if VFS was not able to launch
+        manifest_names_and_content_by_root: dict[str, ManifestEntry] = dict()
+        for root, manifest in merged_manifests_by_root.items():
+            (_, manifest_name) = (
+                session._asset_sync.s3_uploader._get_hashed_file_name_from_root_str(
+                    manifest=manifest,
+                    source_root=session._asset_sync._local_root_to_src_map[root],
+                    manifest_name_suffix="step" if self._step_details else "job",
+                )
             )
-            assert self._step_script is not None
-            session.run_task(
-                step_script=self._step_script,
-                task_parameter_values=dict[str, ParameterValue](),
-                log_task_banner=False,
+            normalized_manifest_name = f"m_{manifest_name}"
+            manifest_names_and_content_by_root[root] = ManifestEntry(
+                normalized_manifest_name, manifest
             )
+
+            session.add_manifest_path(
+                root=root,
+                path=os.path.join(
+                    str(session.openjd_session._files_dir.path), normalized_manifest_name
+                ),
+            )
+        self.set_step_script(
+            manifest_names_and_content_by_root=manifest_names_and_content_by_root,
+            s3_settings=s3_settings,
+        )
+        assert self._step_script is not None
+        session.run_task(
+            step_script=self._step_script,
+            task_parameter_values=dict[str, ParameterValue](),
+            log_task_banner=False,
+        )
 
     @staticmethod
     def _get_output_dirs(
@@ -353,7 +403,7 @@ class AttachmentDownloadAction(OpenjdAction):
                     # Convert Windows path to fit the current platform format
                     output_dir = str(Path(PureWindowsPath(output_dir)))
                 elif source_path_format == PathFormat.POSIX:
-                    # Convert Windows path to fit the current platform format
+                    # Convert POSIX path to fit the current platform format
                     output_dir = str(Path(PurePosixPath(output_dir)))
 
             output_dirs.append(output_dir)
@@ -399,14 +449,15 @@ class AttachmentDownloadAction(OpenjdAction):
             and isinstance(fs_permission_settings, PosixFileSystemPermissionSettings)
         ):
             assert session._asset_sync is not None
-            session._asset_sync._launch_vfs(
+
+            ## TODO: Return false if VFS is not able to be launched
+            return session._asset_sync._launch_vfs(
                 s3_settings=s3_settings,
                 session_dir=session.working_directory,
                 fs_permission_settings=fs_permission_settings,
                 merged_manifests_by_root=merged_manifests_by_root,
                 os_env_vars=dict(session._env),  # type: ignore
             )
-            return True
 
         else:
             return False

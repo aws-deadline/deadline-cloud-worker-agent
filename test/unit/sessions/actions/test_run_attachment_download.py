@@ -171,11 +171,6 @@ class TestStart:
             session_dir=session_dir,
             attachments=ANY,
         )
-        mock_asset_sync._check_and_write_local_manifests.assert_called_once_with(
-            merged_manifests_by_root=ANY,
-            manifest_write_dir=str(session_dir),
-            manifest_name_suffix="job",
-        )
 
         with open(
             Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_download.py",
@@ -262,11 +257,6 @@ class TestStart:
             session_dir=Path(session_dir),
             attachments=ANY,
         )
-        mock_asset_sync._check_and_write_local_manifests.assert_called_once_with(
-            merged_manifests_by_root=ANY,
-            manifest_write_dir=str(session_dir),
-            manifest_name_suffix="job",
-        )
 
 
 class TestVFS:
@@ -302,6 +292,9 @@ class TestVFS:
             s3_settings = JobAttachmentS3Settings(
                 s3BucketName="test-bucket", rootPrefix="test-prefix"
             )
+
+            # Mock that VFS is able to be launched
+            mock_asset_sync._launch_vfs.return_value = True
 
             # WHEN
             result = action._start_vfs(

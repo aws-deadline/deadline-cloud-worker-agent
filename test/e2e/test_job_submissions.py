@@ -3178,6 +3178,13 @@ with open(output_path, "w") as f:
             expected_pattern=r"Download script executed successfully",
         )
 
+        # Verify that we do not run into  "permission denied" when cleaning up manifests
+        job.assert_single_task_log_does_not_contain(
+            deadline_client=deadline_client,
+            logs_client=logs_client,
+            expected_pattern=r"Permission denied",
+        )
+
         # Verify job attachments output
         output_path = wait_for_job_output(
             job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
@@ -3185,5 +3192,3 @@ with open(output_path, "w") as f:
         output_file = os.path.join(list(output_path.keys())[0], "output.txt")
         with open(output_file, "r") as f:
             assert f.read() == "Job attachments working"
-
-        ## TODO: add verification that manifest cleanup completes successfully
