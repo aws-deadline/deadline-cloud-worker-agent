@@ -44,7 +44,12 @@ if TYPE_CHECKING:
     from .actions import SessionActionDefinition
     from .job_entities import JobAttachmentDetails, JobDetails
 
-from openjd.model import TaskParameterSet
+from openjd.model import (
+    TaskParameterSet,
+    RevisionExtensions,
+    SpecificationRevision,
+)
+from openjd.model.v2023_09 import ExtensionName
 from openjd.sessions import (
     ActionState,
     ActionStatus,
@@ -231,6 +236,13 @@ class Session:
             callback=openjd_session_action_callback,
             os_env_vars=self._env,
             session_root_directory=session_root_dir,
+            # Currently for simplicity request that our session allow all extensions
+            # This does not obey the spec.  It should be changed at a later date to the list of requested
+            # extensions once those are returned by BatchGetJobEntity
+            revision_extensions=RevisionExtensions(
+                spec_rev=SpecificationRevision.v2023_09,
+                supported_extensions=[v.value for v in ExtensionName],
+            ),
         )
 
         self._queue = queue
