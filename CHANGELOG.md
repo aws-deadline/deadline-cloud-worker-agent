@@ -8,6 +8,7 @@
 ### Bug Fixes
 * avoid embedded file name conflicts with download/upload script (#690) ([`2b54166`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/2b54166695ed3afc8f09de8c6b736a5ed28e1023))
 
+
 ## 0.28.12 (2025-06-24)
 
 
