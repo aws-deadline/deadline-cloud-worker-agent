@@ -2,11 +2,14 @@
 
 
 ### Features
-* Enable extensions declared in openjd-model in created sessions by default. This session list should come from BatchGetJobEntity in the future most likely, but until it's available we want to allow the use of supported extensions. (#691) ([`5564caa`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/5564caa73b25492c98154ea62dcb33ec121a1ef7))
-* **experimental**: add output manifest reporting (#663) ([`6ac9789`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/6ac97892055ef6bdf7688f002abdffd68d0d85d1))
+* Enable `TASK_CHUNKING` and `REDACTED_ENV_VARS` OpenJobDescription extensions by default. (#691) ([`5564caa`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/5564caa73b25492c98154ea62dcb33ec121a1ef7))
 
-### Bug Fixes
-* avoid embedded file name conflicts with download/upload script (#690) ([`2b54166`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/2b54166695ed3afc8f09de8c6b736a5ed28e1023))
+### Experimental
+These changes are experimental and only available through the use of feature flags
+* MANIFEST_REPORTING_FEATURE - add output manifest reporting (#663) ([`6ac9789`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/6ac97892055ef6bdf7688f002abdffd68d0d85d1))
+* ASSET_SYNC_JOB_USER_FEATURE - avoid embedded file name conflicts with download/upload script (#690) ([`2b54166`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/2b54166695ed3afc8f09de8c6b736a5ed28e1023))
+  If a file named either `upload.py` or `download.py` was uploaded by a user, this would break the job attachments feature.
+
 
 ## 0.28.12 (2025-06-24)
 
