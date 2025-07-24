@@ -3187,3 +3187,51 @@ with open(output_path, "w") as f:
             assert f.read() == "Job attachments working"
 
         ## TODO: add verification that manifest cleanup completes successfully
+
+    def test_worker_job_attachments_output_only(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
+    ) -> None:
+        """Test output-only job attachments with small files on both Windows and Linux"""
+        job_bundle_path: str = os.path.join(
+            os.path.dirname(__file__), "job_attachment_bundle", "output_only"
+        )
+
+        # Use smaller parameters for E2E testing to avoid long-running test
+        # python is only available on windows, python3 is only available on linux
+        command_runner = "python" if os.environ["OPERATING_SYSTEM"] == "windows" else "python3"
+        job = submit_job_from_bundle(
+            deadline_client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            bundle_path=job_bundle_path,
+            max_retries_per_task=0,
+            job_parameters=[
+                {"name": "FilesPerTask", "value": "1"},
+                {"name": "Tasks", "value": "1-5"},
+                {"name": "FileSize", "value": "50"},
+                {"name": "CommandRunner", "value": command_runner},
+            ],
+        )
+
+        job.wait_until_complete(client=deadline_client)
+        assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        # Get job output path
+        os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
+        output_root_path = tempfile.mkdtemp(dir=self.JOB_OUTPUT_PATH, prefix="output_only_job")
+        output_path: dict[str, list[str]] = wait_for_job_output(
+            job=job,
+            deadline_client=deadline_client,
+            deadline_resources=deadline_resources,
+            output_root_path=output_root_path,
+        )
+        LOG.info(f"output_path dict is: {output_path}")
+
+        # Verify the final output file exists and contains expected content
+        verify_output_dir_matches(
+            reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/output_only_job/correct_output",
+            output_dir_path=output_root_path + "/output",
+        )
