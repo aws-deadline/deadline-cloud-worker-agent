@@ -1,0 +1,57 @@
+
+specificationVersion: 'jobtemplate-2023-09'
+name: "Output Sync No Input Job"
+description: |
+  This job bundle is for testing job attachments output sync with no input.
+
+jobEnvironments:
+- name: StartupEnv
+  variables:
+    # Turn off buffering in Python
+    PYTHONUNBUFFERED: "True"
+
+parameterDefinitions:
+- name: CommandRunner
+  type: STRING
+- name: FilesPerTask
+  type: INT
+  default: 600
+- name: Tasks
+  type: STRING
+  default: 1-600
+- name: FileSize
+  type: INT
+  default: 100
+- name: OutputDir
+  type: PATH
+  objectType: DIRECTORY
+  dataFlow: OUT
+  default: ./output
+
+steps:
+- name: FileFactory
+  parameterSpace:
+    taskParameterDefinitions:
+    - name: Index
+      type: INT
+      range: "{{Param.Tasks}}"
+  script:
+    actions:
+      onRun:
+        command: "{{Param.CommandRunner}}"
+        args: ['{{Task.File.Run}}']
+    embeddedFiles:
+    - name: Run
+      filename: run.py
+      type: TEXT
+      data: |
+        import os
+
+        print(r"openjd_status: Generating {{Param.FilesPerTask}} files...")
+
+        os.makedirs(r"{{Param.OutputDir}}", exist_ok=True)
+
+        for i in range({{Param.FilesPerTask}}):
+            filename = f"file_{{Task.Param.Index}}_{i}.txt"
+            with open(r"{{Param.OutputDir}}/" + filename, 'wb') as f:
+                f.write(b'0' * {{Param.FileSize}})
