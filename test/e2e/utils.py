@@ -120,6 +120,7 @@ def submit_job_from_bundle(
     job_attachments_file_system: str = "COPIED",
     queue_parameter_definitions: List[dict] = [],
     max_retries_per_task: Optional[int] = None,
+    job_parameters: list[dict[str, Any]] = [],
 ) -> Job:
     bundle_path = os.path.normpath(bundle_path)
     LOG.info(f"Submitting bundle {bundle_path} to farm {farm.id} and queue {queue.id}")
@@ -162,6 +163,9 @@ def submit_job_from_bundle(
 
     if max_retries_per_task is not None:
         create_job_args["max_retries_per_task"] = max_retries_per_task  # type: ignore
+
+    if job_parameters is not None:
+        create_job_args["job_parameters"] = job_parameters  # type: ignore
 
     job_id = create_job_from_job_bundle(**create_job_args)  # type: ignore
     assert job_id is not None
