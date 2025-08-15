@@ -332,7 +332,7 @@ def _host_shutdown(config: Configuration) -> None:
     if sys.platform == "win32":
         shutdown_command = ["shutdown", "-s"]
     elif sys.platform == "darwin":
-        shutdown_command = ["sudo", "shutdown", "-r", "now"]
+        shutdown_command = ["sudo", "shutdown", "-h", "now"]
     else:
         shutdown_command = ["sudo", "shutdown", "now"]
 
