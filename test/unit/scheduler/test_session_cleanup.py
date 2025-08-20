@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from typing import Generator
 from unittest.mock import MagicMock, patch
-import subprocess
 
 from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
 import pytest
-import os
 
 from deadline_worker_agent.scheduler.session_cleanup import (
     SessionUserCleanupManager,
@@ -208,13 +209,15 @@ class TestSessionUserCleanupManager:
             assert (
                 f"Cleaning up remaining session user processes for '{os_user.user}'" in caplog.text
             )
-            if os.name == "posix":
-                subprocess_run_mock.assert_called_once_with(
-                    args=["sudo", "-u", os_user.user, "/usr/bin/pkill", "-eU", os_user.user],
-                    capture_output=True,
-                    check=True,
-                    text=True,
-                )
+            pkill_opt = ["-eU", os_user.user]
+            if sys.platform == "darwin":
+                pkill_opt = ["-lU", os_user.user]
+            subprocess_run_mock.assert_called_once_with(
+                args=["sudo", "-u", os_user.user, "/usr/bin/pkill", *pkill_opt],
+                capture_output=True,
+                check=True,
+                text=True,
+            )
             assert "Stopped processes:\n" in caplog.text
 
         @pytest.mark.skipif(os.name != "nt", reason="Windows-only test.")

@@ -529,6 +529,7 @@ def test_agent_self_initiated_shutdown(
     (
         pytest.param("win32", ["shutdown", "-s"], id="windows"),
         pytest.param("linux", ["sudo", "shutdown", "now"], id="linux"),
+        pytest.param("darwin", ["sudo", "shutdown", "-h", "now"], id="macOS"),
     ),
 )
 @patch.object(entrypoint_mod._logger, "info")
@@ -567,6 +568,7 @@ def test_host_shutdown(
     (
         pytest.param("win32", ["shutdown", "-s"], id="windows"),
         pytest.param("linux", ["sudo", "shutdown", "now"], id="linux"),
+        pytest.param("darwin", ["sudo", "shutdown", "-h", "now"], id="macOS"),
     ),
 )
 @patch.object(entrypoint_mod, "_logger")
@@ -617,6 +619,7 @@ def test_host_shutdown_failure(
     (
         pytest.param("win32", ["shutdown", "-s"], id="windows"),
         pytest.param("linux", ["sudo", "shutdown", "now"], id="linux"),
+        pytest.param("darwin", ["sudo", "shutdown", "-h", "now"], id="macOS"),
     ),
 )
 @patch.object(entrypoint_mod._logger, "debug")
