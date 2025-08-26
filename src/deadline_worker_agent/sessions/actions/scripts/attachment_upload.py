@@ -269,15 +269,7 @@ def upload_output_assets(
     """
 
     # Generate S3 upload path using session context from environment variables
-    s3_upload_path = JobAttachmentS3Settings.partial_session_action_manifest_prefix(
-        farm_id=os.environ["DEADLINE_FARM_ID"],
-        queue_id=os.environ["DEADLINE_QUEUE_ID"],
-        job_id=os.environ["DEADLINE_JOB_ID"],
-        step_id=os.environ["DEADLINE_STEP_ID"],
-        task_id=os.environ["DEADLINE_TASK_ID"],
-        session_action_id=os.environ["DEADLINE_SESSIONACTION_ID"],
-        time=float(os.environ["DEADLINE_SESSIONACTION_START_TIME"]),
-    )
+    s3_upload_path = build_s3_manifest_path()
 
     # Create S3 settings from the provided URI
     s3_settings = JobAttachmentS3Settings.from_s3_root_uri(s3_uri)
@@ -326,6 +318,48 @@ def upload_output_assets(
             )
 
     return output_manifest_info_list
+
+
+def is_manifest_reporting_enabled() -> bool:
+    """Check if manifest reporting feature is enabled."""
+    return os.environ.get("MANIFEST_REPORTING_FEATURE", "false").lower() == "true"
+
+
+def should_use_task_chunking_format() -> bool:
+    """Determine if task chunking format (without task_id) should be used."""
+    return is_manifest_reporting_enabled() and not os.environ.get("DEADLINE_TASK_ID")
+
+
+def build_s3_manifest_path() -> str:
+    """Build S3 path for manifest upload based on current configuration."""
+
+    farm_id = os.environ["DEADLINE_FARM_ID"]
+    queue_id = os.environ["DEADLINE_QUEUE_ID"]
+    job_id = os.environ["DEADLINE_JOB_ID"]
+    step_id = os.environ["DEADLINE_STEP_ID"]
+    session_action_id = os.environ["DEADLINE_SESSIONACTION_ID"]
+    time = float(os.environ["DEADLINE_SESSIONACTION_START_TIME"])
+
+    if should_use_task_chunking_format():
+        return JobAttachmentS3Settings.partial_session_action_manifest_prefix_without_task(  # type: ignore[attr-defined]
+            farm_id=farm_id,
+            queue_id=queue_id,
+            job_id=job_id,
+            step_id=step_id,
+            session_action_id=session_action_id,
+            time=time,
+        )
+    else:
+        task_id = os.environ["DEADLINE_TASK_ID"]
+        return JobAttachmentS3Settings.partial_session_action_manifest_prefix(
+            farm_id=farm_id,
+            queue_id=queue_id,
+            job_id=job_id,
+            step_id=step_id,
+            task_id=task_id,
+            session_action_id=session_action_id,
+            time=time,
+        )
 
 
 @record_success_fail_telemetry_event(metric_name="attachment_upload")
@@ -385,11 +419,7 @@ def main(args=None):
         latencies.upload_output_assets = time.perf_counter_ns() - start_t
 
         # Check if manifest reporting feature is enabled via environment variable
-        manifest_reporting_enabled = (
-            os.environ.get("MANIFEST_REPORTING_FEATURE", "false").lower() == "true"
-        )
-
-        if manifest_reporting_enabled:
+        if is_manifest_reporting_enabled():
             # ja_upload: is a key word that is detected in the worker agent log filter
             # We're printing the manifest info to the logs so that we can re-load it as a manifest info in the worker agent process
             print(f"ja_upload: {json.dumps([asdict(info) for info in manifest_infos])}")

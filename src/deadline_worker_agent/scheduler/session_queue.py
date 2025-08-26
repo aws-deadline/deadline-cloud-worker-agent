@@ -483,7 +483,7 @@ class SessionActionQueue:
                 action_queue_entry = cast(TaskRunQueueEntry, action_queue_entry)
                 action_definition = action_queue_entry.definition
                 step_id = action_definition["stepId"]
-                task_id = action_definition["taskId"]
+                task_id = action_definition.get("taskId")
                 try:
                     step_details = self._job_entities.step_details(step_id=step_id)
                 except UnsupportedSchema as e:
@@ -509,15 +509,14 @@ class SessionActionQueue:
                     id=action_id,
                     details=step_details,
                     task_parameter_values=task_parameters,
-                    task_id=action_definition["taskId"],
+                    task_id=action_definition.get("taskId"),
                 )
             elif action_type == "SYNC_OUTPUT_JOB_ATTACHMENTS":
                 action_queue_entry = cast(AttachmentUploadActionQueueEntry, action_queue_entry)
                 action_definition = action_queue_entry.definition
                 step_id = action_definition["stepId"]
-                task_id = action_definition["taskId"]
+                task_id = action_definition.get("taskId")
                 start_time = action_definition["startTime"]
-
                 next_action = AttachmentUploadAction(
                     id=action_id,
                     session_id=self._session_id,

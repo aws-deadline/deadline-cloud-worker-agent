@@ -80,7 +80,7 @@ class ChunkIntParameter(TypedDict):
 class TaskRunAction(TypedDict):
     sessionActionId: str
     actionType: StepActionType
-    taskId: str
+    taskId: NotRequired[str]
     stepId: str
     parameters: NotRequired[
         dict[
@@ -106,7 +106,7 @@ class AttachmentUploadAction(TypedDict):
     sessionActionId: str
     actionType: AttachmentUploadActionType
     stepId: str
-    taskId: str
+    taskId: NotRequired[str]
     startTime: float
 
 

@@ -116,7 +116,7 @@ line below:
     SESSION_ROOT_DIR = ModifiableSettingData(
         setting_name="session_root_dir",
         table_name="worker",
-        preceding_comment="""
+        preceding_comment=r"""
 The session root directory is a parent directory where worker agent creates per-session
 subdirectories under. This value is overridden when the DEADLINE_WORKER_SESSION_ROOT_DIR environment
 variable is set or the --session-root-dir command-line argument is specified.

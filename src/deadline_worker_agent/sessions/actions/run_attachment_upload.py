@@ -51,7 +51,7 @@ class AttachmentUploadAction(OpenjdAction):
 
     _step_script: Optional[StepScript_2023_09]
     _step_id: str
-    _task_id: str
+    _task_id: Optional[str]
     _start_time: float
 
     def __init__(
@@ -60,7 +60,7 @@ class AttachmentUploadAction(OpenjdAction):
         id: str,
         session_id: str,
         step_id: str,
-        task_id: str,
+        task_id: Optional[str] = None,
         start_time: float,
     ) -> None:
         super(AttachmentUploadAction, self).__init__(
@@ -183,15 +183,20 @@ class AttachmentUploadAction(OpenjdAction):
         )
 
         assert self._step_script is not None
+
+        env_vars = {
+            "DEADLINE_SESSIONACTION_ID": self._id,
+            "DEADLINE_SESSIONACTION_START_TIME": str(self._start_time),
+            "DEADLINE_STEP_ID": self._step_id,
+            "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
+        }
+
+        if self._task_id is not None:
+            env_vars["DEADLINE_TASK_ID"] = self._task_id
+
         session.run_task(
             step_script=self._step_script,
             task_parameter_values=dict[str, ParameterValue](),
-            os_env_vars={
-                "DEADLINE_SESSIONACTION_ID": self._id,
-                "DEADLINE_SESSIONACTION_START_TIME": str(self._start_time),
-                "DEADLINE_STEP_ID": self._step_id,
-                "DEADLINE_TASK_ID": self._task_id,
-                "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
-            },
+            os_env_vars=env_vars,
             log_task_banner=False,
         )

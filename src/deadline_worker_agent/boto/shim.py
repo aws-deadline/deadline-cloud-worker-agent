@@ -156,9 +156,10 @@ class DeadlineClient:
             mapped_action = TaskRunAction(
                 sessionActionId=action_id,
                 actionType="TASK_RUN",
-                taskId=action["taskId"],
                 stepId=action["stepId"],
             )
+            if action.get("taskId"):
+                mapped_action["taskId"] = action["taskId"]
             if parameters := action.get("parameters", None):
                 mapped_action["parameters"] = parameters
             return mapped_action

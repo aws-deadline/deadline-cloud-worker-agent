@@ -1276,9 +1276,10 @@ class Session:
                     sessionActionId=current_action.definition._id,
                     actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
                     stepId=current_action.definition.step_id,
-                    taskId=current_action.definition.task_id,
                     startTime=current_action.start_time.timestamp(),
                 )
+                if current_action.definition.task_id is not None:
+                    action["taskId"] = current_action.definition.task_id
 
                 if not self._action_output_log_filter:
                     self._action_output_log_filter = ActionOutputCaptureFilter(
@@ -1489,6 +1490,7 @@ class Session:
         from .actions import RunStepTaskAction
 
         assert isinstance(current_action.definition, RunStepTaskAction)
+        assert current_action.definition.task_id is not None
 
         upload_summary_statistics: SummaryStatistics = self._asset_sync.sync_outputs(
             s3_settings=s3_settings,

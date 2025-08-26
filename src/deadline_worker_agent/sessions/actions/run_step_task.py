@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from concurrent.futures import Executor
-from typing import Any, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from openjd.model import TaskParameterSet
 
@@ -25,13 +25,13 @@ class RunStepTaskAction(OpenjdAction):
         The unique step identifier
     details : StepDetails
         The environment details
-    task_id : str
+    task_id : Optional[str]
         The unique task identifier
     task_parameter_values : TaskParameterSet
         The task parameter values
     """
 
-    task_id: str
+    task_id: Optional[str]
     _details: StepDetails
     _task_parameter_values: TaskParameterSet
 
@@ -40,7 +40,7 @@ class RunStepTaskAction(OpenjdAction):
         *,
         id: str,
         details: StepDetails,
-        task_id: str,
+        task_id: Optional[str] = None,
         task_parameter_values: TaskParameterSet,
     ) -> None:
         super(RunStepTaskAction, self).__init__(
@@ -70,11 +70,12 @@ class RunStepTaskAction(OpenjdAction):
         executor : Executor
             An executor for running futures
         """
+        env_vars = {"DEADLINE_SESSIONACTION_ID": self._id}
+        if self.task_id is not None:
+            env_vars["DEADLINE_TASK_ID"] = self.task_id
+
         session.run_task(
             step_script=self._details.step_template.script,
             task_parameter_values=self._task_parameter_values,
-            os_env_vars={
-                "DEADLINE_SESSIONACTION_ID": self._id,
-                "DEADLINE_TASK_ID": self.task_id,
-            },
+            os_env_vars=env_vars,
         )
