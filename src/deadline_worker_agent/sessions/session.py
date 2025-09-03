@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from ..scheduler.session_queue import SessionActionQueue
     from .actions import SessionActionDefinition
     from .job_entities import JobAttachmentDetails, JobDetails
+    from .attachment_models import WorkerManifestProperties
 
 from openjd.model import (
     TaskParameterSet,
@@ -223,6 +224,7 @@ class Session:
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._manifest_paths_by_root = dict()
         self._manifest_out_rel_dirs_by_source: dict[str, list[str]] = dict()
+        self._worker_manifest_properties_by_local_root: dict[str, WorkerManifestProperties] = {}
 
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
@@ -298,6 +300,74 @@ class Session:
             self._manifest_out_rel_dirs_by_source[source].extend(out_rel_dirs)
         else:
             self._manifest_out_rel_dirs_by_source[source] = out_rel_dirs
+
+    @property
+    def worker_manifest_properties_by_local_root(self) -> dict[str, WorkerManifestProperties]:
+        """Worker-specific manifest properties dictionary keyed by local root path for enhanced job attachment processing"""
+        return self._worker_manifest_properties_by_local_root
+
+    def set_worker_manifest_properties(
+        self, worker_manifest_properties: WorkerManifestProperties
+    ) -> None:
+        """Add worker manifest properties to the cached dictionary
+
+        Parameters
+        ----------
+        worker_manifest_properties : WorkerManifestProperties
+            Worker manifest properties to add to the cached session dictionary
+        """
+        self._worker_manifest_properties_by_local_root[
+            worker_manifest_properties.local_root_path
+        ] = worker_manifest_properties
+
+    def get_worker_manifest_properties(
+        self, local_root_path: str
+    ) -> WorkerManifestProperties | None:
+        """Get worker manifest properties by local root path
+
+        Parameters
+        ----------
+        local_root_path : str
+            The local root path key to look up
+
+        Returns
+        -------
+        WorkerManifestProperties | None
+            The worker manifest properties for the given key, or None if not found
+        """
+        return self._worker_manifest_properties_by_local_root.get(local_root_path)
+
+    def get_worker_manifest_properties_list(self) -> list[WorkerManifestProperties]:
+        """Get the cached worker manifest properties as a list
+
+        Returns
+        -------
+        list[WorkerManifestProperties]
+            The cached list of worker manifest properties
+        """
+        return list(self._worker_manifest_properties_by_local_root.values())
+
+    def add_local_manifest_path(self, local_root_path: str, manifest_path: str) -> None:
+        """Add a local manifest path to the worker manifest properties
+
+        Parameters
+        ----------
+        local_root_path : str
+            The local root path key to look up the worker manifest properties
+        manifest_path : str
+            The manifest path to add to the local_manifest_paths list
+
+        Raises
+        ------
+        ValueError
+            If the local_root_path is not found in the worker manifest properties dictionary
+        """
+        if worker_props := self._worker_manifest_properties_by_local_root.get(local_root_path):
+            worker_props.local_manifest_paths.append(manifest_path)
+        else:
+            raise ValueError(
+                f"Worker manifest properties not found for local_root_path: {local_root_path}"
+            )
 
     def _warm_job_entities_cache(self) -> None:
         """Attempts to cache the job entities response for all

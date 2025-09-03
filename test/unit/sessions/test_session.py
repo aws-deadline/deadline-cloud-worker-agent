@@ -88,6 +88,9 @@ import deadline_worker_agent.sessions.log_config as log_config_mod
 from deadline_worker_agent.sessions.job_entities.job_attachment_details import (
     JobAttachmentManifestProperties,
 )
+from deadline_worker_agent.sessions.attachment_models import (
+    WorkerManifestProperties,
+)
 
 from deadline.job_attachments.progress_tracker import (
     ProgressReportMetadata,
@@ -2698,3 +2701,332 @@ class TestSessionStartAction:
         revision_extensions = kwargs["revision_extensions"]
         # Check that REDACTED_ENV_VARS is in the list of extensions
         assert ExtensionName.REDACTED_ENV_VARS.value in revision_extensions.extensions
+
+
+class TestSessionWorkerManifestProperties:
+    """Test cases for Session worker manifest properties dictionary functionality."""
+
+    @pytest.fixture
+    def worker_manifest_properties(self) -> WorkerManifestProperties:
+        """Fixture providing a WorkerManifestProperties instance for testing."""
+        from deadline.job_attachments.models import ManifestProperties, PathFormat
+
+        manifest_props = ManifestProperties(
+            rootPath="/source/path",
+            rootPathFormat=PathFormat.POSIX,
+            fileSystemLocationName="shared_storage",
+            inputManifestPath="input.json",
+            inputManifestHash="hash123",
+            outputRelativeDirectories=["out1", "out2"],
+        )
+
+        return WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="/local/root",
+            local_manifest_paths=["/local/manifest.json"],
+        )
+
+    @pytest.fixture
+    def second_worker_manifest_properties(self) -> WorkerManifestProperties:
+        """Fixture providing a second WorkerManifestProperties instance for testing."""
+        from deadline.job_attachments.models import ManifestProperties, PathFormat
+
+        manifest_props = ManifestProperties(
+            rootPath="/another/source/path",
+            rootPathFormat=PathFormat.WINDOWS,
+            fileSystemLocationName="another_storage",
+            inputManifestPath="another_input.json",
+            inputManifestHash="hash456",
+            outputRelativeDirectories=["output"],
+        )
+
+        return WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="/another/local/root",
+            local_manifest_paths=["/another/local/manifest.json"],
+        )
+
+    def test_worker_manifest_properties_dict_property_initial_state(self, session: Session):
+        """Test that worker_manifest_properties_by_local_root property returns empty dict initially."""
+        # WHEN
+        result = session.worker_manifest_properties_by_local_root
+
+        # THEN
+        assert isinstance({}, dict)
+
+    def test_set_worker_manifest_properties(
+        self, session: Session, worker_manifest_properties: WorkerManifestProperties
+    ):
+        """Test setting worker manifest properties in the session dictionary."""
+        # WHEN
+        session.set_worker_manifest_properties(worker_manifest_properties)
+
+        # THEN
+        assert (
+            worker_manifest_properties.local_root_path
+            in session._worker_manifest_properties_by_local_root
+        )
+        assert (
+            session._worker_manifest_properties_by_local_root[
+                worker_manifest_properties.local_root_path
+            ]
+            == worker_manifest_properties
+        )
+
+    def test_set_multiple_worker_manifest_properties(
+        self,
+        session: Session,
+        worker_manifest_properties: WorkerManifestProperties,
+        second_worker_manifest_properties: WorkerManifestProperties,
+    ):
+        """Test setting multiple worker manifest properties in the session dictionary."""
+        # WHEN
+        session.set_worker_manifest_properties(worker_manifest_properties)
+        session.set_worker_manifest_properties(second_worker_manifest_properties)
+
+        # THEN
+        assert len(session._worker_manifest_properties_by_local_root) == 2
+        assert (
+            session._worker_manifest_properties_by_local_root[
+                worker_manifest_properties.local_root_path
+            ]
+            == worker_manifest_properties
+        )
+        assert (
+            session._worker_manifest_properties_by_local_root[
+                second_worker_manifest_properties.local_root_path
+            ]
+            == second_worker_manifest_properties
+        )
+
+    def test_set_worker_manifest_properties_overwrites_existing(
+        self,
+        session: Session,
+        worker_manifest_properties: WorkerManifestProperties,
+        second_worker_manifest_properties: WorkerManifestProperties,
+    ):
+        """Test that setting worker manifest properties overwrites existing entry with same key."""
+        # GIVEN - Modify second properties to have same local_root_path as first
+        second_worker_manifest_properties.local_root_path = (
+            worker_manifest_properties.local_root_path
+        )
+        session.set_worker_manifest_properties(worker_manifest_properties)
+
+        # WHEN
+        session.set_worker_manifest_properties(second_worker_manifest_properties)
+
+        # THEN
+        assert len(session._worker_manifest_properties_by_local_root) == 1
+        assert (
+            session._worker_manifest_properties_by_local_root[
+                worker_manifest_properties.local_root_path
+            ]
+            == second_worker_manifest_properties
+        )
+
+    def test_get_worker_manifest_properties_existing_key(
+        self, session: Session, worker_manifest_properties: WorkerManifestProperties
+    ):
+        """Test getting worker manifest properties for existing key."""
+        # GIVEN
+        session.set_worker_manifest_properties(worker_manifest_properties)
+
+        # WHEN
+        result = session.get_worker_manifest_properties(worker_manifest_properties.local_root_path)
+
+        # THEN
+        assert result == worker_manifest_properties
+
+    def test_get_worker_manifest_properties_nonexistent_key(self, session: Session):
+        """Test getting worker manifest properties for nonexistent key returns None."""
+        # GIVEN
+        nonexistent_path = "/nonexistent/path"
+
+        # WHEN
+        result = session.get_worker_manifest_properties(nonexistent_path)
+
+        # THEN
+        assert result is None
+
+    def test_get_worker_manifest_properties_list_empty(self, session: Session):
+        """Test getting worker manifest properties list when dictionary is empty."""
+        # WHEN
+        result = session.get_worker_manifest_properties_list()
+
+        # THEN
+        assert result == []
+
+    def test_get_worker_manifest_properties_list_single_item(
+        self, session: Session, worker_manifest_properties: WorkerManifestProperties
+    ):
+        """Test getting worker manifest properties list with single item."""
+        # GIVEN
+        session.set_worker_manifest_properties(worker_manifest_properties)
+
+        # WHEN
+        result = session.get_worker_manifest_properties_list()
+
+        # THEN
+        assert len(result) == 1
+        assert result[0] == worker_manifest_properties
+
+    def test_get_worker_manifest_properties_list_multiple_items(
+        self,
+        session: Session,
+        worker_manifest_properties: WorkerManifestProperties,
+        second_worker_manifest_properties: WorkerManifestProperties,
+    ):
+        """Test getting worker manifest properties list with multiple items."""
+        # GIVEN
+        session.set_worker_manifest_properties(worker_manifest_properties)
+        session.set_worker_manifest_properties(second_worker_manifest_properties)
+
+        # WHEN
+        result = session.get_worker_manifest_properties_list()
+
+        # THEN
+        assert len(result) == 2
+        assert worker_manifest_properties in result
+        assert second_worker_manifest_properties in result
+
+    def test_add_local_manifest_path_existing_key(
+        self, session: Session, worker_manifest_properties: WorkerManifestProperties
+    ):
+        """Test adding local manifest path to existing worker manifest properties."""
+        # GIVEN
+        new_manifest_path = "/new/manifest/path.json"
+        session.set_worker_manifest_properties(worker_manifest_properties)
+        initial_paths = worker_manifest_properties.local_manifest_paths.copy()
+
+        # WHEN
+        session.add_local_manifest_path(
+            worker_manifest_properties.local_root_path, new_manifest_path
+        )
+
+        # THEN
+        updated_props = session.get_worker_manifest_properties(
+            worker_manifest_properties.local_root_path
+        )
+        assert updated_props is not None
+        assert len(updated_props.local_manifest_paths) == len(initial_paths) + 1
+        assert new_manifest_path in updated_props.local_manifest_paths
+        assert all(path in updated_props.local_manifest_paths for path in initial_paths)
+
+    def test_add_local_manifest_path_nonexistent_key(self, session: Session):
+        """Test adding local manifest path to nonexistent key raises ValueError."""
+        # GIVEN
+        nonexistent_path = "/nonexistent/path"
+        manifest_path = "/some/manifest.json"
+
+        # WHEN / THEN
+        with pytest.raises(
+            ValueError,
+            match=f"Worker manifest properties not found for local_root_path: {nonexistent_path}",
+        ):
+            session.add_local_manifest_path(nonexistent_path, manifest_path)
+
+    def test_add_multiple_local_manifest_paths(
+        self, session: Session, worker_manifest_properties: WorkerManifestProperties
+    ):
+        """Test adding multiple local manifest paths to same worker manifest properties."""
+        # GIVEN
+        new_paths = ["/path1.json", "/path2.json", "/path3.json"]
+        session.set_worker_manifest_properties(worker_manifest_properties)
+        initial_count = len(worker_manifest_properties.local_manifest_paths)
+
+        # WHEN
+        for path in new_paths:
+            session.add_local_manifest_path(worker_manifest_properties.local_root_path, path)
+
+        # THEN
+        updated_props = session.get_worker_manifest_properties(
+            worker_manifest_properties.local_root_path
+        )
+        assert updated_props is not None
+        assert len(updated_props.local_manifest_paths) == initial_count + len(new_paths)
+        for path in new_paths:
+            assert path in updated_props.local_manifest_paths
+
+    def test_worker_manifest_properties_dict_property_reflects_changes(
+        self, session: Session, worker_manifest_properties: WorkerManifestProperties
+    ):
+        """Test that worker_manifest_properties_by_local_root property reflects changes made to internal dict."""
+        # WHEN
+        session.set_worker_manifest_properties(worker_manifest_properties)
+        result = session.worker_manifest_properties_by_local_root
+
+        # THEN
+        assert result == {worker_manifest_properties.local_root_path: worker_manifest_properties}
+        assert (
+            result is session._worker_manifest_properties_by_local_root
+        )  # Should return the same reference
+
+    def test_worker_manifest_properties_integration_workflow(
+        self,
+        session: Session,
+        worker_manifest_properties: WorkerManifestProperties,
+        second_worker_manifest_properties: WorkerManifestProperties,
+    ):
+        """Test a complete workflow of setting, getting, and modifying worker manifest properties."""
+        # GIVEN
+        additional_manifest_path = "/additional/manifest.json"
+
+        # WHEN - Set initial properties
+        session.set_worker_manifest_properties(worker_manifest_properties)
+        session.set_worker_manifest_properties(second_worker_manifest_properties)
+
+        # WHEN - Add manifest path to first properties
+        session.add_local_manifest_path(
+            worker_manifest_properties.local_root_path, additional_manifest_path
+        )
+
+        # WHEN - Get all properties
+        all_properties = session.get_worker_manifest_properties_list()
+        first_properties = session.get_worker_manifest_properties(
+            worker_manifest_properties.local_root_path
+        )
+        second_properties = session.get_worker_manifest_properties(
+            second_worker_manifest_properties.local_root_path
+        )
+        properties_dict = session.worker_manifest_properties_by_local_root
+
+        # THEN - Verify all operations worked correctly
+        assert len(all_properties) == 2
+        assert first_properties is not None
+        assert second_properties is not None
+        assert additional_manifest_path in first_properties.local_manifest_paths
+        assert additional_manifest_path not in second_properties.local_manifest_paths
+        assert len(properties_dict) == 2
+        assert properties_dict[worker_manifest_properties.local_root_path] == first_properties
+        assert (
+            properties_dict[second_worker_manifest_properties.local_root_path] == second_properties
+        )
+
+    def test_worker_manifest_properties_with_empty_local_manifest_paths(self, session: Session):
+        """Test worker manifest properties functionality with empty local_manifest_paths."""
+        from deadline.job_attachments.models import ManifestProperties, PathFormat
+
+        # GIVEN
+        manifest_props = ManifestProperties(
+            rootPath="/source/path",
+            rootPathFormat=PathFormat.POSIX,
+        )
+
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="/local/root",
+            # local_manifest_paths defaults to empty list
+        )
+
+        # WHEN
+        session.set_worker_manifest_properties(worker_props)
+        session.add_local_manifest_path(worker_props.local_root_path, "/first/manifest.json")
+        session.add_local_manifest_path(worker_props.local_root_path, "/second/manifest.json")
+
+        # THEN
+        result = session.get_worker_manifest_properties(worker_props.local_root_path)
+        assert result is not None
+        assert sorted(result.local_manifest_paths) == [
+            "/first/manifest.json",
+            "/second/manifest.json",
+        ]
