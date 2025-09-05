@@ -2752,7 +2752,7 @@ class TestSessionWorkerManifestProperties:
         result = session.worker_manifest_properties_by_local_root
 
         # THEN
-        assert isinstance({}, dict)
+        assert result == {}
 
     def test_set_worker_manifest_properties(
         self, session: Session, worker_manifest_properties: WorkerManifestProperties

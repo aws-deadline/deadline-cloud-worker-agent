@@ -141,7 +141,9 @@ class WorkerManifestProperties:
         if self.manifest_properties.inputManifestHash:
             manifest_dict["inputManifestHash"] = self.manifest_properties.inputManifestHash
         if self.manifest_properties.outputRelativeDirectories:
-            manifest_dict["outputRelativeDirectories"] = self.manifest_properties.outputRelativeDirectories
+            manifest_dict["outputRelativeDirectories"] = (
+                self.manifest_properties.outputRelativeDirectories
+            )
 
         return {
             "manifestProperties": manifest_dict,
