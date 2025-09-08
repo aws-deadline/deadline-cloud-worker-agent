@@ -128,25 +128,9 @@ class WorkerManifestProperties:
         Returns:
             Dict[str, Any]: A dictionary representation of the worker manifest properties
         """
-        # Manually serialize ManifestProperties to avoid dependency on unreleased to_dict method
-        manifest_dict: Dict[str, Any] = {"rootPath": self.manifest_properties.rootPath}
-        manifest_dict["rootPathFormat"] = self.manifest_properties.rootPathFormat.value
-
-        if self.manifest_properties.fileSystemLocationName:
-            manifest_dict["fileSystemLocationName"] = (
-                self.manifest_properties.fileSystemLocationName
-            )
-        if self.manifest_properties.inputManifestPath:
-            manifest_dict["inputManifestPath"] = self.manifest_properties.inputManifestPath
-        if self.manifest_properties.inputManifestHash:
-            manifest_dict["inputManifestHash"] = self.manifest_properties.inputManifestHash
-        if self.manifest_properties.outputRelativeDirectories:
-            manifest_dict["outputRelativeDirectories"] = (
-                self.manifest_properties.outputRelativeDirectories
-            )
 
         return {
-            "manifestProperties": manifest_dict,
+            "manifestProperties": self.manifest_properties.to_dict(),
             "localManifestPaths": self.local_manifest_paths,
             "localRootPath": self.local_root_path,
         }
