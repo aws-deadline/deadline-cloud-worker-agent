@@ -34,10 +34,22 @@ class WorkerManifestProperties:
     local_manifest_paths: list[str] = field(default_factory=list)
     """Local file system paths where the manifest files are stored (supports step dependencies)"""
 
-    def __post_init__(self):
-        """Validate that required fields are set after initialization."""
-        if not self.local_root_path:
-            raise ValueError("local_root_path must be set for WorkerManifestProperties")
+    def __init__(
+        self,
+        manifest_properties: ManifestProperties,
+        local_root_path: str,
+        local_manifest_paths: Optional[List[str]] = None,
+    ):
+        """
+        Initialize WorkerManifestProperties.
+        Args:
+            manifest_properties: The original manifest properties
+            local_root_path: Local root path for attachment files
+            local_manifest_paths: Optional list of local paths for manifest files (supports step dependencies)
+        """
+        self.manifest_properties = manifest_properties
+        self.local_root_path = local_root_path
+        self.local_manifest_paths = list(local_manifest_paths) if local_manifest_paths else []
 
     @property
     def root_path(self) -> str:
@@ -74,12 +86,7 @@ class WorkerManifestProperties:
         Convert to an OpenJD-compatible path mapping rule.
         Returns:
             PathMappingRule: A path mapping rule using local root path as destination
-        Raises:
-            ValueError: If local_root_path is empty
         """
-        if not self.local_root_path:
-            raise ValueError("local_root_path must be set to create path mapping rule")
-
         return PathMappingRule(
             source_path_format=self.manifest_properties.rootPathFormat.value,
             source_path=self.manifest_properties.rootPath,
@@ -95,31 +102,10 @@ class WorkerManifestProperties:
         Note:
             This follows the same pattern used in asset_sync.py for manifest name generation.
         """
+        # TODO - add doc and/or define this formally as a data contract in job attachment
         hash_alg = AssetManifest.get_default_hash_alg()
         return hash_data(
             f"{self.file_system_location_name or ''}{self.root_path}".encode(), hash_alg
-        )
-
-    @classmethod
-    def from_manifest_properties(
-        cls,
-        manifest_properties: ManifestProperties,
-        local_root_path: str,
-        local_manifest_paths: Optional[List[str]] = None,
-    ) -> "WorkerManifestProperties":
-        """
-        Create WorkerManifestProperties from ManifestProperties and local paths.
-        Args:
-            manifest_properties: The original manifest properties
-            local_root_path: Local root path for attachment files
-            local_manifest_paths: Optional list of local paths for manifest files (supports step dependencies)
-        Returns:
-            WorkerManifestProperties: A new worker manifest properties instance
-        """
-        return cls(
-            manifest_properties=manifest_properties,
-            local_manifest_paths=local_manifest_paths or [],
-            local_root_path=local_root_path,
         )
 
     def to_dict(self) -> Dict[str, Any]:
