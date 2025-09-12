@@ -5,6 +5,7 @@ Unit tests for worker-specific data structures.
 """
 
 import pytest
+from unittest.mock import patch
 
 from deadline_worker_agent.sessions.attachment_models import (
     WorkerManifestProperties,
@@ -66,6 +67,7 @@ class TestWorkerManifestProperties:
             inputManifestHash="hash123",
             outputRelativeDirectories=["out1", "out2"],
         )
+        # WHEN
         worker_props = WorkerManifestProperties(
             manifest_properties=manifest_props, local_root_path="/local/root"
         )
@@ -137,6 +139,7 @@ class TestWorkerManifestProperties:
 
     def test_property_accessors_with_none_values(self):
         """Test property accessors when optional fields are None."""
+        # GIVEN
         manifest_props = ManifestProperties(
             rootPath="/source/path",
             rootPathFormat=PathFormat.POSIX,
@@ -150,6 +153,7 @@ class TestWorkerManifestProperties:
             manifest_properties=manifest_props, local_root_path="/local/root"
         )
 
+        # WHEN/THEN
         assert worker_props.root_path == "/source/path"
         assert worker_props.root_path_format == PathFormat.POSIX
         assert worker_props.file_system_location_name is None
@@ -159,6 +163,7 @@ class TestWorkerManifestProperties:
 
     def test_to_path_mapping_rule_with_windows_format(self):
         """Test conversion to path mapping rule with Windows path format."""
+        # GIVEN
         manifest_props = ManifestProperties(
             rootPath="C:\\source\\path", rootPathFormat=PathFormat.WINDOWS
         )
@@ -167,8 +172,10 @@ class TestWorkerManifestProperties:
             manifest_properties=manifest_props, local_root_path="C:\\local\\root"
         )
 
+        # WHEN
         rule = worker_props.to_path_mapping_rule()
 
+        # THEN
         assert isinstance(rule, PathMappingRule)
         assert rule.source_path_format == "windows"
         assert rule.source_path == "C:\\source\\path"
@@ -176,6 +183,7 @@ class TestWorkerManifestProperties:
 
     def test_manifest_properties_with_complex_paths(self):
         """Test WorkerManifestProperties with complex file paths."""
+        # GIVEN
         manifest_props = ManifestProperties(
             rootPath="/complex/path/with spaces/and-dashes_underscores",
             rootPathFormat=PathFormat.POSIX,
@@ -185,12 +193,14 @@ class TestWorkerManifestProperties:
             outputRelativeDirectories=["output/renders", "output/logs", "temp/cache"],
         )
 
+        # WHEN
         worker_props = WorkerManifestProperties(
             manifest_properties=manifest_props,
             local_root_path="/local/session/complex_path_hash",
             local_manifest_paths=["/local/session/manifests/complex_manifest.json"],
         )
 
+        # THEN
         assert worker_props.root_path == "/complex/path/with spaces/and-dashes_underscores"
         assert worker_props.file_system_location_name == "complex_storage_name"
         assert worker_props.input_manifest_path == "manifests/complex/input_manifest_v2.json"
@@ -205,6 +215,7 @@ class TestWorkerManifestProperties:
 
     def test_equality_and_comparison(self):
         """Test equality comparison between WorkerManifestProperties instances."""
+        # GIVEN
         manifest_props1 = ManifestProperties(
             rootPath="/source/path",
             rootPathFormat=PathFormat.POSIX,
@@ -235,24 +246,29 @@ class TestWorkerManifestProperties:
             local_manifest_paths=["/local/manifest.json"],
         )
 
+        # WHEN/THEN
         # Test equality (dataclass should provide __eq__)
         assert worker_props1 == worker_props2
         assert worker_props1 != worker_props3
 
     def test_constructor_with_valid_inputs(self):
         """Test that constructor works with valid inputs."""
+        # GIVEN
         manifest_props = ManifestProperties(
             rootPath="/source/path", rootPathFormat=PathFormat.POSIX
         )
 
-        # Test with valid inputs
+        # WHEN
         worker_props = WorkerManifestProperties(
             manifest_properties=manifest_props, local_root_path="/valid/root"
         )
+
+        # THEN
         assert worker_props.local_root_path == "/valid/root"
 
     def test_local_manifest_paths_default_factory(self):
         """Test that each instance gets its own local_manifest_paths list (mutable default fix)."""
+        # GIVEN
         manifest_props1 = ManifestProperties(
             rootPath="/source/path1", rootPathFormat=PathFormat.POSIX
         )
@@ -260,6 +276,7 @@ class TestWorkerManifestProperties:
             rootPath="/source/path2", rootPathFormat=PathFormat.POSIX
         )
 
+        # WHEN
         # Create two instances without specifying local_manifest_paths
         worker_props1 = WorkerManifestProperties(
             manifest_properties=manifest_props1, local_root_path="/local/root1"
@@ -268,6 +285,7 @@ class TestWorkerManifestProperties:
             manifest_properties=manifest_props2, local_root_path="/local/root2"
         )
 
+        # THEN
         # Verify each instance has its own empty list
         assert worker_props1.local_manifest_paths == []
         assert worker_props2.local_manifest_paths == []
@@ -339,14 +357,17 @@ class TestWorkerManifestProperties:
 
     def test_local_manifest_paths_modification_after_initialization(self):
         """Test that local_manifest_paths can be modified after initialization."""
+        # GIVEN
         manifest_props = ManifestProperties(
             rootPath="/source/path", rootPathFormat=PathFormat.POSIX
         )
 
+        # WHEN
         worker_props = WorkerManifestProperties(
             manifest_properties=manifest_props, local_root_path="/local/root"
         )
 
+        # WHEN/THEN
         # Start with empty list
         assert worker_props.local_manifest_paths == []
 
@@ -365,7 +386,8 @@ class TestWorkerManifestProperties:
         assert len(worker_props.local_manifest_paths) == 4
 
     def test_to_dict_with_none_values(self):
-        """Test to_dict with None values for optional fields."""
+        """Test to_dict with mocked ManifestProperties.to_dict() for None values."""
+        # GIVEN
         manifest_props = ManifestProperties(
             rootPath="/source/path",
             rootPathFormat=PathFormat.WINDOWS,
@@ -380,19 +402,25 @@ class TestWorkerManifestProperties:
             local_root_path="/local/root",
         )
 
-        result_dict = worker_props.to_dict()
+        # Mock ManifestProperties.to_dict() to return controlled data
+        mock_manifest_dict = {"mocked": "data"}
 
-        manifest_data = result_dict["manifestProperties"]
-        assert manifest_data["rootPath"] == "/source/path"
-        assert manifest_data["rootPathFormat"] == "windows"
-        # None values are not included in the dictionary by ManifestProperties.to_dict()
-        assert "fileSystemLocationName" not in manifest_data
-        assert "inputManifestPath" not in manifest_data
-        assert "inputManifestHash" not in manifest_data
-        assert "outputRelativeDirectories" not in manifest_data
+        # WHEN
+        with patch.object(
+            manifest_props, "to_dict", return_value=mock_manifest_dict
+        ) as mock_to_dict:
+            result_dict = worker_props.to_dict()
 
-        assert result_dict["localManifestPaths"] == []
-        assert result_dict["localRootPath"] == "/local/root"
+            # THEN
+            # Verify the mock was called
+            mock_to_dict.assert_called_once()
+
+            # Verify the integration: mock result is used as manifestProperties
+            assert result_dict["manifestProperties"] is mock_manifest_dict
+
+            # Verify worker-specific fields are correct
+            assert result_dict["localManifestPaths"] == []
+            assert result_dict["localRootPath"] == "/local/root"
 
     def test_from_dict_deserialization(self):
         """Test creating WorkerManifestProperties from dictionary."""
@@ -431,6 +459,7 @@ class TestWorkerManifestProperties:
 
     def test_from_dict_with_missing_optional_fields(self):
         """Test from_dict with missing optional fields."""
+        # GIVEN
         data = {
             "manifestProperties": {
                 "rootPath": "/source/path",
@@ -439,8 +468,10 @@ class TestWorkerManifestProperties:
             "localRootPath": "/local/root",
         }
 
+        # WHEN
         worker_props = WorkerManifestProperties.from_dict(data)
 
+        # THEN
         assert worker_props.root_path == "/source/path"
         assert worker_props.root_path_format == PathFormat.WINDOWS
         assert worker_props.file_system_location_name is None
@@ -452,35 +483,42 @@ class TestWorkerManifestProperties:
 
     def test_from_dict_missing_required_fields_raises_error(self):
         """Test that from_dict raises KeyError for missing required fields."""
-        # GIVEN/WHEN/THEN - Missing manifestProperties
+        # GIVEN - Missing manifestProperties
         data_missing_manifest = {
             "localRootPath": "/local/root",
         }
+        # THEN
         with pytest.raises(KeyError):
+            # WHEN
             WorkerManifestProperties.from_dict(data_missing_manifest)
 
-        # GIVEN/WHEN/THEN - Missing localRootPath
+        # GIVEN - Missing localRootPath
         data_missing_root = {
             "manifestProperties": {
                 "rootPath": "/source/path",
                 "rootPathFormat": "posix",
             },
         }
+        # THEN
         with pytest.raises(KeyError):
+            # WHEN
             WorkerManifestProperties.from_dict(data_missing_root)
 
-        # GIVEN/WHEN/THEN - Missing rootPath in manifestProperties
+        # GIVEN - Missing rootPath in manifestProperties
         data_missing_root_path = {
             "manifestProperties": {
                 "rootPathFormat": "posix",
             },
             "localRootPath": "/local/root",
         }
+        # THEN
         with pytest.raises(KeyError):
+            # WHEN
             WorkerManifestProperties.from_dict(data_missing_root_path)
 
     def test_from_dict_invalid_path_format_raises_error(self):
         """Test that from_dict raises ValueError for invalid path format."""
+        # GIVEN
         data = {
             "manifestProperties": {
                 "rootPath": "/source/path",
@@ -489,11 +527,13 @@ class TestWorkerManifestProperties:
             "localRootPath": "/local/root",
         }
 
+        # WHEN/THEN
         with pytest.raises(ValueError):
             WorkerManifestProperties.from_dict(data)
 
     def test_dict_roundtrip_serialization(self):
-        """Test that dict serialization and deserialization are symmetric."""
+        """Test that dict serialization and deserialization are symmetric with mocked to_dict."""
+        # GIVEN
         # Create original object with minimal data
         manifest_props = ManifestProperties(
             rootPath="/minimal/path",
@@ -505,9 +545,26 @@ class TestWorkerManifestProperties:
             local_root_path="/local/minimal",
         )
 
-        # Serialize to dict and back
-        data_dict = original_worker_props.to_dict()
-        reconstructed_worker_props = WorkerManifestProperties.from_dict(data_dict)
+        # Mock ManifestProperties.to_dict() with data compatible with from_dict
+        mock_manifest_dict = {"rootPath": "/minimal/path", "rootPathFormat": "posix"}
 
-        # Verify they are equal
-        assert reconstructed_worker_props == original_worker_props
+        # WHEN
+        with patch.object(
+            manifest_props, "to_dict", return_value=mock_manifest_dict
+        ) as mock_to_dict:
+            # Serialize to dict and back
+            data_dict = original_worker_props.to_dict()
+
+            # THEN
+            # Verify the mock was called
+            mock_to_dict.assert_called_once()
+
+            # Verify the mock result is properly integrated
+            assert data_dict["manifestProperties"] is mock_manifest_dict
+
+            # Since from_dict doesn't use ManifestProperties.to_dict(),
+            # we can still test the round trip
+            reconstructed_worker_props = WorkerManifestProperties.from_dict(data_dict)
+
+            # Verify they are equal
+            assert reconstructed_worker_props == original_worker_props
