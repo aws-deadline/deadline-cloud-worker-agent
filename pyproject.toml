@@ -104,6 +104,7 @@ pretty = true
 # Declare mypy plugins
 plugins = [
   "pydantic.mypy",
+  "pydantic.v1.mypy"
 ]
 
 files = [ "src/**/*.py" ]
