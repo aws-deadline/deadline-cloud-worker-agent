@@ -9,7 +9,6 @@ while maintaining backward compatibility for CLI operations.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 
 from deadline.job_attachments.models import ManifestProperties, PathMappingRule
@@ -17,22 +16,12 @@ from deadline.job_attachments.asset_manifests import hash_data
 from deadline.job_attachments.asset_manifests.v2023_03_03.asset_manifest import AssetManifest
 
 
-@dataclass
 class WorkerManifestProperties:
     """
     Worker-specific manifest properties that extend ManifestProperties with local paths.
     This class contains the original manifest properties along with worker-specific
     information about local file system paths for manifest files and root directories.
     """
-
-    manifest_properties: ManifestProperties
-    """The original manifest properties from job attachment details"""
-
-    local_root_path: str
-    """Local file system root path where attachment files are stored"""
-
-    local_manifest_paths: list[str] = field(default_factory=list)
-    """Local file system paths where the manifest files are stored (supports step dependencies)"""
 
     def __init__(
         self,
@@ -150,4 +139,35 @@ class WorkerManifestProperties:
             manifest_properties=manifest_properties,
             local_manifest_paths=data.get("localManifestPaths", []),
             local_root_path=data["localRootPath"],
+        )
+
+    def __eq__(self, other: object) -> bool:
+        """
+        Check equality with another WorkerManifestProperties instance.
+        Args:
+            other: Object to compare with
+        Returns:
+            bool: True if objects are equal, False otherwise
+        """
+        if not isinstance(other, WorkerManifestProperties):
+            return False
+
+        return (
+            self.manifest_properties == other.manifest_properties
+            and self.local_root_path == other.local_root_path
+            and self.local_manifest_paths == other.local_manifest_paths
+        )
+
+    def __hash__(self) -> int:
+        """
+        Generate hash for WorkerManifestProperties instance.
+        Returns:
+            int: Hash value based on immutable attributes
+        """
+        return hash(
+            (
+                self.manifest_properties,
+                self.local_root_path,
+                tuple(self.local_manifest_paths),  # Convert list to tuple for hashing
+            )
         )
