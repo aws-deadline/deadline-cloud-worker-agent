@@ -2,10 +2,11 @@
 
 
 ### Features
-* **experimental**: add worker session data model for job attachment sync operations (#727) ([`1f3e29c`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/1f3e29c04ddf6f4251253fb0ab88fafae58efe88))
-* macOS worker can kill session processes and shutdown host (#720) ([`4524bf4`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/4524bf4e503f4d8c0610b954f81534d289244c2b))
-* allow macOS to shutdown host ([`4524bf4`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/4524bf4e503f4d8c0610b954f81534d289244c2b))
+* macOS worker can stop session processes and shutdown host (#720) ([`4524bf4`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/4524bf4e503f4d8c0610b954f81534d289244c2b))
 
+### Experimental
+These changes are experimental and only available through the use of feature flags
+* MANIFEST_REPORTING_FEATURE - Add worker session data model for job attachment sync operations (#727) ([`1f3e29c`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/1f3e29c04ddf6f4251253fb0ab88fafae58efe88))
 
 ## 0.28.13 (2025-07-23)
 
