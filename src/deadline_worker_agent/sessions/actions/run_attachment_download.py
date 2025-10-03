@@ -399,14 +399,12 @@ class AttachmentDownloadAction(OpenjdAction):
             and isinstance(fs_permission_settings, PosixFileSystemPermissionSettings)
         ):
             assert session._asset_sync is not None
-            session._asset_sync._launch_vfs(
+            return session._asset_sync._launch_vfs(
                 s3_settings=s3_settings,
                 session_dir=session.working_directory,
                 fs_permission_settings=fs_permission_settings,
                 merged_manifests_by_root=merged_manifests_by_root,
                 os_env_vars=dict(session._env),  # type: ignore
             )
-            return True
-
         else:
             return False
