@@ -1,7 +1,7 @@
 backoff == 2.2.*
 coverage[toml] ~= 7.10
 coverage-conditional-plugin == 0.9.*
-deadline-cloud-test-fixtures == 0.18.*
+deadline-cloud-test-fixtures >= 0.18.6, <0.19
 flaky == 3.8.*
 pytest ~= 8.4
 pytest-cov == 7.0.*
