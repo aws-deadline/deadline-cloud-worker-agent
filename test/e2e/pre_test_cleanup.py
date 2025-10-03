@@ -1,3 +1,4 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 """
 Utility script for cleaning up the test environment before running
 Deadline Cloud Worker Agent E2E tests. Will terminate all instances
