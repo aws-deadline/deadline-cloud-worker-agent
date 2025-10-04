@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from pathlib import Path
+import json
 import os
 import sys
 import tempfile
@@ -32,6 +33,7 @@ from deadline.job_attachments.models import (
     JobAttachmentsFileSystem,
 )
 from deadline.job_attachments.asset_manifests import BaseAssetManifest
+from deadline_worker_agent.sessions.attachment_models import WorkerManifestProperties
 
 if TYPE_CHECKING:
     from deadline_worker_agent.sessions.job_entities import JobAttachmentDetails
@@ -150,6 +152,21 @@ class TestStart:
         assert job_details.job_attachment_settings.s3_bucket_name is not None
         assert job_details.job_attachment_settings.root_prefix is not None
 
+        # Mock session methods for WorkerManifestProperties
+        session.set_worker_manifest_properties = Mock()
+        session.get_worker_manifest_properties_list = Mock(return_value=[])
+        session.add_local_manifest_path = Mock()
+        session.get_worker_manifest_properties = Mock(return_value=None)
+        session.add_manifest_path = Mock()
+        session.add_manifest_out_rel_dirs = Mock()
+        session.manifest_out_rel_dirs_by_source = {}
+
+        # Mock asset sync methods
+        mock_asset_sync.get_local_destination.return_value = str(session_dir)
+        mock_asset_sync._check_and_write_local_manifests.return_value = {
+            str(session_dir): "/path/to/manifest.json"
+        }
+
         # WHEN
         action.start(session=session, executor=executor)
         s3_settings = JobAttachmentS3Settings(
@@ -157,6 +174,7 @@ class TestStart:
             rootPrefix=job_details.job_attachment_settings.root_prefix,
         )
 
+        # THEN
         mock_asset_sync._aggregate_asset_root_manifests.assert_called_once_with(
             session_dir=session_dir,
             s3_settings=s3_settings,
@@ -177,21 +195,21 @@ class TestStart:
             manifest_name_suffix="job",
         )
 
+        # Verify the step script structure with new arguments
         with open(
             Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_download.py",
             "r",
         ) as f:
-            assert action._step_script == StepScript_2023_09(
+            expected_script = StepScript_2023_09(
                 actions=StepActions_2023_09(
                     onRun=Action_2023_09(
                         command=CommandString(python_path),
                         args=[
                             ArgString("{{ Task.File.AttachmentDownload }}"),
-                            ArgString("-pm"),
-                            ArgString("{{ Session.PathMappingRulesFile }}"),
                             ArgString("-s3"),
                             ArgString(s3_settings.to_s3_root_uri()),
-                            ArgString("-m"),
+                            ArgString("-wp"),
+                            ArgString("{{ Task.File.WorkerManifestProperties }}"),
                         ],
                     )
                 ),
@@ -200,13 +218,32 @@ class TestStart:
                         name="AttachmentDownload",
                         type=EmbeddedFileTypes_2023_09.TEXT,
                         data=DataString(f.read()),
-                    )
+                    ),
+                    EmbeddedFileText_2023_09(
+                        name="WorkerManifestProperties",
+                        type=EmbeddedFileTypes_2023_09.TEXT,
+                        data=DataString(ANY),  # JSON data will vary
+                    ),
                 ],
             )
+
+            # Check the basic structure
+            assert action._step_script is not None
+            assert (
+                action._step_script.actions.onRun.command == expected_script.actions.onRun.command
+            )
+            assert action._step_script.actions.onRun.args == expected_script.actions.onRun.args
+            assert action._step_script.embeddedFiles is not None
+            assert len(action._step_script.embeddedFiles) == 2
+            assert action._step_script.embeddedFiles[0].name == "AttachmentDownload"
+            assert action._step_script.embeddedFiles[1].name == "WorkerManifestProperties"
 
         session.run_task.assert_called_once_with(
             step_script=action._step_script,
             task_parameter_values=dict[str, ParameterValue](),
+            os_env_vars={
+                "DEADLINE_QUEUE_ID": TestStart.QUEUE_ID,
+            },
             log_task_banner=False,
         )
 
@@ -232,6 +269,21 @@ class TestStart:
 
         assert not job_details.path_mapping_rules
 
+        # Mock session methods for WorkerManifestProperties
+        session.set_worker_manifest_properties = Mock()
+        session.get_worker_manifest_properties_list = Mock(return_value=[])
+        session.add_local_manifest_path = Mock()
+        session.get_worker_manifest_properties = Mock(return_value=None)
+        session.add_manifest_path = Mock()
+        session.add_manifest_out_rel_dirs = Mock()
+        session.manifest_out_rel_dirs_by_source = {}
+
+        # Mock asset sync methods
+        mock_asset_sync.get_local_destination.return_value = str(session_dir)
+        mock_asset_sync._check_and_write_local_manifests.return_value = {
+            str(session_dir): "/path/to/manifest.json"
+        }
+
         # WHEN
         action.start(session=session, executor=executor)
         s3_settings = JobAttachmentS3Settings(
@@ -243,20 +295,19 @@ class TestStart:
         # Verify _get_unique_dest_dir_name was called with the root path
         mock_get_unique_dest_dir_name.assert_called_once_with("/foo/bar")
 
-        # Check that the method was called
-        assert mock_asset_sync._aggregate_asset_root_manifests.call_count == 1
-        # Get the call arguments
-        call_args = mock_asset_sync._aggregate_asset_root_manifests.call_args
-
-        # Check specific arguments individually
-        assert call_args[1]["session_dir"] == Path(session_dir)
-        assert call_args[1]["s3_settings"] == s3_settings
-        assert call_args[1]["queue_id"] == TestStart.QUEUE_ID
-        assert call_args[1]["job_id"] == TestStart.JOB_ID
-        assert call_args[1]["step_dependencies"] == []
-        assert call_args[1]["storage_profiles_path_mapping_rules"] == {
-            "/foo/bar": str(session.working_directory.joinpath(TestStart.DIR_NAME))
-        }
+        # Check that the method was called with correct arguments
+        mock_asset_sync._aggregate_asset_root_manifests.assert_called_once_with(
+            session_dir=Path(session_dir),
+            s3_settings=s3_settings,
+            queue_id=TestStart.QUEUE_ID,
+            job_id=TestStart.JOB_ID,
+            attachments=ANY,
+            step_dependencies=[],
+            dynamic_mapping_rules=ANY,
+            storage_profiles_path_mapping_rules={
+                "/foo/bar": str(session.working_directory.joinpath(TestStart.DIR_NAME))
+            },
+        )
 
         mock_asset_sync.generate_dynamic_path_mapping.assert_called_once_with(
             session_dir=Path(session_dir),
@@ -267,6 +318,122 @@ class TestStart:
             manifest_write_dir=str(session_dir),
             manifest_name_suffix="job",
         )
+
+        # Verify WorkerManifestProperties was created and set
+        session.set_worker_manifest_properties.assert_called_once()
+        call_args = session.set_worker_manifest_properties.call_args[0][0]
+        assert isinstance(call_args, WorkerManifestProperties)
+        assert call_args.local_root_path == str(session_dir)
+        assert call_args.local_manifest_paths == ["/path/to/manifest.json"]
+
+
+class TestSetStepScript:
+    """Tests for AttachmentDownloadAction.set_step_script()"""
+
+    def test_set_step_script_with_worker_manifest_properties(
+        self,
+        action: actions_module.AttachmentDownloadAction,
+        job_attachment_details: JobAttachmentDetails,
+        python_path: str,
+    ) -> None:
+        """
+        Tests that set_step_script creates the correct step script with worker manifest properties
+        """
+        # GIVEN
+        from deadline.job_attachments.models import ManifestProperties, PathFormat
+
+        manifest_properties = ManifestProperties(
+            rootPath="/test/root",
+            rootPathFormat=PathFormat.POSIX,
+            fileSystemLocationName="test-location",
+            inputManifestPath="/test/manifest.json",
+            inputManifestHash="test-hash",
+            outputRelativeDirectories=["/output"],
+        )
+
+        worker_manifest_properties = WorkerManifestProperties(
+            manifest_properties=manifest_properties,
+            local_root_path="/local/root",
+            local_manifest_paths=["/local/manifest.json"],
+        )
+
+        s3_settings = JobAttachmentS3Settings(
+            s3BucketName="test-bucket",
+            rootPrefix="test-prefix",
+        )
+
+        # WHEN
+        action.set_step_script(
+            worker_manifest_properties_list=[worker_manifest_properties],
+            s3_settings=s3_settings,
+        )
+
+        # THEN
+        assert action._step_script is not None
+
+        # Check command and args
+        assert action._step_script.actions.onRun.command == CommandString(python_path)
+        expected_args = [
+            ArgString("{{ Task.File.AttachmentDownload }}"),
+            ArgString("-s3"),
+            ArgString(s3_settings.to_s3_root_uri()),
+            ArgString("-wp"),
+            ArgString("{{ Task.File.WorkerManifestProperties }}"),
+        ]
+        assert action._step_script.actions.onRun.args == expected_args
+
+        # Check embedded files
+        assert action._step_script.embeddedFiles is not None
+        assert len(action._step_script.embeddedFiles) == 2
+
+        # Check AttachmentDownload file
+        attachment_file = action._step_script.embeddedFiles[0]
+        assert attachment_file.name == "AttachmentDownload"
+        assert attachment_file.type == EmbeddedFileTypes_2023_09.TEXT
+
+        # Check WorkerManifestProperties file
+        worker_props_file = action._step_script.embeddedFiles[1]
+        assert worker_props_file.name == "WorkerManifestProperties"
+        assert worker_props_file.type == EmbeddedFileTypes_2023_09.TEXT
+
+        # Verify the worker properties JSON contains expected data
+        worker_props_data = json.loads(worker_props_file.data)
+        assert len(worker_props_data) == 1
+        assert worker_props_data[0]["localRootPath"] == "/local/root"
+        assert worker_props_data[0]["localManifestPaths"] == ["/local/manifest.json"]
+
+    def test_set_step_script_with_empty_worker_manifest_properties(
+        self,
+        action: actions_module.AttachmentDownloadAction,
+        python_path: str,
+    ) -> None:
+        """
+        Tests that set_step_script works with empty worker manifest properties list
+        """
+        # GIVEN
+        s3_settings = JobAttachmentS3Settings(
+            s3BucketName="test-bucket",
+            rootPrefix="test-prefix",
+        )
+
+        # WHEN
+        action.set_step_script(
+            worker_manifest_properties_list=[],
+            s3_settings=s3_settings,
+        )
+
+        # THEN
+        assert action._step_script is not None
+
+        # Check that embedded files still exist but WorkerManifestProperties is empty
+        assert action._step_script.embeddedFiles is not None
+        assert len(action._step_script.embeddedFiles) == 2
+
+        worker_props_file = action._step_script.embeddedFiles[1]
+        assert worker_props_file.name == "WorkerManifestProperties"
+
+        worker_props_data = json.loads(worker_props_file.data)
+        assert worker_props_data == []
 
 
 class TestVFS:
