@@ -28,17 +28,20 @@ class WorkerManifestProperties:
         manifest_properties: ManifestProperties,
         local_root_path: str,
         local_manifest_paths: Optional[List[str]] = None,
+        local_input_manifest_path: Optional[str] = None,
     ):
         """
         Initialize WorkerManifestProperties.
         Args:
             manifest_properties: The original manifest properties
             local_root_path: Local root path for attachment files
-            local_manifest_paths: Optional list of local paths for manifest files (supports step dependencies)
+            local_manifest_paths: Optional list of local paths for all manifest files
+            local_input_manifest_path: Optional local file path for input manifest
         """
         self.manifest_properties = manifest_properties
         self.local_root_path = local_root_path
         self.local_manifest_paths = list(local_manifest_paths) if local_manifest_paths else []
+        self.local_input_manifest_path = local_input_manifest_path
 
     @property
     def root_path(self) -> str:
@@ -108,6 +111,7 @@ class WorkerManifestProperties:
             "manifestProperties": self.manifest_properties.to_dict(),
             "localManifestPaths": self.local_manifest_paths,
             "localRootPath": self.local_root_path,
+            "localInputManifestPath": self.local_input_manifest_path,
         }
 
     @classmethod
@@ -135,11 +139,13 @@ class WorkerManifestProperties:
             outputRelativeDirectories=manifest_props_data.get("outputRelativeDirectories"),
         )
 
-        return cls(
+        worker_props = cls(
             manifest_properties=manifest_properties,
             local_manifest_paths=data.get("localManifestPaths", []),
             local_root_path=data["localRootPath"],
         )
+        worker_props.local_input_manifest_path = data.get("localInputManifestPath")
+        return worker_props
 
     def __eq__(self, other: object) -> bool:
         """
@@ -156,6 +162,7 @@ class WorkerManifestProperties:
             self.manifest_properties == other.manifest_properties
             and self.local_root_path == other.local_root_path
             and self.local_manifest_paths == other.local_manifest_paths
+            and self.local_input_manifest_path == other.local_input_manifest_path
         )
 
     def __hash__(self) -> int:
@@ -169,5 +176,6 @@ class WorkerManifestProperties:
                 self.manifest_properties,
                 self.local_root_path,
                 tuple(self.local_manifest_paths),  # Convert list to tuple for hashing
+                self.local_input_manifest_path,
             )
         )

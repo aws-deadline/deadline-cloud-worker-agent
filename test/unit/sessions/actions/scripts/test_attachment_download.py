@@ -118,6 +118,7 @@ class TestBuildMergedManifestsByRoot:
             manifest_properties=manifest_props,
             local_root_path="/local/test/path",
             local_manifest_paths=["/local/manifest1.json", "/local/manifest2.json"],
+            local_input_manifest_path="/local/manifest1.json"
         )
 
     @pytest.fixture
@@ -231,11 +232,13 @@ class TestBuildMergedManifestsByRoot:
                 manifest_properties=mock_manifest_properties,
                 local_root_path="/local/path1",
                 local_manifest_paths=["/manifest1.json"],
+                local_input_manifest_path="/manifest1.json",
             ),
             WorkerManifestProperties(
                 manifest_properties=mock_manifest_properties,
                 local_root_path="/local/path2",
                 local_manifest_paths=["/manifest2.json"],
+                local_input_manifest_path="/manifest2.json",
             ),
         ]
 

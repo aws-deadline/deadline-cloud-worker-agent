@@ -337,7 +337,7 @@ class AttachmentDownloadAction(OpenjdAction):
         # Now that we have merged_manifests_by_root and manifest_path_by_root available
 
         download_manifest_properties_list: list[WorkerManifestProperties] = list()
-        if manifest_properties_list:
+        if not step_dependencies:
             for manifest_properties in manifest_properties_list:
                 # Create WorkerManifestProperties with local paths and manifest TODO
                 local_root_path: str = session._asset_sync.get_local_destination(
@@ -352,28 +352,24 @@ class AttachmentDownloadAction(OpenjdAction):
                     manifest_properties=manifest_properties,
                     local_root_path=local_root_path,
                     local_manifest_paths=[manifest_path] if manifest_path else [],
+                    local_input_manifest_path=manifest_path,
                 )
                 session.set_worker_manifest_properties(worker_manifest_props)
                 download_manifest_properties_list.append(worker_manifest_props)
 
-        elif session.get_worker_manifest_properties_list():
+        else:
+            assert session.get_worker_manifest_properties_list() is not None
             # If we already have cached WorkerManifestProperties (e.g., for step dependency),
             # add the manifest paths from manifest_path_by_root to the existing properties
             for local_root_path, manifest_path in manifest_paths_by_root.items():
-                if manifest_path:
-                    session.add_local_manifest_path(
-                        local_root_path=local_root_path, manifest_path=manifest_path
-                    )
-                    curr = session.get_worker_manifest_properties(local_root_path=local_root_path)
-                    if curr:
-                        worker_manifest_props = WorkerManifestProperties(
-                            manifest_properties=curr.manifest_properties,
-                            local_root_path=local_root_path,
-                            local_manifest_paths=[manifest_path],
-                        )
-                        download_manifest_properties_list.append(worker_manifest_props)
-        else:
-            self._logger.info("Nothing to sync for AttachmentDownloadAction")
+                # if manifest_path:
+                session.add_local_manifest_path(
+                    local_root_path=local_root_path, manifest_path=manifest_path
+                )
+                curr = session.get_worker_manifest_properties(local_root_path=local_root_path)
+                assert curr is not None
+                curr.local_input_manifest_path(local_root_path)
+                download_manifest_properties_list.append(worker_manifest_props)
 
         #  Try to launch VFS if needed once all files are prepared
         if self._start_vfs(

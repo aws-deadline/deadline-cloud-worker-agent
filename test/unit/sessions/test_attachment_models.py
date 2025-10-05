@@ -40,6 +40,7 @@ class TestWorkerManifestProperties:
         assert worker_props.manifest_properties == manifest_props
         assert worker_props.local_root_path == "/local/root"
         assert worker_props.local_manifest_paths == ["/local/manifest.json"]
+        assert worker_props.local_input_manifest_path is None
 
     def test_initialization_with_empty_string_local_root_path(self):
         """Test that empty string local_root_path is allowed (no validation)."""
@@ -137,6 +138,26 @@ class TestWorkerManifestProperties:
         assert worker_props.local_root_path == "/local/root"
         assert worker_props.local_manifest_paths == []
 
+    def test_input_manifest_path_setter(self):
+        """Test input_manifest_path property setter."""
+        # GIVEN
+        manifest_props = ManifestProperties(
+            rootPath="/source/path",
+            rootPathFormat=PathFormat.POSIX,
+            inputManifestPath="s3://input/manifest.json",
+            fileSystemLocationName="shared_storage",
+        )
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props, local_root_path="/local/root"
+        )
+
+        # WHEN
+        worker_props.local_input_manifest_path = "/local/input/manifest.json"
+
+        # THEN
+        assert worker_props.input_manifest_path == "s3://input/manifest.json"
+        assert worker_props.local_input_manifest_path == "/local/input/manifest.json"
+
     def test_property_accessors_with_none_values(self):
         """Test property accessors when optional fields are None."""
         # GIVEN
@@ -198,6 +219,7 @@ class TestWorkerManifestProperties:
             manifest_properties=manifest_props,
             local_root_path="/local/session/complex_path_hash",
             local_manifest_paths=["/local/session/manifests/complex_manifest.json"],
+            local_input_manifest_path="/local/session/manifests/complex_manifest.json",
         )
 
         # THEN
@@ -212,6 +234,10 @@ class TestWorkerManifestProperties:
         assert worker_props.local_manifest_paths == [
             "/local/session/manifests/complex_manifest.json"
         ]
+        assert (
+            worker_props.local_input_manifest_path
+            == "/local/session/manifests/complex_manifest.json"
+        )
 
     def test_equality_and_comparison(self):
         """Test equality comparison between WorkerManifestProperties instances."""
@@ -435,6 +461,7 @@ class TestWorkerManifestProperties:
                 "outputRelativeDirectories": ["out1", "out2"],
             },
             "localManifestPaths": ["/local/manifest1.json", "/local/manifest2.json"],
+            "localInputManifestPath": "/local/manifest1.json",
             "localRootPath": "/local/root",
         }
 
@@ -455,6 +482,7 @@ class TestWorkerManifestProperties:
             "/local/manifest1.json",
             "/local/manifest2.json",
         ]
+        assert worker_props.local_input_manifest_path == "/local/manifest1.json"
         assert worker_props.local_root_path == "/local/root"
 
     def test_from_dict_with_missing_optional_fields(self):
@@ -544,6 +572,7 @@ class TestWorkerManifestProperties:
             manifest_properties=manifest_props,
             local_root_path="/local/minimal",
         )
+        original_worker_props.local_input_manifest_path = "/local/input/manifest.json"
 
         # Mock ManifestProperties.to_dict() with data compatible with from_dict
         mock_manifest_dict = {"rootPath": "/minimal/path", "rootPathFormat": "posix"}

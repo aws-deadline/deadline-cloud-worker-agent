@@ -63,21 +63,23 @@ def build_merged_manifests_by_root(
         FileNotFoundError: If a manifest file doesn't exist
         ValueError: If manifest decoding fails
     """
-    merged_manifests_by_root = {}
+    manifests_by_root = {}
 
     for worker_prop in worker_manifest_properties:
-        if worker_prop.local_manifest_paths and len(worker_prop.local_manifest_paths) > 0:
-            with open(worker_prop.local_manifest_paths[0], "r") as manifest_file:
-                merged_manifests_by_root[worker_prop.local_root_path] = decode_manifest(
+        if worker_prop.local_input_manifest_path:
+            with open(worker_prop.local_input_manifest_path, "r") as manifest_file:
+                manifests_by_root[worker_prop.local_root_path] = decode_manifest(
                     manifest_file.read()
                 )
+        else:
+            print(f"Root {worker_prop.root_path} contains no input manifest to sync.")
 
-    return merged_manifests_by_root
+    return manifests_by_root
 
 
 def perform_download(
     s3_settings: JobAttachmentS3Settings,
-    merged_manifests_by_root: Dict[str, BaseAssetManifest],
+    manifests_by_root: Dict[str, BaseAssetManifest],
     queue_id: str,
 ) -> DownloadSummaryStatistics:
     """
@@ -85,7 +87,7 @@ def perform_download(
 
     Args:
         s3_settings: S3 settings for the download
-        merged_manifests_by_root: Dictionary mapping root paths to manifests
+        manifests_by_root: Dictionary mapping root paths to manifests
         queue_id: Queue ID for telemetry
 
     Returns:
@@ -97,7 +99,7 @@ def perform_download(
     try:
         download_summary_statistics = download_files_from_manifests(
             s3_bucket=s3_settings.s3BucketName,
-            manifests_by_root=merged_manifests_by_root,
+            manifests_by_root=manifests_by_root,
             cas_prefix=s3_settings.full_cas_prefix(),
             session=boto3.session.Session(),
         )
@@ -141,7 +143,7 @@ def main() -> None:
     worker_manifest_properties = load_worker_manifest_properties(args.worker_properties)
 
     # Build merged manifests by root
-    merged_manifests_by_root = build_merged_manifests_by_root(worker_manifest_properties)
+    manifests_by_root = build_merged_manifests_by_root(worker_manifest_properties)
 
     print("\nStarting download...")
 
@@ -150,7 +152,7 @@ def main() -> None:
 
     # Perform download
     perform_download(
-        s3_settings, merged_manifests_by_root, os.environ.get("DEADLINE_QUEUE_ID", "queue-unknown")
+        s3_settings, manifests_by_root, os.environ.get("DEADLINE_QUEUE_ID", "queue-unknown")
     )
 
     total = time.perf_counter() - start_time
