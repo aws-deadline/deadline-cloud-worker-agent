@@ -29,6 +29,8 @@ from openjd.model.v2023_09 import (
 import deadline_worker_agent.sessions.session as session_mod
 from deadline.job_attachments.models import (
     Attachments,
+    PathFormat,
+    ManifestProperties,
     JobAttachmentS3Settings,
     JobAttachmentsFileSystem,
 )
@@ -152,11 +154,23 @@ class TestStart:
         assert job_details.job_attachment_settings.s3_bucket_name is not None
         assert job_details.job_attachment_settings.root_prefix is not None
 
-        # Mock session methods for WorkerManifestProperties
+        # Create a mock WorkerManifestProperties object
+        mock_manifest_properties = ManifestProperties(
+            rootPath="/foo/bar",
+            rootPathFormat=PathFormat.POSIX,
+            fileSystemLocationName="test-location",
+            inputManifestPath="/path/to/input/manifest.json",
+            inputManifestHash="inputmanifesthash",
+            outputRelativeDirectories=["/asset/output"],
+        )
+        mock_worker_manifest_props = WorkerManifestProperties(
+            manifest_properties=mock_manifest_properties, local_root_path=str(session_dir)
+        )
+
         session.set_worker_manifest_properties = Mock()
         session.get_worker_manifest_properties_list = Mock(return_value=[])
         session.add_local_manifest_path = Mock()
-        session.get_worker_manifest_properties = Mock(return_value=None)
+        session.get_worker_manifest_properties = Mock(return_value=mock_worker_manifest_props)
         session.add_manifest_path = Mock()
         session.add_manifest_out_rel_dirs = Mock()
         session.manifest_out_rel_dirs_by_source = {}
@@ -269,11 +283,23 @@ class TestStart:
 
         assert not job_details.path_mapping_rules
 
-        # Mock session methods for WorkerManifestProperties
+        # Create a mock WorkerManifestProperties object
+        mock_manifest_properties = ManifestProperties(
+            rootPath="/foo/bar",
+            rootPathFormat=PathFormat.POSIX,
+            fileSystemLocationName="test-location",
+            inputManifestPath="/path/to/input/manifest.json",
+            inputManifestHash="inputmanifesthash",
+            outputRelativeDirectories=["/asset/output"],
+        )
+        mock_worker_manifest_props = WorkerManifestProperties(
+            manifest_properties=mock_manifest_properties, local_root_path=str(session_dir)
+        )
+
         session.set_worker_manifest_properties = Mock()
         session.get_worker_manifest_properties_list = Mock(return_value=[])
         session.add_local_manifest_path = Mock()
-        session.get_worker_manifest_properties = Mock(return_value=None)
+        session.get_worker_manifest_properties = Mock(return_value=mock_worker_manifest_props)
         session.add_manifest_path = Mock()
         session.add_manifest_out_rel_dirs = Mock()
         session.manifest_out_rel_dirs_by_source = {}
@@ -324,7 +350,6 @@ class TestStart:
         call_args = session.set_worker_manifest_properties.call_args[0][0]
         assert isinstance(call_args, WorkerManifestProperties)
         assert call_args.local_root_path == str(session_dir)
-        assert call_args.local_manifest_paths == ["/path/to/manifest.json"]
 
 
 class TestSetStepScript:
