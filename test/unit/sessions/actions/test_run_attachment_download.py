@@ -271,7 +271,8 @@ class TestStart:
 
 class TestVFS:
     @pytest.mark.skipif(sys.platform == "win32", reason="Test not supported on Windows")
-    def test_start_vfs_success(
+    @pytest.mark.parametrize("launch_vfs_return_value", [True, False])
+    def test_start_vfs_calling_asset_sync(
         self,
         executor: Mock,
         session: Mock,
@@ -279,9 +280,10 @@ class TestVFS:
         session_dir: Path,
         mock_asset_sync: MagicMock,
         job_details: JobDetails,
+        launch_vfs_return_value: bool,
     ) -> None:
         """
-        Tests that _start_vfs successfully launches VFS when all conditions are met
+        Tests that _start_vfs returns the correct value based on _launch_vfs result when all conditions are met
         """
 
         # Mock platform to be non-Windows
@@ -289,6 +291,9 @@ class TestVFS:
             # Set up session with required attributes for VFS
             session._os_user = PosixSessionUser(user="test-user", group="test-group")
             session._env = {"AWS_PROFILE": "test-profile"}
+
+            # Configure the mock to return the parameterized value when _launch_vfs is called
+            mock_asset_sync._launch_vfs.return_value = launch_vfs_return_value
 
             # Create attachments with VIRTUAL file system
             attachments = Attachments(
@@ -312,7 +317,7 @@ class TestVFS:
             )
 
             # THEN
-            assert result is True
+            assert result is launch_vfs_return_value
             mock_asset_sync._launch_vfs.assert_called_once_with(
                 s3_settings=s3_settings,
                 session_dir=session_dir,
