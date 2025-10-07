@@ -5,6 +5,7 @@ import dataclasses
 import logging
 import os
 import pytest
+
 from dataclasses import dataclass, field, InitVar
 from typing import Callable, Generator, Type
 from contextlib import contextmanager
@@ -20,6 +21,7 @@ from deadline_test_fixtures import (
     BootstrapResources,
     PosixSessionUser,
     OperatingSystem,
+    Ec2Tag,
 )
 import pytest
 
@@ -71,7 +73,9 @@ class DeadlineResources:
             Queue(id=jobs_run_as_agent_user_queue_id, farm=self.farm),
         )
         object.__setattr__(
-            self, "non_valid_role_queue", Queue(id=non_valid_role_queue_id, farm=self.farm)
+            self,
+            "non_valid_role_queue",
+            Queue(id=non_valid_role_queue_id, farm=self.farm),
         )
         object.__setattr__(self, "fleet", Fleet(id=fleet_id, farm=self.farm, autoscaling=False))
         object.__setattr__(self, "scaling_queue", Queue(id=scaling_queue_id, farm=self.farm))
@@ -94,6 +98,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         SCALING_QUEUE_ID: ID of the Deadline scaling queue to use.
         SCALING_FLEET_ID: ID of the Deadline scaling fleet to use.
         JOB_STORAGE_PROFILE_ID: ID of the Deadline storage profile to use
+        TEST_CATEGORY: The type of test that's being run. Will usually be one of dev, <OS>Mainline, or <OS>Release
 
     Returns:
         DeadlineResources: The Deadline resources used for tests
@@ -108,6 +113,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
     scaling_queue_id = os.environ["SCALING_QUEUE_ID"]
     scaling_fleet_id = os.environ["SCALING_FLEET_ID"]
     job_storage_profile_id = os.environ["JOB_STORAGE_PROFILE_ID"]
+    test_category = os.environ.get("TEST_CATEGORY", "dev")
 
     LOG.info(
         f"Configured Deadline Cloud Resources - Farm ID: {farm_id}, "
@@ -118,6 +124,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         f"Queue B ID: {queue_b_id}, "
         f"Fleet ID: {fleet_id}, "
         f"Jobs Run As Agent User Queue ID: {jobs_run_as_agent_user_queue_id}, "
+        f"Test Type: {test_category}, "
     )
 
     sts_client = boto3.client("sts")
@@ -164,7 +171,11 @@ def worker_config(
     """
     return dataclasses.replace(
         worker_config,
-        job_users=[posix_job_user, posix_config_override_job_user, posix_env_override_job_user],
+        job_users=[
+            posix_job_user,
+            posix_config_override_job_user,
+            posix_env_override_job_user,
+        ],
         windows_job_users=windows_job_users,
     )
 
@@ -269,6 +280,7 @@ def create_worker(
         security_group_id = os.getenv("SECURITY_GROUP_ID")
         instance_type = os.getenv("WORKER_INSTANCE_TYPE", default="t3.large")
         instance_shutdown_behavior = os.getenv("WORKER_INSTANCE_SHUTDOWN_BEHAVIOR", default="stop")
+        test_category = os.getenv("TEST_CATEGORY", "dev")
 
         assert subnet_id, "SUBNET_ID is required when deploying an EC2 worker"
         assert security_group_id, "SECURITY_GROUP_ID is required when deploying an EC2 worker"
@@ -296,6 +308,7 @@ def create_worker(
             configuration=worker_config,
             instance_type=instance_type,
             instance_shutdown_behavior=instance_shutdown_behavior,
+            additional_tags=[Ec2Tag(key="TestCategory", value=test_category)],
         )
 
     @contextmanager

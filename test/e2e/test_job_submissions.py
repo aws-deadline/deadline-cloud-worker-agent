@@ -39,6 +39,7 @@ from e2e.utils import (
     submit_job_from_bundle,
     verify_output_dir_matches,
 )
+from e2e.s3_validation_utils import validate_s3_job_output_manifest
 
 
 LOG = logging.getLogger(__name__)
@@ -1799,6 +1800,14 @@ class TestJobSubmission:
             job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
         )
 
+        # Validate S3 setup and manifest integrity after job completion
+        LOG.info(f"Validating S3 setup for job {job.id}")
+        validate_s3_job_output_manifest(
+            job=job,
+            deadline_client=deadline_client,
+        )
+        LOG.info("S3 validation completed successfully")
+
         try:
             with (
                 open(os.path.join(job_bundle_path, "files", "test_input_file"), "r") as input_file,
@@ -1944,6 +1953,14 @@ class TestJobSubmission:
         job.wait_until_complete(client=deadline_client)
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
+        # Validate S3 setup and manifest integrity
+        LOG.info(f"Validating S3 setup for job {job.id}")
+        validate_s3_job_output_manifest(
+            job=job,
+            deadline_client=deadline_client,
+        )
+        LOG.info("S3 validation completed successfully")
+
         # Get job output path
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
         output_root_path = tempfile.mkdtemp(
@@ -1986,6 +2003,14 @@ class TestJobSubmission:
 
         job.wait_until_complete(client=deadline_client)
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        # Validate S3 setup and manifest integrity
+        LOG.info(f"Validating S3 setup for job {job.id}")
+        validate_s3_job_output_manifest(
+            job=job,
+            deadline_client=deadline_client,
+        )
+        LOG.info("S3 validation completed successfully")
 
         # Get job output path
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
@@ -3160,6 +3185,14 @@ with open(output_path, "w") as f:
         LOG.info(f"Job result: {job}")
 
         assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        # Validate S3 setup and manifest integrity
+        LOG.info(f"Validating S3 setup for job {job.id}")
+        validate_s3_job_output_manifest(
+            job=job,
+            deadline_client=deadline_client,
+        )
+        LOG.info("S3 validation completed successfully")
 
         logs_client = boto3.client(
             "logs",
