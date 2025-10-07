@@ -169,7 +169,7 @@ class TestStart:
 
         session.set_worker_manifest_properties = Mock()
         session.get_worker_manifest_properties_list = Mock(return_value=[])
-        session.add_local_manifest_path = Mock()
+        session.add_local_manifest_path = Mock(return_value=mock_worker_manifest_props)
         session.get_worker_manifest_properties = Mock(return_value=mock_worker_manifest_props)
         session.add_manifest_path = Mock()
         session.add_manifest_out_rel_dirs = Mock()
@@ -210,47 +210,38 @@ class TestStart:
         )
 
         # Verify the step script structure with new arguments
-        with open(
-            Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_download.py",
-            "r",
-        ) as f:
-            expected_script = StepScript_2023_09(
-                actions=StepActions_2023_09(
-                    onRun=Action_2023_09(
-                        command=CommandString(python_path),
-                        args=[
-                            ArgString("{{ Task.File.AttachmentDownload }}"),
-                            ArgString("-s3"),
-                            ArgString(s3_settings.to_s3_root_uri()),
-                            ArgString("-wp"),
-                            ArgString("{{ Task.File.WorkerManifestProperties }}"),
-                        ],
-                    )
+        download_script_path = (
+            Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_download.py"
+        )
+        expected_script = StepScript_2023_09(
+            actions=StepActions_2023_09(
+                onRun=Action_2023_09(
+                    command=CommandString(python_path),
+                    args=[
+                        ArgString(str(download_script_path)),
+                        ArgString("-s3"),
+                        ArgString(s3_settings.to_s3_root_uri()),
+                        ArgString("-wp"),
+                        ArgString("{{ Task.File.WorkerManifestProperties }}"),
+                    ],
+                )
+            ),
+            embeddedFiles=[
+                EmbeddedFileText_2023_09(
+                    name="WorkerManifestProperties",
+                    type=EmbeddedFileTypes_2023_09.TEXT,
+                    data=DataString(ANY),  # JSON data will vary
                 ),
-                embeddedFiles=[
-                    EmbeddedFileText_2023_09(
-                        name="AttachmentDownload",
-                        type=EmbeddedFileTypes_2023_09.TEXT,
-                        data=DataString(f.read()),
-                    ),
-                    EmbeddedFileText_2023_09(
-                        name="WorkerManifestProperties",
-                        type=EmbeddedFileTypes_2023_09.TEXT,
-                        data=DataString(ANY),  # JSON data will vary
-                    ),
-                ],
-            )
+            ],
+        )
 
-            # Check the basic structure
-            assert action._step_script is not None
-            assert (
-                action._step_script.actions.onRun.command == expected_script.actions.onRun.command
-            )
-            assert action._step_script.actions.onRun.args == expected_script.actions.onRun.args
-            assert action._step_script.embeddedFiles is not None
-            assert len(action._step_script.embeddedFiles) == 2
-            assert action._step_script.embeddedFiles[0].name == "AttachmentDownload"
-            assert action._step_script.embeddedFiles[1].name == "WorkerManifestProperties"
+        # Check the basic structure
+        assert action._step_script is not None
+        assert action._step_script.actions.onRun.command == expected_script.actions.onRun.command
+        assert action._step_script.actions.onRun.args == expected_script.actions.onRun.args
+        assert action._step_script.embeddedFiles is not None
+        assert len(action._step_script.embeddedFiles) == 1
+        assert action._step_script.embeddedFiles[0].name == "WorkerManifestProperties"
 
         session.run_task.assert_called_once_with(
             step_script=action._step_script,
@@ -298,7 +289,7 @@ class TestStart:
 
         session.set_worker_manifest_properties = Mock()
         session.get_worker_manifest_properties_list = Mock(return_value=[])
-        session.add_local_manifest_path = Mock()
+        session.add_local_manifest_path = Mock(return_value=mock_worker_manifest_props)
         session.get_worker_manifest_properties = Mock(return_value=mock_worker_manifest_props)
         session.add_manifest_path = Mock()
         session.add_manifest_out_rel_dirs = Mock()
@@ -398,8 +389,12 @@ class TestSetStepScript:
 
         # Check command and args
         assert action._step_script.actions.onRun.command == CommandString(python_path)
+        # The actual path is calculated from the actions module location
+        download_script_path = (
+            Path(actions_module.__file__).parent / "scripts" / "attachment_download.py"
+        )
         expected_args = [
-            ArgString("{{ Task.File.AttachmentDownload }}"),
+            ArgString(str(download_script_path)),
             ArgString("-s3"),
             ArgString(s3_settings.to_s3_root_uri()),
             ArgString("-wp"),
@@ -409,15 +404,10 @@ class TestSetStepScript:
 
         # Check embedded files
         assert action._step_script.embeddedFiles is not None
-        assert len(action._step_script.embeddedFiles) == 2
-
-        # Check AttachmentDownload file
-        attachment_file = action._step_script.embeddedFiles[0]
-        assert attachment_file.name == "AttachmentDownload"
-        assert attachment_file.type == EmbeddedFileTypes_2023_09.TEXT
+        assert len(action._step_script.embeddedFiles) == 1
 
         # Check WorkerManifestProperties file
-        worker_props_file = action._step_script.embeddedFiles[1]
+        worker_props_file = action._step_script.embeddedFiles[0]
         assert worker_props_file.name == "WorkerManifestProperties"
         assert worker_props_file.type == EmbeddedFileTypes_2023_09.TEXT
 
@@ -452,9 +442,9 @@ class TestSetStepScript:
 
         # Check that embedded files still exist but WorkerManifestProperties is empty
         assert action._step_script.embeddedFiles is not None
-        assert len(action._step_script.embeddedFiles) == 2
+        assert len(action._step_script.embeddedFiles) == 1
 
-        worker_props_file = action._step_script.embeddedFiles[1]
+        worker_props_file = action._step_script.embeddedFiles[0]
         assert worker_props_file.name == "WorkerManifestProperties"
 
         worker_props_data = json.loads(worker_props_file.data)

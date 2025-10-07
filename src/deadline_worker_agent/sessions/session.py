@@ -347,7 +347,9 @@ class Session:
         """
         return list(self._worker_manifest_properties_by_local_root.values())
 
-    def add_local_manifest_path(self, local_root_path: str, manifest_path: str) -> None:
+    def add_local_manifest_path(
+        self, local_root_path: str, manifest_path: str
+    ) -> WorkerManifestProperties:
         """Add a local manifest path to the worker manifest properties
 
         Parameters
@@ -364,6 +366,8 @@ class Session:
         """
         if worker_props := self._worker_manifest_properties_by_local_root.get(local_root_path):
             worker_props.local_manifest_paths.append(manifest_path)
+
+            return worker_props
         else:
             raise ValueError(
                 f"Worker manifest properties not found for local_root_path: {local_root_path}"

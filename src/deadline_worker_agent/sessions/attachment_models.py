@@ -139,13 +139,12 @@ class WorkerManifestProperties:
             outputRelativeDirectories=manifest_props_data.get("outputRelativeDirectories"),
         )
 
-        worker_props = cls(
+        return cls(
             manifest_properties=manifest_properties,
             local_manifest_paths=data.get("localManifestPaths", []),
             local_root_path=data["localRootPath"],
+            local_input_manifest_path=data.get("localInputManifestPath"),
         )
-        worker_props.local_input_manifest_path = data.get("localInputManifestPath")
-        return worker_props
 
     def __eq__(self, other: object) -> bool:
         """

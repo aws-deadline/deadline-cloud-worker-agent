@@ -2899,7 +2899,7 @@ class TestSessionWorkerManifestProperties:
         initial_paths = worker_manifest_properties.local_manifest_paths.copy()
 
         # WHEN
-        session.add_local_manifest_path(
+        returned_props = session.add_local_manifest_path(
             worker_manifest_properties.local_root_path, new_manifest_path
         )
 
@@ -2908,6 +2908,7 @@ class TestSessionWorkerManifestProperties:
             worker_manifest_properties.local_root_path
         )
         assert updated_props is not None
+        assert returned_props is updated_props  # Verify return value is the same object
         assert len(updated_props.local_manifest_paths) == len(initial_paths) + 1
         assert new_manifest_path in updated_props.local_manifest_paths
         assert all(path in updated_props.local_manifest_paths for path in initial_paths)
@@ -2935,8 +2936,20 @@ class TestSessionWorkerManifestProperties:
         initial_count = len(worker_manifest_properties.local_manifest_paths)
 
         # WHEN
+        returned_props_list = []
         for path in new_paths:
-            session.add_local_manifest_path(worker_manifest_properties.local_root_path, path)
+            returned_props = session.add_local_manifest_path(
+                worker_manifest_properties.local_root_path, path
+            )
+            returned_props_list.append(returned_props)
+
+            # THEN
+            updated_props = session.get_worker_manifest_properties(
+                worker_manifest_properties.local_root_path
+            )
+            assert updated_props is not None
+            assert returned_props is updated_props
+            assert path in updated_props.local_manifest_paths
 
         # THEN
         updated_props = session.get_worker_manifest_properties(
@@ -2944,8 +2957,6 @@ class TestSessionWorkerManifestProperties:
         )
         assert updated_props is not None
         assert len(updated_props.local_manifest_paths) == initial_count + len(new_paths)
-        for path in new_paths:
-            assert path in updated_props.local_manifest_paths
 
     def test_worker_manifest_properties_dict_property_reflects_changes(
         self, session: Session, worker_manifest_properties: WorkerManifestProperties
@@ -2976,7 +2987,7 @@ class TestSessionWorkerManifestProperties:
         session.set_worker_manifest_properties(second_worker_manifest_properties)
 
         # WHEN - Add manifest path to first properties
-        session.add_local_manifest_path(
+        returned_props = session.add_local_manifest_path(
             worker_manifest_properties.local_root_path, additional_manifest_path
         )
 
@@ -2994,6 +3005,7 @@ class TestSessionWorkerManifestProperties:
         assert len(all_properties) == 2
         assert first_properties is not None
         assert second_properties is not None
+        assert returned_props is first_properties  # Verify return value is correct
         assert additional_manifest_path in first_properties.local_manifest_paths
         assert additional_manifest_path not in second_properties.local_manifest_paths
         assert len(properties_dict) == 2

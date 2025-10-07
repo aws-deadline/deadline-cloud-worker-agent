@@ -35,16 +35,13 @@ def load_worker_manifest_properties(worker_properties_file: str) -> List[WorkerM
         json.JSONDecodeError: If the file contains invalid JSON
         ValueError: If the JSON structure is invalid
     """
-    worker_manifest_properties = []
-
     with open(worker_properties_file, "r") as f:
         worker_manifest_properties_data = json.load(f)
 
-    for item in worker_manifest_properties_data or []:
-        worker_prop = WorkerManifestProperties.from_dict(item)
-        worker_manifest_properties.append(worker_prop)
+    if isinstance(worker_manifest_properties_data, dict):
+        raise ValueError("Expected a list but got a dictionary in worker properties file")
 
-    return worker_manifest_properties
+    return [WorkerManifestProperties.from_dict(item) for item in worker_manifest_properties_data]
 
 
 def build_merged_manifests_by_root(
@@ -135,22 +132,15 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    s3_uri = args.s3_uri
 
-    print(f"args.worker_properties is {args.worker_properties}")
-
-    # Load worker manifest properties
     worker_manifest_properties = load_worker_manifest_properties(args.worker_properties)
 
-    # Build merged manifests by root
     manifests_by_root = build_merged_manifests_by_root(worker_manifest_properties)
 
     print("\nStarting download...")
 
-    # Create S3 settings
-    s3_settings = JobAttachmentS3Settings.from_s3_root_uri(s3_uri)
+    s3_settings = JobAttachmentS3Settings.from_s3_root_uri(args.s3_uri)
 
-    # Perform download
     perform_download(
         s3_settings, manifests_by_root, os.environ.get("DEADLINE_QUEUE_ID", "queue-unknown")
     )

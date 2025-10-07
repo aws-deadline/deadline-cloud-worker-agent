@@ -109,16 +109,6 @@ class AttachmentDownloadAction(OpenjdAction):
         # Create embedded files for each manifest and collect temporary paths
         embedded_files = []
 
-        # Add the main attachment download script
-        with open(Path(__file__).parent / "scripts" / "attachment_download.py", "r") as f:
-            embedded_files.append(
-                EmbeddedFileText_2023_09(
-                    name="AttachmentDownload",
-                    type=EmbeddedFileTypes_2023_09.TEXT,
-                    data=DataString(f.read()),
-                )
-            )
-
         # Create embedded file for worker manifest properties
         worker_props_data = []
         for worker_props in worker_manifest_properties_list:
@@ -134,8 +124,9 @@ class AttachmentDownloadAction(OpenjdAction):
         )
 
         # Build the command arguments
+        download_script_path = Path(__file__).parent / "scripts" / "attachment_download.py"
         args = [
-            ArgString("{{ Task.File.AttachmentDownload }}"),
+            ArgString(str(download_script_path)),
             ArgString("-s3"),
             ArgString(s3_settings.to_s3_root_uri()),
             ArgString("-wp"),
@@ -332,6 +323,8 @@ class AttachmentDownloadAction(OpenjdAction):
             session.add_manifest_path(root=root_name, path=root_path)
 
         # Create WorkerManifestProperties list for enhanced worker agent processing
+        # Populate the manifest properties data from sync job input step
+        # The data is avavilable for subsequent actions such as sync step step
         if not step_dependencies:
             for manifest_properties in manifest_properties_list:
                 local_root_path: str = session._asset_sync.get_local_destination(
@@ -350,13 +343,9 @@ class AttachmentDownloadAction(OpenjdAction):
         # Prepare input manifest for download task run
         download_manifest_properties_list: list[WorkerManifestProperties] = list()
         for local_root_path, manifest_path in manifest_paths_by_root.items():
-            session.add_local_manifest_path(
+            download_manifest = session.add_local_manifest_path(
                 local_root_path=local_root_path, manifest_path=manifest_path
             )
-            download_manifest = session.get_worker_manifest_properties(
-                local_root_path=local_root_path
-            )
-            assert download_manifest is not None
             # Set the input file path for download
             download_manifest.local_input_manifest_path = manifest_path
             # Add to list for passing to step scripts
