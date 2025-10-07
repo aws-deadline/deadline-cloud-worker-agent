@@ -4,18 +4,26 @@ import json
 import os
 import tempfile
 from unittest.mock import Mock, patch, mock_open, ANY
+from typing import Generator
 import pytest
 
+from deadline.job_attachments.progress_tracker import (
+    DownloadSummaryStatistics,
+    ProgressReportMetadata,
+    ProgressStatus,
+)
 from deadline.job_attachments.models import ManifestProperties, PathFormat, JobAttachmentS3Settings
 from deadline.job_attachments.asset_manifests.v2023_03_03.asset_manifest import AssetManifest
 from deadline_worker_agent.sessions.attachment_models import WorkerManifestProperties
 
 # Import the functions we want to test
+import deadline_worker_agent.sessions.actions.scripts.attachment_download as attachment_download_mod
 from deadline_worker_agent.sessions.actions.scripts.attachment_download import (
     load_worker_manifest_properties,
     build_merged_manifests_by_root,
     perform_download,
     main,
+    _seconds_to_minutes_str,
 )
 
 
@@ -263,22 +271,31 @@ class TestBuildMergedManifestsByRoot:
 class TestPerformDownload:
     """Test cases for perform_download function."""
 
-    @patch(
-        "deadline_worker_agent.sessions.actions.scripts.attachment_download.download_files_from_manifests"
-    )
-    @patch(
-        "deadline_worker_agent.sessions.actions.scripts.attachment_download.record_sync_inputs_telemetry_event"
-    )
-    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_download.boto3")
-    def test_perform_download_success(
-        self, mock_boto3, mock_success_telemetry, mock_download_files
-    ):
+    @pytest.fixture(autouse=True)
+    def mock_boto3(self) -> Generator[Mock, None, None]:
+        """Mock boto3 session for testing."""
+        with patch.object(attachment_download_mod, "boto3") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_download_files(self) -> Generator[Mock, None, None]:
+        with patch.object(attachment_download_mod, "download_files_from_manifests") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_success_telemetry(self) -> Generator[Mock, None, None]:
+        with patch.object(attachment_download_mod, "record_sync_inputs_telemetry_event") as m:
+            yield m
+
+    @pytest.fixture(autouse=True)
+    def mock_fail_telemetry(self) -> Generator[Mock, None, None]:
+        with patch.object(attachment_download_mod, "record_sync_inputs_fail_telemetry_event") as m:
+            yield m
+
+    def test_perform_download_success(self, mock_success_telemetry, mock_download_files):
         """Test successful download with telemetry recording."""
         # GIVEN
         from deadline.job_attachments.progress_tracker import SummaryStatistics
-
-        mock_session = Mock()
-        mock_boto3.session.Session.return_value = mock_session
 
         mock_download_summary = Mock()
         mock_summary_stats = SummaryStatistics(
@@ -304,18 +321,9 @@ class TestPerformDownload:
         mock_download_files.assert_called_once()
         mock_success_telemetry.assert_called_once_with("test-queue", mock_summary_stats)
 
-    @patch(
-        "deadline_worker_agent.sessions.actions.scripts.attachment_download.download_files_from_manifests"
-    )
-    @patch(
-        "deadline_worker_agent.sessions.actions.scripts.attachment_download.record_sync_inputs_fail_telemetry_event"
-    )
-    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_download.boto3")
-    def test_perform_download_failure(self, mock_boto3, mock_fail_telemetry, mock_download_files):
+    def test_perform_download_failure(self, mock_fail_telemetry, mock_download_files):
         """Test download failure with telemetry recording."""
         # GIVEN
-        mock_session = Mock()
-        mock_boto3.session.Session.return_value = mock_session
         mock_download_files.side_effect = Exception("Download failed")
 
         s3_settings = JobAttachmentS3Settings.from_s3_root_uri("s3://test-bucket/test-prefix")
@@ -327,6 +335,96 @@ class TestPerformDownload:
         mock_fail_telemetry.assert_called_once_with(
             queue_id="test-queue",
             failure_reason="Error downloading files: Download failed",
+        )
+
+    def test_progress_reporting(
+        self,
+        mock_download_files: Mock,
+        capsys: pytest.CaptureFixture,
+    ):
+        """
+        Tests that attachment_download reports progress and status
+        """
+        # GIVEN
+        s3_settings = JobAttachmentS3Settings.from_s3_root_uri("s3://test-bucket/test-prefix")
+
+        # Mock out the Job Attachment's download_files_from_manifests function to
+        # report progress
+        def fake_download_files_from_manifests(on_downloading_files, *args, **kwargs):
+            for i in range(10):
+                on_downloading_files(
+                    ProgressReportMetadata(
+                        status=ProgressStatus.DOWNLOAD_IN_PROGRESS,
+                        progress=i * 10,
+                        transferRate=10 * 10**9,
+                        progressMessage=f"test: {i}",
+                    )
+                )
+            return DownloadSummaryStatistics()
+
+        mock_download_files.side_effect = fake_download_files_from_manifests
+
+        # WHEN
+        perform_download(
+            s3_settings=s3_settings,
+            manifests_by_root={},
+            queue_id="test-queue",
+        )
+
+        # THEN
+        stdout = capsys.readouterr().out
+        for msg in [f"openjd_progress: {i * 10}" for i in range(10)]:
+            assert msg in stdout
+        for msg in [f"openjd_status: test: {i}" for i in range(10)]:
+            assert msg in stdout
+
+    def test_cancellation_by_low_transfer_rate(
+        self,
+        mock_fail_telemetry: Mock,
+        mock_download_files: Mock,
+        capsys: pytest.CaptureFixture,
+    ):
+        """
+        Tests that the session is canceled if it observes a series of alarmingly low transfer rates.
+        """
+        # GIVEN
+        s3_settings = JobAttachmentS3Settings.from_s3_root_uri("s3://test-bucket/test-prefix")
+
+        # Mock out the Job Attachment's download_files_from_manifests function to
+        # report multiple consecutive low transfer rates (lower than the threshold) via callback function.
+        def fake_download_files_from_manifests(on_downloading_files, *args, **kwargs):
+            low_transfer_rate_report = ProgressReportMetadata(
+                status=ProgressStatus.DOWNLOAD_IN_PROGRESS,
+                progress=0.0,
+                transferRate=(10 * 10**3) / 2,
+                progressMessage="",
+            )
+            for _ in range(60):
+                on_downloading_files(low_transfer_rate_report)
+
+            return DownloadSummaryStatistics()
+
+        mock_download_files.side_effect = fake_download_files_from_manifests
+
+        # WHEN
+        perform_download(
+            s3_settings=s3_settings,
+            manifests_by_root={},
+            queue_id="test-queue",
+        )
+
+        # THEN
+        assert (
+            "openjd_fail: Input syncing failed due to successive low transfer rates (< 10.0 KB/s). "
+            "The transfer rate was below the threshold for the last 1 minute."
+        ) in capsys.readouterr().out
+        mock_fail_telemetry.assert_called_once_with(
+            queue_id="test-queue",
+            failure_reason=(
+                "Insufficient download speed: "
+                "Input syncing failed due to successive low transfer rates (< 10.0 KB/s). "
+                "The transfer rate was below the threshold for the last 1 minute."
+            ),
         )
 
 
@@ -434,3 +532,21 @@ class TestMainFunction:
             mock_manifests,
             "queue-unknown",
         )
+
+
+@pytest.mark.parametrize(
+    "seconds, expected_str",
+    [
+        (0, "0 seconds"),
+        (1, "1 second"),
+        (30, "30 seconds"),
+        (60, "1 minute"),
+        (61, "1 minute 1 second"),
+        (90, "1 minute 30 seconds"),
+        (120, "2 minutes"),
+        (121, "2 minutes 1 second"),
+        (150, "2 minutes 30 seconds"),
+    ],
+)
+def test_seconds_to_minutes_str(seconds: int, expected_str: str):
+    assert _seconds_to_minutes_str(seconds) == expected_str
