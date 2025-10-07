@@ -78,7 +78,7 @@ def validate_s3_job_output_manifest(
 
         for step in steps:
             step_id = step["stepId"]
-            manifest_prefix = f"Deadline/Manifests/{farm_id}/{queue_id}/{job.id}/{step_id}"
+            manifest_prefix = f"rootPrefix/Manifests/{farm_id}/{queue_id}/{job.id}/{step_id}"
 
             try:
                 manifest_keys = _get_tasks_manifests_keys_from_s3(
