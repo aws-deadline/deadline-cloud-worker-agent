@@ -39,6 +39,7 @@ from e2e.utils import (
     submit_job_from_bundle,
     verify_output_dir_matches,
 )
+from deadline_test_fixtures import DeadlineWorkerConfiguration
 from e2e.s3_validation_utils import validate_s3_job_output_manifest
 
 
