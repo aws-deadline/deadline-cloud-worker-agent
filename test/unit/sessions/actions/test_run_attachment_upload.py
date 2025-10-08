@@ -5,7 +5,6 @@ from pathlib import Path
 import os
 import sys
 import tempfile
-import json
 from typing import TYPE_CHECKING, Generator
 from unittest.mock import MagicMock, Mock, patch
 
@@ -14,18 +13,11 @@ import pytest
 import deadline_worker_agent.sessions.actions as actions_module
 from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
 from deadline_worker_agent.feature_flag import MANIFEST_REPORTING_FEATURE
-from openjd.sessions import SessionUser, PathMappingRule, PathFormat
+from openjd.sessions import SessionUser
 from openjd.model import ParameterValue
-from pathlib import PurePosixPath
 from openjd.model.v2023_09 import (
     EmbeddedFileTypes as EmbeddedFileTypes_2023_09,
-    EmbeddedFileText as EmbeddedFileText_2023_09,
-    Action as Action_2023_09,
-    StepScript as StepScript_2023_09,
-    StepActions as StepActions_2023_09,
-    ArgString,
     CommandString,
-    DataString,
 )
 
 import deadline_worker_agent.sessions.session as session_mod
@@ -114,10 +106,7 @@ class TestStart:
         session.openjd_session = mock_openjd_session_cls
         session._queue_id = TestStart.QUEUE_ID
         session._queue._job_id = TestStart.JOB_ID
-        session.manifest_paths_by_root = {
-            "root1": "manifest1.json",
-            "root2": "manifest2.json",
-        }
+        session.get_worker_manifest_properties_list = Mock(return_value=[])
 
         return session
 
@@ -146,8 +135,6 @@ class TestStart:
             s3BucketName=job_details.job_attachment_settings.s3_bucket_name,
             rootPrefix=job_details.job_attachment_settings.root_prefix,
         )
-        session.manifest_out_rel_dirs_by_source = {}
-
         session.working_directory = Path(session_dir)
 
         # Mock file operations to avoid actual file access
@@ -155,35 +142,26 @@ class TestStart:
             # WHEN
             action.start(session=session, executor=executor)
 
-        with open(
-            Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_upload.py",
-            "r",
-        ) as f:
-            assert action._step_script == StepScript_2023_09(
-                actions=StepActions_2023_09(
-                    onRun=Action_2023_09(
-                        command=CommandString(python_path),
-                        args=[
-                            ArgString("{{ Task.File.AttachmentUpload }}"),
-                            ArgString("-pm"),
-                            ArgString("{{ Session.PathMappingRulesFile }}"),
-                            ArgString("-s3"),
-                            ArgString(s3_settings.to_s3_root_uri()),
-                            ArgString("-mp"),
-                            ArgString(json.dumps(session.manifest_paths_by_root)),
-                            ArgString("-od"),
-                            ArgString(json.dumps({})),
-                        ],
-                    )
-                ),
-                embeddedFiles=[
-                    EmbeddedFileText_2023_09(
-                        name="AttachmentUpload",
-                        type=EmbeddedFileTypes_2023_09.TEXT,
-                        data=DataString(f.read()),
-                    )
-                ],
-            )
+        # THEN - Verify the step script is created with new format
+        assert action._step_script is not None
+        assert action._step_script.actions.onRun.command == CommandString(python_path)
+
+        # Check that the arguments use the new format (no embedded file, direct script path)
+        args = action._step_script.actions.onRun.args
+        assert args is not None
+        assert len(args) == 5  # script_path, -s3, s3_uri, -wp, worker_properties_file
+        assert str(args[1]) == "-s3"
+        assert str(args[2]) == s3_settings.to_s3_root_uri()
+        assert str(args[3]) == "-wp"
+        assert str(args[4]) == "{{ Task.File.WorkerManifestProperties }}"
+
+        # Check embedded files contain WorkerManifestProperties
+        embedded_files = action._step_script.embeddedFiles
+        assert embedded_files is not None
+        assert len(embedded_files) == 1
+        embedded_file = embedded_files[0]
+        assert embedded_file.name == "WorkerManifestProperties"
+        assert embedded_file.type == EmbeddedFileTypes_2023_09.TEXT
 
         session.run_task.assert_called_once_with(
             step_script=action._step_script,
@@ -197,7 +175,7 @@ class TestStart:
             log_task_banner=False,
         )
 
-    def test_attachment_upload_action_start_with_include_dirs(
+    def test_attachment_upload_action_start_with_worker_manifest_properties(
         self,
         executor: Mock,
         session: Mock,
@@ -209,7 +187,7 @@ class TestStart:
         action_id: str,
     ) -> None:
         """
-        Tests that AttachmentUploadAction.start() correctly handles include directories
+        Tests that AttachmentUploadAction.start() correctly handles worker manifest properties
         and passes them to the attachment_upload script
         """
         # GIVEN
@@ -217,75 +195,39 @@ class TestStart:
         assert job_details.job_attachment_settings.s3_bucket_name is not None
         assert job_details.job_attachment_settings.root_prefix is not None
 
-        s3_settings = JobAttachmentS3Settings(
-            s3BucketName=job_details.job_attachment_settings.s3_bucket_name,
-            rootPrefix=job_details.job_attachment_settings.root_prefix,
-        )
+        # Setup session with worker manifest properties
+        from deadline_worker_agent.sessions.attachment_models import WorkerManifestProperties
 
-        # Setup session with output directories
-        session.manifest_out_rel_dirs_by_source = {
-            "/source/path1": ["output_dir1", "output_dir2"],
-            "/source/path2": ["output_dir3"],
+        mock_worker_props = Mock(spec=WorkerManifestProperties)
+        mock_worker_props.to_dict.return_value = {
+            "root_path": "/test/path",
+            "local_root_path": "/local/test/path",
+            "local_manifest_paths": ["/path/to/manifest.json"],
         }
 
-        # Setup path mapping rules
-        session.openjd_session._path_mapping_rules = [
-            PathMappingRule(
-                source_path_format=PathFormat.POSIX,
-                source_path=PurePosixPath("/source/path1"),
-                destination_path=PurePosixPath("/dest/path1"),
-            ),
-            PathMappingRule(
-                source_path_format=PathFormat.POSIX,
-                source_path=PurePosixPath("/source/path2"),
-                destination_path=PurePosixPath("/dest/path2"),
-            ),
-            PathMappingRule(
-                source_path_format=PathFormat.POSIX,
-                source_path=PurePosixPath("/source/path3"),
-                destination_path=PurePosixPath("/dest/path3"),
-            ),
-        ]
+        session.get_worker_manifest_properties_list.return_value = [mock_worker_props]
 
-        # Expected include directories map after mapping
-        expected_out_rel_dirs_map = {
-            "/dest/path1": ["output_dir1", "output_dir2"],
-            "/dest/path2": ["output_dir3"],
-        }
+        # Mock file operations to avoid actual file access
+        with patch("os.path.exists", return_value=False):
+            # WHEN
+            action.start(session=session, executor=executor)
 
-        # WHEN
-        action.start(session=session, executor=executor)
+        # THEN - Verify the step script is created with worker manifest properties
+        assert action._step_script is not None
 
-        # THEN
-        with open(
-            Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_upload.py",
-            "r",
-        ) as f:
-            assert action._step_script == StepScript_2023_09(
-                actions=StepActions_2023_09(
-                    onRun=Action_2023_09(
-                        command=CommandString(python_path),
-                        args=[
-                            ArgString("{{ Task.File.AttachmentUpload }}"),
-                            ArgString("-pm"),
-                            ArgString("{{ Session.PathMappingRulesFile }}"),
-                            ArgString("-s3"),
-                            ArgString(s3_settings.to_s3_root_uri()),
-                            ArgString("-mp"),
-                            ArgString(json.dumps(session.manifest_paths_by_root)),
-                            ArgString("-od"),
-                            ArgString(json.dumps(expected_out_rel_dirs_map)),
-                        ],
-                    )
-                ),
-                embeddedFiles=[
-                    EmbeddedFileText_2023_09(
-                        name="AttachmentUpload",
-                        type=EmbeddedFileTypes_2023_09.TEXT,
-                        data=DataString(f.read()),
-                    )
-                ],
-            )
+        # Check embedded files contain WorkerManifestProperties with expected data
+        embedded_files = action._step_script.embeddedFiles
+        assert embedded_files is not None
+        assert len(embedded_files) == 1
+        embedded_file = embedded_files[0]
+        assert embedded_file.name == "WorkerManifestProperties"
+
+        # Verify the embedded data contains the worker properties
+        import json
+
+        embedded_data = json.loads(str(embedded_file.data))
+        assert len(embedded_data) == 1
+        assert embedded_data[0]["root_path"] == "/test/path"
 
         session.run_task.assert_called_once_with(
             step_script=action._step_script,

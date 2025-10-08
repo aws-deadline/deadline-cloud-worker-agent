@@ -54,13 +54,11 @@ def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[st
         None values indicate no manifests were available to merge.
     """
     # Create directory for merged manifest files
-    manifest_path = os.path.join(os.getcwd(), "manifest_merge")
+    manifest_path = "manifest_merge"
     root_path_to_local_manifest: dict[str, Optional[str]] = {}
 
     # Process each worker manifest property
     for manifest_props in worker_manifest_properties:
-        print(f"local_manifest_paths for merge are: {manifest_props.local_manifest_paths}")
-
         # Merge manifest files using the job attachments API
         output: Optional[ManifestMerge] = _manifest_merge(
             # Use source path for correct path hash correspondence
@@ -68,7 +66,7 @@ def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[st
             # paths to manifest files to be merged
             manifest_files=manifest_props.local_manifest_paths,
             # directory to put the generated merged manifests
-            destination=str(manifest_path),
+            destination=manifest_path,
             name="merge",
         )
 
@@ -104,7 +102,7 @@ def snapshot(
         Only includes entries where changes were detected.
     """
     # Create directory for snapshot manifest files
-    output_path = os.path.join(os.getcwd(), "manifest_snapshot")
+    output_path = "manifest_snapshot"
     root_path_to_output_manifest = {}
 
     # Process each worker manifest property
@@ -116,7 +114,7 @@ def snapshot(
         output_manifest: Optional[ManifestSnapshot] = _manifest_snapshot(
             root=local_root_path,
             # directory to put the generated diff manifests
-            destination=str(output_path),
+            destination=output_path,
             # base manifest to compare against (for detecting changes)
             # if the base is None, meaning all changes are output
             diff=root_path_to_base_manifest.get(manifest_props.root_path),
@@ -218,11 +216,6 @@ def main(args=None):
 
     # Load and parse worker manifest properties configuration
     worker_manifest_properties = parse_worker_manifest_properties(parsed_args.worker_properties)
-    print(f"Loaded {len(worker_manifest_properties)} worker manifest properties")
-
-    # Log the worker manifest properties for debugging
-    for i, props in enumerate(worker_manifest_properties):
-        print(f"Worker manifest property {i}: {props.to_dict()}")
 
     # Step 1: Merge input manifests to create base manifests for comparison
     root_path_to_base_manifest = merge(worker_manifest_properties=worker_manifest_properties)
@@ -321,8 +314,6 @@ def upload_output_assets(
                 # Read and decode the output manifest
                 with open(output_manifest_path, "r") as manifest_file:
                     output_manifest = decode_manifest(manifest_file.read())
-                    # TODO - remove debug print
-                    print(f"output_manifest is {output_manifest}")
             except (IOError, OSError) as e:
                 print(f"Error reading output manifest: {e}")
                 continue

@@ -2824,71 +2824,6 @@ class TestSessionWorkerManifestProperties:
             == second_worker_manifest_properties
         )
 
-    def test_get_worker_manifest_properties_existing_key(
-        self, session: Session, worker_manifest_properties: WorkerManifestProperties
-    ):
-        """Test getting worker manifest properties for existing key."""
-        # GIVEN
-        session.set_worker_manifest_properties(worker_manifest_properties)
-
-        # WHEN
-        result = session.get_worker_manifest_properties(worker_manifest_properties.local_root_path)
-
-        # THEN
-        assert result == worker_manifest_properties
-
-    def test_get_worker_manifest_properties_nonexistent_key(self, session: Session):
-        """Test getting worker manifest properties for nonexistent key returns None."""
-        # GIVEN
-        nonexistent_path = "/nonexistent/path"
-
-        # WHEN
-        result = session.get_worker_manifest_properties(nonexistent_path)
-
-        # THEN
-        assert result is None
-
-    def test_get_worker_manifest_properties_list_empty(self, session: Session):
-        """Test getting worker manifest properties list when dictionary is empty."""
-        # WHEN
-        result = session.get_worker_manifest_properties_list()
-
-        # THEN
-        assert result == []
-
-    def test_get_worker_manifest_properties_list_single_item(
-        self, session: Session, worker_manifest_properties: WorkerManifestProperties
-    ):
-        """Test getting worker manifest properties list with single item."""
-        # GIVEN
-        session.set_worker_manifest_properties(worker_manifest_properties)
-
-        # WHEN
-        result = session.get_worker_manifest_properties_list()
-
-        # THEN
-        assert len(result) == 1
-        assert result[0] == worker_manifest_properties
-
-    def test_get_worker_manifest_properties_list_multiple_items(
-        self,
-        session: Session,
-        worker_manifest_properties: WorkerManifestProperties,
-        second_worker_manifest_properties: WorkerManifestProperties,
-    ):
-        """Test getting worker manifest properties list with multiple items."""
-        # GIVEN
-        session.set_worker_manifest_properties(worker_manifest_properties)
-        session.set_worker_manifest_properties(second_worker_manifest_properties)
-
-        # WHEN
-        result = session.get_worker_manifest_properties_list()
-
-        # THEN
-        assert len(result) == 2
-        assert worker_manifest_properties in result
-        assert second_worker_manifest_properties in result
-
     def test_add_local_manifest_path_existing_key(
         self, session: Session, worker_manifest_properties: WorkerManifestProperties
     ):
@@ -2904,10 +2839,9 @@ class TestSessionWorkerManifestProperties:
         )
 
         # THEN
-        updated_props = session.get_worker_manifest_properties(
+        updated_props = session.worker_manifest_properties_by_local_root[
             worker_manifest_properties.local_root_path
-        )
-        assert updated_props is not None
+        ]
         assert returned_props is updated_props  # Verify return value is the same object
         assert len(updated_props.local_manifest_paths) == len(initial_paths) + 1
         assert new_manifest_path in updated_props.local_manifest_paths
@@ -2944,18 +2878,16 @@ class TestSessionWorkerManifestProperties:
             returned_props_list.append(returned_props)
 
             # THEN
-            updated_props = session.get_worker_manifest_properties(
+            updated_props = session.worker_manifest_properties_by_local_root[
                 worker_manifest_properties.local_root_path
-            )
-            assert updated_props is not None
+            ]
             assert returned_props is updated_props
             assert path in updated_props.local_manifest_paths
 
         # THEN
-        updated_props = session.get_worker_manifest_properties(
+        updated_props = session.worker_manifest_properties_by_local_root[
             worker_manifest_properties.local_root_path
-        )
-        assert updated_props is not None
+        ]
         assert len(updated_props.local_manifest_paths) == initial_count + len(new_paths)
 
     def test_worker_manifest_properties_dict_property_reflects_changes(
@@ -2992,26 +2924,22 @@ class TestSessionWorkerManifestProperties:
         )
 
         # WHEN - Get all properties
-        all_properties = session.get_worker_manifest_properties_list()
-        first_properties = session.get_worker_manifest_properties(
-            worker_manifest_properties.local_root_path
-        )
-        second_properties = session.get_worker_manifest_properties(
-            second_worker_manifest_properties.local_root_path
-        )
         properties_dict = session.worker_manifest_properties_by_local_root
 
         # THEN - Verify all operations worked correctly
-        assert len(all_properties) == 2
-        assert first_properties is not None
-        assert second_properties is not None
-        assert returned_props is first_properties  # Verify return value is correct
-        assert additional_manifest_path in first_properties.local_manifest_paths
-        assert additional_manifest_path not in second_properties.local_manifest_paths
         assert len(properties_dict) == 2
-        assert properties_dict[worker_manifest_properties.local_root_path] == first_properties
         assert (
-            properties_dict[second_worker_manifest_properties.local_root_path] == second_properties
+            returned_props is properties_dict[worker_manifest_properties.local_root_path]
+        )  # Verify return value is correct
+        assert (
+            additional_manifest_path
+            in properties_dict[worker_manifest_properties.local_root_path].local_manifest_paths
+        )
+        assert (
+            additional_manifest_path
+            not in properties_dict[
+                second_worker_manifest_properties.local_root_path
+            ].local_manifest_paths
         )
 
     def test_worker_manifest_properties_with_empty_local_manifest_paths(self, session: Session):
@@ -3036,8 +2964,7 @@ class TestSessionWorkerManifestProperties:
         session.add_local_manifest_path(worker_props.local_root_path, "/second/manifest.json")
 
         # THEN
-        result = session.get_worker_manifest_properties(worker_props.local_root_path)
-        assert result is not None
+        result = session.worker_manifest_properties_by_local_root[worker_props.local_root_path]
         assert sorted(result.local_manifest_paths) == [
             "/first/manifest.json",
             "/second/manifest.json",
