@@ -222,8 +222,6 @@ class Session:
         self._report_action_update = action_update_callback
         self._env = env
         self._executor = ThreadPoolExecutor(max_workers=1)
-        self._manifest_paths_by_root = dict()
-        self._manifest_out_rel_dirs_by_source: dict[str, list[str]] = dict()
         self._worker_manifest_properties_by_local_root: dict[str, WorkerManifestProperties] = {}
 
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
@@ -280,28 +278,6 @@ class Session:
         return self._os_user
 
     @property
-    def manifest_paths_by_root(self) -> dict[str, list[str]]:
-        """Job Attachments manifest local path list to its local root mapping"""
-        return self._manifest_paths_by_root
-
-    def add_manifest_path(self, root: str, path: str):
-        if self._manifest_paths_by_root.get(root):
-            self._manifest_paths_by_root[root].append(path)
-        else:
-            self._manifest_paths_by_root[root] = [path]
-
-    @property
-    def manifest_out_rel_dirs_by_source(self) -> dict[str, list[str]]:
-        return self._manifest_out_rel_dirs_by_source
-
-    def add_manifest_out_rel_dirs(self, source: str, out_rel_dirs: list[str]):
-        """Job Attachments output relative directories list to its submission source mapping"""
-        if self._manifest_out_rel_dirs_by_source.get(source):
-            self._manifest_out_rel_dirs_by_source[source].extend(out_rel_dirs)
-        else:
-            self._manifest_out_rel_dirs_by_source[source] = out_rel_dirs
-
-    @property
     def worker_manifest_properties_by_local_root(self) -> dict[str, WorkerManifestProperties]:
         """Worker-specific manifest properties dictionary keyed by local root path for enhanced job attachment processing"""
         return self._worker_manifest_properties_by_local_root
@@ -319,23 +295,6 @@ class Session:
         self._worker_manifest_properties_by_local_root[
             worker_manifest_properties.local_root_path
         ] = worker_manifest_properties
-
-    def get_worker_manifest_properties(
-        self, local_root_path: str
-    ) -> WorkerManifestProperties | None:
-        """Get worker manifest properties by local root path
-
-        Parameters
-        ----------
-        local_root_path : str
-            The local root path key to look up
-
-        Returns
-        -------
-        WorkerManifestProperties | None
-            The worker manifest properties for the given key, or None if not found
-        """
-        return self._worker_manifest_properties_by_local_root.get(local_root_path)
 
     def get_worker_manifest_properties_list(self) -> list[WorkerManifestProperties]:
         """Get the cached worker manifest properties as a list
@@ -1169,7 +1128,9 @@ class Session:
         This callback is called when the output log filter is triggered.
         """
         if message_type == ActionOutputMessageKind.JA_SNAPSHOT:
-            self.add_manifest_path(root=value["root"], path=value["manifest"])
+            self.add_local_manifest_path(
+                local_root_path=value["root"], manifest_path=value["manifest"]
+            )
         if MANIFEST_REPORTING_FEATURE and message_type == ActionOutputMessageKind.JA_UPLOAD:
             try:
                 manifest_list_data = json.loads(value)
