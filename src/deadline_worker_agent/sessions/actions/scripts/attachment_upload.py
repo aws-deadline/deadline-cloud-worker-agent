@@ -41,8 +41,8 @@ def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[st
     """
     Merge multiple manifest files for each worker manifest property.
 
-    This function takes a list of worker manifest properties and merges their
-    associated manifest files into consolidated manifests. This is typically
+    This function takes a list of worker manifest properties, each represents all manifests within a root,
+    and merges their associated manifest files into consolidated manifests. This is typically
     done to combine input manifests before creating output snapshots.
 
     Args:
@@ -69,6 +69,11 @@ def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[st
             destination=manifest_path,
             name="merge",
         )
+
+        if root_path_to_local_manifest.get(manifest_props.root_path) is not None:
+            print(
+                f"Duplicate root path for {manifest_props.root_path}, replacing with latest manifest"
+            )
 
         if output:
             # Store the path to the merged manifest
@@ -157,8 +162,10 @@ def parse_worker_manifest_properties(file_path: str) -> list[WorkerManifestPrope
     try:
         with open(file_path, "r") as f:
             data = json.load(f)
-    except (IOError, OSError, json.JSONDecodeError) as e:
-        raise ValueError(f"Error reading worker properties file '{file_path}': {e}")
+    except Exception as e:
+        raise ValueError(
+            f"Error reading worker properties file '{file_path}': {type(e).__name__} - {e}"
+        )
 
     # Convert each JSON object to WorkerManifestProperties
     return [WorkerManifestProperties.from_dict(item) for item in data]
@@ -190,6 +197,92 @@ def parse_args(args):
         required=True,
     )
     return parser.parse_args(args)
+
+
+def upload_output_assets(
+    s3_uri: str,
+    worker_manifest_properties: list[WorkerManifestProperties],
+    root_path_to_output_manifest: dict[str, str],
+) -> list[UploadManifestInfo]:
+    """
+    Upload output assets to S3 storage based on manifest snapshots.
+
+    This function handles the actual upload of job output files to S3. It processes
+    each worker manifest property, reads the corresponding output manifest, and
+    uploads the assets using the S3AssetUploader.
+
+    Args:
+        s3_uri: S3 root URI where assets will be uploaded
+        worker_manifest_properties: List of WorkerManifestProperties containing
+                                   upload configuration and path mappings
+        root_path_to_output_manifest: Dictionary mapping root paths to their
+                                    output manifest file paths
+
+    Returns:
+        List of UploadManifestInfo objects containing upload results and metadata
+
+    Raises:
+        ValueError: If required environment variables are missing
+    """
+
+    # Generate S3 upload path using session context from environment variables
+    s3_upload_path = JobAttachmentS3Settings.partial_session_action_manifest_prefix(
+        farm_id=os.environ["DEADLINE_FARM_ID"],
+        queue_id=os.environ["DEADLINE_QUEUE_ID"],
+        job_id=os.environ["DEADLINE_JOB_ID"],
+        step_id=os.environ["DEADLINE_STEP_ID"],
+        task_id=os.environ["DEADLINE_TASK_ID"],
+        session_action_id=os.environ["DEADLINE_SESSIONACTION_ID"],
+        time=time.time(),
+    )
+
+    # Create S3 settings from the provided URI
+    s3_settings = JobAttachmentS3Settings.from_s3_root_uri(s3_uri)
+
+    # Initialize the S3 asset uploader
+    asset_uploader: S3AssetUploader = S3AssetUploader()
+    output_manifest_info_list = []
+
+    # Process each worker manifest property for upload
+    for manifest_props in worker_manifest_properties:
+        output_manifest_path = root_path_to_output_manifest.get(manifest_props.root_path)
+
+        if output_manifest_path:
+            # Only upload when there is an output manifest (changes detected)
+            try:
+                # Read and decode the output manifest
+                with open(output_manifest_path, "r") as manifest_file:
+                    output_manifest = decode_manifest(manifest_file.read())
+            except (IOError, OSError) as e:
+                print(f"Error reading output manifest: {e}")
+                continue
+
+            # Upload the assets to S3
+            key, data = asset_uploader.upload_assets(
+                job_attachment_settings=s3_settings,
+                manifest=output_manifest,
+                partial_manifest_prefix=s3_upload_path,
+                # Create unique manifest filename using hashed source path
+                manifest_file_name=f"{manifest_props.get_hashed_source_path()}_output",
+                manifest_metadata=manifest_props.as_output_metadata(),
+                source_root=Path(manifest_props.root_path),
+                asset_root=Path(manifest_props.local_root_path),
+                s3_check_cache_dir=config_file.get_cache_directory(),
+            )
+
+            print(
+                f"Uploaded assets from {manifest_props.local_root_path}, to {s3_settings.to_s3_root_uri()}/Manifests/{key}, hashed data {data}"
+            )
+
+            output_manifest_info_list.append(
+                UploadManifestInfo(
+                    output_manifest_path=key,
+                    output_manifest_hash=data,
+                    source_path=manifest_props.root_path,
+                )
+            )
+
+    return output_manifest_info_list
 
 
 def main(args=None):
@@ -250,100 +343,6 @@ def main(args=None):
 
         total = time.perf_counter() - start_time
         print(f"Finished uploading after {total} seconds")
-
-
-def upload_output_assets(
-    s3_uri: str,
-    worker_manifest_properties: list[WorkerManifestProperties],
-    root_path_to_output_manifest: dict[str, str],
-) -> list[UploadManifestInfo]:
-    """
-    Upload output assets to S3 storage based on manifest snapshots.
-
-    This function handles the actual upload of job output files to S3. It processes
-    each worker manifest property, reads the corresponding output manifest, and
-    uploads the assets using the S3AssetUploader.
-
-    Args:
-        s3_uri: S3 root URI where assets will be uploaded
-        worker_manifest_properties: List of WorkerManifestProperties containing
-                                   upload configuration and path mappings
-        root_path_to_output_manifest: Dictionary mapping root paths to their
-                                    output manifest file paths
-
-    Returns:
-        List of UploadManifestInfo objects containing upload results and metadata
-
-    Raises:
-        ValueError: If required environment variables are missing
-    """
-
-    # Helper function to get environment variable or raise error if missing
-    def get_env_or_raise(name):
-        """Get required environment variable or raise ValueError if not set."""
-        value = os.environ.get(name)
-        if value is None:
-            raise ValueError(f"Required environment variable '{name}' is not set")
-        return value
-
-    # Generate S3 upload path using session context from environment variables
-    s3_upload_path = JobAttachmentS3Settings.partial_session_action_manifest_prefix(
-        farm_id=get_env_or_raise("DEADLINE_FARM_ID"),
-        queue_id=get_env_or_raise("DEADLINE_QUEUE_ID"),
-        job_id=get_env_or_raise("DEADLINE_JOB_ID"),
-        step_id=get_env_or_raise("DEADLINE_STEP_ID"),
-        task_id=get_env_or_raise("DEADLINE_TASK_ID"),
-        session_action_id=get_env_or_raise("DEADLINE_SESSIONACTION_ID"),
-        time=time.time(),
-    )
-
-    # Create S3 settings from the provided URI
-    s3_settings = JobAttachmentS3Settings.from_s3_root_uri(s3_uri)
-
-    # Initialize the S3 asset uploader
-    asset_uploader: S3AssetUploader = S3AssetUploader()
-    output_manifest_info_list = []
-
-    # Process each worker manifest property for upload
-    for manifest_props in worker_manifest_properties:
-        output_manifest_path = root_path_to_output_manifest.get(manifest_props.root_path)
-
-        if output_manifest_path:
-            # Only upload when there is an output manifest (changes detected)
-            try:
-                # Read and decode the output manifest
-                with open(output_manifest_path, "r") as manifest_file:
-                    output_manifest = decode_manifest(manifest_file.read())
-            except (IOError, OSError) as e:
-                print(f"Error reading output manifest: {e}")
-                continue
-
-            # Upload the assets to S3
-            key, data = asset_uploader.upload_assets(
-                job_attachment_settings=s3_settings,
-                manifest=output_manifest,
-                partial_manifest_prefix=s3_upload_path,
-                # Create unique manifest filename using hashed source path
-                manifest_file_name=f"{manifest_props.get_hashed_source_path()}_output",
-                manifest_metadata=manifest_props.as_output_metadata(),
-                source_root=Path(manifest_props.root_path),
-                asset_root=Path(manifest_props.local_root_path),
-                s3_check_cache_dir=config_file.get_cache_directory(),
-            )
-
-            print(
-                f"Uploaded assets from {manifest_props.local_root_path}, to {s3_settings.to_s3_root_uri()}/Manifests/{key}, hashed data {data}"
-            )
-
-            output_manifest_info_list.append(
-                UploadManifestInfo(
-                    output_manifest_path=key,
-                    output_manifest_hash=data,
-                    source_path=manifest_props.root_path,
-                )
-            )
-
-    return output_manifest_info_list
 
 
 if __name__ == "__main__":

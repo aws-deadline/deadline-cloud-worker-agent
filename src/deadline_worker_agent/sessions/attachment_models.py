@@ -77,7 +77,7 @@ class WorkerManifestProperties:
 
     def local_output_relative_directories(self) -> Optional[List[str]]:
         """
-        Get the output relative directories converted to the local path format.
+        Normalize the output relative directory to host operating system format.
 
         This function converts the output relative directories from the manifest's
         original path format to the current host's path format, ensuring proper

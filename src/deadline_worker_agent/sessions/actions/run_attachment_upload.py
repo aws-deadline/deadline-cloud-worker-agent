@@ -27,6 +27,7 @@ from openjd.model import ParameterValue
 
 from ...feature_flag import MANIFEST_REPORTING_FEATURE
 from ...log_messages import SessionActionLogKind
+from ..attachment_models import WorkerManifestProperties
 from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
@@ -72,7 +73,7 @@ class AttachmentUploadAction(OpenjdAction):
     def set_step_script(
         self,
         s3_settings: JobAttachmentS3Settings,
-        worker_manifest_properties_list: list,
+        worker_manifest_properties_list: list[WorkerManifestProperties],
     ) -> None:
         """Sets the step script for the action
 
