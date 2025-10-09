@@ -19,7 +19,6 @@ from deadline_test_fixtures import (
 )
 from deadline.client.api import create_job_from_job_bundle  # type: ignore
 import backoff
-from e2e.conftest import DeadlineResources
 
 LOG = logging.getLogger(__name__)
 
@@ -27,22 +26,21 @@ LOG = logging.getLogger(__name__)
 def wait_for_job_output(
     job: Job,
     deadline_client: DeadlineClient,
-    deadline_resources: DeadlineResources,
     output_root_path: Optional[str] = None,
 ) -> dict[str, list[str]]:
     job.wait_until_complete(client=deadline_client, max_retries=20)
 
     job_attachment_settings = get_queue(
-        farm_id=deadline_resources.farm.id,
-        queue_id=deadline_resources.queue_a.id,
+        farm_id=job.farm.id,
+        queue_id=job.queue.id,
     ).jobAttachmentSettings
 
     assert job_attachment_settings is not None
 
     job_output_downloader = download.OutputDownloader(
         s3_settings=job_attachment_settings,
-        farm_id=deadline_resources.farm.id,
-        queue_id=deadline_resources.queue_a.id,
+        farm_id=job.farm.id,
+        queue_id=job.queue.id,
         job_id=job.id,
         step_id=None,
         task_id=None,

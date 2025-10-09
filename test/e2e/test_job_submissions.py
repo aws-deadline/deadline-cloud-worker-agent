@@ -4,34 +4,38 @@ This test module contains tests that verify the Worker agent's behavior by submi
 Deadline Cloud service and checking that the result/output of the jobs is as we expect it.
 """
 
-import hashlib
-from flaky import flaky
-import json
-import pathlib
-from typing import Any, Dict, List, Optional
-import pytest
+from __future__ import annotations
+
+import configparser
 import logging
+import json
+import os
+import pathlib
+import re
+import tempfile
+import time
+import uuid
+from typing import Any, Dict, List, Optional
+
+import backoff
+import boto3
+import botocore.config
+import hashlib
+import pytest
+from deadline.client import api
+from deadline.client.config import set_setting
 from deadline_test_fixtures import (
     Job,
     DeadlineClient,
+    DeadlineWorkerConfiguration,
     PosixSessionUser,
     TaskStatus,
     EC2InstanceWorker,
 )
+from flaky import flaky
+
 from e2e.conftest import DeadlineResources
-import backoff
-import boto3
-import botocore.client
-import botocore.config
-import botocore.exceptions
-import re
-import time
-from deadline.client.config import set_setting
-from deadline.client import api
-import uuid
-import os
-import configparser
-import tempfile
+from e2e.s3_validation_utils import validate_s3_job_output_manifest
 from e2e.utils import (
     wait_for_job_output,
     submit_sleep_job,
@@ -39,9 +43,6 @@ from e2e.utils import (
     submit_job_from_bundle,
     verify_output_dir_matches,
 )
-from deadline_test_fixtures import DeadlineWorkerConfiguration
-from e2e.s3_validation_utils import validate_s3_job_output_manifest
-
 
 LOG = logging.getLogger(__name__)
 
@@ -1798,7 +1799,8 @@ class TestJobSubmission:
         )
 
         output_path: dict[str, list[str]] = wait_for_job_output(
-            job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
+            job=job,
+            deadline_client=deadline_client,
         )
 
         # Validate S3 setup and manifest integrity after job completion
@@ -1983,7 +1985,6 @@ class TestJobSubmission:
         output_path: dict[str, list[str]] = wait_for_job_output(
             job=job,
             deadline_client=deadline_client,
-            deadline_resources=deadline_resources,
             output_root_path=output_root_path,
         )
         LOG.info(f"output_path dict is: {output_path}")
@@ -2034,7 +2035,6 @@ class TestJobSubmission:
         output_path: dict[str, list[str]] = wait_for_job_output(
             job=job,
             deadline_client=deadline_client,
-            deadline_resources=deadline_resources,
             output_root_path=output_root_path,
         )
         LOG.info(f"output_path dict is: {output_path}")
@@ -2360,7 +2360,8 @@ class TestJobSubmission:
         assert check_percentage(complete_percentage)
 
         output_path: dict[str, list[str]] = wait_for_job_output(
-            job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
+            job=job,
+            deadline_client=deadline_client,
         )
         with (
             open(os.path.join(list(output_path.keys())[0], "output_file.txt"), "r") as output_file,
@@ -2514,7 +2515,8 @@ class TestJobSubmission:
         )
 
         output_path: dict[str, list[str]] = wait_for_job_output(
-            job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
+            job=job,
+            deadline_client=deadline_client,
         )
 
         try:
@@ -2653,7 +2655,8 @@ echo -n $(cat {{Param.DataDir}}/files/test_input_file)Hello > {{Param.DataDir}}/
         )
 
         output_path: dict[str, list[str]] = wait_for_job_output(
-            job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
+            job=job,
+            deadline_client=deadline_client,
         )
         LOG.info(f"Job output path is: {output_path}")
 
@@ -3227,7 +3230,8 @@ with open(output_path, "w") as f:
 
         # Verify job attachments output
         output_path = wait_for_job_output(
-            job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
+            job=job,
+            deadline_client=deadline_client,
         )
         output_file = os.path.join(list(output_path.keys())[0], "output.txt")
         with open(output_file, "r") as f:
@@ -3272,7 +3276,6 @@ with open(output_path, "w") as f:
         output_path: dict[str, list[str]] = wait_for_job_output(
             job=job,
             deadline_client=deadline_client,
-            deadline_resources=deadline_resources,
             output_root_path=output_root_path,
         )
         LOG.info(f"output_path dict is: {output_path}")
