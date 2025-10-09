@@ -4,6 +4,7 @@ import json
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch, mock_open
+from typing import Optional
 
 from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
     parse_args,
@@ -13,6 +14,7 @@ from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
     upload_output_assets,
     main,
 )
+import deadline_worker_agent.sessions.actions.scripts.attachment_upload as attachment_upload_mod
 
 
 class TestAttachmentUpload:
@@ -286,3 +288,140 @@ class TestAttachmentUpload:
             worker_manifest_properties=[mock_worker_props],
             root_path_to_base_manifest={"/source/path": "/base/manifest.json"},
         )
+
+
+class TestTelemetry:
+    """Test cases for telemetry functionality."""
+
+    @patch.object(attachment_upload_mod, "record_attachment_upload_fail_telemetry_event")
+    @patch("builtins.open", side_effect=FileNotFoundError("File not found"))
+    def test_failure_telemetry_decorator_on_parse_worker_manifest_properties(
+        self, mock_open: Mock, mock_fail_telemetry: Mock
+    ):
+        """Test that @failure_telemetry decorator records failures for parse_worker_manifest_properties."""
+        with pytest.raises(ValueError):
+            # WHEN
+            parse_worker_manifest_properties("/nonexistent/file.json")
+
+        # THEN
+        mock_fail_telemetry.assert_called_once_with(
+            queue_id="queue-unknown",
+            failure_reason="parse_worker_manifest_properties: ValueError",
+        )
+
+    @patch.object(attachment_upload_mod, "record_attachment_upload_fail_telemetry_event")
+    @patch.object(attachment_upload_mod, "_manifest_merge")
+    def test_failure_telemetry_decorator_on_merge(
+        self, mock_manifest_merge: Mock, mock_fail_telemetry: Mock
+    ):
+        """Test that @failure_telemetry decorator records failures for merge function."""
+        # GIVEN
+        mock_manifest_merge.side_effect = Exception("Merge failed")
+
+        with pytest.raises(Exception, match="Merge failed"):
+            # WHEN
+            merge([Mock()])
+
+        # THEN
+        mock_fail_telemetry.assert_called_once_with(
+            queue_id="queue-unknown",
+            failure_reason="merge: Exception",
+        )
+
+    @patch.object(attachment_upload_mod, "record_attachment_upload_fail_telemetry_event")
+    @patch.object(attachment_upload_mod, "_manifest_snapshot")
+    def test_failure_telemetry_decorator_on_snapshot(
+        self, mock_manifest_snapshot: Mock, mock_fail_telemetry: Mock
+    ):
+        """Test that @failure_telemetry decorator records failures for snapshot function."""
+        # GIVEN
+        mock_worker_manifest_properties = Mock()
+        mock_worker_manifest_properties.local_output_relative_directories.return_value = ["test"]
+        mock_manifest_snapshot.side_effect = Exception("Snapshot failed")
+
+        with pytest.raises(Exception, match="Snapshot failed"):
+            # WHEN
+            snapshot([mock_worker_manifest_properties], Mock())
+
+        # THEN
+        mock_fail_telemetry.assert_called_once_with(
+            queue_id="queue-unknown",
+            failure_reason="snapshot: Exception",
+        )
+
+    @patch.object(
+        attachment_upload_mod.JobAttachmentS3Settings, "partial_session_action_manifest_prefix"
+    )
+    @patch.object(attachment_upload_mod, "record_attachment_upload_fail_telemetry_event")
+    def test_failure_telemetry_decorator_on_upload_output_assets(
+        self,
+        mock_fail_telemetry: Mock,
+        mock_partial_session_action_manifest_prefix: Mock,
+    ):
+        """Test that @failure_telemetry decorator records failures for upload_output_assets function."""
+        # GIVEN
+        with (
+            # Force a KeyError failure by clearing the environment variables
+            # which the function uses to get DEADLINE_FARM_ID, etc.
+            patch.dict(attachment_upload_mod.os.environ, {}),
+            pytest.raises(KeyError),
+        ):
+            # WHEN
+            upload_output_assets(Mock(), [Mock()], Mock())
+
+        # THEN
+        mock_fail_telemetry.assert_called_once_with(
+            queue_id="queue-unknown",
+            failure_reason="upload_output_assets: KeyError",
+        )
+
+    @pytest.mark.parametrize(
+        argnames=["root_path_to_output_manifest"],
+        argvalues=[[{"test": "value"}], [{}]],
+        ids=["with output", "no output"],
+    )
+    @patch.dict(
+        attachment_upload_mod.os.environ,
+        {
+            "DEADLINE_FARM_ID": "DEADLINE_FARM_ID",
+            "DEADLINE_QUEUE_ID": "DEADLINE_QUEUE_ID",
+            "DEADLINE_JOB_ID": "DEADLINE_JOB_ID",
+            "DEADLINE_STEP_ID": "DEADLINE_STEP_ID",
+            "DEADLINE_TASK_ID": "DEADLINE_TASK_ID",
+            "DEADLINE_SESSIONACTION_ID": "DEADLINE_SESSIONACTION_ID",
+            "DEADLINE_SESSIONACTION_START_TIME": "123.456",
+        },
+    )  # Mock the environment variables
+    @patch.object(attachment_upload_mod, "record_attachment_upload_latencies_telemetry_event")
+    @patch.object(attachment_upload_mod, "snapshot")
+    @patch.object(attachment_upload_mod, "merge")
+    @patch.object(attachment_upload_mod, "parse_worker_manifest_properties")
+    def test_latencies_telemetry(
+        self,
+        mock_parse: Mock,
+        mock_merge: Mock,
+        mock_snapshot: Mock,
+        mock_latencies_telemetry: Mock,
+        root_path_to_output_manifest: Optional[Mock],
+    ):
+        """Test that latencies telemetry is recorded whether output is uploaded or not"""
+        # GIVEN
+        mock_snapshot.return_value = root_path_to_output_manifest
+        args = ["-s3", "s3://test-bucket/path", "-wp", "/path/to/worker.json"]
+
+        # WHEN
+        main(args)
+
+        # THEN
+        mock_latencies_telemetry.assert_called_once()
+        call_args = mock_latencies_telemetry.call_args
+        assert call_args[1]["queue_id"] == "queue-unknown"
+        assert "latencies" in call_args[1]
+
+        # Verify latencies structure
+        latencies = call_args[1]["latencies"]
+        assert "merge" in latencies
+        assert "snapshot" in latencies
+        assert "parse_worker_manifest_properties" in latencies
+        assert "upload_output_assets" in latencies
+        assert "total" in latencies

@@ -13,11 +13,13 @@ to handle job output file uploads after task completion.
 
 #! /usr/bin/env python3
 import argparse
+import dataclasses
+import functools
 import sys
 import time
 import os
 import json
-from typing import Optional
+from typing import cast, Any, Callable, Optional, TypeVar
 from pathlib import Path
 from dataclasses import asdict
 
@@ -32,11 +34,49 @@ from deadline.job_attachments.models import (
     JobAttachmentS3Settings,
     UploadManifestInfo,
 )
+from deadline_worker_agent.aws.deadline import (
+    record_attachment_upload_fail_telemetry_event,
+    record_attachment_upload_latencies_telemetry_event,
+    record_success_fail_telemetry_event,
+)
 from deadline_worker_agent.sessions.attachment_models import (
     WorkerManifestProperties,
 )
 
+_queue_id = os.environ.get("DEADLINE_QUEUE_ID", "queue-unknown")  # Just for telemetry
 
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def failure_telemetry(function: F) -> F:
+    """Decorator to record failure telemetry on a function"""
+
+    @functools.wraps(function)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return function(*args, **kwargs)
+        except Exception as e:
+            record_attachment_upload_fail_telemetry_event(
+                queue_id=_queue_id,
+                failure_reason=f"{function.__name__}: {type(e).__name__}",
+            )
+            raise e
+
+    return cast(F, wrapper)
+
+
+@dataclasses.dataclass
+class AttachmentUploadLatences:
+    """Stores metrics for function latencies in this script"""
+
+    merge: int = 0
+    snapshot: int = 0
+    parse_worker_manifest_properties: int = 0
+    upload_output_assets: int = 0
+    total: int = 0
+
+
+@failure_telemetry
 def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[str, Optional[str]]:
     """
     Merge multiple manifest files for each worker manifest property.
@@ -85,6 +125,7 @@ def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[st
     return root_path_to_local_manifest
 
 
+@failure_telemetry
 def snapshot(
     worker_manifest_properties: list[WorkerManifestProperties],
     root_path_to_base_manifest: dict[str, Optional[str]],
@@ -142,6 +183,7 @@ def snapshot(
     return root_path_to_output_manifest
 
 
+@failure_telemetry
 def parse_worker_manifest_properties(file_path: str) -> list[WorkerManifestProperties]:
     """
     Parse WorkerManifestProperties from a JSON file.
@@ -199,6 +241,7 @@ def parse_args(args):
     return parser.parse_args(args)
 
 
+@failure_telemetry
 def upload_output_assets(
     s3_uri: str,
     worker_manifest_properties: list[WorkerManifestProperties],
@@ -285,6 +328,7 @@ def upload_output_assets(
     return output_manifest_info_list
 
 
+@record_success_fail_telemetry_event(metric_name="attachment_upload")
 def main(args=None):
     """
     Main entry point for the attachment upload script.
@@ -299,7 +343,8 @@ def main(args=None):
     Args:
         args: Optional list of command line arguments. If None, uses sys.argv[1:]
     """
-    start_time = time.perf_counter()
+    total_start_time = time.perf_counter_ns()
+    latencies = AttachmentUploadLatences()
 
     # Use command line arguments if not provided
     if args is None:
@@ -308,16 +353,22 @@ def main(args=None):
     parsed_args = parse_args(args)
 
     # Load and parse worker manifest properties configuration
+    start_t = time.perf_counter_ns()
     worker_manifest_properties = parse_worker_manifest_properties(parsed_args.worker_properties)
+    latencies.parse_worker_manifest_properties = time.perf_counter_ns() - start_t
 
     # Step 1: Merge input manifests to create base manifests for comparison
+    start_t = time.perf_counter_ns()
     root_path_to_base_manifest = merge(worker_manifest_properties=worker_manifest_properties)
+    latencies.merge = time.perf_counter_ns() - start_t
 
     # Step 2: Create snapshots of output files by comparing against base manifests
+    start_t = time.perf_counter_ns()
     root_path_to_output_manifest = snapshot(
         worker_manifest_properties=worker_manifest_properties,
         root_path_to_base_manifest=root_path_to_base_manifest,
     )
+    latencies.snapshot = time.perf_counter_ns() - start_t
 
     # Step 3: Upload assets if there are any changes to upload
     if not root_path_to_output_manifest:
@@ -325,11 +376,13 @@ def main(args=None):
 
     else:
         print("\nStarting upload...")
+        start_t = time.perf_counter_ns()
         manifest_infos = upload_output_assets(
             s3_uri=parsed_args.s3_uri,
             worker_manifest_properties=worker_manifest_properties,
             root_path_to_output_manifest=root_path_to_output_manifest,
         )
+        latencies.upload_output_assets = time.perf_counter_ns() - start_t
 
         # Check if manifest reporting feature is enabled via environment variable
         manifest_reporting_enabled = (
@@ -341,8 +394,15 @@ def main(args=None):
             # We're printing the manifest info to the logs so that we can re-load it as a manifest info in the worker agent process
             print(f"ja_upload: {json.dumps([asdict(info) for info in manifest_infos])}")
 
-        total = time.perf_counter() - start_time
-        print(f"Finished uploading after {total} seconds")
+    # Always record latencies telemetry regardless of whether upload occurred
+    total = time.perf_counter_ns() - total_start_time
+    print(f"Finished after {round(total * 10**-9, 2)} seconds")
+    latencies.total = total
+
+    record_attachment_upload_latencies_telemetry_event(
+        queue_id=_queue_id,
+        latencies=dataclasses.asdict(latencies),
+    )
 
 
 if __name__ == "__main__":
