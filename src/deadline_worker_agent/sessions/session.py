@@ -1277,6 +1277,7 @@ class Session:
                     actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
                     stepId=current_action.definition.step_id,
                     taskId=current_action.definition.task_id,
+                    startTime=current_action.start_time.timestamp(),
                 )
 
                 if not self._action_output_log_filter:

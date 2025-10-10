@@ -2,6 +2,7 @@
 
 import json
 import pytest
+from pathlib import Path
 from unittest.mock import Mock, patch, mock_open
 
 from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
@@ -172,8 +173,10 @@ class TestAttachmentUpload:
             "DEADLINE_STEP_ID": "step-abc",
             "DEADLINE_TASK_ID": "task-def",
             "DEADLINE_SESSIONACTION_ID": "action-ghi",
+            "DEADLINE_SESSIONACTION_START_TIME": "1234567890.0",
         },
     )
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.config_file")
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.S3AssetUploader")
     @patch(
         "deadline_worker_agent.sessions.actions.scripts.attachment_upload.JobAttachmentS3Settings"
@@ -181,7 +184,7 @@ class TestAttachmentUpload:
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.decode_manifest")
     @patch("builtins.open", new_callable=mock_open, read_data='{"files": []}')
     def test_upload_output_assets(
-        self, mock_file, mock_decode, mock_s3_settings, mock_uploader_class
+        self, mock_file, mock_decode, mock_s3_settings, mock_uploader_class, mock_config_file
     ):
         # GIVEN
         mock_worker_props = Mock()
@@ -197,7 +200,9 @@ class TestAttachmentUpload:
         mock_s3_settings_instance = Mock()
         mock_s3_settings.from_s3_root_uri.return_value = mock_s3_settings_instance
         mock_s3_settings_instance.to_s3_root_uri.return_value = "s3://bucket/path"
+        mock_s3_settings.partial_session_action_manifest_prefix.return_value = "session/path"
 
+        mock_config_file.get_cache_directory.return_value = "/cache/dir"
         mock_decode.return_value = {"files": []}
 
         root_to_manifest = {"/source/path": "/output/manifest.json"}
@@ -208,7 +213,16 @@ class TestAttachmentUpload:
         # THEN
         assert len(result) == 1
         assert result[0].source_path == "/source/path"
-        mock_uploader.upload_assets.assert_called_once()
+        mock_uploader.upload_assets.assert_called_once_with(
+            job_attachment_settings=mock_s3_settings_instance,
+            manifest={"files": []},
+            partial_manifest_prefix="session/path",
+            manifest_file_name="hash123_output",
+            manifest_metadata={"Metadata": {"key": "value"}},
+            source_root=Path("/source/path"),
+            asset_root=Path("/local/path"),
+            s3_check_cache_dir="/cache/dir",
+        )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.upload_output_assets")
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.snapshot")

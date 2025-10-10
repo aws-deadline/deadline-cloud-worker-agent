@@ -233,7 +233,7 @@ def upload_output_assets(
         step_id=os.environ["DEADLINE_STEP_ID"],
         task_id=os.environ["DEADLINE_TASK_ID"],
         session_action_id=os.environ["DEADLINE_SESSIONACTION_ID"],
-        time=time.time(),
+        time=float(os.environ["DEADLINE_SESSIONACTION_START_TIME"]),
     )
 
     # Create S3 settings from the provided URI

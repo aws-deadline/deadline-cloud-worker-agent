@@ -79,7 +79,11 @@ def action(
     task_id: str,
 ) -> actions_module.AttachmentUploadAction:
     return actions_module.AttachmentUploadAction(
-        id=action_id, session_id="session-1234", step_id=step_id, task_id=task_id
+        id=action_id,
+        session_id="session-1234",
+        step_id=step_id,
+        task_id=task_id,
+        start_time=1234567890.0,
     )
 
 
@@ -170,6 +174,7 @@ class TestStart:
                 "DEADLINE_SESSIONACTION_ID": action_id,
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
+                "DEADLINE_SESSIONACTION_START_TIME": "1234567890.0",
                 "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
             },
             log_task_banner=False,
@@ -236,6 +241,7 @@ class TestStart:
                 "DEADLINE_SESSIONACTION_ID": action_id,
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
+                "DEADLINE_SESSIONACTION_START_TIME": "1234567890.0",
                 "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
             },
             log_task_banner=False,

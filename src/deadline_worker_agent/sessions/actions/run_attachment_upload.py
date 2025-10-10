@@ -52,6 +52,7 @@ class AttachmentUploadAction(OpenjdAction):
     _step_script: Optional[StepScript_2023_09]
     _step_id: str
     _task_id: str
+    _start_time: float
 
     def __init__(
         self,
@@ -60,6 +61,7 @@ class AttachmentUploadAction(OpenjdAction):
         session_id: str,
         step_id: str,
         task_id: str,
+        start_time: float,
     ) -> None:
         super(AttachmentUploadAction, self).__init__(
             id=id,
@@ -67,6 +69,7 @@ class AttachmentUploadAction(OpenjdAction):
         )
         self._step_id = step_id
         self._task_id = task_id
+        self._start_time = start_time
 
         self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
@@ -128,6 +131,7 @@ class AttachmentUploadAction(OpenjdAction):
             and self._id == other._id
             and self._step_id == other._step_id
             and self._task_id == other._task_id
+            and self._start_time == other._start_time
             and self._step_script == other._step_script
         )
 
@@ -184,6 +188,7 @@ class AttachmentUploadAction(OpenjdAction):
             task_parameter_values=dict[str, ParameterValue](),
             os_env_vars={
                 "DEADLINE_SESSIONACTION_ID": self._id,
+                "DEADLINE_SESSIONACTION_START_TIME": str(self._start_time),
                 "DEADLINE_STEP_ID": self._step_id,
                 "DEADLINE_TASK_ID": self._task_id,
                 "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),

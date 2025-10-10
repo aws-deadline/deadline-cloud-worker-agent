@@ -1710,6 +1710,7 @@ class TestSessionActionUpdatedImpl:
                 actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
                 stepId=step_id,
                 taskId=task_id,
+                startTime=action_start_time.timestamp(),
             )
         )
 
