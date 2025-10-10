@@ -2,9 +2,10 @@
 
 import logging
 from time import sleep, monotonic
-from typing import Any, Callable, Dict, List, Optional, TypeVar, cast
+from typing import Any, Callable, Dict, Optional, TypeVar, cast
 from threading import Event
 from dataclasses import asdict, dataclass
+from functools import wraps
 import random
 
 from botocore.retries.standard import RetryContext
@@ -869,19 +870,51 @@ def record_sync_inputs_fail_telemetry_event(
     )
 
 
-def record_success_fail_telemetry_event(**decorator_kwargs: Dict[str, Any]) -> Callable[..., F]:
+def record_attachment_download_telemetry_event(queue_id: str, summary: SummaryStatistics) -> None:
+    """Calls the telemetry client to record an event capturing the attachment download summary."""
+    details: Dict[str, Any] = asdict(summary)
+    details["queue_id"] = queue_id
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.attachment_download_summary",
+        event_details=details,
+    )
+
+
+def record_attachment_download_fail_telemetry_event(
+    queue_id: str,
+    failure_reason: str,
+) -> None:
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.attachment_download_failure",
+        event_details={
+            "queue_id": queue_id,
+            "failure_reason": failure_reason,
+        },
+    )
+
+
+def record_attachment_download_latencies_telemetry_event(
+    queue_id: str,
+    latencies: Dict[str, Any],
+) -> None:
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.attachment_download_latencies",
+        event_details={
+            "queue_id": queue_id,
+            "latencies": latencies,
+        },
+    )
+
+
+def record_success_fail_telemetry_event(**decorator_kwargs: Any) -> Callable[[F], F]:
     """
     Decorator to try catch a function. Sends a success / fail telemetry event.
     :param ** Python variable arguments. See https://docs.python.org/3/glossary.html#term-parameter
     """
 
     def inner(function: F) -> F:
-        def wrapper(*args: List[Any], **kwargs: Dict[str, Any]) -> Any:
-            """
-            Wrapper to actually try-catch
-            :param * Python variable argument. See https://docs.python.org/3/glossary.html#term-parameter
-            :param ** Python variable argument. See https://docs.python.org/3/glossary.html#term-parameter
-            """
+        @wraps(function)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             success: bool = True
             try:
                 return function(*args, **kwargs)

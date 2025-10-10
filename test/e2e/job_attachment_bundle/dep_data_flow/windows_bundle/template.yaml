@@ -7,12 +7,18 @@ parameterDefinitions:
 - name: JobName
   type: STRING
   default: Step-Step Dependency Test
-- name: DataDir
+- name: DataDir1
   type: PATH
   objectType: DIRECTORY
   dataFlow: INOUT
-  default: ./data_dir
-  description: This directory is both the input and output for all steps.
+  default: ./data_dir1
+  description: This directory is the first directory for both the input and output for all steps.
+- name: DataDir2
+  type: PATH
+  objectType: DIRECTORY
+  dataFlow: INOUT
+  default: ./data_dir2
+  description: This directory is the secondary directory for both the input and output for all steps.
 - name: InputDir
   type: PATH
   objectType: DIRECTORY
@@ -40,16 +46,23 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          $STEP="Step1"
+          # First directory
+          $STEP_DIR_1="Step1"
 
-          echo "Running $STEP!"
+          echo "Running $STEP_DIR_1!"
 
-          # The two input job attachments directories should match the files
+          # The three input job attachments directories should match the files
           # defined in the job bundle.
-          echo "Checking DataDir: {{RawParam.DataDir}} / {{Param.DataDir}}"
-          if ((Get-ChildItem -Path {{Param.DataDir}}).Count -ne 2) {
+          echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
+          if ((Get-ChildItem -Path {{Param.DataDir1}}).Count -ne 2) {
             echo "Starting dir contents is incorrect:"
-            Get-ChildItem -Path {{Param.DataDir}}
+            Get-ChildItem -Path {{Param.DataDir1}}
+            exit 1
+          }
+          echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
+          if ((Get-ChildItem -Path {{Param.DataDir2}}).Count -ne 2) {
+            echo "Starting dir contents is incorrect:"
+            Get-ChildItem -Path {{Param.DataDir2}}
             exit 1
           }
           echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
@@ -60,16 +73,25 @@ steps:
           }
 
           # This file should be visible in later steps
-          cd {{Param.DataDir}}
-          Copy-Item "create_job_in.txt" -Destination "{{Param.DataDir}}\$STEP.out"
-          echo "2. Processed in $STEP" | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
+          cd {{Param.DataDir1}}
+          Copy-Item "create_job_in.txt" -Destination "{{Param.DataDir1}}\$STEP_DIR_1.out"
+          echo "2. Processed in $STEP_DIR_1" | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+
+          # Second directory
+          $STEP_DIR_2="Step2"
+          echo "Running $STEP_DIR_2!"
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir2}}
+          Copy-Item "create_job_in.txt" -Destination "{{Param.DataDir2}}\$STEP_DIR_2.out"
+          echo "2. Processed in $STEP_DIR_2" | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
 
           # This file should not be visible in later steps
           cd {{Param.InputDir}}
-          Copy-Item "create_job_in.txt" -Destination "{{Param.InputDir}}\$STEP.out"
-          echo "2. Processed in $STEP" | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
+          Copy-Item "create_job_in.txt" -Destination "{{Param.InputDir}}\$STEP_DIR_2.out"
+          echo "2. Processed in $STEP_DIR_2" | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
 
-          echo "Finished $STEP!"
+          echo "Finished $STEP_DIR_1!"
 - name: Step1-2
   hostRequirements:
     attributes:
@@ -94,20 +116,33 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          $STEP="Step1-2.{{Task.Param.Frame}}"
+          # First directory
+          $STEP_DIR_1="Step1-2.{{Task.Param.Frame}}"
 
-          echo "Running $STEP!"
+          echo "Running $STEP_DIR_1!"
 
-          # DataDir should now include the output of Step1.
-          echo "Checking DataDir: {{RawParam.DataDir}} / {{Param.DataDir}}"
+          # DataDir1 should now include the output of Step1.
+          echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
           # When running all the tasks of a step, the output is not cleared
           # between each task, so outputs from other tasks may be included.
-          $DATA_DIR_COUNT=(Get-ChildItem -Path {{Param.DataDir}}).Count
+          $DATA_DIR_COUNT=(Get-ChildItem -Path {{Param.DataDir1}}).Count
           if (($DATA_DIR_COUNT -lt 3) -or ($DATA_DIR_COUNT -gt 6)) {
             echo Starting dir contents is incorrect:
-            ls {{Param.DataDir}}
+            ls {{Param.DataDir1}}
             exit 1
           }
+
+          # DataDir2 should now include the output of Step1.
+          echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
+          # When running all the tasks of a step, the output is not cleared
+          # between each task, so outputs from other tasks may be included.
+          $DATA_DIR_COUNT=(Get-ChildItem -Path {{Param.DataDir2}}).Count
+          if (($DATA_DIR_COUNT -lt 3) -or ($DATA_DIR_COUNT -gt 6)) {
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir2}}
+            exit 1
+          }
+
           # InputDir should not include the output of Step1
           echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
           # When running all the tasks of a step, the input is not cleared
@@ -120,16 +155,26 @@ steps:
           }
 
           # This file should be visible in later steps
-          cd {{Param.DataDir}}
-          Copy-Item "Step1.out" -Destination "{{Param.DataDir}}\$STEP.out"
-          echo "3.{{Task.Param.Frame}} Processed in $STEP" | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
+          cd {{Param.DataDir1}}
+          Copy-Item "Step1.out" -Destination "{{Param.DataDir1}}\$STEP_DIR_1.out"
+          echo "3.{{Task.Param.Frame}} Processed in $STEP_DIR_1" | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+
+          # Second directory
+          $STEP_DIR_2="Step2-2.{{Task.Param.Frame}}"
+
+          echo "Running $STEP_DIR_2!"
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir2}}
+          Copy-Item "Step2.out" -Destination "{{Param.DataDir2}}\$STEP_DIR_2.out"
+          echo "3.{{Task.Param.Frame}} Processed in $STEP_DIR_2" | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
 
           # This file should not be visible in later steps
           cd {{Param.InputDir}}
-          Copy-Item "create_job_in.txt" -Destination "{{Param.InputDir}}\$STEP.out"
-          echo "2. Processed in $STEP" | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
+          Copy-Item "create_job_in.txt" -Destination "{{Param.InputDir}}\$STEP_DIR_2.out"
+          echo "2. Processed in $STEP_DIR_2" | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
 
-          echo "Finished $STEP!"
+          echo "Finished $STEP_DIR_1!"
 - name: Step1-2-3
   hostRequirements:
     attributes:
@@ -149,17 +194,27 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          $STEP="Step1-2-3"
+          # First directory
+          $STEP_DIR_1="Step1-2-3"
 
-          echo "Running $STEP!"
+          echo "Running $STEP_DIR_1!"
 
-          # DataDir should now include the output of every task in Step2, but not Step1.
-          echo "Checking DataDir: {{RawParam.DataDir}} / {{Param.DataDir}}"
-          if ((Get-ChildItem -Path {{Param.DataDir}}).Count -ne 6) {
+          # DataDir1 should now include the output of every task in Step2, but not Step1.
+          echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
+          if ((Get-ChildItem -Path {{Param.DataDir1}}).Count -ne 6) {
             echo "Starting dir contents is incorrect:"
-            Get-ChildItem -Path {{Param.DataDir}}
+            Get-ChildItem -Path {{Param.DataDir1}}
             exit 1
           }
+
+          # DataDir2 should now include the output of every task in Step2, but not Step1.
+          echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
+          if ((Get-ChildItem -Path {{Param.DataDir2}}).Count -ne 6) {
+            echo "Starting dir contents is incorrect:"
+            Get-ChildItem -Path {{Param.DataDir2}}
+            exit 1
+          }
+
           # InputDir should not include the output of Step1 or Step2
           echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
           if ((Get-ChildItem -Path {{Param.InputDir}}).Count -ne 2) {
@@ -169,19 +224,32 @@ steps:
           }
 
           # This file should be visible in later steps
-          cd {{Param.DataDir}}
-          Copy-Item "Step1-2.8.out" -Destination "{{Param.DataDir}}\$STEP.out"
-          Get-Content Step1-2.9.out | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
-          Get-Content Step1-2.10.out | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
-          Get-Content Step1-2.11.out | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
-          echo "4. Processed in $STEP" | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
+          cd {{Param.DataDir1}}
+          Copy-Item "Step1-2.8.out" -Destination "{{Param.DataDir1}}\$STEP_DIR_1.out"
+          Get-Content Step1-2.9.out | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+          Get-Content Step1-2.10.out | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+          Get-Content Step1-2.11.out | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+          echo "4. Processed in $STEP_DIR_1" | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+
+          # Second directory
+          $STEP_DIR_2="Step2-2-3"
+
+          echo "Running $STEP_DIR_2!"
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir2}}
+          Copy-Item "Step2-2.8.out" -Destination "{{Param.DataDir2}}\$STEP_DIR_2.out"
+          Get-Content Step2-2.9.out | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
+          Get-Content Step2-2.10.out | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
+          Get-Content Step2-2.11.out | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
+          echo "4. Processed in $STEP_DIR_2" | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
 
           # This file should not be visible in later steps
           cd {{Param.InputDir}}
-          Copy-Item "create_job_in.txt" -Destination "{{Param.InputDir}}\$STEP.out"
-          echo "2. Processed in $STEP" | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
-
-          echo "Finished $STEP!"
+          Copy-Item "create_job_in.txt" -Destination "{{Param.InputDir}}\$STEP_DIR_2.out"
+          echo "2. Processed in $STEP_DIR_2" | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
+          
+          echo "Finished $STEP_DIR_2!"
 - name: Step1-2-4
   hostRequirements:
     attributes:
@@ -201,17 +269,27 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          $STEP="Step1-2-4"
+          # First directory
+          $STEP_DIR_1="Step1-2-4"
 
-          echo "Running $STEP!"
+          echo "Running $STEP_DIR_1!"
 
-          # DataDir should now include the output of every task in Step2, but not Step1.
-          echo "Checking DataDir: {{RawParam.DataDir}} / {{Param.DataDir}}"
-          if ((Get-ChildItem -Path {{Param.DataDir}}).Count -ne 6) {
+          # DataDir1 should now include the output of every task in Step2, but not Step1.
+          echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
+          if ((Get-ChildItem -Path {{Param.DataDir1}}).Count -ne 6) {
             echo "Starting dir contents is incorrect:"
-            Get-ChildItem -Path {{Param.DataDir}}
+            Get-ChildItem -Path {{Param.DataDir1}}
             exit 1
           }
+
+          # DataDir2 should now include the output of every task in Step2, but not Step1.
+          echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
+          if ((Get-ChildItem -Path {{Param.DataDir2}}).Count -ne 6) {
+            echo "Starting dir contents is incorrect:"
+            Get-ChildItem -Path {{Param.DataDir2}}
+            exit 1
+          }
+
           # InputDir should not include the output of Step1 or Step2
           echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
           if ((Get-ChildItem -Path {{Param.InputDir}}).Count -ne 2) {
@@ -221,19 +299,32 @@ steps:
           }
 
           # This file should be visible in later steps
-          cd {{Param.DataDir}}
-          Copy-Item "Step1-2.8.out" -Destination "{{Param.DataDir}}\$STEP.out"
-          Get-Content Step1-2.9.out | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
-          Get-Content Step1-2.10.out | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
-          Get-Content Step1-2.11.out | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
-          echo "4. Processed in $STEP" | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
+          cd {{Param.DataDir1}}
+          Copy-Item "Step1-2.8.out" -Destination "{{Param.DataDir1}}\$STEP_DIR_1.out"
+          Get-Content Step1-2.9.out | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+          Get-Content Step1-2.10.out | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+          Get-Content Step1-2.11.out | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+          echo "4. Processed in $STEP_DIR_1" | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+
+          # Second directory
+          $STEP_DIR_2="Step2-2-4"
+
+          echo "Running $STEP_DIR_2!"
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir2}}
+          Copy-Item "Step2-2.8.out" -Destination "{{Param.DataDir2}}\$STEP_DIR_2.out"
+          Get-Content Step2-2.9.out | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
+          Get-Content Step2-2.10.out | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
+          Get-Content Step2-2.11.out | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
+          echo "4. Processed in $STEP_DIR_2" | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
 
           # This file should not be visible in later steps
           cd {{Param.InputDir}}
-          Copy-Item "create_job_in.txt" -Destination "{{Param.InputDir}}\$STEP.out"
-          echo "2. Processed in $STEP" | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
+          Copy-Item "create_job_in.txt" -Destination "{{Param.InputDir}}\$STEP_DIR_2.out"
+          echo "2. Processed in $STEP_DIR_2" | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
 
-          echo "Finished $STEP!"
+          echo "Finished $STEP_DIR_1!"
 - name: Step1-2-34-5
   hostRequirements:
     attributes:
@@ -254,17 +345,27 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          $STEP="Step1-2-34-5"
+          # First directory
+          $STEP_DIR_1="Step1-2-34-5"
 
-          echo "Running $STEP!"
+          echo "Running $STEP_DIR_1!"
 
-          # DataDir should now include the output of Steps 3 and 4, but not Steps 1 or 2.
-          echo "Checking DataDir: {{RawParam.DataDir}} / {{Param.DataDir}}"
-          if ((Get-ChildItem -Path {{Param.DataDir}}).Count -ne 4) {
+          # DataDir1 should now include the output of Steps 3 and 4, but not Steps 1 or 2.
+          echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
+          if ((Get-ChildItem -Path {{Param.DataDir1}}).Count -ne 4) {
             echo "Starting dir contents is incorrect:"
-            Get-ChildItem -Path {{Param.DataDir}}
+            Get-ChildItem -Path {{Param.DataDir1}}
             exit 1
           }
+
+          # DataDir2 should now include the output of Steps 3 and 4, but not Steps 1 or 2.
+          echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
+          if ((Get-ChildItem -Path {{Param.DataDir2}}).Count -ne 4) {
+            echo "Starting dir contents is incorrect:"
+            Get-ChildItem -Path {{Param.DataDir2}}
+            exit 1
+          }
+
           # InputDir should not include the output of any dependency steps
           echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
           if ((Get-ChildItem -Path {{Param.InputDir}}).Count -ne 2) {
@@ -274,15 +375,27 @@ steps:
           }
 
           # This file should be visible when downloading the output job attachments
-          cd {{Param.DataDir}}
-          Copy-Item "Step1-2-3.out" -Destination "{{Param.DataDir}}\$STEP.out"
-          echo " --- merge --- " | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
-          Get-Content Step1-2-4.out | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
-          echo "5. Processed in $STEP" | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
+          cd {{Param.DataDir1}}
+          Copy-Item "Step1-2-3.out" -Destination "{{Param.DataDir1}}\$STEP_DIR_1.out"
+          echo " --- merge --- " | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+          Get-Content Step1-2-4.out | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+          echo "5. Processed in $STEP_DIR_1" | Out-File -FilePath "$STEP_DIR_1.out" -Append -Encoding utf8
+
+          # Second directory
+          $STEP_DIR_2="Step2-2-34-5"
+
+          echo "Running $STEP_DIR_2!"
+
+          # This file should be visible when downloading the output job attachments
+          cd {{Param.DataDir2}}
+          Copy-Item "Step2-2-3.out" -Destination "{{Param.DataDir2}}\$STEP_DIR_2.out"
+          echo " --- merge --- " | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
+          Get-Content Step2-2-4.out | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
+          echo "5. Processed in $STEP_DIR_2" | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
 
           # This file should not be visible when downloading the output job attachments
           cd {{Param.InputDir}}
-          Copy-Item "create_job_in.txt" -Destination "{{Param.InputDir}}\$STEP.out"
-          echo "2. Processed in $STEP" | Out-File -FilePath "$STEP.out" -Append -Encoding utf8
+          Copy-Item "create_job_in.txt" -Destination "{{Param.InputDir}}\$STEP_DIR_2.out"
+          echo "2. Processed in $STEP_DIR_2" | Out-File -FilePath "$STEP_DIR_2.out" -Append -Encoding utf8
 
-          echo "Finished $STEP!"
+          echo "Finished $STEP_DIR_1!"
