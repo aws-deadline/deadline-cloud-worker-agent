@@ -516,12 +516,14 @@ class SessionActionQueue:
                 action_definition = action_queue_entry.definition
                 step_id = action_definition["stepId"]
                 task_id = action_definition["taskId"]
+                start_time = action_definition["startTime"]
 
                 next_action = AttachmentUploadAction(
                     id=action_id,
                     session_id=self._session_id,
                     step_id=step_id,
                     task_id=task_id,
+                    start_time=start_time,
                 )
 
             elif action_type == "SYNC_INPUT_JOB_ATTACHMENTS":

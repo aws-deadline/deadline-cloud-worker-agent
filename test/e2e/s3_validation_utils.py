@@ -68,6 +68,7 @@ def validate_s3_job_output_manifest(
 
     # Extract S3 configuration
     s3_bucket = queue_details.jobAttachmentSettings.s3BucketName
+    root_prefix = queue_details.jobAttachmentSettings.rootPrefix
 
     for manifest_properties in job_details.attachments.manifests:
         root_path = manifest_properties.rootPath
@@ -78,7 +79,7 @@ def validate_s3_job_output_manifest(
 
         for step in steps:
             step_id = step["stepId"]
-            manifest_prefix = f"rootPrefix/Manifests/{farm_id}/{queue_id}/{job.id}/{step_id}"
+            manifest_prefix = f"{root_prefix}/Manifests/{farm_id}/{queue_id}/{job.id}/{step_id}"
 
             try:
                 manifest_keys = _get_tasks_manifests_keys_from_s3(

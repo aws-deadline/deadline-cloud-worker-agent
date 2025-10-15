@@ -107,6 +107,7 @@ class AttachmentUploadAction(TypedDict):
     actionType: AttachmentUploadActionType
     stepId: str
     taskId: str
+    startTime: float
 
 
 class HostConfiguration(TypedDict):

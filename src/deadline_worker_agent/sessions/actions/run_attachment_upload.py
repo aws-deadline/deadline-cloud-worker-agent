@@ -12,7 +12,7 @@ from pathlib import Path
 from deadline.job_attachments.models import (
     JobAttachmentS3Settings,
 )
-from openjd.sessions import LOG as OPENJD_LOG, LogContent, PathMappingRule
+from openjd.sessions import LOG as OPENJD_LOG, LogContent
 from openjd.model.v2023_09 import (
     EmbeddedFileTypes as EmbeddedFileTypes_2023_09,
     EmbeddedFileText as EmbeddedFileText_2023_09,
@@ -27,6 +27,7 @@ from openjd.model import ParameterValue
 
 from ...feature_flag import MANIFEST_REPORTING_FEATURE
 from ...log_messages import SessionActionLogKind
+from ..attachment_models import WorkerManifestProperties
 from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
@@ -51,6 +52,7 @@ class AttachmentUploadAction(OpenjdAction):
     _step_script: Optional[StepScript_2023_09]
     _step_id: str
     _task_id: str
+    _start_time: float
 
     def __init__(
         self,
@@ -59,6 +61,7 @@ class AttachmentUploadAction(OpenjdAction):
         session_id: str,
         step_id: str,
         task_id: str,
+        start_time: float,
     ) -> None:
         super(AttachmentUploadAction, self).__init__(
             id=id,
@@ -66,59 +69,61 @@ class AttachmentUploadAction(OpenjdAction):
         )
         self._step_id = step_id
         self._task_id = task_id
+        self._start_time = start_time
 
         self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
     def set_step_script(
         self,
-        manifest_paths_by_root: dict[str, list[str]],
-        out_rel_dirs_by_root: dict[str, list[str]],
         s3_settings: JobAttachmentS3Settings,
+        worker_manifest_properties_list: list[WorkerManifestProperties],
     ) -> None:
         """Sets the step script for the action
 
         Parameters
         ----------
-        manifest_paths_by_root : dict[str, str]
-            A dictionary mapping root paths to manifest paths
         s3_settings : JobAttachmentS3Settings
             The S3 settings for the job attachment
+        worker_manifest_properties_list : list
+            List of worker manifest properties for enhanced processing
         """
 
+        # Create embedded file for worker manifest properties
+        worker_props_data = [
+            worker_props.to_dict() for worker_props in worker_manifest_properties_list
+        ]
+
+        worker_props_json = json.dumps(worker_props_data, indent=2)
+
+        # Build the command arguments
+        upload_script_path = Path(__file__).parent / "scripts" / "attachment_upload.py"
         args = [
-            ArgString("{{ Task.File.AttachmentUpload }}"),
-            ArgString("-pm"),
-            ArgString("{{ Session.PathMappingRulesFile }}"),
+            ArgString(str(upload_script_path)),
             ArgString("-s3"),
             ArgString(s3_settings.to_s3_root_uri()),
-            ArgString("-mp"),
-            ArgString(json.dumps(manifest_paths_by_root)),
-            ArgString("-od"),
-            ArgString(json.dumps(out_rel_dirs_by_root)),
+            ArgString("-wp"),
+            ArgString("{{ Task.File.WorkerManifestProperties }}"),
         ]
 
         executable_path = Path(sys.executable)
         python_path = executable_path.parent / executable_path.name.lower().replace(
             "pythonservice.exe", "python.exe"
         )
-
-        with open(Path(__file__).parent / "scripts" / "attachment_upload.py", "r") as f:
-            data = f.read()
-            self._step_script = StepScript_2023_09(
-                actions=StepActions_2023_09(
-                    onRun=Action_2023_09(
-                        command=CommandString(str(python_path)),
-                        args=args,
-                    )
+        self._step_script = StepScript_2023_09(
+            actions=StepActions_2023_09(
+                onRun=Action_2023_09(
+                    command=CommandString(str(python_path)),
+                    args=args,
+                )
+            ),
+            embeddedFiles=[
+                EmbeddedFileText_2023_09(
+                    name="WorkerManifestProperties",
+                    type=EmbeddedFileTypes_2023_09.TEXT,
+                    data=DataString(worker_props_json),
                 ),
-                embeddedFiles=[
-                    EmbeddedFileText_2023_09(
-                        name="AttachmentUpload",
-                        type=EmbeddedFileTypes_2023_09.TEXT,
-                        data=DataString(data),
-                    )
-                ],
-            )
+            ],
+        )
 
     def __eq__(self, other: Any) -> bool:
         return (
@@ -126,6 +131,7 @@ class AttachmentUploadAction(OpenjdAction):
             and self._id == other._id
             and self._step_id == other._step_id
             and self._task_id == other._task_id
+            and self._start_time == other._start_time
             and self._step_script == other._step_script
         )
 
@@ -171,18 +177,9 @@ class AttachmentUploadAction(OpenjdAction):
             rootPrefix=job_attachment_settings.root_prefix,
         )
 
-        manifest_paths_by_root = session.manifest_paths_by_root
-        # outputRelativeDirectories by source provided by job manifests
-        out_rel_dirs_by_source = session.manifest_out_rel_dirs_by_source
-        out_rel_dirs_by_root: dict[str, list[str]] = self._get_out_rel_dirs_by_root(
-            out_rel_dirs_by_source=out_rel_dirs_by_source,
-            path_mapping_list=session.openjd_session._path_mapping_rules,
-        )
-
         self.set_step_script(
-            manifest_paths_by_root=manifest_paths_by_root,
-            out_rel_dirs_by_root=out_rel_dirs_by_root,
             s3_settings=s3_settings,
+            worker_manifest_properties_list=session.get_worker_manifest_properties_list(),
         )
 
         assert self._step_script is not None
@@ -191,34 +188,10 @@ class AttachmentUploadAction(OpenjdAction):
             task_parameter_values=dict[str, ParameterValue](),
             os_env_vars={
                 "DEADLINE_SESSIONACTION_ID": self._id,
+                "DEADLINE_SESSIONACTION_START_TIME": str(self._start_time),
                 "DEADLINE_STEP_ID": self._step_id,
                 "DEADLINE_TASK_ID": self._task_id,
                 "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
             },
             log_task_banner=False,
         )
-
-    def _get_out_rel_dirs_by_root(
-        self,
-        out_rel_dirs_by_source: dict[str, list[str]],
-        path_mapping_list: Optional[list[PathMappingRule]],
-    ) -> dict[str, list[str]]:
-        """Gets the include local path for a given path mapping
-
-        Parameters
-        ----------
-        out_rel_dirs_by_source : dict[str, list[str]]
-            A dictionary mapping root paths to include paths
-        path_mapping : PathMapping
-            The path mapping to get the include local path for
-        """
-        out_rel_dirs_by_root: dict[str, list[str]] = dict()
-        for path_mapping in path_mapping_list or []:
-            out_dirs: Optional[list[str]] = out_rel_dirs_by_source.get(
-                str(path_mapping.source_path)
-            )
-
-            if out_dirs is not None:
-                out_rel_dirs_by_root[str(path_mapping.destination_path)] = out_dirs
-
-        return out_rel_dirs_by_root
