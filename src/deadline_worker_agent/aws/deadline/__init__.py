@@ -906,6 +906,32 @@ def record_attachment_download_latencies_telemetry_event(
     )
 
 
+def record_attachment_upload_fail_telemetry_event(
+    queue_id: str,
+    failure_reason: str,
+) -> None:
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.attachment_upload_failure",
+        event_details={
+            "queue_id": queue_id,
+            "failure_reason": failure_reason,
+        },
+    )
+
+
+def record_attachment_upload_latencies_telemetry_event(
+    queue_id: str,
+    latencies: Dict[str, Any],
+) -> None:
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.attachment_upload_latencies",
+        event_details={
+            "queue_id": queue_id,
+            "latencies": latencies,
+        },
+    )
+
+
 def record_success_fail_telemetry_event(**decorator_kwargs: Any) -> Callable[[F], F]:
     """
     Decorator to try catch a function. Sends a success / fail telemetry event.

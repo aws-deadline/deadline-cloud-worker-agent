@@ -5,6 +5,7 @@ Unit tests for worker-specific data structures.
 """
 
 import pytest
+import platform
 from unittest.mock import patch
 
 from deadline_worker_agent.sessions.attachment_models import (
@@ -597,3 +598,250 @@ class TestWorkerManifestProperties:
 
             # Verify they are equal
             assert reconstructed_worker_props == original_worker_props
+
+    def test_local_output_relative_directories_returns_none_when_no_output_dirs(self):
+        """Test local_output_relative_directories returns None when no output directories are set."""
+        # GIVEN
+        manifest_props = ManifestProperties(
+            rootPath="/source/path",
+            rootPathFormat=PathFormat.POSIX,
+            outputRelativeDirectories=None,
+        )
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="/local/root",
+        )
+
+        # WHEN
+        result = worker_props.local_output_relative_directories()
+
+        # THEN
+        assert result is None
+
+    def test_local_output_relative_directories_returns_none_when_empty_output_dirs(self):
+        """Test local_output_relative_directories returns None when output directories list is empty."""
+        # GIVEN
+        manifest_props = ManifestProperties(
+            rootPath="/source/path",
+            rootPathFormat=PathFormat.POSIX,
+            outputRelativeDirectories=[],
+        )
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="/local/root",
+        )
+
+        # WHEN
+        result = worker_props.local_output_relative_directories()
+
+        # THEN
+        assert result is None
+
+    @pytest.mark.skipif(
+        platform.system() == "Windows",
+        reason="This test is for testing path changes on POSIX systems.",
+    )
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_no_conversion_when_same_format(
+        self, mock_get_host_format
+    ):
+        """Test local_output_relative_directories returns unchanged paths when source and host formats match."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        manifest_props = ManifestProperties(
+            rootPath="/source/path",
+            rootPathFormat=PathFormat.POSIX,
+            outputRelativeDirectories=["output/renders", "output/logs", "temp/cache"],
+        )
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="/local/root",
+        )
+
+        # WHEN
+        result = worker_props.local_output_relative_directories()
+
+        # THEN
+        assert result == ["output/renders", "output/logs", "temp/cache"]
+        mock_get_host_format.assert_called_once()
+
+    @pytest.mark.skipif(
+        platform.system() == "Windows",
+        reason="This test is for testing path changes on POSIX systems.",
+    )
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_converts_windows_to_posix(
+        self, mock_get_host_format
+    ):
+        """Test local_output_relative_directories converts Windows paths to POSIX format."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        manifest_props = ManifestProperties(
+            rootPath="C:\\source\\path",
+            rootPathFormat=PathFormat.WINDOWS,
+            outputRelativeDirectories=["output\\renders", "output\\logs", "temp\\cache"],
+        )
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="/local/root",
+        )
+
+        # WHEN
+        result = worker_props.local_output_relative_directories()
+
+        # THEN
+        # Windows paths should be converted to POSIX format
+        assert result == ["output/renders", "output/logs", "temp/cache"]
+        mock_get_host_format.assert_called_once()
+
+    @pytest.mark.skipif(
+        platform.system() != "Windows", reason="This test is for testing path changes in Windows."
+    )
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_converts_posix_to_windows(
+        self, mock_get_host_format
+    ):
+        """Test local_output_relative_directories converts POSIX paths to Windows format."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.WINDOWS
+        manifest_props = ManifestProperties(
+            rootPath="/source/path",
+            rootPathFormat=PathFormat.POSIX,
+            outputRelativeDirectories=["output/renders", "output/logs", "temp/cache"],
+        )
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="C:\\local\\root",
+        )
+
+        # WHEN
+        result = worker_props.local_output_relative_directories()
+
+        # THEN
+        # POSIX paths should be converted to Windows format
+        expected = ["output\\renders", "output\\logs", "temp\\cache"]
+        assert result == expected
+        mock_get_host_format.assert_called_once()
+
+    @pytest.mark.skipif(
+        platform.system() == "Windows",
+        reason="This test is for testing path changes on POSIX systems.",
+    )
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_handles_complex_windows_paths(
+        self, mock_get_host_format
+    ):
+        """Test local_output_relative_directories handles complex Windows paths with spaces and special chars."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        manifest_props = ManifestProperties(
+            rootPath="C:\\Program Files\\App",
+            rootPathFormat=PathFormat.WINDOWS,
+            outputRelativeDirectories=[
+                "output\\final renders",
+                "logs\\error logs",
+                "temp\\cache-files_v2",
+            ],
+        )
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="/local/root",
+        )
+
+        # WHEN
+        result = worker_props.local_output_relative_directories()
+
+        # THEN
+        expected = ["output/final renders", "logs/error logs", "temp/cache-files_v2"]
+        assert result == expected
+        mock_get_host_format.assert_called_once()
+
+    @pytest.mark.skipif(
+        platform.system() != "Windows", reason="This test is for testing path changes in Windows."
+    )
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_handles_complex_posix_paths(
+        self, mock_get_host_format
+    ):
+        """Test local_output_relative_directories handles complex POSIX paths with spaces and special chars."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.WINDOWS
+        manifest_props = ManifestProperties(
+            rootPath="/usr/local/app",
+            rootPathFormat=PathFormat.POSIX,
+            outputRelativeDirectories=[
+                "output/final renders",
+                "logs/error logs",
+                "temp/cache-files_v2",
+            ],
+        )
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="C:\\local\\root",
+        )
+
+        # WHEN
+        result = worker_props.local_output_relative_directories()
+
+        # THEN
+        expected = ["output\\final renders", "logs\\error logs", "temp\\cache-files_v2"]
+        assert result == expected
+        mock_get_host_format.assert_called_once()
+
+    @pytest.mark.skipif(
+        platform.system() == "Windows",
+        reason="This test is for testing path changes on POSIX systems.",
+    )
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_single_directory(self, mock_get_host_format):
+        """Test local_output_relative_directories works with single directory."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        manifest_props = ManifestProperties(
+            rootPath="C:\\source",
+            rootPathFormat=PathFormat.WINDOWS,
+            outputRelativeDirectories=["output"],
+        )
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="/local/root",
+        )
+
+        # WHEN
+        result = worker_props.local_output_relative_directories()
+
+        # THEN
+        assert result == ["output"]
+        mock_get_host_format.assert_called_once()
+
+    @pytest.mark.skipif(
+        platform.system() == "Windows",
+        reason="This test is for testing path changes on POSIX systems.",
+    )
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_preserves_original_list(self, mock_get_host_format):
+        """Test local_output_relative_directories doesn't modify the original output directories list."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        original_dirs = ["output\\renders", "output\\logs"]
+        manifest_props = ManifestProperties(
+            rootPath="C:\\source",
+            rootPathFormat=PathFormat.WINDOWS,
+            outputRelativeDirectories=original_dirs,
+        )
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props,
+            local_root_path="/local/root",
+        )
+
+        # WHEN
+        result = worker_props.local_output_relative_directories()
+
+        # THEN
+        # Original list should be unchanged
+        assert manifest_props.outputRelativeDirectories == ["output\\renders", "output\\logs"]
+        # Result should be converted
+        assert result == ["output/renders", "output/logs"]
+        # Should be different objects
+        assert result is not manifest_props.outputRelativeDirectories
+        mock_get_host_format.assert_called_once()

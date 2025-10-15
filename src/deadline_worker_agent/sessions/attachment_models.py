@@ -10,8 +10,10 @@ while maintaining backward compatibility for CLI operations.
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Any
+from pathlib import Path, PurePosixPath, PureWindowsPath
+import json
 
-from deadline.job_attachments.models import ManifestProperties, PathMappingRule
+from deadline.job_attachments.models import ManifestProperties, PathMappingRule, PathFormat
 from deadline.job_attachments.asset_manifests import hash_data
 from deadline.job_attachments.asset_manifests.v2023_03_03.asset_manifest import AssetManifest
 
@@ -72,6 +74,69 @@ class WorkerManifestProperties:
     def output_relative_directories(self) -> Optional[List[str]]:
         """Get the output relative directories from manifest properties."""
         return self.manifest_properties.outputRelativeDirectories
+
+    def local_output_relative_directories(self) -> Optional[List[str]]:
+        """
+        Normalize the output relative directory to host operating system format.
+
+        This function converts the output relative directories from the manifest's
+        original path format to the current host's path format, ensuring proper
+        path handling across different operating systems.
+
+        Returns:
+            Optional[List[str]]: List of output relative directories in local path format,
+                               or None if no output directories are defined
+        """
+
+        if not self.output_relative_directories:
+            return None
+
+        local_output_relative_directories: list[str] = []
+        source_path_format = self.root_path_format
+        current_path_format = PathFormat.get_host_path_format()
+
+        for output_dir in self.output_relative_directories or []:
+            if source_path_format != current_path_format:
+                if source_path_format == PathFormat.WINDOWS:
+                    # Convert Windows path to fit the current platform format
+                    output_dir = str(Path(PureWindowsPath(output_dir)))
+                elif source_path_format == PathFormat.POSIX:
+                    # Convert Windows path to fit the current platform format
+                    output_dir = str(Path(PurePosixPath(output_dir)))
+
+            local_output_relative_directories.append(output_dir)
+
+        return local_output_relative_directories
+
+    def as_output_metadata(self) -> dict[str, dict[str, str]]:
+        """
+        Generate S3 metadata for output manifest uploads.
+
+        Creates metadata dictionary containing asset root path and optional file system location.
+        Handles non-ASCII characters in paths by JSON-encoding them with ASCII-safe format.
+
+        Returns:
+            dict[str, str]: S3 metadata dictionary with 'Metadata' key containing:
+                - 'asset-root': ASCII-compatible root path, or JSON-encoded root path for non-ASCII paths
+                - 'asset-root-json': JSON-encoded root path for non-ASCII paths
+                - 'file-system-location-name': Optional file system location name
+        """
+        metadata: dict[str, str] = {}
+        try:
+            # Set 'asset-root' metadata as the path if the path is ASCII
+            self.root_path.encode(encoding="ascii")
+            metadata["asset-root"] = self.root_path
+        except UnicodeEncodeError:
+            # S3 metadata must be ASCII
+            # Add both 'asset-root' and 'asset-root-json' metadata encoded to ASCII as a JSON string
+            # Populate both fileds for backward compatibility
+            json_root_path = json.dumps(self.root_path, ensure_ascii=True)
+            metadata["asset-root-json"] = json_root_path
+            metadata["asset-root"] = json_root_path
+        if self.file_system_location_name:
+            metadata["file-system-location-name"] = self.file_system_location_name
+
+        return {"Metadata": metadata}
 
     def to_path_mapping_rule(self) -> PathMappingRule:
         """

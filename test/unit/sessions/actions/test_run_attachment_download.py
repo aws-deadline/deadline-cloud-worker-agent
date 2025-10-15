@@ -168,12 +168,7 @@ class TestStart:
         )
 
         session.set_worker_manifest_properties = Mock()
-        session.get_worker_manifest_properties_list = Mock(return_value=[])
         session.add_local_manifest_path = Mock(return_value=mock_worker_manifest_props)
-        session.get_worker_manifest_properties = Mock(return_value=mock_worker_manifest_props)
-        session.add_manifest_path = Mock()
-        session.add_manifest_out_rel_dirs = Mock()
-        session.manifest_out_rel_dirs_by_source = {}
 
         # Mock asset sync methods
         mock_asset_sync.get_local_destination.return_value = str(session_dir)
@@ -288,12 +283,7 @@ class TestStart:
         )
 
         session.set_worker_manifest_properties = Mock()
-        session.get_worker_manifest_properties_list = Mock(return_value=[])
         session.add_local_manifest_path = Mock(return_value=mock_worker_manifest_props)
-        session.get_worker_manifest_properties = Mock(return_value=mock_worker_manifest_props)
-        session.add_manifest_path = Mock()
-        session.add_manifest_out_rel_dirs = Mock()
-        session.manifest_out_rel_dirs_by_source = {}
 
         # Mock asset sync methods
         mock_asset_sync.get_local_destination.return_value = str(session_dir)
