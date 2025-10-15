@@ -39,6 +39,7 @@ from e2e.utils import (
     submit_job_from_bundle,
     verify_output_dir_matches,
 )
+from deadline_test_fixtures import DeadlineWorkerConfiguration
 from e2e.s3_validation_utils import validate_s3_job_output_manifest
 
 
@@ -1935,11 +1936,23 @@ class TestJobSubmission:
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         session_worker: EC2InstanceWorker,
+        worker_config: DeadlineWorkerConfiguration,
         file_system: str,
     ) -> None:
         job_bundle_path: str = os.path.join(
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "linux_bundle"
         )
+        if worker_config.worker_env_var:
+            job_parameters: List[Dict[str, str]] = [
+                {
+                    "name": "AssetSync",
+                    "value": worker_config.worker_env_var.get(
+                        "ASSET_SYNC_JOB_USER_FEATURE", "False"
+                    ),
+                },
+            ]
+        else:
+            job_parameters = []
 
         job = submit_job_from_bundle(
             deadline_client=deadline_client,
@@ -1948,6 +1961,7 @@ class TestJobSubmission:
             bundle_path=job_bundle_path,
             job_attachments_file_system=file_system,
             max_retries_per_task=0,
+            job_parameters=job_parameters,
         )
 
         job.wait_until_complete(client=deadline_client)
@@ -1976,8 +1990,8 @@ class TestJobSubmission:
 
         # Verify the final output file exists and contains expected content
         verify_output_dir_matches(
-            reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/dep_data_flow/correct_output",
-            output_dir_path=output_root_path + "/data_dir",
+            reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/dep_data_flow/linux_bundle/correct_output",
+            output_dir_path=output_root_path,
         )
 
     @pytest.mark.skipif(
@@ -2027,8 +2041,8 @@ class TestJobSubmission:
 
         # Verify the final output file exists and contains expected content
         verify_output_dir_matches(
-            reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/dep_data_flow/correct_output",
-            output_dir_path=output_root_path + "/data_dir",
+            reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/dep_data_flow/windows_bundle/correct_output",
+            output_dir_path=output_root_path,
         )
 
     @pytest.mark.skip(reason="Queue role permissions are failing the test during E2E test runs")

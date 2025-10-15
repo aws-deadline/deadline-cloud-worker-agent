@@ -8,7 +8,7 @@ import os
 import sys
 import json
 
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
 from logging import LoggerAdapter
 from typing import Any, TYPE_CHECKING, Optional
 from dataclasses import asdict
@@ -227,15 +227,6 @@ class AttachmentDownloadAction(OpenjdAction):
                     outputRelativeDirectories=ja_manifest_properties.output_relative_directories,
                 )
                 manifest_properties_list.append(manifest_properties)
-                # process the defined outputRelativeDirectories and pass on to attachment upload
-                session.add_manifest_out_rel_dirs(
-                    source=ja_manifest_properties.root_path,
-                    out_rel_dirs=self._get_output_dirs(manifest_properties),
-                )
-
-            self._logger.debug(
-                f"Finished processing outputRelativeDirectories: {session.manifest_out_rel_dirs_by_source}",
-            )
 
         attachments = Attachments(
             manifests=manifest_properties_list,
@@ -318,9 +309,6 @@ class AttachmentDownloadAction(OpenjdAction):
             manifest_write_dir=str(session.working_directory),
             manifest_name_suffix="step" if self._step_details else "job",
         )
-        # Set the manifests by root mapping to session for attachment upload to determine output
-        for root_name, root_path in manifest_paths_by_root.items():
-            session.add_manifest_path(root=root_name, path=root_path)
 
         # Create WorkerManifestProperties list for enhanced worker agent processing
         # Populate the manifest properties data from sync job input step
@@ -387,27 +375,6 @@ class AttachmentDownloadAction(OpenjdAction):
                 },
                 log_task_banner=False,
             )
-
-    @staticmethod
-    def _get_output_dirs(
-        manifest_properties: ManifestProperties,
-    ) -> list[str]:
-        output_dirs: list[str] = []
-        source_path_format = manifest_properties.rootPathFormat
-        current_path_format = PathFormat.get_host_path_format()
-
-        for output_dir in manifest_properties.outputRelativeDirectories or []:
-            if source_path_format != current_path_format:
-                if source_path_format == PathFormat.WINDOWS:
-                    # Convert Windows path to fit the current platform format
-                    output_dir = str(Path(PureWindowsPath(output_dir)))
-                elif source_path_format == PathFormat.POSIX:
-                    # Convert Windows path to fit the current platform format
-                    output_dir = str(Path(PurePosixPath(output_dir)))
-
-            output_dirs.append(output_dir)
-
-        return output_dirs
 
     def _start_vfs(
         self,

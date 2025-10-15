@@ -9,6 +9,7 @@ import pytest
 from dataclasses import dataclass, field, InitVar
 from typing import Callable, Generator, Type
 from contextlib import contextmanager
+from typing import Dict
 
 from deadline_test_fixtures import (
     DeadlineWorker,
@@ -24,6 +25,7 @@ from deadline_test_fixtures import (
     Ec2Tag,
 )
 import pytest
+from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 
 LOG = logging.getLogger(__name__)
 
@@ -169,6 +171,10 @@ def worker_config(
     Returns:
         DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
     """
+    worker_env_var: Dict[str, str] = {
+        "ASSET_SYNC_JOB_USER_FEATURE": str(ASSET_SYNC_JOB_USER_FEATURE),
+    }
+
     return dataclasses.replace(
         worker_config,
         job_users=[
@@ -177,6 +183,7 @@ def worker_config(
             posix_env_override_job_user,
         ],
         windows_job_users=windows_job_users,
+        worker_env_var=worker_env_var,
     )
 
 

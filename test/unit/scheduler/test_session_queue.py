@@ -311,6 +311,7 @@ class TestSessionActionQueueDequeue:
                         actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
                         stepId="step-1",
                         taskId="task-1",
+                        startTime=1234567890.0,
                     ),
                 ),
                 AttachmentUploadAction(
@@ -318,6 +319,7 @@ class TestSessionActionQueueDequeue:
                     session_id="session-1234",
                     step_id="step-1",
                     task_id="task-1",
+                    start_time=1234567890.0,
                 ),
                 id="attachment upload action",
             ),
@@ -361,6 +363,7 @@ class TestSessionActionQueueDequeue:
             actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
             stepId="step-1",
             taskId="task-1",
+            startTime=1234567890.0,
         )
 
         # WHEN
