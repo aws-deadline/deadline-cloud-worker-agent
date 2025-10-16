@@ -1,0 +1,24 @@
+{
+ "manifests": [
+  {
+   "rootPath": "C:\\Users\\windows_bundle",
+   "rootPathFormat": "windows",
+   "inputManifestPath": "farm/step_input",
+   "inputManifestHash": "3830afe267952f6bd778ab729ae1e595",
+   "outputRelativeDirectories": [
+    "data_dir1",
+    "data_dir2"
+   ]
+  },
+  {
+   "rootPath": "C:\\Users2\\windows_bundle",
+   "rootPathFormat": "windows",
+   "inputManifestPath": "rootPathManifest/root_input",
+   "inputManifestHash": "4457600537648811920034017addc59c",
+   "outputRelativeDirectories": [
+    "files_out"
+   ]
+  }
+ ],
+ "fileSystem": "COPIED"
+}

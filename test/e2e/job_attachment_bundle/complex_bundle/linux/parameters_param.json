@@ -1,0 +1,17 @@
+{
+ "DataDir1": {
+  "path": "/tmp/storageprofiletest2/data_dir1"
+ },
+ "DataDir2": {
+  "path": "/tmp/storageprofiletest2/data_dir2"
+ },
+ "InputDir": {
+  "path": "/tmp/storageprofiletest2/input_dir"
+ },
+ "InputDir2ndRoot": {
+  "path": "/tmp/storageprofiletest/files"
+ },
+ "DataDir2ndRoot": {
+  "path": "/tmp/storageprofiletest/files_out"
+ }
+}

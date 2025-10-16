@@ -1,0 +1,25 @@
+{
+ "manifests": [
+  {
+   "rootPath": "/tmp/storageprofiletest2",
+   "rootPathFormat": "posix",
+   "inputManifestPath": "farm/step_input",
+   "inputManifestHash": "3830afe267952f6bd778ab729ae1e595",
+   "outputRelativeDirectories": [
+    "data_dir1",
+    "data_dir2"
+   ]
+  },
+  {
+   "fileSystemLocationName": "StorageProfileTest",
+   "rootPath": "/tmp/storageprofiletest",
+   "rootPathFormat": "posix",
+   "inputManifestPath": "rootPathManifest/root_input",
+   "inputManifestHash": "4457600537648811920034017addc59c",
+   "outputRelativeDirectories": [
+    "files_out"
+   ]
+  }
+ ],
+ "fileSystem": "COPIED"
+}

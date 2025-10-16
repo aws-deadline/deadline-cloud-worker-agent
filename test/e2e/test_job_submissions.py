@@ -38,6 +38,7 @@ from e2e.utils import (
     submit_custom_job,
     submit_job_from_bundle,
     verify_output_dir_matches,
+    submit_job_from_create_job_API,
 )
 from deadline_test_fixtures import DeadlineWorkerConfiguration
 from e2e.s3_validation_utils import validate_s3_job_output_manifest
@@ -3281,4 +3282,127 @@ with open(output_path, "w") as f:
         verify_output_dir_matches(
             reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/output_only_job/correct_output",
             output_dir_path=output_root_path + "/output",
+        )
+
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "windows",
+        reason="Linux specific job bundle to test create job API call",
+    )
+    def test_worker_create_job_API_call_linux(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
+    ) -> None:
+        """
+        Test job submission using the Create Job API with a complex job attachment bundle.
+
+        This test uses a "complex" bundle that contains various edge cases to thoroughly
+        test job attachment handling, including:
+        - Have more than one manifests and root path
+        - Have step-step dependency
+        - Have output
+        - Have storage profile
+        """
+        job_bundle_path: str = os.path.join(
+            os.path.dirname(__file__), "job_attachment_bundle", "complex_bundle", "linux"
+        )
+        os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
+
+        # Create Job API
+        job = submit_job_from_create_job_API(
+            deadline_client=deadline_client,
+            deadline_resources=deadline_resources,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            debug_snapshot_dir=job_bundle_path,
+            storage_profile=True,
+        )
+
+        job.wait_until_complete(client=deadline_client)
+        assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        # Validate S3 setup and manifest integrity
+        LOG.info(f"Validating S3 setup for job {job.id}")
+        validate_s3_job_output_manifest(
+            job=job,
+            deadline_client=deadline_client,
+        )
+        LOG.info("S3 validation completed successfully")
+
+        # Get job output path
+        output_root_path = tempfile.mkdtemp(dir=self.JOB_OUTPUT_PATH, prefix="linux_complex_job")
+        output_path: dict[str, list[str]] = wait_for_job_output(
+            job=job,
+            deadline_client=deadline_client,
+            deadline_resources=deadline_resources,
+            output_root_path=output_root_path,
+        )
+        LOG.info(f"output_path dict is: {output_path}")
+
+        # Verify the final output file exists and contains expected content
+        verify_output_dir_matches(
+            reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/complex_bundle/linux/correct_output",
+            output_dir_path=output_root_path,
+        )
+
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "linux",
+        reason="Windows specific job bundle to test create job API call",
+    )
+    def test_worker_create_job_API_call_windows(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
+    ) -> None:
+        """
+        Test job submission using the Create Job API with a complex job attachment bundle.
+
+        This test uses a "complex" bundle that contains various edge cases to thoroughly
+        test job attachment handling, including:
+        - Have more than one manifests and root path
+        - Have step-step dependency
+        - Have output
+        """
+        job_bundle_path: str = os.path.join(
+            os.path.dirname(__file__), "job_attachment_bundle", "complex_bundle", "windows"
+        )
+        os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
+
+        # Create Job API
+        job = submit_job_from_create_job_API(
+            deadline_client=deadline_client,
+            deadline_resources=deadline_resources,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            debug_snapshot_dir=job_bundle_path,
+            storage_profile=False,
+        )
+
+        job.wait_until_complete(client=deadline_client)
+        assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        # Validate S3 setup and manifest integrity
+        LOG.info(f"Validating S3 setup for job {job.id}")
+        validate_s3_job_output_manifest(
+            job=job,
+            deadline_client=deadline_client,
+        )
+        LOG.info("S3 validation completed successfully")
+
+        # Get job output path
+        output_root_path = tempfile.mkdtemp(dir=self.JOB_OUTPUT_PATH, prefix="windows_complex_job")
+        output_path: dict[str, list[str]] = wait_for_job_output(
+            job=job,
+            deadline_client=deadline_client,
+            deadline_resources=deadline_resources,
+            output_root_path=output_root_path,
+        )
+        LOG.info(f"output_path dict is: {output_path}")
+
+        # Verify the final output file exists and contains expected content
+        verify_output_dir_matches(
+            reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/complex_bundle/windows/correct_output",
+            output_dir_path=output_root_path,
         )

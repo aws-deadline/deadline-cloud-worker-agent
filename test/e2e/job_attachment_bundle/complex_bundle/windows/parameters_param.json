@@ -1,0 +1,17 @@
+{
+ "DataDir1": {
+  "path": "C:\\Users\\windows_bundle\\data_dir1"
+ },
+ "DataDir2": {
+  "path": "C:\\Users\\windows_bundle\\data_dir2"
+ },
+ "InputDir": {
+  "path": "C:\\Users\\windows_bundle\\input_dir"
+ },
+ "InputDir2ndRoot": {
+  "path": "C:\\Users2\\windows_bundle\\files"
+ },
+ "DataDir2ndRoot": {
+  "path": "C:\\Users2\\windows_bundle\\files_out"
+ }
+}

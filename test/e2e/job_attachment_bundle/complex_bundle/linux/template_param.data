@@ -1,0 +1,455 @@
+specificationVersion: 'jobtemplate-2023-09'
+name: '{{Param.JobName}}'
+description: |
+  This is a test job for complex job attachments setup
+parameterDefinitions:
+- name: JobName
+  type: STRING
+  default: Complex Manifest Test
+- name: DataDir1
+  type: PATH
+  objectType: DIRECTORY
+  dataFlow: INOUT
+  default: ./data_dir1
+  description: This directory is the first directory for both the input and output for all steps.
+- name: DataDir2
+  type: PATH
+  objectType: DIRECTORY
+  dataFlow: INOUT
+  default: ./data_dir2
+  description: This directory is the secondary directory for both the input and output for all steps.
+- name: InputDir
+  type: PATH
+  objectType: DIRECTORY
+  dataFlow: IN
+  default: ./input_dir
+  description: This directory is only an input for all the steps.
+- name: DataDir2ndRoot
+  type: PATH
+  objectType: DIRECTORY
+  dataFlow: INOUT
+  description: This directory is for 2nd rootPath.
+- name: InputDir2ndRoot
+  type: PATH
+  objectType: DIRECTORY
+  dataFlow: IN
+  description: This directory is only an input for all the steps of 2nd root.
+- name: Frames
+  type: STRING
+  default: "8-11"
+- name: AssetSync
+  type: STRING
+  default: "False"
+steps:
+- name: Step1
+  hostRequirements:
+    attributes:
+    - name: attr.worker.os.family
+      anyOf:
+      - linux
+  script:
+    actions:
+      onRun:
+        command: '{{Task.File.Run}}'
+    embeddedFiles:
+      - name: Run
+        runnable: true
+        type: TEXT
+        data: |
+          #!/bin/env bash
+
+          set -euo pipefail
+
+          # First directory
+          export STEP_DIR_1=Step1
+
+          echo "Running $STEP_DIR_1!"
+
+          # The three input job attachments directories should match the files
+          # defined in the job bundle.
+          echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
+          if [ "`ls {{Param.DataDir1}} | wc -l`" != "2" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir1}}
+            exit 1
+          fi
+          echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
+          if [ "`ls {{Param.DataDir2}} | wc -l`" != "1" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir2}}
+            exit 1
+          fi
+          echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
+          if [ "`ls {{Param.InputDir}} | wc -l`" != "2" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.InputDir}}
+            exit 1
+          fi
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir1}}
+          cp create_job_in.txt $STEP_DIR_1.out
+          echo "2. Processed in $STEP_DIR_1" >> $STEP_DIR_1.out
+
+          # Second directory
+          export STEP_DIR_2=Step2
+
+          echo "Running $STEP_DIR_2!"
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir2}}
+
+          if [ "$(echo '{{Param.AssetSync}}' | tr A-Z a-z)" = "true" ]; then
+            echo Scope down permission since Asset Sync as job user is set to {{Param.AssetSync}}
+            chmod 700 test
+          fi
+          cd test
+
+          cp create_job_in.txt $STEP_DIR_2.out
+          echo "2. Processed in $STEP_DIR_2" >> $STEP_DIR_2.out
+
+          # This file should not be visible in later steps
+          cd {{Param.InputDir}}
+          cp create_job_in.txt $STEP_DIR_2.out
+          echo "2. Processed in $STEP_DIR_2" >> $STEP_DIR_2.out
+          cat {{Session.PathMappingRulesFile}}
+
+          cd ..
+          ls -lR
+
+          echo Finished $STEP_DIR_1!
+- name: Step1-2
+  hostRequirements:
+    attributes:
+    - name: attr.worker.os.family
+      anyOf:
+      - linux
+  dependencies:
+  - dependsOn: Step1
+  parameterSpace:
+    taskParameterDefinitions:
+    - name: Frame
+      type: INT
+      range: "{{Param.Frames}}"
+  script:
+    actions:
+      onRun:
+        command: '{{Task.File.Run}}'
+    embeddedFiles:
+      - name: Run
+        runnable: true
+        type: TEXT
+        data: |
+          #!/bin/env bash
+
+          set -euo pipefail
+
+          # First directory
+          export STEP_DIR_1=Step1-2.{{Task.Param.Frame}}
+
+          echo "Running $STEP_DIR_1!"
+          echo "Default folder"
+          ls -lR
+          echo "pathmap folder"
+          ls -lR /tmp/storageprofiletest/dest
+
+          # DataDir1 should now include the output of Step1.
+          echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
+          # When running all the tasks of a step, the output is not cleared
+          # between each task, so outputs from other tasks may be included.
+          DATA_DIR_COUNT=`ls {{Param.DataDir1}} | wc -l`
+          if [ $DATA_DIR_COUNT -lt 3 ] || [ $DATA_DIR_COUNT -gt 6 ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir1}}
+            exit 1
+          fi
+
+          # DataDir2 should now include the output of Step2.
+          echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
+          # When running all the tasks of a step, the output is not cleared
+          # between each task, so outputs from other tasks may be included.
+          DATA_DIR_COUNT=`ls {{Param.DataDir2}}/test | wc -l`
+          if [ $DATA_DIR_COUNT -lt 3 ] || [ $DATA_DIR_COUNT -gt 6 ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir2}}
+            exit 1
+          fi
+
+          # InputDir should not include the output of Step1
+          echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
+          # When running all the tasks of a step, the input is not cleared
+          # between each task, so inputs created from other tasks may be included.
+          INPUT_DIR_COUNT=`ls {{Param.InputDir}} | wc -l`
+          if [ $INPUT_DIR_COUNT -lt 2 ] || [ $INPUT_DIR_COUNT -gt 5 ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.InputDir}}
+            exit 1
+          fi
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir1}}
+          cp Step1.out $STEP_DIR_1.out
+          echo "3.{{Task.Param.Frame}} Processed in $STEP_DIR_1" >> $STEP_DIR_1.out
+
+          cat {{Session.PathMappingRulesFile}}
+          ls -lR
+
+          # Second directory
+          export STEP_DIR_2=Step2-2.{{Task.Param.Frame}}
+
+          echo "Running $STEP_DIR_2!"
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir2}}/test
+          cp Step2.out $STEP_DIR_2.out
+          echo "3.{{Task.Param.Frame}} Processed in $STEP_DIR_2" >> $STEP_DIR_2.out
+
+          # This file should not be visible in later steps
+          cd {{Param.InputDir}}
+          cp create_job_in.txt $STEP_DIR_2.out
+          echo "2. Processed in $STEP_DIR_2" >> $STEP_DIR_2.out
+
+          cat {{Session.PathMappingRulesFile}}
+
+          ls -lR
+
+          echo Finished $STEP_DIR_1!
+- name: Step1-2-3
+  hostRequirements:
+    attributes:
+    - name: attr.worker.os.family
+      anyOf:
+      - linux
+  dependencies:
+  - dependsOn: Step1-2
+  script:
+    actions:
+      onRun:
+        command: '{{Task.File.Run}}'
+    embeddedFiles:
+      - name: Run
+        runnable: true
+        type: TEXT
+        data: |
+          #!/bin/env bash
+
+          set -euo pipefail
+
+          # First directory
+          export STEP_DIR_1=Step1-2-3
+
+          echo "Running $STEP_DIR_1!"
+
+          # DataDir1 should now include the output of every task in Step2, but not Step1.
+          echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
+          if [ "`ls {{Param.DataDir1}} | wc -l`" != "6" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir1}}
+            exit 1
+          fi
+
+          # DataDir2 should now include the output of every task in Step2, but not Step1.
+          echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
+          if [ "`ls {{Param.DataDir2}}/test | wc -l`" != "6" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir2}}/test
+            exit 1
+          fi
+
+          # InputDir should not include the output of Step1 or Step2
+          echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
+          if [ "`ls {{Param.InputDir}} | wc -l`" != "2" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.InputDir}}
+            exit 1
+          fi
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir1}}
+          cp Step1-2.8.out $STEP_DIR_1.out
+          cat Step1-2.9.out >> $STEP_DIR_1.out
+          cat Step1-2.10.out >> $STEP_DIR_1.out
+          cat Step1-2.11.out >> $STEP_DIR_1.out
+          echo "4. Processed in $STEP_DIR_1" >> $STEP_DIR_1.out
+
+          # Second directory
+          export STEP_DIR_2=Step2-2-3
+
+          echo "Running $STEP_DIR_2!"
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir2}}/test
+          cp Step2-2.8.out $STEP_DIR_2.out
+          cat Step2-2.9.out >> $STEP_DIR_2.out
+          cat Step2-2.10.out >> $STEP_DIR_2.out
+          cat Step2-2.11.out >> $STEP_DIR_2.out
+          echo "4. Processed in $STEP_DIR_2" >> $STEP_DIR_2.out
+
+          # This file should not be visible in later steps
+          cd {{Param.InputDir}}
+          cp create_job_in.txt $STEP_DIR_2.out
+          echo "2. Processed in $STEP_DIR_2" >> $STEP_DIR_2.out
+
+          echo Finished $STEP_DIR_1!
+- name: Step1-2-4
+  hostRequirements:
+    attributes:
+    - name: attr.worker.os.family
+      anyOf:
+      - linux
+  dependencies:
+  - dependsOn: Step1-2
+  script:
+    actions:
+      onRun:
+        command: '{{Task.File.Run}}'
+    embeddedFiles:
+      - name: Run
+        runnable: true
+        type: TEXT
+        data: |
+          #!/bin/env bash
+
+          set -euo pipefail
+
+          # First directory
+          export STEP_DIR_1=Step1-2-4
+
+          echo "Running $STEP_DIR_1!"
+
+          # DataDir1 should now include the output of every task in Step2, but not Step1.
+          echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
+          if [ "`ls {{Param.DataDir1}} | wc -l`" != "6" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir1}}
+            exit 1
+          fi
+
+          # DataDir2 should now include the output of every task in Step2, but not Step1.
+          echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
+          if [ "`ls {{Param.DataDir2}}/test | wc -l`" != "6" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir2}}/test
+            exit 1
+          fi
+
+          # InputDir should not include the output of Step1 or Step2
+          echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
+          if [ "`ls {{Param.InputDir}} | wc -l`" != "2" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.InputDir}}
+            exit 1
+          fi
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir1}}
+          cp Step1-2.8.out $STEP_DIR_1.out
+          cat Step1-2.9.out >> $STEP_DIR_1.out
+          cat Step1-2.10.out >> $STEP_DIR_1.out
+          cat Step1-2.11.out >> $STEP_DIR_1.out
+          echo "4. Processed in $STEP_DIR_1" >> $STEP_DIR_1.out
+
+          # Second directory
+          export STEP_DIR_2=Step2-2-4
+
+          echo "Running $STEP_DIR_2!"
+
+          # This file should be visible in later steps
+          cd {{Param.DataDir2}}/test
+          cp Step2-2.8.out $STEP_DIR_2.out
+          cat Step2-2.9.out >> $STEP_DIR_2.out
+          cat Step2-2.10.out >> $STEP_DIR_2.out
+          cat Step2-2.11.out >> $STEP_DIR_2.out
+          echo "4. Processed in $STEP_DIR_2" >> $STEP_DIR_2.out
+
+          # This file should not be visible in later steps
+          cd {{Param.InputDir}}
+          cp create_job_in.txt $STEP_DIR_2.out
+          echo "2. Processed in $STEP_DIR_2" >> $STEP_DIR_2.out
+
+          echo Finished $STEP_DIR_1!
+- name: Step1-2-34-5
+  hostRequirements:
+    attributes:
+    - name: attr.worker.os.family
+      anyOf:
+      - linux
+  dependencies:
+  - dependsOn: Step1-2-3
+  - dependsOn: Step1-2-4
+  script:
+    actions:
+      onRun:
+        command: '{{Task.File.Fun}}'
+    embeddedFiles:
+      - name: Fun
+        runnable: true
+        type: TEXT
+        data: |
+          #!/bin/env bash
+
+          set -euo pipefail
+
+          # First directory
+          export STEP_DIR_1=Step1-2-34-5
+
+          echo "Running $STEP_DIR_1!"
+
+          # DataDir1 should now include the output of Steps 3 and 4, but not Steps 1 or 2.
+          echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
+          if [ "`ls {{Param.DataDir1}} | wc -l`" != "4" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir1}}
+            exit 1
+          fi
+
+          # DataDir2 should now include the output of Steps 3 and 4, but not Steps 1 or 2.
+          echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
+          if [ "`ls {{Param.DataDir2}}/test | wc -l`" != "4" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.DataDir2}}
+            exit 1
+          fi
+
+          # InputDir should not include the output of any dependency steps
+          echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
+          if [ "`ls {{Param.InputDir}} | wc -l`" != "2" ]; then
+            echo Starting dir contents is incorrect:
+            ls {{Param.InputDir}}
+            exit 1
+          fi
+
+          # This file should be visible when downloading the output job attachments
+          cd {{Param.DataDir1}}
+          cp Step1-2-3.out $STEP_DIR_1.out
+          echo " --- merge --- " >> $STEP_DIR_1.out
+          cat Step1-2-4.out >> $STEP_DIR_1.out
+          echo "5. Processed in $STEP_DIR_1" >> $STEP_DIR_1.out
+
+          # Second directory
+          export STEP_DIR_2=Step2-2-34-5
+
+          echo "Running $STEP_DIR_2!"
+
+          # This file should be visible when downloading the output job attachments
+          cd {{Param.DataDir2}}/test
+          cp Step2-2-3.out $STEP_DIR_2.out
+          echo " --- merge --- " >> $STEP_DIR_2.out
+          cat Step2-2-4.out >> $STEP_DIR_2.out
+          echo "5. Processed in $STEP_DIR_2" >> $STEP_DIR_2.out
+
+          # This file should not be visible when downloading the output job attachments
+          cd {{Param.InputDir}}
+          cp create_job_in.txt $STEP_DIR_2.out
+          echo "2. Processed in $STEP_DIR_2" >> $STEP_DIR_2.out
+
+          echo "START MODIFING ROOT 2"
+          mkdir -p {{Param.DataDir2ndRoot}}
+          echo "Session.HasPathMappingRules = {{ Session.HasPathMappingRules }}"
+          echo "Path Mapping Rules File Content (Pretty Print)"
+          jq '.' "{{ Session.PathMappingRulesFile }}"
+          echo -n $(cat {{Param.InputDir2ndRoot}}/test_input_file)Hello > {{Param.DataDir2ndRoot}}/output_file
+
+          ls -lR /tmp/storageprofiletest/dest
+
+          echo Finished $STEP_DIR_1!

@@ -7,6 +7,7 @@ import yaml
 
 from glob import glob
 from typing import Any, Dict, Optional, List
+from pathlib import Path
 from configparser import ConfigParser
 from deadline.job_attachments._aws.deadline import get_queue
 from deadline.job_attachments import download
@@ -20,6 +21,7 @@ from deadline_test_fixtures import (
 from deadline.client.api import create_job_from_job_bundle  # type: ignore
 import backoff
 from e2e.conftest import DeadlineResources
+from deadline.job_attachments._aws.aws_clients import get_s3_client
 
 LOG = logging.getLogger(__name__)
 
@@ -52,14 +54,18 @@ def wait_for_job_output(
 
     # Download file and place it into the output_paths_by_root
     if output_root_path is not None:
-        if len(output_paths_by_root) != 1:
-            raise NotImplementedError(
-                f"Currently do not support more than one root paths, provided {output_paths_by_root.keys()}"
+        if len(output_paths_by_root) == 1:
+            # Single root path
+            job_output_downloader.set_root_path(
+                list(output_paths_by_root.keys())[0], os.path.abspath(output_root_path)
             )
-
-        job_output_downloader.set_root_path(
-            list(output_paths_by_root.keys())[0], os.path.abspath(output_root_path)
-        )
+        else:
+            # Multiple root paths - process each one with a subdirectory
+            for i, root_path in enumerate(sorted(output_paths_by_root.keys())):
+                # Create a subdirectory for each root path to avoid conflicts
+                root_output_path = os.path.join(output_root_path, f"root_{i}")
+                os.makedirs(root_output_path, exist_ok=True)
+                job_output_downloader.set_root_path(root_path, os.path.abspath(root_output_path))
 
     job_output_downloader.download_job_output()
     return output_paths_by_root
@@ -209,7 +215,6 @@ def verify_output_dir_matches(
                 open_file.write(content)
 
     # len check confirms there are no extra files in output
-
     assert len(reference_files) == len(output_files)
 
     # match: list of equivalent files, mismatch: list of files with different content,
@@ -379,3 +384,116 @@ $content | Select-String -Pattern "^# shutdown_on_stop =|^shutdown_on_stop ="
         return cmd_result.stdout.strip()
     else:
         raise Exception(f"Unsupported operating system: {os.environ['OPERATING_SYSTEM']}")
+
+
+def submit_job_from_create_job_API(
+    deadline_client: DeadlineClient,
+    deadline_resources: DeadlineResources,
+    farm: Farm,
+    queue: Queue,
+    debug_snapshot_dir: str,
+    storage_profile: bool = False,
+) -> Job:
+    """Submit a job using the Deadline create job API.
+
+    Args:
+        deadline_client: The Deadline client instance for making API calls
+        deadline_resources: Deadline resources containing configuration details
+        farm: The farm where the job will be submitted
+        queue: The queue where the job will be submitted
+        debug_snapshot_dir: Directory path containing job data, manifests, and parameter files
+        storage_profile: Whether to enable storage profile for the job (defaults to False)
+
+    Returns:
+        Job: The created job object with details from the submission
+    """
+    debug_snapshot_dir = os.path.normpath(debug_snapshot_dir)
+    LOG.info(f"Submitting bundle {debug_snapshot_dir} to farm {farm.id} and queue {queue.id}")
+
+    queue_details = get_queue(farm_id=farm.id, queue_id=queue.id)
+
+    if not queue_details.jobAttachmentSettings:
+        raise ValueError("Queue does not have job attachment settings configured")
+
+    s3_bucket = queue_details.jobAttachmentSettings.s3BucketName
+    rootPrefix = queue_details.jobAttachmentSettings.rootPrefix
+
+    s3_client = get_s3_client()
+
+    upload_directory_to_s3(
+        s3_client=s3_client,
+        local_dir=f"{debug_snapshot_dir}/Data",
+        bucket=s3_bucket,
+        s3_prefix=rootPrefix,
+    )
+    upload_directory_to_s3(
+        s3_client=s3_client,
+        local_dir=f"{debug_snapshot_dir}/Manifests",
+        bucket=s3_bucket,
+        s3_prefix=rootPrefix,
+    )
+
+    # Load template file
+    with open(f"{debug_snapshot_dir}/template_param.data", "r") as f:
+        template_content = f.read()
+
+    # Load attachments file
+    with open(f"{debug_snapshot_dir}/attachments_param.json", "r") as f:
+        attachments = json.load(f)
+
+    # Load parameters file
+    with open(f"{debug_snapshot_dir}/parameters_param.json", "r") as f:
+        parameters = json.load(f)
+
+    create_job_kwargs = {
+        "farmId": farm.id,
+        "queueId": queue.id,
+        "template": template_content,
+        "templateType": "YAML",
+        "priority": 50,
+        "attachments": attachments,
+        "parameters": parameters,
+        "maxRetriesPerTask": 0,
+    }
+
+    if storage_profile:
+        create_job_kwargs["storageProfileId"] = deadline_resources.queue_a_job_storage_profile_id
+
+    response = deadline_client.create_job(**create_job_kwargs)
+    assert response["jobId"] is not None
+    job_id = response["jobId"]
+
+    LOG.info(f"Bundle successfully submitted {job_id} to farm {farm.id} {queue.id}")
+
+    job_details = Job.get_job_details(
+        client=deadline_client,
+        farm=farm,
+        queue=queue,
+        job_id=job_id,
+    )
+    LOG.info(f"Job details: {job_details}")
+    LOG.info(f"Job template: {template_content}")
+
+    return Job(
+        farm=farm,
+        queue=queue,
+        template=yaml.safe_load(template_content),
+        **job_details,
+    )
+
+
+def upload_directory_to_s3(s3_client: Any, local_dir: str, bucket: str, s3_prefix: str) -> None:
+    """Upload a directory recursively to S3"""
+    local_path = Path(local_dir)
+    if not local_path.exists():
+        LOG.info(f"Warning: {local_dir} does not exist, skipping upload")
+        return
+
+    for file_path in local_path.rglob("*"):
+        if file_path.is_file():
+            # Calculate relative path for S3 key, including the top folder name
+            relative_path = file_path.relative_to(local_path.parent)
+            s3_key = f"{s3_prefix}/{relative_path}".replace("\\", "/")
+
+            LOG.info(f"Uploading {file_path} to s3://{bucket}/{s3_key}")
+            s3_client.upload_file(str(file_path), bucket, s3_key)
