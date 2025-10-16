@@ -3,9 +3,18 @@
 import json
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, mock_open
-from typing import Optional
+from unittest.mock import Mock, call, patch, mock_open
+from typing import Optional, Generator
 
+import deadline_worker_agent.sessions.actions.scripts.attachment_upload as attachment_upload_mod
+from deadline.job_attachments.asset_manifests.decode import decode_manifest
+from deadline.job_attachments.progress_tracker import ProgressStatus, ProgressTracker
+from deadline.job_attachments.models import JobAttachmentS3Settings
+from deadline_worker_agent.sessions.attachment_models import (
+    WorkerManifestProperties,
+    ManifestProperties,
+    PathFormat,
+)
 from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
     parse_args,
     parse_worker_manifest_properties,
@@ -14,7 +23,32 @@ from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
     upload_output_assets,
     main,
 )
-import deadline_worker_agent.sessions.actions.scripts.attachment_upload as attachment_upload_mod
+
+
+@pytest.fixture(autouse=True)
+def mock_record_attachment_upload_fail_telemetry_event() -> Generator[Mock, None, None]:
+    with patch.object(attachment_upload_mod, "record_attachment_upload_fail_telemetry_event") as m:
+        yield m
+
+
+@pytest.fixture(autouse=True)
+def mock_record_attachment_upload_telemetry_event() -> Generator[Mock, None, None]:
+    with patch.object(attachment_upload_mod, "record_attachment_upload_telemetry_event") as m:
+        yield m
+
+
+@pytest.fixture(autouse=True)
+def mock_record_attachment_upload_latencies_telemetry_event() -> Generator[Mock, None, None]:
+    with patch.object(
+        attachment_upload_mod, "record_attachment_upload_latencies_telemetry_event"
+    ) as m:
+        yield m
+
+
+@pytest.fixture(autouse=True)
+def mock_record_success_fail_telemetry_event() -> Generator[Mock, None, None]:
+    with patch.object(attachment_upload_mod, "record_success_fail_telemetry_event") as m:
+        yield m
 
 
 class TestAttachmentUpload:
@@ -178,52 +212,155 @@ class TestAttachmentUpload:
             "DEADLINE_SESSIONACTION_START_TIME": "1234567890.0",
         },
     )
-    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.config_file")
-    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.S3AssetUploader")
-    @patch(
-        "deadline_worker_agent.sessions.actions.scripts.attachment_upload.JobAttachmentS3Settings"
-    )
-    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.decode_manifest")
-    @patch("builtins.open", new_callable=mock_open, read_data='{"files": []}')
+    @patch.object(attachment_upload_mod, "ProgressTracker")
+    @patch.object(attachment_upload_mod.config_file, "get_cache_directory")
+    @patch.object(attachment_upload_mod, "S3AssetUploader")
     def test_upload_output_assets(
-        self, mock_file, mock_decode, mock_s3_settings, mock_uploader_class, mock_config_file
+        self,
+        mock_uploader_class: Mock,
+        mock_get_cache_directory: Mock,
+        mock_progress_tracker: Mock,
+        mock_record_attachment_upload_telemetry_event: Mock,
     ):
         # GIVEN
-        mock_worker_props = Mock()
-        mock_worker_props.root_path = "/source/path"
-        mock_worker_props.local_root_path = "/local/path"
-        mock_worker_props.get_hashed_source_path.return_value = "hash123"
-        mock_worker_props.as_output_metadata.return_value = {"Metadata": {"key": "value"}}
+        worker_props = [
+            WorkerManifestProperties(
+                manifest_properties=ManifestProperties(
+                    rootPath="/root/path/one",
+                    rootPathFormat=PathFormat.POSIX,
+                ),
+                local_root_path="/local/path/one",
+            ),
+            WorkerManifestProperties(
+                manifest_properties=ManifestProperties(
+                    rootPath="/root/path/two",
+                    rootPathFormat=PathFormat.POSIX,
+                ),
+                local_root_path="/local/path/two",
+            ),
+        ]
 
-        mock_uploader = Mock()
-        mock_uploader_class.return_value = mock_uploader
-        mock_uploader.upload_assets.return_value = ("manifest_key", "hash_data")
+        mock_upload_assets: Mock = mock_uploader_class.return_value.upload_assets
+        mock_upload_assets.return_value = ("manifest_key", "hash_data")
 
-        mock_s3_settings_instance = Mock()
-        mock_s3_settings.from_s3_root_uri.return_value = mock_s3_settings_instance
-        mock_s3_settings_instance.to_s3_root_uri.return_value = "s3://bucket/path"
-        mock_s3_settings.partial_session_action_manifest_prefix.return_value = "session/path"
+        s3_settings = JobAttachmentS3Settings(
+            s3BucketName="bucket",
+            rootPrefix="path",
+        )
 
-        mock_config_file.get_cache_directory.return_value = "/cache/dir"
-        mock_decode.return_value = {"files": []}
+        manifest_one = {
+            "hashAlg": "xxh128",
+            "manifestVersion": "2023-03-03",
+            "paths": [
+                {
+                    "path": "one.txt",
+                    "hash": "abc123",
+                    "size": 123,
+                    "mtime": 456,
+                },
+            ],
+            "totalSize": 123,
+        }
+        manifest_two = {
+            "hashAlg": "xxh128",
+            "manifestVersion": "2023-03-03",
+            "paths": [
+                {
+                    "path": "two.txt",
+                    "hash": "xyz987",
+                    "size": 987,
+                    "mtime": 654,
+                },
+                {
+                    "path": "three.txt",
+                    "hash": "testhash",
+                    "size": 123,
+                    "mtime": 789,
+                },
+            ],
+            "totalSize": 123 + 987,
+        }
 
-        root_to_manifest = {"/source/path": "/output/manifest.json"}
+        # Since we're mocking the actual upload the progress tracker doesn't get any updates
+        # Prepopulate the tracker with expected values and make sure it gets recorded
+        expected_total_bytes = 123 + 123 + 987
+        expected_total_files = 1 + 2
+        progress_tracker_stub = ProgressTracker(
+            status=ProgressStatus.NONE,
+            total_files=expected_total_files,
+            total_bytes=expected_total_bytes,
+        )
+        progress_tracker_stub.processed_bytes = expected_total_bytes
+        progress_tracker_stub.processed_files = expected_total_files
+        mock_progress_tracker.return_value = progress_tracker_stub
 
-        # WHEN
-        result = upload_output_assets("s3://bucket/path", [mock_worker_props], root_to_manifest)
+        with patch.object(
+            attachment_upload_mod,
+            "open",
+            side_effect=[
+                mock_open(read_data=json.dumps(manifest_one)).return_value,
+                mock_open(read_data=json.dumps(manifest_two)).return_value,
+            ],
+        ):
+            # WHEN
+            result = upload_output_assets(
+                s3_uri=s3_settings.to_s3_root_uri(),
+                worker_manifest_properties=worker_props,
+                root_path_to_output_manifest={
+                    worker_props[0].root_path: "/output1/manifest.json",
+                    worker_props[1].root_path: "/output2/manifest.json",
+                },
+            )
 
         # THEN
-        assert len(result) == 1
-        assert result[0].source_path == "/source/path"
-        mock_uploader.upload_assets.assert_called_once_with(
-            job_attachment_settings=mock_s3_settings_instance,
-            manifest={"files": []},
-            partial_manifest_prefix="session/path",
-            manifest_file_name="hash123_output",
-            manifest_metadata={"Metadata": {"key": "value"}},
-            source_root=Path("/source/path"),
-            asset_root=Path("/local/path"),
-            s3_check_cache_dir="/cache/dir",
+        assert len(result) == 2
+        assert result[0].source_path == worker_props[0].root_path
+        assert result[1].source_path == worker_props[1].root_path
+
+        expected_partial_manifest_prefix = (
+            JobAttachmentS3Settings.partial_session_action_manifest_prefix(
+                farm_id="farm-123",
+                queue_id="queue-456",
+                job_id="job-789",
+                step_id="step-abc",
+                task_id="task-def",
+                session_action_id="action-ghi",
+                time=1234567890.0,
+            )
+        )
+        mock_upload_assets.assert_has_calls(
+            calls=[
+                call(
+                    job_attachment_settings=s3_settings,
+                    manifest=decode_manifest(json.dumps(manifest_one)),
+                    partial_manifest_prefix=expected_partial_manifest_prefix,
+                    manifest_file_name=f"{worker_props[0].get_hashed_source_path()}_output",
+                    manifest_metadata=worker_props[0].as_output_metadata(),
+                    source_root=Path(worker_props[0].root_path),
+                    asset_root=Path(worker_props[0].local_root_path),
+                    s3_check_cache_dir=mock_get_cache_directory.return_value,
+                    progress_tracker=progress_tracker_stub,
+                ),
+                call(
+                    job_attachment_settings=s3_settings,
+                    manifest=decode_manifest(json.dumps(manifest_two)),
+                    partial_manifest_prefix=expected_partial_manifest_prefix,
+                    manifest_file_name=f"{worker_props[1].get_hashed_source_path()}_output",
+                    manifest_metadata=worker_props[1].as_output_metadata(),
+                    source_root=Path(worker_props[1].root_path),
+                    asset_root=Path(worker_props[1].local_root_path),
+                    s3_check_cache_dir=mock_get_cache_directory.return_value,
+                    progress_tracker=progress_tracker_stub,
+                ),
+            ],
+        )
+
+        # Verify telemetry
+        mock_record_attachment_upload_telemetry_event.assert_called_once_with(
+            queue_id="queue-unknown",
+            upload_summary=progress_tracker_stub.get_summary_statistics(),
+            manifest_total_bytes=expected_total_bytes,
+            manifest_total_files=expected_total_files,
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.upload_output_assets")

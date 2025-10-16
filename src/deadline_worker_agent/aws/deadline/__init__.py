@@ -906,6 +906,27 @@ def record_attachment_download_latencies_telemetry_event(
     )
 
 
+def record_attachment_upload_telemetry_event(
+    queue_id: str,
+    upload_summary: SummaryStatistics,
+    manifest_total_files: int,
+    manifest_total_bytes: int,
+) -> None:
+    """Calls the telemetry client to record an event capturing the attachment_upload summary."""
+    details = {
+        "queue_id": queue_id,
+        "upload_summary": asdict(upload_summary),
+        "manifest_summary": {
+            "total_files": manifest_total_files,
+            "total_bytes": manifest_total_bytes,
+        },
+    }
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.attachment_upload_summary",
+        event_details=details,
+    )
+
+
 def record_attachment_upload_fail_telemetry_event(
     queue_id: str,
     failure_reason: str,

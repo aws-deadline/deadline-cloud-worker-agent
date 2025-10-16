@@ -3,9 +3,37 @@
 import os
 import pytest
 from unittest.mock import patch, MagicMock
+from typing import Generator
 
+import deadline_worker_agent.sessions.actions.scripts.attachment_upload as attachment_upload_mod
 from deadline_worker_agent.sessions.actions.scripts.attachment_upload import upload_output_assets
 from deadline_worker_agent.sessions.attachment_models import WorkerManifestProperties
+
+
+@pytest.fixture(autouse=True)
+def mock_record_attachment_upload_fail_telemetry_event() -> Generator[MagicMock, None, None]:
+    with patch.object(attachment_upload_mod, "record_attachment_upload_fail_telemetry_event") as m:
+        yield m
+
+
+@pytest.fixture(autouse=True)
+def mock_record_attachment_upload_telemetry_event() -> Generator[MagicMock, None, None]:
+    with patch.object(attachment_upload_mod, "record_attachment_upload_telemetry_event") as m:
+        yield m
+
+
+@pytest.fixture(autouse=True)
+def mock_record_attachment_upload_latencies_telemetry_event() -> Generator[MagicMock, None, None]:
+    with patch.object(
+        attachment_upload_mod, "record_attachment_upload_latencies_telemetry_event"
+    ) as m:
+        yield m
+
+
+@pytest.fixture(autouse=True)
+def mock_record_success_fail_telemetry_event() -> Generator[MagicMock, None, None]:
+    with patch.object(attachment_upload_mod, "record_success_fail_telemetry_event") as m:
+        yield m
 
 
 class TestAttachmentUploadPathFormat:
@@ -65,7 +93,7 @@ class TestAttachmentUploadPathFormat:
         mock_uploader_class.return_value = mock_uploader
         mock_uploader.upload_assets.return_value = ("key", "data")
 
-        mock_decode_manifest.return_value = {}
+        mock_decode_manifest.return_value = MagicMock()
         mock_open.return_value.__enter__.return_value.read.return_value = "{}"
 
         with patch.dict(os.environ, mock_env_vars):
@@ -109,7 +137,7 @@ class TestAttachmentUploadPathFormat:
         mock_uploader_class.return_value = mock_uploader
         mock_uploader.upload_assets.return_value = ("key", "data")
 
-        mock_decode_manifest.return_value = {}
+        mock_decode_manifest.return_value = MagicMock()
         mock_open.return_value.__enter__.return_value.read.return_value = "{}"
 
         with patch.dict(os.environ, mock_env_vars):
@@ -157,7 +185,7 @@ class TestAttachmentUploadPathFormat:
         mock_uploader_class.return_value = mock_uploader
         mock_uploader.upload_assets.return_value = ("key", "data")
 
-        mock_decode_manifest.return_value = {}
+        mock_decode_manifest.return_value = MagicMock()
         mock_open.return_value.__enter__.return_value.read.return_value = "{}"
 
         with patch.dict(os.environ, mock_env_vars):
@@ -200,7 +228,7 @@ class TestAttachmentUploadPathFormat:
         mock_uploader_class.return_value = mock_uploader
         mock_uploader.upload_assets.return_value = ("key", "data")
 
-        mock_decode_manifest.return_value = {}
+        mock_decode_manifest.return_value = MagicMock()
         mock_open.return_value.__enter__.return_value.read.return_value = "{}"
 
         with patch.dict(os.environ, mock_env_vars):
