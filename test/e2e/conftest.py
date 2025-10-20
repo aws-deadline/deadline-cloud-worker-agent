@@ -147,6 +147,12 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
 
 
 @pytest.fixture(scope="session")
+def test_runner_identity() -> dict[str, str]:
+    sts_client = boto3.client("sts")
+    return sts_client.get_caller_identity()
+
+
+@pytest.fixture(scope="session")
 def worker_config(
     posix_job_user: PosixSessionUser,
     posix_env_override_job_user: PosixSessionUser,

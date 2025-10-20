@@ -3406,3 +3406,156 @@ with open(output_path, "w") as f:
             reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/complex_bundle/windows/correct_output",
             output_dir_path=output_root_path,
         )
+
+    def test_job_attachments_no_output_relative_directories(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        session_worker: EC2InstanceWorker,
+        test_runner_identity: dict[str, str],
+    ) -> None:
+        """
+        Tests that a job created with multiple manifests that have the same rootPath and both manifests have a file with the same path
+        results in the file from the second manifest taking precedence over the first manifest
+        """
+        # Get S3 settings from queue using boto3 directly
+        queue_info = deadline_client._real_client.get_queue(
+            farmId=deadline_resources.farm.id, queueId=deadline_resources.queue_a.id
+        )
+        s3_bucket = queue_info["jobAttachmentSettings"]["s3BucketName"]
+        s3_prefix = queue_info["jobAttachmentSettings"]["rootPrefix"]
+
+        # Create test files and calculate hashes
+        file1_content = str(time.time())
+        from xxhash import xxh3_128
+
+        file1_hash = xxh3_128(file1_content).hexdigest()
+
+        # Upload asset files to S3
+        s3 = boto3.client("s3")
+        s3.put_object(
+            Bucket=s3_bucket,
+            Key=f"{s3_prefix}/Data/{file1_hash}",
+            Body=file1_content,
+            ExpectedBucketOwner=test_runner_identity["Account"],
+        )
+
+        # Create manifests with collision (same path, different hashes)
+        manifest = {
+            "hashAlg": "xxh128",
+            "manifestVersion": "2023-03-03",
+            "paths": [
+                {
+                    "hash": file1_hash,
+                    "mtime": 1679079744833848,
+                    "path": "file.txt",
+                    "size": len(file1_content),
+                },
+            ],
+            "totalSize": len(file1_content),
+        }
+
+        # Upload manifests
+        s3.put_object(
+            Bucket=s3_bucket,
+            Key=f"{s3_prefix}/Manifests/manifest1hash",
+            Body=json.dumps(manifest),
+            ExpectedBucketOwner=test_runner_identity["Account"],
+        )
+
+        # Create and submit job using boto3 directly
+        template = {
+            "specificationVersion": "jobtemplate-2023-09",
+            "name": f"empty-outputRelativeDirectories-test-{os.environ['OPERATING_SYSTEM']}",
+            "parameterDefinitions": [
+                {
+                    "name": "AssetPath",
+                    "type": "PATH",
+                    "objectType": "DIRECTORY",
+                    "dataFlow": "INOUT",
+                    "description": "Path to input assets",
+                }
+            ],
+            "steps": [
+                {
+                    "name": "step1",
+                    "script": {
+                        "actions": {
+                            "onRun": (
+                                {
+                                    "command": "/bin/bash",
+                                    "args": [
+                                        "-c",
+                                        "; ".join(
+                                            [
+                                                "ls -lR",
+                                                "echo $(cat {{Param.AssetPath}}/file.txt)",
+                                                "echo 'Modifying existing file' >> {{Param.AssetPath}}/file.txt",
+                                                "echo $(cat {{Param.AssetPath}}/file.txt)",
+                                                "echo 'Create a new file' > {{Param.AssetPath}}/newfile.txt",
+                                                "ls -lR",
+                                                "echo {{Session.PathMappingRulesFile}}",
+                                                "cat {{Session.PathMappingRulesFile}}",
+                                            ]
+                                        ),
+                                    ],
+                                }
+                                if os.environ["OPERATING_SYSTEM"] == "linux"
+                                else {
+                                    "command": "cmd",
+                                    "args": [
+                                        "/c",
+                                        (
+                                            "dir /s & "
+                                            "type {{Param.AssetPath}}\\file.txt & "
+                                            "echo Modifying existing file >> {{Param.AssetPath}}\\file.txt & "
+                                            "type {{Param.AssetPath}}\\file.txt & "
+                                            "echo Create a new file > {{Param.AssetPath}}\\newfile.txt & "
+                                            "dir /s & "
+                                            "echo {{Session.PathMappingRulesFile}} & "
+                                            "type {{Session.PathMappingRulesFile}}"
+                                        ),
+                                    ],
+                                }
+                            ),
+                        }
+                    },
+                }
+            ],
+        }
+        attachments = {
+            "manifests": [
+                {
+                    # no outputRelativeDirectories
+                    "rootPath": "/test/assets",
+                    "rootPathFormat": "posix",
+                    "inputManifestPath": "manifest1hash",
+                    "inputManifestHash": "manifest1hash",
+                },
+            ]
+        }
+
+        job = Job.submit(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            template=template,
+            priority=50,
+            attachments=attachments,
+            parameters={
+                "AssetPath": {"path": "/test/assets"},
+            },
+        )
+        job.wait_until_complete(client=deadline_client)
+        assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        output_root_path = tempfile.mkdtemp(
+            dir=self.JOB_OUTPUT_PATH, prefix="no_output_relative_directories_empty_output"
+        )
+        output_path: dict[str, list[str]] = wait_for_job_output(
+            job=job,
+            deadline_client=deadline_client,
+            deadline_resources=deadline_resources,
+            output_root_path=output_root_path,
+        )
+        assert len(output_path) == 0
