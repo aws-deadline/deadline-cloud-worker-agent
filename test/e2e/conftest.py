@@ -43,6 +43,9 @@ class DeadlineResources:
     scaling_queue: Queue = field(init=False)
     scaling_fleet: Fleet = field(init=False)
     queue_a_job_storage_profile_id: str = field(init=False)
+    windows_job_storage_profile_id: str
+    fleet_storage_profile_id: str
+    windows_fleet_storage_profile_id: str
 
     farm_id: InitVar[str]
     queue_a_id: InitVar[str]
@@ -99,7 +102,10 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         FLEET_ID: ID of a non scaling Deadline fleet to use for tests.
         SCALING_QUEUE_ID: ID of the Deadline scaling queue to use.
         SCALING_FLEET_ID: ID of the Deadline scaling fleet to use.
-        JOB_STORAGE_PROFILE_ID: ID of the Deadline storage profile to use
+        JOB_STORAGE_PROFILE_ID: ID of the Deadline storage profile to use for Linux jobs
+        WINDOWS_JOB_STORAGE_PROFILE_ID: ID of the Deadline storage profile to use for Windows jobs
+        FLEET_STORAGE_PROFILE_ID: ID of the Deadline storage profile to use for the Linux fleet
+        WINDOWS_FLEET_STORAGE_PROFILE_ID: ID of the Deadline storage profile to use for the Windows fleet
         TEST_CATEGORY: The type of test that's being run. Will usually be one of dev, <OS>Mainline, or <OS>Release
 
     Returns:
@@ -115,6 +121,9 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
     scaling_queue_id = os.environ["SCALING_QUEUE_ID"]
     scaling_fleet_id = os.environ["SCALING_FLEET_ID"]
     job_storage_profile_id = os.environ["JOB_STORAGE_PROFILE_ID"]
+    windows_job_storage_profile_id = os.environ["WINDOWS_JOB_STORAGE_PROFILE_ID"]
+    fleet_storage_profile_id = os.environ["FLEET_STORAGE_PROFILE_ID"]
+    windows_fleet_storage_profile_id = os.environ["WINDOWS_FLEET_STORAGE_PROFILE_ID"]
     test_category = os.environ.get("TEST_CATEGORY", "dev")
 
     LOG.info(
@@ -123,8 +132,11 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         f"Scaling Queue ID: {scaling_queue_id}, "
         f"Queue A ID: {queue_a_id}, "
         f"Queue A Storage Profile ID: {job_storage_profile_id}, "
+        f"Queue A Windows Storage Profile ID: {windows_job_storage_profile_id}, "
         f"Queue B ID: {queue_b_id}, "
         f"Fleet ID: {fleet_id}, "
+        f"Fleet Storage Profile ID: {fleet_storage_profile_id}, "
+        f"Fleet Windows Storage Profile ID: {windows_fleet_storage_profile_id}, "
         f"Jobs Run As Agent User Queue ID: {jobs_run_as_agent_user_queue_id}, "
         f"Test Type: {test_category}, "
     )
@@ -143,6 +155,9 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
         scaling_queue_id=scaling_queue_id,
         scaling_fleet_id=scaling_fleet_id,
         job_storage_profile_id=job_storage_profile_id,
+        windows_job_storage_profile_id=windows_job_storage_profile_id,
+        fleet_storage_profile_id=fleet_storage_profile_id,
+        windows_fleet_storage_profile_id=windows_fleet_storage_profile_id,
     )
 
 

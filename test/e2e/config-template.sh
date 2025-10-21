@@ -95,6 +95,11 @@ export SCALING_QUEUE_ID
 # Required - The ID of the fleets to use
 export FLEET_ID
 export SCALING_FLEET_ID
+# Required - The ID of the storage profiles to use
+export JOB_STORAGE_PROFILE_ID
+export WINDOWS_JOB_STORAGE_PROFILE_ID
+export FLEET_STORAGE_PROFILE_ID
+export WINDOWS_FLEET_STORAGE_PROFILE_ID
 # Optional - The ID of the KMS key association with your farm
 # If you use this option, then you must BYO_BOOTSTRAP because the default IAM role created for
 # the Worker will not have sufficient permissions to access this key

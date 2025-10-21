@@ -81,4 +81,7 @@ export FLEET_ID=$(echo "${STACK_OUTPUTS}" | jq -r ".${OS}ManualFleetX86Id")
 export SCALING_QUEUE_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.ScalingQueueId')
 export SCALING_FLEET_ID=$(echo "${STACK_OUTPUTS}" | jq -r ".${OS}AutoFleetX86Id")
 export JOB_STORAGE_PROFILE_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.LinuxJobStorageProfileId')
+export WINDOWS_JOB_STORAGE_PROFILE_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.WindowsJobStorageProfileId')
+export FLEET_STORAGE_PROFILE_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.LinuxFleetStorageProfileId')
+export WINDOWS_FLEET_STORAGE_PROFILE_ID=$(echo "${STACK_OUTPUTS}" | jq -r '.WindowsFleetStorageProfileId')
 EOF
