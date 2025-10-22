@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Generator, Iterable
 from concurrent.futures import wait
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from threading import Event, RLock
 from types import TracebackType
@@ -60,6 +60,9 @@ from deadline_worker_agent.sessions.actions import (
     EnterEnvironmentAction,
     ExitEnvironmentAction,
     RunStepTaskAction,
+)
+from deadline_worker_agent.sessions.actions.run_attachment_upload import (
+    AttachmentUploadAction as AttachmentUploadActionClass,
 )
 from deadline_worker_agent.sessions.job_entities import (
     EnvironmentDetails,
@@ -1437,7 +1440,7 @@ class TestSessionActionUpdatedImpl:
                 start_time=action_start_time,
                 completed_status="FAILED",
                 end_time=action_complete_time,
-                manifests=[],
+                manifests=None,
             )
         else:
             expected_action_update = SessionActionStatus(
@@ -1516,7 +1519,7 @@ class TestSessionActionUpdatedImpl:
                 start_time=action_start_time,
                 completed_status="FAILED",
                 end_time=action_complete_time,
-                manifests=[],
+                manifests=None,
             )
         else:
             expected_action_update = SessionActionStatus(
@@ -1908,7 +1911,7 @@ class TestSessionActionUpdatedImpl:
                 start_time=action_start_time,
                 completed_status="FAILED",
                 end_time=action_complete_time,
-                manifests=[],
+                manifests=None,
             )
         else:
             expected_action_update = SessionActionStatus(
@@ -2179,6 +2182,203 @@ class TestSessionActionUpdatedImpl:
 
         assert len(session._upload_manifest_list) == 1
         assert all(isinstance(item, UploadManifestInfo) for item in session._upload_manifest_list)
+
+    @pytest.mark.skipif(
+        not MANIFEST_REPORTING_FEATURE or not ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test only runs when both MANIFEST_REPORTING_FEATURE and ASSET_SYNC_JOB_USER_FEATURE are enabled",
+    )
+    def test_progress_update_excludes_manifests(
+        self,
+        session: Session,
+        mock_report_action_update: MagicMock,
+    ) -> None:
+        """Test that progress updates (RUNNING state) do not include manifests field"""
+        # GIVEN - A running task action with progress
+        action_id = "test-action-123"
+        step_id = "step-456"
+        task_id = "task-789"
+
+        current_action = CurrentAction(
+            definition=RunStepTaskAction(
+                details=StepDetails(
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
+                                    cancelation=None,
+                                )
+                            )
+                        ),
+                    ),
+                    step_id=step_id,
+                ),
+                id=action_id,
+                task_id=task_id,
+                task_parameter_values=dict[str, ParameterValue](),
+            ),
+            start_time=datetime.now(tz=timezone.utc),
+        )
+        session._current_action = current_action
+
+        # Progress update (RUNNING state, no completed_status)
+        progress_action_status = ActionStatus(
+            state=ActionState.RUNNING, progress=50.0, status_message="Processing files..."
+        )
+
+        # WHEN - Progress update is reported
+        session._action_updated_impl(
+            action_status=progress_action_status,
+            now=datetime.now(tz=timezone.utc),
+        )
+
+        # THEN - No manifests field should be included
+        mock_report_action_update.assert_called_once()
+        call_args = mock_report_action_update.call_args[0][0]
+        assert isinstance(call_args, SessionActionStatus)
+        assert call_args.manifests is None  # Should be None for progress updates
+
+    @pytest.mark.skipif(
+        not MANIFEST_REPORTING_FEATURE or not ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test only runs when both MANIFEST_REPORTING_FEATURE and ASSET_SYNC_JOB_USER_FEATURE are enabled",
+    )
+    def test_failed_task_excludes_manifests(
+        self,
+        session: Session,
+        mock_report_action_update: MagicMock,
+    ) -> None:
+        """Test that failed task actions do not include manifests field"""
+        # GIVEN - A failed task action
+        action_id = "test-action-123"
+        step_id = "step-456"
+        task_id = "task-789"
+
+        current_action = CurrentAction(
+            definition=RunStepTaskAction(
+                details=StepDetails(
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
+                                    cancelation=None,
+                                )
+                            )
+                        ),
+                    ),
+                    step_id=step_id,
+                ),
+                id=action_id,
+                task_id=task_id,
+                task_parameter_values=dict[str, ParameterValue](),
+            ),
+            start_time=datetime.now(tz=timezone.utc),
+        )
+        session._current_action = current_action
+
+        # Failed action status
+        failed_action_status = ActionStatus(state=ActionState.FAILED, fail_message="Task failed")
+
+        # WHEN - Failed action is reported
+        with patch.object(
+            session_mod,
+            "OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS",
+            {ActionState.FAILED: "FAILED"},
+        ):
+            session._action_updated_impl(
+                action_status=failed_action_status,
+                now=datetime.now(tz=timezone.utc),
+            )
+
+        # THEN - No manifests field should be included
+        mock_report_action_update.assert_called_once()
+        call_args = mock_report_action_update.call_args[0][0]
+        assert isinstance(call_args, SessionActionStatus)
+        assert call_args.manifests is None  # Should be None for failed actions
+
+    @pytest.mark.skipif(
+        not MANIFEST_REPORTING_FEATURE or not ASSET_SYNC_JOB_USER_FEATURE,
+        reason="This test only runs when both MANIFEST_REPORTING_FEATURE and ASSET_SYNC_JOB_USER_FEATURE are enabled",
+    )
+    def test_successful_task_without_job_attachments_includes_empty_manifests(
+        self,
+        session: Session,
+        mock_report_action_update: MagicMock,
+    ) -> None:
+        """Test that successful task actions without job attachments include empty manifests list"""
+        # GIVEN - A successful attachment upload action with no outputs
+        action_id = "test-action-123"
+        step_id = "step-456"
+        task_id = "task-789"
+
+        current_action = CurrentAction(
+            definition=RunStepTaskAction(
+                details=StepDetails(
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
+                                    cancelation=None,
+                                )
+                            )
+                        ),
+                    ),
+                    step_id=step_id,
+                ),
+                id=action_id,
+                task_id=task_id,
+                task_parameter_values=dict[str, ParameterValue](),
+            ),
+            start_time=datetime.now(tz=timezone.utc),
+        )
+
+        # Mock the attachment upload completion scenario
+        # Create an attachment upload action as the current action
+        upload_action = CurrentAction(
+            definition=AttachmentUploadActionClass(
+                id=f"{current_action.definition.id}-upload",
+                session_id="test-session",
+                step_id=step_id,
+                task_id=task_id,
+                start_time=current_action.start_time.timestamp(),
+            ),
+            start_time=datetime.now(tz=timezone.utc),
+        )
+
+        session._current_action = upload_action  # Upload action is current
+        session._output_sync_target_action = current_action  # Original task action is target
+        session._job_attachment_details = None  # No job attachments
+        session._upload_manifest_list = []
+
+        # Successful action status for the upload action
+        success_action_status = ActionStatus(state=ActionState.SUCCESS, exit_code=0)
+
+        # WHEN - Upload action completes successfully
+        with (
+            patch.object(
+                session_mod,
+                "OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS",
+                {ActionState.SUCCESS: "SUCCEEDED"},
+            ),
+            patch.object(session, "_handle_action_update") as mock_handle_action_update,
+        ):
+            session._action_updated_impl(
+                action_status=success_action_status,
+                now=datetime.now(tz=timezone.utc),
+            )
+
+        # THEN - Empty manifests list should be passed to _handle_action_update
+        mock_handle_action_update.assert_called_once()
+        call_args = mock_handle_action_update.call_args[0]
+        manifests_arg = call_args[4]  # 5th argument is manifests
+        assert manifests_arg == []  # Should be empty list
 
 
 @pytest.mark.usefixtures("mock_openjd_session")

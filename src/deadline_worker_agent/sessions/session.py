@@ -1206,15 +1206,12 @@ class Session:
 
         if self._output_sync_target_action is not None:
             if OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(action_status.state, None):
-                manifests_list = None
+                manifests_list = []
 
                 # Get job attachment details to access input manifests
                 job_attachment_details = self._job_attachment_details
 
                 if job_attachment_details:
-                    # Create a list of ManifestInfo objects with the same length as the input manifests list
-                    manifests_list = []
-
                     # For each input manifest, find the corresponding output manifest
                     for input_manifest in job_attachment_details.manifests:
                         asset_root = input_manifest.root_path
@@ -1359,12 +1356,6 @@ class Session:
         now: datetime,
         manifests: list[ManifestInfo] | None = None,
     ):
-        # avoid circular import
-        from .actions import RunStepTaskAction
-
-        if manifests is None and isinstance(current_action.definition, RunStepTaskAction):
-            manifests = []
-
         completed_status = OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(
             action_status.state, None
         )
@@ -1423,8 +1414,18 @@ class Session:
         # Only report action update when it's not attachment upload for syncing job attachment outputs,
         # progress reporting is not supported by the output upload yet.
         if not self._output_sync_target_action:
-            # Only include manifests if feature flag is enabled
-            session_manifests = manifests if MANIFEST_REPORTING_FEATURE else None
+            # avoid circular import
+            from .actions import RunStepTaskAction
+
+            # Only include manifests for successfully completed RunStepTaskActions
+            session_manifests = None
+            if (
+                MANIFEST_REPORTING_FEATURE
+                and completed_status == "SUCCEEDED"
+                and isinstance(current_action.definition, RunStepTaskAction)
+            ):
+                # Always report empty list for successful task runs to differentiate from old workers
+                session_manifests = manifests if manifests is not None else []
 
             self._report_action_update(
                 SessionActionStatus(
