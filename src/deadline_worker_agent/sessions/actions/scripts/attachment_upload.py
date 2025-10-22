@@ -158,6 +158,7 @@ def snapshot(
         local_root_path = manifest_props.local_root_path
         output_relative_directories = manifest_props.local_output_relative_directories()
 
+        # Skip when output relative directories is None or []
         if not output_relative_directories:
             print(
                 f"No output directories specified for {manifest_props.root_path}, skipping upload"
@@ -173,6 +174,7 @@ def snapshot(
             # if the base is None, meaning all changes are output
             diff=root_path_to_base_manifest.get(manifest_props.root_path),
             # include patterns for output directories (with recursive wildcard)
+            # when the code reaches here, it's guaranteed output_relative_directories contains value
             include=[subdir + "/**" for subdir in output_relative_directories],
             name="output",
         )
