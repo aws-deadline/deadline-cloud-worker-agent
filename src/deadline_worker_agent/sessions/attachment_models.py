@@ -88,7 +88,7 @@ class WorkerManifestProperties:
                                or None if no output directories are defined
         """
 
-        if not self.output_relative_directories:
+        if self.output_relative_directories is None:
             return None
 
         local_output_relative_directories: list[str] = []

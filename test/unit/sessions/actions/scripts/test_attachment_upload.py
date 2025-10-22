@@ -158,6 +158,69 @@ class TestAttachmentUpload:
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
+    def test_snapshot_mixed_output_directories(self, mock_manifest_snapshot: Mock):
+        # GIVEN
+        mock_worker_props1 = Mock()
+        mock_worker_props1.local_root_path = "/local/path1"
+        mock_worker_props1.root_path = "/source/path1"
+        mock_worker_props1.local_output_relative_directories.return_value = None
+        mock_worker_props1.output_relative_directories = None
+
+        mock_worker_props2 = Mock()
+        mock_worker_props2.local_root_path = "/local/path2"
+        mock_worker_props2.root_path = "/source/path2"
+        mock_worker_props2.local_output_relative_directories.return_value = ["output"]
+
+        mock_worker_props3 = Mock()
+        mock_worker_props3.local_root_path = "/local/path3"
+        mock_worker_props3.root_path = "/source/path3"
+        mock_worker_props3.local_output_relative_directories.return_value = []
+        mock_worker_props3.output_relative_directories = []
+
+        mock_worker_props4 = Mock()
+        mock_worker_props4.local_root_path = "/local/path4"
+        mock_worker_props4.root_path = "/source/path4"
+        mock_worker_props4.local_output_relative_directories.return_value = ["."]
+
+        mock_snapshot_result = Mock()
+        mock_snapshot_result.manifest = "/snapshot/manifest.json"
+        mock_manifest_snapshot.return_value = mock_snapshot_result
+
+        base_manifests = {
+            "/source/path1": None,
+            "/source/path2": "/base/manifest.json",
+            "/source/path3": None,
+            "/source/path4": None,
+        }
+
+        # WHEN
+        result = snapshot(
+            [mock_worker_props1, mock_worker_props2, mock_worker_props3, mock_worker_props4],
+            base_manifests,
+        )
+
+        # THEN
+        assert result == {
+            "/source/path2": "/snapshot/manifest.json",
+            "/source/path4": "/snapshot/manifest.json",
+        }
+        assert mock_manifest_snapshot.call_count == 2
+        mock_manifest_snapshot.assert_any_call(
+            root="/local/path2",
+            destination="manifest_snapshot",
+            diff="/base/manifest.json",
+            include=["output/**"],
+            name="output",
+        )
+        mock_manifest_snapshot.assert_any_call(
+            root="/local/path4",
+            destination="manifest_snapshot",
+            diff=None,
+            include=["./**"],
+            name="output",
+        )
+
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
     def test_snapshot(self, mock_manifest_snapshot: Mock):
         # GIVEN
         mock_worker_props1 = Mock()

@@ -635,7 +635,7 @@ class TestWorkerManifestProperties:
         result = worker_props.local_output_relative_directories()
 
         # THEN
-        assert result is None
+        assert result == []
 
     @pytest.mark.skipif(
         platform.system() == "Windows",

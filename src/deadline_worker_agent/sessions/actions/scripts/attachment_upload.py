@@ -156,7 +156,13 @@ def snapshot(
     # Process each worker manifest property
     for manifest_props in worker_manifest_properties:
         local_root_path = manifest_props.local_root_path
-        output_relative_directories = manifest_props.local_output_relative_directories() or []
+        output_relative_directories = manifest_props.local_output_relative_directories()
+
+        if not output_relative_directories:
+            print(
+                f"No output directories specified for {manifest_props.root_path}, skipping upload"
+            )
+            continue
 
         # Create a snapshot of the output files, comparing against the base manifest
         output_manifest: Optional[ManifestSnapshot] = _manifest_snapshot(

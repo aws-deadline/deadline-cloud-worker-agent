@@ -3527,7 +3527,15 @@ with open(output_path, "w") as f:
             "manifests": [
                 {
                     # no outputRelativeDirectories
-                    "rootPath": "/test/assets",
+                    "rootPath": "/test/assets1",
+                    "rootPathFormat": "posix",
+                    "inputManifestPath": "manifest1hash",
+                    "inputManifestHash": "manifest1hash",
+                },
+                {
+                    # empty outputRelativeDirectories
+                    "outputRelativeDirectories": [],
+                    "rootPath": "/test/assets2",
                     "rootPathFormat": "posix",
                     "inputManifestPath": "manifest1hash",
                     "inputManifestHash": "manifest1hash",
