@@ -1,5 +1,6 @@
 ## 0.28.15 (2025-10-23)
 
+
 ### Features
 * support optional task id in task run session actions (#758) ([`dece265`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/dece26572600d47c26db937bcdecb4ae894e72ac))
 
