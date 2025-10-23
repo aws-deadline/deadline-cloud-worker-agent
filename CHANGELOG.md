@@ -1,3 +1,19 @@
+## 0.28.15 (2025-10-23)
+
+### Features
+* support optional task id in task run session actions (#758) ([`dece265`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/dece26572600d47c26db937bcdecb4ae894e72ac))
+
+### Experimental
+These changes are experimental and only available through the use of feature flags
+
+* ASSET_SYNC_JOB_USER_FEATURE - job attachments does not fall back to COPIED when launching VFS fails (#753) ([`f0f2696`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/f0f269629cd5c8ca88b4fde8b0850a9d42525735))
+* ASSET_SYNC_JOB_USER_FEATURE - job attachment output manifest upload uses current time to construct s3 partition (#767) ([`84bb52d`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/84bb52d7c193a2e3fc72c712fb2fda25ae93e3f5))
+* ASSET_SYNC_JOB_USER_FEATURE - add progress reporting and low transfer rate check to sync input attachments (#759) ([`5504ff3`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/5504ff38fba53664295a14617e781c64dd76323f))
+* ASSET_SYNC_JOB_USER_FEATURE - enhance download process by using WorkerManifestProperties and download_files_from_manifests (#755) ([`0272a46`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/0272a468157b893165d5f855d52b5c50e7d43e96))
+* ASSET_SYNC_JOB_USER_FEATURE - enhance upload process by using WorkerManifestProperties and upload_assets (#762) ([`73ea2d7`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/73ea2d7e270567e4a1f8ee104d9a1ad4442797d2))
+* MANIFEST_REPORTING_FEATURE - not reporting manifests in progress updates (#779) ([`c0ffe77`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/c0ffe77ac884235c79bf68561f4f7880abf331a1))
+
+
 ## 0.28.14 (2025-09-15)
 
 

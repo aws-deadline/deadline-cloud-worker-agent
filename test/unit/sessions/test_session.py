@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Generator, Iterable
 from concurrent.futures import wait
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from threading import Event, RLock
 from types import TracebackType
@@ -44,10 +44,6 @@ from deadline_worker_agent.api_models import (
     AttachmentUploadAction,
     ManifestInfo,
 )
-from deadline_worker_agent.feature_flag import (
-    ASSET_SYNC_JOB_USER_FEATURE,
-    MANIFEST_REPORTING_FEATURE,
-)
 from deadline_worker_agent.sessions import Session
 import deadline_worker_agent.sessions.session as session_mod
 from deadline_worker_agent.sessions.session import (
@@ -61,6 +57,7 @@ from deadline_worker_agent.sessions.actions import (
     ExitEnvironmentAction,
     RunStepTaskAction,
 )
+
 from deadline_worker_agent.sessions.job_entities import (
     EnvironmentDetails,
     JobAttachmentDetails,
@@ -987,10 +984,7 @@ class TestSessionSyncAssetOutputs:
 
         return current_action
 
-    @pytest.mark.skipif(
-        MANIFEST_REPORTING_FEATURE,
-        reason="Only relevant when MANIFEST_REPORTING_FEATURE is not enabled",
-    )
+    @patch("deadline_worker_agent.sessions.session.MANIFEST_REPORTING_FEATURE", False)
     def test_sync_asset_outputs_without_manifest_reporting(
         self,
         action_id: str,
@@ -1391,6 +1385,7 @@ class TestSessionActionUpdatedImpl:
         with patch("deadline_worker_agent.sessions.session.OPENJD_LOG") as mock_log:
             yield mock_log
 
+    @pytest.mark.parametrize("manifest_feature", [True, False])
     def test_failed_enter_env(
         self,
         action_id: str,
@@ -1400,6 +1395,7 @@ class TestSessionActionUpdatedImpl:
         action_complete_time: datetime,
         failed_action_status: ActionStatus,
         mock_report_action_update: MagicMock,
+        manifest_feature: bool,
     ) -> None:
         """Tests that if a environment enter action fails (the Open Job Description action), that the action
         failure is returned, and that any pending actions other than ENV_EXITS are marked as
@@ -1430,14 +1426,14 @@ class TestSessionActionUpdatedImpl:
         expected_next_action_message = failed_action_status.fail_message or (
             f"Previous action failed: {current_action.definition.id}"
         )
-        if MANIFEST_REPORTING_FEATURE:
+        if manifest_feature:
             expected_action_update = SessionActionStatus(
                 id=action_id,
                 status=failed_action_status,
                 start_time=action_start_time,
                 completed_status="FAILED",
                 end_time=action_complete_time,
-                manifests=[],
+                manifests=None,
             )
         else:
             expected_action_update = SessionActionStatus(
@@ -1448,7 +1444,10 @@ class TestSessionActionUpdatedImpl:
                 end_time=action_complete_time,
             )
 
-        with patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs:
+        with (
+            patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs,
+            patch.object(session_mod, "MANIFEST_REPORTING_FEATURE", manifest_feature),
+        ):
             # WHEN
             future = session._action_updated_impl(
                 action_status=failed_action_status,
@@ -1466,6 +1465,7 @@ class TestSessionActionUpdatedImpl:
         mock_sync_asset_outputs.assert_not_called()
         assert session._current_action is None, "Current session action emptied"
 
+    @pytest.mark.parametrize("manifest_feature", [True, False])
     def test_failed_task_run(
         self,
         action_id: str,
@@ -1477,6 +1477,7 @@ class TestSessionActionUpdatedImpl:
         action_complete_time: datetime,
         failed_action_status: ActionStatus,
         mock_report_action_update: MagicMock,
+        manifest_feature: bool,
     ) -> None:
         """Tests that if a task run fails (the Open Job Description action), that job attachment output
         sync is not performed, the action failure is returned, and that any pending actions are
@@ -1509,14 +1510,14 @@ class TestSessionActionUpdatedImpl:
         expected_next_action_message = failed_action_status.fail_message or (
             f"Previous action failed: {current_action.definition.id}"
         )
-        if MANIFEST_REPORTING_FEATURE:
+        if manifest_feature:
             expected_action_update = SessionActionStatus(
                 id=action_id,
                 status=failed_action_status,
                 start_time=action_start_time,
                 completed_status="FAILED",
                 end_time=action_complete_time,
-                manifests=[],
+                manifests=None,
             )
         else:
             expected_action_update = SessionActionStatus(
@@ -1527,7 +1528,10 @@ class TestSessionActionUpdatedImpl:
                 end_time=action_complete_time,
             )
 
-        with patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs:
+        with (
+            patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs,
+            patch.object(session_mod, "MANIFEST_REPORTING_FEATURE", manifest_feature),
+        ):
             # WHEN
             future = session._action_updated_impl(
                 action_status=failed_action_status,
@@ -1545,10 +1549,8 @@ class TestSessionActionUpdatedImpl:
         assert session._current_action is None, "Current session action emptied"
         mock_sync_asset_outputs.assert_not_called()
 
-    @pytest.mark.skipif(
-        ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test will be removed after releasing the asset sync job user feature",
-    )
+    @pytest.mark.parametrize("manifest_feature", [True, False])
+    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", False)
     def test_success_task_run(
         self,
         action_id: str,
@@ -1560,6 +1562,7 @@ class TestSessionActionUpdatedImpl:
         success_action_status: ActionStatus,
         task_id: str,
         mock_report_action_update: MagicMock,
+        manifest_feature: bool,
     ) -> None:
         """Tests that if a task run succeeds (the Open Job Description action), that job attachment output
         sync is performed, and AFTER that, the action success is returned."""
@@ -1589,7 +1592,7 @@ class TestSessionActionUpdatedImpl:
         session._current_action = current_action
         queue_cancel_all: MagicMock = session_action_queue.cancel_all
 
-        if MANIFEST_REPORTING_FEATURE:
+        if manifest_feature:
             expected_action_update = SessionActionStatus(
                 id=action_id,
                 status=success_action_status,
@@ -1613,6 +1616,7 @@ class TestSessionActionUpdatedImpl:
         with (
             patch.object(session_mod, "datetime") as mock_datetime,
             patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs,
+            patch.object(session_mod, "MANIFEST_REPORTING_FEATURE", manifest_feature),
         ):
             mock_datetime.now.side_effect = mock_now
 
@@ -1637,10 +1641,7 @@ class TestSessionActionUpdatedImpl:
         assert session._current_action is None, "Current session action emptied"
         mock_sync_asset_outputs.assert_called_once_with(current_action=current_action)
 
-    @pytest.mark.skipif(
-        not ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test will be run unconditionally after releasing the asset sync job user featuer",
-    )
+    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_success_task_run_attachment_upload(
         self,
         action_id: str,
@@ -1714,10 +1715,8 @@ class TestSessionActionUpdatedImpl:
             )
         )
 
-    @pytest.mark.skipif(
-        not ASSET_SYNC_JOB_USER_FEATURE or not MANIFEST_REPORTING_FEATURE,
-        reason="This test should be skipped if either feature is not implemented",
-    )
+    @patch("deadline_worker_agent.sessions.session.MANIFEST_REPORTING_FEATURE", True)
+    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_success_task_run_attachment_upload_with_no_output_manifest(
         self,
         session: Session,
@@ -1761,10 +1760,8 @@ class TestSessionActionUpdatedImpl:
             expected_manifest_list,
         )
 
-    @pytest.mark.skipif(
-        not ASSET_SYNC_JOB_USER_FEATURE or not MANIFEST_REPORTING_FEATURE,
-        reason="This test should be skipped if either feature is not implemented",
-    )
+    @patch("deadline_worker_agent.sessions.session.MANIFEST_REPORTING_FEATURE", True)
+    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_success_task_run_attachment_upload_with_manifest(
         self,
         session: Session,
@@ -1851,10 +1848,8 @@ class TestSessionActionUpdatedImpl:
             expected_manifest_list,
         )
 
-    @pytest.mark.skipif(
-        ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test will be re-written before releasing the asset sync job user feature",
-    )
+    @pytest.mark.parametrize("manifest_feature", [True, False])
+    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", False)
     def test_success_task_run_fail_output_sync(
         self,
         action_id: str,
@@ -1866,6 +1861,7 @@ class TestSessionActionUpdatedImpl:
         success_action_status: ActionStatus,
         task_id: str,
         mock_report_action_update: MagicMock,
+        manifest_feature: bool,
     ) -> None:
         """Tests that if a task run succeeds (the Open Job Description action), but the job attachment output
         sync fails, the action failure is returned, and any pending actions are marked as
@@ -1901,14 +1897,14 @@ class TestSessionActionUpdatedImpl:
             state=ActionState.FAILED,
             fail_message=f"Failed to sync job output attachments for {current_action.definition.id}: {sync_outputs_exception_msg}",
         )
-        if MANIFEST_REPORTING_FEATURE:
+        if manifest_feature:
             expected_action_update = SessionActionStatus(
                 id=action_id,
                 status=expected_fail_action_status,
                 start_time=action_start_time,
                 completed_status="FAILED",
                 end_time=action_complete_time,
-                manifests=[],
+                manifests=None,
             )
         else:
             expected_action_update = SessionActionStatus(
@@ -1927,6 +1923,7 @@ class TestSessionActionUpdatedImpl:
             patch.object(
                 session, "_sync_asset_outputs", side_effect=sync_outputs_exception
             ) as mock_sync_asset_outputs,
+            patch.object(session_mod, "MANIFEST_REPORTING_FEATURE", manifest_feature),
         ):
             mock_datetime.now.side_effect = mock_now
 
@@ -1947,10 +1944,7 @@ class TestSessionActionUpdatedImpl:
         assert session._current_action is None, "Current session action emptied"
         mock_sync_asset_outputs.assert_called_once_with(current_action=current_action)
 
-    @pytest.mark.skipif(
-        ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test will be re-written before releasing the asset sync job user feature",
-    )
+    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", False)
     def test_logs_succeeded(
         self,
         action_complete_time: datetime,
@@ -2030,10 +2024,7 @@ class TestSessionActionUpdatedImpl:
         assert mock_mod_logger.info.call_args.args[0].status == "CANCELED"
         assert mock_mod_logger.info.call_args.args[0].action_id == current_action.definition.id
 
-    @pytest.mark.skipif(
-        not ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test only runs when ASSET_SYNC_JOB_USER_FEATURE is enabled",
-    )
+    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_action_output_capture_filter_integration_on_output_sync_creation(
         self,
         action_id: str,
@@ -2095,10 +2086,7 @@ class TestSessionActionUpdatedImpl:
         assert session._output_sync_target_action == current_action
         assert session._current_action is None
 
-    @pytest.mark.skipif(
-        not ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test only runs when ASSET_SYNC_JOB_USER_FEATURE is enabled",
-    )
+    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_action_output_filter_removed_on_output_sync_completion(
         self,
         session: Session,
@@ -2138,10 +2126,7 @@ class TestSessionActionUpdatedImpl:
         # Verify output sync target action was cleared
         assert session._output_sync_target_action is None
 
-    @pytest.mark.skipif(
-        not MANIFEST_REPORTING_FEATURE,
-        reason="This test only runs when MANIFEST_REPORTING_FEATURE is enabled",
-    )
+    @patch("deadline_worker_agent.sessions.session.MANIFEST_REPORTING_FEATURE", True)
     def test_action_output_capture_filter_ja_upload_callback_invalid(
         self,
         session: Session,
@@ -2161,10 +2146,7 @@ class TestSessionActionUpdatedImpl:
 
         assert session._upload_manifest_list == []
 
-    @pytest.mark.skipif(
-        not MANIFEST_REPORTING_FEATURE,
-        reason="This test only runs when MANIFEST_REPORTING_FEATURE is enabled",
-    )
+    @patch("deadline_worker_agent.sessions.session.MANIFEST_REPORTING_FEATURE", True)
     def test_action_output_capture_filter_ja_upload_callback_valid(
         self,
         session: Session,
@@ -2179,6 +2161,187 @@ class TestSessionActionUpdatedImpl:
 
         assert len(session._upload_manifest_list) == 1
         assert all(isinstance(item, UploadManifestInfo) for item in session._upload_manifest_list)
+
+    @patch("deadline_worker_agent.sessions.session.MANIFEST_REPORTING_FEATURE", True)
+    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
+    def test_progress_update_excludes_manifests(
+        self,
+        session: Session,
+        mock_report_action_update: MagicMock,
+    ) -> None:
+        """Test that progress updates (RUNNING state) do not include manifests field"""
+        # GIVEN - A running task action with progress
+        action_id = "test-action-123"
+        step_id = "step-456"
+        task_id = "task-789"
+
+        current_action = CurrentAction(
+            definition=RunStepTaskAction(
+                details=StepDetails(
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
+                                    cancelation=None,
+                                )
+                            )
+                        ),
+                    ),
+                    step_id=step_id,
+                ),
+                id=action_id,
+                task_id=task_id,
+                task_parameter_values=dict[str, ParameterValue](),
+            ),
+            start_time=datetime.now(tz=timezone.utc),
+        )
+        session._current_action = current_action
+
+        # Progress update (RUNNING state, no completed_status)
+        progress_action_status = ActionStatus(
+            state=ActionState.RUNNING, progress=50.0, status_message="Processing files..."
+        )
+
+        # WHEN - Progress update is reported
+        session._action_updated_impl(
+            action_status=progress_action_status,
+            now=datetime.now(tz=timezone.utc),
+        )
+
+        # THEN - No manifests field should be included
+        mock_report_action_update.assert_called_once()
+        call_args = mock_report_action_update.call_args[0][0]
+        assert isinstance(call_args, SessionActionStatus)
+        assert call_args.manifests is None  # Should be None for progress updates
+
+    @patch("deadline_worker_agent.sessions.session.MANIFEST_REPORTING_FEATURE", True)
+    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
+    def test_failed_task_excludes_manifests(
+        self,
+        session: Session,
+        mock_report_action_update: MagicMock,
+    ) -> None:
+        """Test that failed task actions do not include manifests field"""
+        # GIVEN - A failed task action
+        action_id = "test-action-123"
+        step_id = "step-456"
+        task_id = "task-789"
+
+        current_action = CurrentAction(
+            definition=RunStepTaskAction(
+                details=StepDetails(
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
+                                    cancelation=None,
+                                )
+                            )
+                        ),
+                    ),
+                    step_id=step_id,
+                ),
+                id=action_id,
+                task_id=task_id,
+                task_parameter_values=dict[str, ParameterValue](),
+            ),
+            start_time=datetime.now(tz=timezone.utc),
+        )
+        session._current_action = current_action
+
+        # Failed action status
+        failed_action_status = ActionStatus(state=ActionState.FAILED, fail_message="Task failed")
+
+        # WHEN - Failed action is reported
+        with patch.object(
+            session_mod,
+            "OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS",
+            {ActionState.FAILED: "FAILED"},
+        ):
+            session._action_updated_impl(
+                action_status=failed_action_status,
+                now=datetime.now(tz=timezone.utc),
+            )
+
+        # THEN - No manifests field should be included
+        mock_report_action_update.assert_called_once()
+        call_args = mock_report_action_update.call_args[0][0]
+        assert isinstance(call_args, SessionActionStatus)
+        assert call_args.manifests is None  # Should be None for failed actions
+
+    @pytest.mark.parametrize("manifest_reporting_enabled", [True, False])
+    def test_successful_task_manifest_reporting_based_on_feature_flag(
+        self,
+        session: Session,
+        mock_report_action_update: MagicMock,
+        manifest_reporting_enabled: bool,
+    ) -> None:
+        """Test that manifests are included/excluded based on MANIFEST_REPORTING_FEATURE flag"""
+        action_id = "test-action-123"
+        step_id = "step-456"
+        task_id = "task-789"
+
+        current_action = CurrentAction(
+            definition=RunStepTaskAction(
+                details=StepDetails(
+                    step_template=StepTemplate(
+                        name="Test",
+                        script=StepScript(
+                            actions=StepActions(
+                                onRun=Action(
+                                    command=CommandString("echo"),
+                                    args=[ArgString("hello")],
+                                    cancelation=None,
+                                )
+                            )
+                        ),
+                    ),
+                    step_id=step_id,
+                ),
+                id=action_id,
+                task_id=task_id,
+                task_parameter_values=dict[str, ParameterValue](),
+            ),
+            start_time=datetime.now(tz=timezone.utc),
+        )
+        session._current_action = current_action
+
+        success_action_status = ActionStatus(state=ActionState.SUCCESS, exit_code=0)
+
+        # WHEN - Action completes successfully with feature flag set
+        with (
+            patch(
+                "deadline_worker_agent.sessions.session.MANIFEST_REPORTING_FEATURE",
+                manifest_reporting_enabled,
+            ),
+            patch.object(
+                session_mod,
+                "OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS",
+                {ActionState.SUCCESS: "SUCCEEDED"},
+            ),
+        ):
+            session._handle_action_update(
+                is_unsuccessful=False,
+                action_status=success_action_status,
+                current_action=current_action,
+                now=datetime.now(tz=timezone.utc),
+                manifests=[],
+            )
+
+        # THEN - Verify manifests field based on feature flag
+        mock_report_action_update.assert_called_once()
+        call_args = mock_report_action_update.call_args[0][0]
+        assert isinstance(call_args, SessionActionStatus)
+        if manifest_reporting_enabled:
+            assert call_args.manifests == []
+        else:
+            assert call_args.manifests is None
 
 
 @pytest.mark.usefixtures("mock_openjd_session")
