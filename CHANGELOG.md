@@ -11,6 +11,7 @@ These changes are experimental and only available through the use of feature fla
 * ASSET_SYNC_JOB_USER_FEATURE - add progress reporting and low transfer rate check to sync input attachments (#759) ([`5504ff3`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/5504ff38fba53664295a14617e781c64dd76323f))
 * ASSET_SYNC_JOB_USER_FEATURE - enhance download process by using WorkerManifestProperties and download_files_from_manifests (#755) ([`0272a46`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/0272a468157b893165d5f855d52b5c50e7d43e96))
 * ASSET_SYNC_JOB_USER_FEATURE - enhance upload process by using WorkerManifestProperties and upload_assets (#762) ([`73ea2d7`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/73ea2d7e270567e4a1f8ee104d9a1ad4442797d2))
+* ASSET_SYNC_JOB_USER_FEATURE - attachment uploads all as output when no output relative directories defined for a root (#780) ([`3b3d8ec`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/3b3d8ec462ab8ac0fb44a35b24416432d36d5804))
 * MANIFEST_REPORTING_FEATURE - not reporting manifests in progress updates (#779) ([`c0ffe77`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/c0ffe77ac884235c79bf68561f4f7880abf331a1))
 
 
