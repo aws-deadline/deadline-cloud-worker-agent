@@ -70,7 +70,10 @@ class RunStepTaskAction(OpenjdAction):
         executor : Executor
             An executor for running futures
         """
-        env_vars = {"DEADLINE_SESSIONACTION_ID": self._id}
+        env_vars = {
+            "DEADLINE_STEP_ID": self._details.step_id,
+            "DEADLINE_SESSIONACTION_ID": self._id,
+        }
         if self.task_id is not None:
             env_vars["DEADLINE_TASK_ID"] = self.task_id
 

@@ -70,8 +70,9 @@ class TestRunStepTaskAction:
 
         assert "os_env_vars" in call_args
         env_vars = call_args["os_env_vars"]
-        assert env_vars["DEADLINE_SESSIONACTION_ID"] == "action-123"
+        assert env_vars["DEADLINE_STEP_ID"] == "step-123"
         assert env_vars["DEADLINE_TASK_ID"] == "task-456"
+        assert env_vars["DEADLINE_SESSIONACTION_ID"] == "action-123"
 
     def test_start_without_task_id(self, mock_step_details, mock_session, mock_executor):
         """Test start() excludes DEADLINE_TASK_ID when task_id is None."""
@@ -88,5 +89,6 @@ class TestRunStepTaskAction:
 
         assert "os_env_vars" in call_args
         env_vars = call_args["os_env_vars"]
+        assert env_vars["DEADLINE_STEP_ID"] == "step-123"
         assert env_vars["DEADLINE_SESSIONACTION_ID"] == "action-123"
         assert "DEADLINE_TASK_ID" not in env_vars

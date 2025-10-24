@@ -2738,6 +2738,7 @@ class TestSessionStartAction:
     def test_run_action_with_env_variables(
         self,
         session: Session,
+        step_id: str,
         run_step_task_action: RunStepTaskAction,
         mock_mod_logger: MagicMock,
     ) -> None:
@@ -2765,6 +2766,7 @@ class TestSessionStartAction:
         session_run_task.call_args.kwargs["os_env_vars"] == {
             "DEADLINE_SESSIONACTION_ID": run_step_task_action.id,
             "DEADLINE_TASK_ID": run_step_task_action.task_id,
+            "DEADLINE_STEP_ID": step_id,
         }
 
     def test_enter_env_action_called_with_env_variables(
