@@ -3,7 +3,7 @@
   {
    "rootPath": "C:\\Users\\windows_bundle",
    "rootPathFormat": "windows",
-   "inputManifestPath": "farm/step_input",
+   "inputManifestPath": "complex_1st_manifest_windows/step_input",
    "inputManifestHash": "3830afe267952f6bd778ab729ae1e595",
    "outputRelativeDirectories": [
     "data_dir1",
@@ -13,7 +13,7 @@
   {
    "rootPath": "C:\\Users2\\windows_bundle",
    "rootPathFormat": "windows",
-   "inputManifestPath": "rootPathManifest/root_input",
+   "inputManifestPath": "complex_2nd_manifest_windows/root_input",
    "inputManifestHash": "4457600537648811920034017addc59c",
    "outputRelativeDirectories": [
     "files_out"
