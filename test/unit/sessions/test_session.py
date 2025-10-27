@@ -786,7 +786,7 @@ class TestSessionSyncAssetInputs:
                     {
                         "job_attachment_details": JobAttachmentDetails(
                             manifests=[],
-                            job_attachments_file_system="COPIED",
+                            job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
                         )
                     }
                 ],
@@ -797,7 +797,7 @@ class TestSessionSyncAssetInputs:
                     {
                         "job_attachment_details": JobAttachmentDetails(
                             manifests=[],
-                            job_attachments_file_system="COPIED",
+                            job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
                         )
                     },
                     {"step_dependencies": ["step-1"]},
