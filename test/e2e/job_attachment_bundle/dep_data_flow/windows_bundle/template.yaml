@@ -6,7 +6,7 @@ description: |
 parameterDefinitions:
 - name: JobName
   type: STRING
-  default: Step-Step Dependency Test
+  default: CreateJob Step-Step Dependency Test
 - name: DataDir1
   type: PATH
   objectType: DIRECTORY

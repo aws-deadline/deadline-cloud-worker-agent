@@ -9,7 +9,6 @@ import pytest
 from dataclasses import dataclass, field, InitVar
 from typing import Callable, Generator, Type
 from contextlib import contextmanager
-from typing import Dict
 
 from deadline_test_fixtures import (
     DeadlineWorker,
@@ -25,7 +24,6 @@ from deadline_test_fixtures import (
     Ec2Tag,
 )
 import pytest
-from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 
 LOG = logging.getLogger(__name__)
 
@@ -192,9 +190,50 @@ def worker_config(
     Returns:
         DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
     """
-    worker_env_var: Dict[str, str] = {
-        "ASSET_SYNC_JOB_USER_FEATURE": str(ASSET_SYNC_JOB_USER_FEATURE),
+
+    return dataclasses.replace(
+        worker_config,
+        job_users=[
+            posix_job_user,
+            posix_config_override_job_user,
+            posix_env_override_job_user,
+        ],
+        windows_job_users=windows_job_users,
+    )
+
+
+@pytest.fixture(scope="session")
+def session_worker(
+    request: pytest.FixtureRequest,
+    worker_config: DeadlineWorkerConfiguration,
+    ec2_worker_type: Type[EC2InstanceWorker],
+) -> Generator[DeadlineWorker, None, None]:
+    with create_worker(worker_config, ec2_worker_type, request) as worker:
+        yield worker
+
+    stop_worker(request, worker)
+
+
+@pytest.fixture(scope="session", params=[True, False])
+def asset_sync_worker_config(
+    request: pytest.FixtureRequest,
+    posix_job_user: PosixSessionUser,
+    posix_env_override_job_user: PosixSessionUser,
+    posix_config_override_job_user: PosixSessionUser,
+    worker_config: DeadlineWorkerConfiguration,
+    windows_job_users: list[str],
+) -> DeadlineWorkerConfiguration:
+    """
+    Parametrized worker configuration fixture that tests ASSET_SYNC_JOB_USER_FEATURE with both True and False values.
+
+    This fixture ensures the environment variable is set before worker initialization,
+    allowing proper testing of the asset sync feature flag behavior.
+    """
+    asset_sync_feature = request.param
+    worker_env_var = {
+        "ASSET_SYNC_JOB_USER_FEATURE": str(asset_sync_feature),
     }
+    LOG.info(f"worker_env_var: {worker_env_var}")
 
     return dataclasses.replace(
         worker_config,
@@ -209,12 +248,12 @@ def worker_config(
 
 
 @pytest.fixture(scope="session")
-def session_worker(
+def asset_sync_session_worker(
     request: pytest.FixtureRequest,
-    worker_config: DeadlineWorkerConfiguration,
+    asset_sync_worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(asset_sync_worker_config, ec2_worker_type, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -434,7 +473,10 @@ def pytest_collection_modifyitems(items):
     sorted_list = list(items)
     for item in items:
         # Run session scoped tests last to prevent Worker conflicts with class and function scoped tests.
-        if "session_worker" in item.fixturenames:
+        if (
+            "session_worker" in item.fixturenames
+            or "asset_sync_session_worker" in item.fixturenames
+        ):
             sorted_list.remove(item)
             sorted_list.append(item)
 

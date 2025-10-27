@@ -49,7 +49,7 @@ class Asset:
 
 
 class TestJobAttachments:
-    @pytest.mark.usefixtures("session_worker")
+    @pytest.mark.usefixtures("asset_sync_session_worker")
     @pytest.mark.parametrize(
         "submission_os",
         [
