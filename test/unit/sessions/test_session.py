@@ -2276,45 +2276,27 @@ class TestSessionActionUpdatedImpl:
         assert call_args.manifests is None  # Should be None for failed actions
 
     @pytest.mark.parametrize("manifest_reporting_enabled", [True, False])
-    def test_successful_task_manifest_reporting_based_on_feature_flag(
+    def test_successful_task_without_job_attachments_includes_none_manifests(
         self,
         session: Session,
         mock_report_action_update: MagicMock,
         manifest_reporting_enabled: bool,
     ) -> None:
-        """Test that manifests are included/excluded based on MANIFEST_REPORTING_FEATURE flag"""
-        action_id = "test-action-123"
-        step_id = "step-456"
-        task_id = "task-789"
+        """Test that manifests are None when job attachments are not used in output sync flow"""
+        # Set up a mock output sync action
+        mocked_upload_action = MagicMock()
+        # Set up a mock output sync target action
+        output_sync_target_action = MagicMock()
 
-        current_action = CurrentAction(
-            definition=RunStepTaskAction(
-                details=StepDetails(
-                    step_template=StepTemplate(
-                        name="Test",
-                        script=StepScript(
-                            actions=StepActions(
-                                onRun=Action(
-                                    command=CommandString("echo"),
-                                    args=[ArgString("hello")],
-                                    cancelation=None,
-                                )
-                            )
-                        ),
-                    ),
-                    step_id=step_id,
-                ),
-                id=action_id,
-                task_id=task_id,
-                task_parameter_values=dict[str, ParameterValue](),
-            ),
-            start_time=datetime.now(tz=timezone.utc),
-        )
-        session._current_action = current_action
+        session._current_action = mocked_upload_action
+        session._output_sync_target_action = output_sync_target_action
+        # Explicitly set job_attachment_details to None to simulate no job attachments
+        session._job_attachment_details = None
 
-        success_action_status = ActionStatus(state=ActionState.SUCCESS, exit_code=0)
+        # WHEN - Call with a completed action status
+        completed_action_status = ActionStatus(state=ActionState.SUCCESS)
+        action_complete_time = datetime.now()
 
-        # WHEN - Action completes successfully with feature flag set
         with (
             patch(
                 "deadline_worker_agent.sessions.session.MANIFEST_REPORTING_FEATURE",
@@ -2325,23 +2307,21 @@ class TestSessionActionUpdatedImpl:
                 "OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS",
                 {ActionState.SUCCESS: "SUCCEEDED"},
             ),
+            patch.object(session, "_handle_action_update") as mocked_handle_action_upload,
         ):
-            session._handle_action_update(
-                is_unsuccessful=False,
-                action_status=success_action_status,
-                current_action=current_action,
-                now=datetime.now(tz=timezone.utc),
-                manifests=[],
+            session._action_updated_impl(
+                action_status=completed_action_status,
+                now=action_complete_time,
             )
 
-        # THEN - Verify manifests field based on feature flag
-        mock_report_action_update.assert_called_once()
-        call_args = mock_report_action_update.call_args[0][0]
-        assert isinstance(call_args, SessionActionStatus)
-        if manifest_reporting_enabled:
-            assert call_args.manifests == []
-        else:
-            assert call_args.manifests is None
+        # THEN - manifests_list should be None when job attachments are not used
+        mocked_handle_action_upload.assert_called_once_with(
+            False,
+            completed_action_status,
+            output_sync_target_action,
+            action_complete_time,
+            None,  # manifests_list should be None when job attachments are not used
+        )
 
 
 @pytest.mark.usefixtures("mock_openjd_session")

@@ -1206,12 +1206,13 @@ class Session:
 
         if self._output_sync_target_action is not None:
             if OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS.get(action_status.state, None):
-                manifests_list = []
+                manifests_list = None
 
                 # Get job attachment details to access input manifests
                 job_attachment_details = self._job_attachment_details
 
                 if job_attachment_details:
+                    manifests_list = []
                     # For each input manifest, find the corresponding output manifest
                     for input_manifest in job_attachment_details.manifests:
                         asset_root = input_manifest.root_path
