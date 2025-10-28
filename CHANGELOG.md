@@ -1,3 +1,15 @@
+## 0.28.16 (2025-10-28)
+
+
+### Features
+* add DEADLINE_STEP_ID to task run env vars (#787) ([`4ee307d`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/4ee307d1227dc8629cc32ff4cd3c23e516d92ff3))
+
+### Experimental
+These changes are experimental and only available through the use of feature flags
+
+* MANIFEST_REPORTING_FEATURE - manifests being reported without job attachments (#789) ([`49b175a`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/49b175a4b2b061b2f4c4eaf542aaa53306bdba51))
+
+
 ## 0.28.15 (2025-10-23)
 
 ### Features
