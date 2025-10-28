@@ -7,7 +7,7 @@ import os
 import pytest
 
 from dataclasses import dataclass, field, InitVar
-from typing import Callable, Generator, Type
+from typing import Callable, Generator, Type, Dict
 from contextlib import contextmanager
 
 from deadline_test_fixtures import (
@@ -190,6 +190,8 @@ def worker_config(
     Returns:
         DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
     """
+    # Empty worker_env_var for base configuration - modify here for global env vars
+    worker_env_var: Dict[str, str] = {}
 
     return dataclasses.replace(
         worker_config,
@@ -199,6 +201,7 @@ def worker_config(
             posix_env_override_job_user,
         ],
         windows_job_users=windows_job_users,
+        worker_env_var=worker_env_var,
     )
 
 
@@ -471,13 +474,31 @@ def operating_system() -> OperatingSystem:
 
 def pytest_collection_modifyitems(items):
     sorted_list = list(items)
+    session_worker_tests = []
+    asset_sync_session_worker_tests = []
+
     for item in items:
-        # Run session scoped tests last to prevent Worker conflicts with class and function scoped tests.
-        if (
-            "session_worker" in item.fixturenames
-            or "asset_sync_session_worker" in item.fixturenames
-        ):
+        # Check for conflicting fixture usage
+        has_session_worker = "session_worker" in item.fixturenames
+        has_asset_sync_session_worker = "asset_sync_session_worker" in item.fixturenames
+
+        if has_session_worker and has_asset_sync_session_worker:
+            raise ValueError(
+                f"Test {item.nodeid} requests both 'session_worker' and 'asset_sync_session_worker' fixtures. "
+                "This would create conflicting workers. Use only one session worker fixture per test."
+            )
+
+        # Separate session worker tests into two groups to prevent worker conflicts
+        if has_asset_sync_session_worker:
             sorted_list.remove(item)
-            sorted_list.append(item)
+            asset_sync_session_worker_tests.append(item)
+        elif has_session_worker:
+            sorted_list.remove(item)
+            session_worker_tests.append(item)
+
+    # Run session worker tests first, then asset_sync_session_worker tests
+    # This ensures only one session worker is active at a time
+    sorted_list.extend(session_worker_tests)
+    sorted_list.extend(asset_sync_session_worker_tests)
 
     items[:] = sorted_list
