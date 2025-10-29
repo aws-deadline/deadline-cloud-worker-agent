@@ -6,7 +6,7 @@ description: |
 parameterDefinitions:
 - name: JobName
   type: STRING
-  default: BundleSubmit Step-Step Dependency Test
+  default: Step-Step Dependency Test
 - name: DataDir1
   type: PATH
   objectType: DIRECTORY
@@ -91,7 +91,6 @@ steps:
           cd {{Param.DataDir2}}
 
           if [ "$(echo '{{Param.AssetSync}}' | tr A-Z a-z)" = "true" ]; then
-            ls -l
             echo Scope down permission since Asset Sync as job user is set to {{Param.AssetSync}}
             chmod 700 test
           fi
