@@ -14,6 +14,7 @@ metadata = "hatch project metadata {args:}"
 e2e-test= [
   "python test/e2e/pre_test_cleanup.py",
   "pytest --session-timeout=6600 --no-cov test/e2e {args:}",
+  "echo pytest done",
 ]
 integ-test = "pytest --no-cov test/integ {args:}"
 typing = "mypy {args:src test}"
