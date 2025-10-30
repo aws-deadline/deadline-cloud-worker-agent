@@ -133,7 +133,7 @@ class TestJobAttachments:
             "totalSize": input_asset.size,
         }
 
-        manifest_s3_key = f"{s3_prefix}/Manifests/manifesthash"
+        manifest_s3_key = f"{s3_prefix}/Manifests/{test_disambiguator}"
         LOG.info(f"Uploading manifest file to s3://{s3_bucket}/{manifest_s3_key}: {manifest}")
         s3.put_object(
             Bucket=s3_bucket,
@@ -146,8 +146,8 @@ class TestJobAttachments:
             "rootPath": queue_file_system_location["path"],
             "rootPathFormat": "posix" if submission_os == "linux" else "windows",
             "outputRelativeDirectories": [test_disambiguator],
-            "inputManifestPath": "manifesthash",
-            "inputManifestHash": "manifesthash",
+            "inputManifestPath": test_disambiguator,
+            "inputManifestHash": test_disambiguator,
         }
 
         # Create and submit job using boto3 directly
