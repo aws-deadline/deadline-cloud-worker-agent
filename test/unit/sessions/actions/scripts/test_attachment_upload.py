@@ -155,6 +155,7 @@ class TestAttachmentUpload:
             manifest_files=["/path/to/manifest.json"],
             destination="manifest_merge",
             name="merge",
+            print_function_callback=print,
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
@@ -211,6 +212,7 @@ class TestAttachmentUpload:
             diff="/base/manifest.json",
             include=["output/**"],
             name="output",
+            print_function_callback=print,
         )
         mock_manifest_snapshot.assert_any_call(
             root="/local/path4",
@@ -218,6 +220,7 @@ class TestAttachmentUpload:
             diff=None,
             include=["./**"],
             name="output",
+            print_function_callback=print,
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
@@ -254,6 +257,7 @@ class TestAttachmentUpload:
             diff="/base/manifest.json",
             include=["output/**"],
             name="output",
+            print_function_callback=print,
         )
         mock_manifest_snapshot.assert_any_call(
             root="/local/path2",
@@ -261,6 +265,7 @@ class TestAttachmentUpload:
             diff=None,
             include=["output/**"],
             name="output",
+            print_function_callback=print,
         )
 
     @patch.dict(
