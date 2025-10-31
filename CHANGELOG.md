@@ -1,3 +1,11 @@
+## 0.28.17 (2025-10-31)
+
+### Experimental
+These changes are experimental and only available through the use of feature flags
+
+* ASSET_SYNC_JOB_USER_FEATURE - Job attachments sync output processing information was not being logged (#800) ([`a1f103d`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/a1f103dec6999aea2fe3a442cff5e2385ddc699b))
+
+
 ## 0.28.16 (2025-10-28)
 
 
