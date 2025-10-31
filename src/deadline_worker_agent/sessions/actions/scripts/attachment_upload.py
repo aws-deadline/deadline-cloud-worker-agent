@@ -110,6 +110,7 @@ def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[st
             # directory to put the generated merged manifests
             destination=manifest_path,
             name="merge",
+            print_function_callback=print,
         )
 
         if root_path_to_local_manifest.get(manifest_props.root_path) is not None:
@@ -177,6 +178,7 @@ def snapshot(
             # when the code reaches here, it's guaranteed output_relative_directories contains value
             include=[subdir + "/**" for subdir in output_relative_directories],
             name="output",
+            print_function_callback=print,
         )
 
         if output_manifest:
