@@ -156,6 +156,7 @@ def perform_download(
         DownloadSummaryStatistics object containing download results
     """
     low_transfer_count = 0
+    last_processed_files = 0
 
     def progress_handler(job_attachments_download_status: ProgressReportMetadata) -> bool:
         """
@@ -165,8 +166,14 @@ def perform_download(
         # Check the transfer rate from the progress report. It monitors for a series of
         # alarmingly low transfer rates, and if the count exceeds the specified threshold,
         # cancels the download and fails the current (SYNC_INPUT_JOB_ATTACHMENTS) action.
-        nonlocal low_transfer_count
+        nonlocal low_transfer_count, last_processed_files
         transfer_rate = job_attachments_download_status.transferRate
+
+        # File completion acts as heartbeat to prevent false positive of low transfer rate
+        # due to files with small sizes < ~50bytes
+        if job_attachments_download_status.processedFiles > last_processed_files:
+            low_transfer_count = 0
+        last_processed_files = job_attachments_download_status.processedFiles
 
         if transfer_rate < LOW_TRANSFER_RATE_THRESHOLD:
             low_transfer_count += 1

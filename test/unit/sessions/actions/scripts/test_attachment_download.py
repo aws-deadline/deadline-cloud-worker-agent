@@ -373,6 +373,7 @@ class TestPerformDownload:
                         progress=i * 10,
                         transferRate=10 * 10**9,
                         progressMessage=f"test: {i}",
+                        processedFiles=0,
                     )
                 )
             return DownloadSummaryStatistics()
@@ -412,6 +413,7 @@ class TestPerformDownload:
                 progress=0.0,
                 transferRate=(10 * 10**3) / 2,
                 progressMessage="",
+                processedFiles=0,
             )
             for _ in range(60):
                 on_downloading_files(low_transfer_rate_report)
@@ -671,6 +673,7 @@ class TestTelemetry:
                 progress=0.0,
                 transferRate=1,
                 progressMessage="Low rate",
+                processedFiles=0,
             )
             for _ in range(60):
                 should_continue = on_downloading_files(low_rate_progress)

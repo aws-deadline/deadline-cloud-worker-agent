@@ -297,6 +297,194 @@ if __name__ == "__main__":
         finally:
             os.remove(output_file_path)
 
+    def test_job_submission_many_small_files_download_does_not_cancel(
+        self,
+        deadline_resources: DeadlineResources,
+        session_worker: EC2InstanceWorker,
+        deadline_client: DeadlineClient,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """
+        Test that downloading many small files does not trigger false positive cancellation
+        due to overhead being included in transfer rate calculation.
+
+        This test demonstrates the bug where many tiny files (1 byte each) with high
+        per-file overhead results in misleadingly low transfer rates that cause job cancellation.
+        """
+
+        # Create job bundle with many small input files
+        job_bundle_path = os.path.join(tmp_path, "small_files_job_bundle")
+        os.makedirs(job_bundle_path, exist_ok=True)
+
+        num_files = 3000  # ~minimum files needed to cause lost transfer rate bug
+        file_size = 1
+
+        LOG.info(f"Creating {num_files} small files ({file_size} byte each) in job bundle...")
+        # Optimize file creation for speed
+        content = "x"  # 1 byte content - reuse the same content
+        for i in range(num_files):
+            small_file_path = os.path.join(job_bundle_path, f"tiny_file_{i:04d}.txt")
+            with open(small_file_path, "w") as f:
+                f.write(content)
+        LOG.info(f"Finished creating {num_files} files")
+
+        # Create simple job template that just echoes completion
+        # The key is that job attachments will download all the small files
+        with open(os.path.join(job_bundle_path, "template.json"), "w") as template_file:
+            template_file.write(
+                json.dumps(
+                    {
+                        "specificationVersion": "jobtemplate-2023-09",
+                        "name": "Many Small Files Transfer Rate Test",
+                        "description": "Test job that downloads many small files to verify transfer rate calculation doesn't cause false cancellation",
+                        "parameterDefinitions": [
+                            {
+                                "name": "DataDir",
+                                "type": "PATH",
+                                "dataFlow": "IN",
+                            },
+                        ],
+                        "steps": [
+                            {
+                                "hostRequirements": {
+                                    "attributes": [
+                                        {
+                                            "name": "attr.worker.os.family",
+                                            "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                        }
+                                    ]
+                                },
+                                "name": "ProcessSmallFiles",
+                                "script": {
+                                    "actions": {
+                                        "onRun": (
+                                            {
+                                                "command": "echo",
+                                                "args": [
+                                                    "Small files download test completed successfully"
+                                                ],
+                                            }
+                                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                                            else {
+                                                "command": "powershell",
+                                                "args": [
+                                                    '"Small files download test completed successfully"'
+                                                ],
+                                            }
+                                        ),
+                                    },
+                                },
+                            },
+                        ],
+                    }
+                )
+            )
+
+        # Set up job parameters
+        job_parameters = [
+            {"name": "DataDir", "value": job_bundle_path},
+        ]
+
+        # Configure deadline client
+        config = configparser.ConfigParser()
+        set_setting("defaults.farm_id", deadline_resources.farm.id, config)
+        set_setting("defaults.queue_id", deadline_resources.queue_a.id, config)
+
+        # Submit job using the job bundle (this will create job attachments for all small files)
+        LOG.info(f"Submitting job with {num_files} small files as job attachments...")
+        job_id = api.create_job_from_job_bundle(
+            job_bundle_path,
+            job_parameters,
+            priority=98,
+            config=config,
+            queue_parameter_definitions=[],
+        )
+        assert job_id is not None
+
+        # Get job details and create Job object
+        job_details = Job.get_job_details(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            job_id=job_id,
+        )
+        job = Job(
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            template={},
+            **job_details,
+        )
+
+        LOG.info(f"Submitted job {job.id} with {num_files} small files ({file_size} byte each)")
+        job.wait_until_complete(client=deadline_client, max_retries=30)
+        LOG.info(f"Job completed with status: {job.task_run_status}")
+
+        # Check if job failed due to transfer rate issues
+        if job.task_run_status == TaskStatus.FAILED:
+            LOG.info("Job failed - checking for transfer rate cancellation...")
+
+            # Get session details to find the failure reason
+            sessions = deadline_client.list_sessions(
+                farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
+            ).get("sessions", [])
+
+            for session in sessions:
+                session_actions = deadline_client.list_session_actions(
+                    farmId=job.farm.id,
+                    queueId=job.queue.id,
+                    jobId=job.id,
+                    sessionId=session["sessionId"],
+                ).get("sessionActions", [])
+
+                for action in session_actions:
+                    # Look specifically for syncInputJobAttachments failures
+                    if "syncInputJobAttachments" in action.get("definition", {}):
+                        if action.get("status") == "FAILED":
+                            # Get detailed session action info to find the transfer rate error message
+                            try:
+                                detailed_action = deadline_client.get_session_action(
+                                    farmId=job.farm.id,
+                                    queueId=job.queue.id,
+                                    jobId=job.id,
+                                    sessionActionId=action["sessionActionId"],
+                                )
+
+                                # Debug: Print all available fields in detailed_action
+                                LOG.info(
+                                    f"FAILED syncInputJobAttachments - Full detailed_action: {detailed_action}"
+                                )
+
+                                # Get the progress message which contains the actual error
+                                progress_message = detailed_action.get("progressMessage", "")
+
+                                if progress_message:
+                                    LOG.info(f"TRANSFER RATE ERROR: {progress_message}")
+                                    pytest.fail(
+                                        f"Job cancelled due to transfer rate error: {progress_message}"
+                                    )
+                                else:
+                                    pytest.fail(
+                                        "Job cancelled due to false low transfer rates (syncInputJobAttachments failed)"
+                                    )
+
+                            except Exception:
+                                # Still count as transfer rate failure since syncInputJobAttachments failed
+                                pytest.fail(
+                                    "Job cancelled due to false low transfer rates (syncInputJobAttachments failed)"
+                                )
+
+                            return  # Exit after handling the first syncInputJobAttachments failure
+
+            # If we get here, no syncInputJobAttachments failures were found
+            pytest.fail(f"Job failed for unexpected reason. Status: {job.task_run_status}")
+
+        elif job.task_run_status == TaskStatus.SUCCEEDED:
+            LOG.info("Job completed successfully - no false cancellation occurred")
+
+        else:
+            # Unexpected status (CANCELED, etc.)
+            pytest.fail(f"Job ended with unexpected status: {job.task_run_status}")
+
     @pytest.mark.parametrize(
         "append_string_script",
         [
@@ -980,7 +1168,7 @@ if __name__ == "__main__":
             job_bundle_path,
             job_parameters,
             priority=99,
-            max_retries_per_task=2,
+            max_retries_per_task=0,
             config=config,
             queue_parameter_definitions=[],
         )
