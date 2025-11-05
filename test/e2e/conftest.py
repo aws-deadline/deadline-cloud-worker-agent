@@ -9,7 +9,6 @@ import pytest
 from dataclasses import dataclass, field, InitVar
 from typing import Callable, Generator, Type
 from contextlib import contextmanager
-from typing import Dict
 
 from deadline_test_fixtures import (
     DeadlineWorker,
@@ -25,7 +24,6 @@ from deadline_test_fixtures import (
     Ec2Tag,
 )
 import pytest
-from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 
 LOG = logging.getLogger(__name__)
 
@@ -192,9 +190,6 @@ def worker_config(
     Returns:
         DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
     """
-    worker_env_var: Dict[str, str] = {
-        "ASSET_SYNC_JOB_USER_FEATURE": str(ASSET_SYNC_JOB_USER_FEATURE),
-    }
 
     return dataclasses.replace(
         worker_config,
@@ -204,7 +199,6 @@ def worker_config(
             posix_env_override_job_user,
         ],
         windows_job_users=windows_job_users,
-        worker_env_var=worker_env_var,
     )
 
 
@@ -237,6 +231,7 @@ def asset_sync_worker_config(
     """
     asset_sync_feature = request.param
     worker_env_var = {
+        **dict(worker_config.worker_env_var or {}),
         "ASSET_SYNC_JOB_USER_FEATURE": str(asset_sync_feature),
     }
     LOG.info(f"worker_env_var: {worker_env_var}")
@@ -499,11 +494,10 @@ def pytest_collection_modifyitems(items):
             sorted_list.remove(item)
             session_worker_tests.append(item)
 
-    # Run asset sync class worker tests first, then session worker tests
-    # This ensures
+    # Run asset sync class worker tests first, then session worker tests. This ensures
     # 1. job attachments tests are run by one asset sync worker at a time
-    # 2. only one session worker is active at a time
     sorted_list.extend(asset_sync_class_worker_tests)
+    # 2. only one session worker is active at a time
     sorted_list.extend(session_worker_tests)
 
     items[:] = sorted_list

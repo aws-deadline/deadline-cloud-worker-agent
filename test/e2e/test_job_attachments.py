@@ -536,17 +536,17 @@ if __name__ == "__main__":
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         asset_sync_class_worker: EC2InstanceWorker,
-        worker_config: DeadlineWorkerConfiguration,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
         file_system: str,
     ) -> None:
         job_bundle_path: str = os.path.join(
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "linux_bundle"
         )
-        if worker_config.worker_env_var:
+        if asset_sync_worker_config.worker_env_var:
             job_parameters: List[Dict[str, str]] = [
                 {
                     "name": "AssetSync",
-                    "value": worker_config.worker_env_var.get(
+                    "value": asset_sync_worker_config.worker_env_var.get(
                         "ASSET_SYNC_JOB_USER_FEATURE", "False"
                     ),
                 },
