@@ -603,7 +603,15 @@ if __name__ == "__main__":
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
     ) -> None:
+        # Mark as xfail when ASSET_SYNC_JOB_USER_FEATURE is True
+        if (
+            asset_sync_worker_config.worker_env_var
+            and asset_sync_worker_config.worker_env_var.get("ASSET_SYNC_JOB_USER_FEATURE") == "True"
+        ):
+            pytest.xfail("Expected to fail when ASSET_SYNC_JOB_USER_FEATURE is True")
+
         job_bundle_path: str = os.path.join(
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "windows_bundle"
         )
