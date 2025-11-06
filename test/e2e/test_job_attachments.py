@@ -615,7 +615,7 @@ if __name__ == "__main__":
             bundle_path=job_bundle_path,
         )
 
-        job.wait_until_complete(client=deadline_client)
+        job.wait_until_complete(client=deadline_client, max_retries=30)
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # Validate S3 setup and manifest integrity
