@@ -608,14 +608,18 @@ if __name__ == "__main__":
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "windows_bundle"
         )
 
+        submit_start_time = time.perf_counter()
         job = submit_job_from_bundle(
             deadline_client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             bundle_path=job_bundle_path,
         )
+        LOG.info(f"Job {job.id} submitted in {time.perf_counter() - submit_start_time:.2f} seconds")
 
         job.wait_until_complete(client=deadline_client, max_retries=30)
+        LOG.info(f"Job {job.id} total in {time.perf_counter() - submit_start_time:.2f} seconds")
+
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # Validate S3 setup and manifest integrity
