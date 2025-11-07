@@ -1523,25 +1523,27 @@ class Session:
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
     ) -> None:
-        # Avoid circular import
-        from .actions import AttachmentDownloadAction, AttachmentUploadAction
+        self._session.run_task(
+            step_script=step_script,
+            task_parameter_values=task_parameter_values,
+            os_env_vars=os_env_vars,
+            log_task_banner=log_task_banner,
+        )
 
-        if self._current_action is not None and isinstance(
-            self._current_action.definition, (AttachmentDownloadAction, AttachmentUploadAction)
-        ):
-            self._session._run_task_without_session_env(
-                step_script=step_script,
-                task_parameter_values=task_parameter_values,
-                os_env_vars=os_env_vars,
-                log_task_banner=log_task_banner,
-            )
-        else:
-            self._session.run_task(
-                step_script=step_script,
-                task_parameter_values=task_parameter_values,
-                os_env_vars=os_env_vars,
-                log_task_banner=log_task_banner,
-            )
+    def _run_attachment_sync_task(
+        self,
+        *,
+        step_script: StepScriptModel,
+        task_parameter_values: TaskParameterSet,
+        os_env_vars: Optional[dict[str, str]] = None,
+        log_task_banner: bool = True,
+    ) -> None:
+        self._session._run_task_without_session_env(
+            step_script=step_script,
+            task_parameter_values=task_parameter_values,
+            os_env_vars=os_env_vars,
+            log_task_banner=log_task_banner,
+        )
 
     def stop(
         self,

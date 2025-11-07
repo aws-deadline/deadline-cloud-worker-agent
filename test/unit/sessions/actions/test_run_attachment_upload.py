@@ -167,7 +167,7 @@ class TestStart:
         assert embedded_file.name == "WorkerManifestProperties"
         assert embedded_file.type == EmbeddedFileTypes_2023_09.TEXT
 
-        session.run_task.assert_called_once_with(
+        session._run_attachment_sync_task.assert_called_once_with(
             step_script=action._step_script,
             task_parameter_values=dict[str, ParameterValue](),
             os_env_vars={
@@ -234,7 +234,7 @@ class TestStart:
         assert len(embedded_data) == 1
         assert embedded_data[0]["root_path"] == "/test/path"
 
-        session.run_task.assert_called_once_with(
+        session._run_attachment_sync_task.assert_called_once_with(
             step_script=action._step_script,
             task_parameter_values=dict[str, ParameterValue](),
             os_env_vars={

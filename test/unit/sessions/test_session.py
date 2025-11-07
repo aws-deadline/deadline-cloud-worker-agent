@@ -3115,3 +3115,67 @@ class TestSessionWorkerManifestProperties:
             "/first/manifest.json",
             "/second/manifest.json",
         ]
+
+
+class TestRunAttachmentSyncTask:
+    """Test cases for Session._run_attachment_sync_task()
+
+    This method is a thin wrapper around _run_task_without_session_env, so we only test
+    that it correctly delegates to the underlying method with the right parameters.
+    """
+
+    @pytest.mark.parametrize(
+        "os_env_vars,log_task_banner",
+        [
+            (None, True),
+            ({"ENV_VAR1": "value1", "ENV_VAR2": "value2"}, True),
+            (None, False),
+            ({"ENV_VAR1": "value1"}, False),
+        ],
+        ids=["defaults", "with_env_vars", "no_banner", "all_params"],
+    )
+    def test_delegates_to_run_task_without_session_env(
+        self,
+        session: Session,
+        mock_openjd_session: MagicMock,
+        os_env_vars: dict[str, str] | None,
+        log_task_banner: bool,
+    ) -> None:
+        """Tests that _run_attachment_sync_task correctly delegates to _run_task_without_session_env."""
+        # GIVEN
+        step_script_model = MagicMock()
+
+        # WHEN
+        session._run_attachment_sync_task(
+            step_script=step_script_model,
+            task_parameter_values=dict[str, ParameterValue](),
+            os_env_vars=os_env_vars,
+            log_task_banner=log_task_banner,
+        )
+
+        # THEN
+        mock_openjd_session._run_task_without_session_env.assert_called_once_with(
+            step_script=step_script_model,
+            task_parameter_values=dict[str, ParameterValue](),
+            os_env_vars=os_env_vars,
+            log_task_banner=log_task_banner,
+        )
+
+    def test_propagates_exception_from_openjd_session(
+        self,
+        session: Session,
+        mock_openjd_session: MagicMock,
+    ) -> None:
+        """Tests that exceptions from the underlying Open Job Description session are propagated."""
+        # GIVEN
+        expected_exception = RuntimeError("Task execution failed")
+        mock_openjd_session._run_task_without_session_env.side_effect = expected_exception
+
+        # WHEN / THEN
+        with pytest.raises(RuntimeError) as exc_info:
+            session._run_attachment_sync_task(
+                step_script=MagicMock(),
+                task_parameter_values={},
+            )
+
+        assert exc_info.value is expected_exception
