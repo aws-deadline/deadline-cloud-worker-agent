@@ -605,13 +605,6 @@ if __name__ == "__main__":
         asset_sync_class_worker: EC2InstanceWorker,
         asset_sync_worker_config: DeadlineWorkerConfiguration,
     ) -> None:
-        # Mark as xfail when ASSET_SYNC_JOB_USER_FEATURE is True
-        if (
-            asset_sync_worker_config.worker_env_var
-            and asset_sync_worker_config.worker_env_var.get("ASSET_SYNC_JOB_USER_FEATURE") == "True"
-        ):
-            pytest.xfail("Expected to fail when ASSET_SYNC_JOB_USER_FEATURE is True")
-
         job_bundle_path: str = os.path.join(
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "windows_bundle"
         )
@@ -1661,6 +1654,7 @@ with open(output_path, "w") as f:
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
 
         # Create Job API
+        submit_start_time = time.perf_counter()
         job = submit_job_from_create_job_API(
             deadline_client=deadline_client,
             deadline_resources=deadline_resources,
@@ -1670,7 +1664,10 @@ with open(output_path, "w") as f:
             storage_profile=False,
         )
 
-        job.wait_until_complete(client=deadline_client)
+        LOG.info(f"Job {job.id} submitted in {time.perf_counter() - submit_start_time:.2f} seconds")
+        job.wait_until_complete(client=deadline_client, max_retries=30)
+        LOG.info(f"Job {job.id} total in {time.perf_counter() - submit_start_time:.2f} seconds")
+
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # Validate S3 setup and manifest integrity
