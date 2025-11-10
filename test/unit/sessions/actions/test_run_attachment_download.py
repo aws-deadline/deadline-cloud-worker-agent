@@ -238,7 +238,7 @@ class TestStart:
         assert len(action._step_script.embeddedFiles) == 1
         assert action._step_script.embeddedFiles[0].name == "WorkerManifestProperties"
 
-        session.run_task.assert_called_once_with(
+        session._run_attachment_sync_task.assert_called_once_with(
             step_script=action._step_script,
             task_parameter_values=dict[str, ParameterValue](),
             os_env_vars={

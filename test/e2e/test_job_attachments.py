@@ -68,7 +68,7 @@ class Asset:
 class TestJobAttachments:
     JOB_OUTPUT_PATH = os.path.join(os.getcwd(), "job_output")
 
-    @pytest.mark.usefixtures("session_worker")
+    @pytest.mark.usefixtures("asset_sync_class_worker")
     @pytest.mark.parametrize(
         "submission_os",
         [
@@ -302,7 +302,7 @@ if __name__ == "__main__":
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
         append_string_script: str,
     ) -> None:
         # Verify that the worker uses the correct job attachment configuration, and writes the output to the correct location
@@ -433,7 +433,7 @@ if __name__ == "__main__":
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
     ) -> None:
         # Tests that if a job has no job output files in the output directory, the job does not fail. This tests prevents regressions in the output code
 
@@ -535,18 +535,18 @@ if __name__ == "__main__":
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        session_worker: EC2InstanceWorker,
-        worker_config: DeadlineWorkerConfiguration,
+        asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
         file_system: str,
     ) -> None:
         job_bundle_path: str = os.path.join(
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "linux_bundle"
         )
-        if worker_config.worker_env_var:
+        if asset_sync_worker_config.worker_env_var:
             job_parameters: List[Dict[str, str]] = [
                 {
                     "name": "AssetSync",
-                    "value": worker_config.worker_env_var.get(
+                    "value": asset_sync_worker_config.worker_env_var.get(
                         "ASSET_SYNC_JOB_USER_FEATURE", "False"
                     ),
                 },
@@ -602,20 +602,25 @@ if __name__ == "__main__":
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
     ) -> None:
         job_bundle_path: str = os.path.join(
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "windows_bundle"
         )
 
+        submit_start_time = time.perf_counter()
         job = submit_job_from_bundle(
             deadline_client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             bundle_path=job_bundle_path,
         )
+        LOG.info(f"Job {job.id} submitted in {time.perf_counter() - submit_start_time:.2f} seconds")
 
-        job.wait_until_complete(client=deadline_client)
+        job.wait_until_complete(client=deadline_client, max_retries=30)
+        LOG.info(f"Job {job.id} total in {time.perf_counter() - submit_start_time:.2f} seconds")
+
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # Validate S3 setup and manifest integrity
@@ -649,7 +654,7 @@ if __name__ == "__main__":
     def test_worker_fails_job_attachment_sync_when_non_valid_queue_role(
         self,
         deadline_resources: DeadlineResources,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
     ) -> None:
         # Test that when submitting a job with job attachments to a queue with a role that cannot read the S3 bucket, the worker will fail the job attachments sync
@@ -807,7 +812,7 @@ if __name__ == "__main__":
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
         hash_string_script: str,
         tmp_path: pathlib.Path,
     ) -> None:
@@ -973,7 +978,7 @@ if __name__ == "__main__":
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
         tmp_path: pathlib.Path,
     ) -> None:
         # Test that submits a job that has step step dependencies and confirm that the final output is as we expect
@@ -1139,7 +1144,7 @@ if __name__ == "__main__":
     def test_worker_fails_job_attachment_sync_when_file_does_not_exist_in_bucket(
         self,
         deadline_resources: DeadlineResources,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
         tmp_path: pathlib.Path,
     ) -> None:
@@ -1325,9 +1330,9 @@ if __name__ == "__main__":
 
         # Make sure the worker is still running and not crashed after this
         get_worker_response: dict[str, Any] = deadline_client.get_worker(
-            farmId=session_worker.configuration.farm_id,
-            fleetId=session_worker.configuration.fleet.id,
-            workerId=session_worker.worker_id,
+            farmId=asset_sync_class_worker.configuration.farm_id,
+            fleetId=asset_sync_class_worker.configuration.fleet.id,
+            workerId=asset_sync_class_worker.worker_id,
         )
 
         assert get_worker_response["status"] in ["STARTED", "RUNNING", "IDLE"]
@@ -1348,7 +1353,7 @@ if __name__ == "__main__":
     def test_job_submission_asset_sync_behaviour_expected_without_errors(
         self,
         deadline_resources,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
         tmp_path: pathlib.Path,
     ) -> None:
@@ -1518,7 +1523,7 @@ with open(output_path, "w") as f:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
     ) -> None:
         """Test output-only job attachments with small files on both Windows and Linux"""
         job_bundle_path: str = os.path.join(
@@ -1570,7 +1575,7 @@ with open(output_path, "w") as f:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
     ) -> None:
         """
         Test job submission using the Create Job API with a complex job attachment bundle.
@@ -1632,7 +1637,7 @@ with open(output_path, "w") as f:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
     ) -> None:
         """
         Test job submission using the Create Job API with a complex job attachment bundle.
@@ -1649,6 +1654,7 @@ with open(output_path, "w") as f:
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
 
         # Create Job API
+        submit_start_time = time.perf_counter()
         job = submit_job_from_create_job_API(
             deadline_client=deadline_client,
             deadline_resources=deadline_resources,
@@ -1658,7 +1664,10 @@ with open(output_path, "w") as f:
             storage_profile=False,
         )
 
-        job.wait_until_complete(client=deadline_client)
+        LOG.info(f"Job {job.id} submitted in {time.perf_counter() - submit_start_time:.2f} seconds")
+        job.wait_until_complete(client=deadline_client, max_retries=30)
+        LOG.info(f"Job {job.id} total in {time.perf_counter() - submit_start_time:.2f} seconds")
+
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # Validate S3 setup and manifest integrity
@@ -1689,7 +1698,7 @@ with open(output_path, "w") as f:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        session_worker: EC2InstanceWorker,
+        asset_sync_class_worker: EC2InstanceWorker,
         test_runner_identity: dict[str, str],
     ) -> None:
         """
