@@ -1530,6 +1530,21 @@ class Session:
             log_task_banner=log_task_banner,
         )
 
+    def _run_attachment_sync_task(
+        self,
+        *,
+        step_script: StepScriptModel,
+        task_parameter_values: TaskParameterSet,
+        os_env_vars: Optional[dict[str, str]] = None,
+        log_task_banner: bool = True,
+    ) -> None:
+        self._session._run_task_without_session_env(
+            step_script=step_script,
+            task_parameter_values=task_parameter_values,
+            os_env_vars=os_env_vars,
+            log_task_banner=log_task_banner,
+        )
+
     def stop(
         self,
         *,

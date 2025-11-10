@@ -10,7 +10,7 @@ from deadline_worker_agent.sessions.attachment_models import WorkerManifestPrope
 @pytest.fixture
 def mock_session():
     session = Mock()
-    session.run_task = Mock()
+    session._run_attachment_sync_task = Mock()
 
     # Mock the worker manifest properties
     mock_worker_props = Mock(spec=WorkerManifestProperties)
@@ -70,8 +70,8 @@ class TestAttachmentUploadActionOptionalTaskId:
 
         action.start(session=mock_session, executor=mock_executor)
 
-        mock_session.run_task.assert_called_once()
-        call_args = mock_session.run_task.call_args[1]
+        mock_session._run_attachment_sync_task.assert_called_once()
+        call_args = mock_session._run_attachment_sync_task.call_args[1]
 
         assert "os_env_vars" in call_args
         env_vars = call_args["os_env_vars"]
@@ -91,8 +91,8 @@ class TestAttachmentUploadActionOptionalTaskId:
 
         action.start(session=mock_session, executor=mock_executor)
 
-        mock_session.run_task.assert_called_once()
-        call_args = mock_session.run_task.call_args[1]
+        mock_session._run_attachment_sync_task.assert_called_once()
+        call_args = mock_session._run_attachment_sync_task.call_args[1]
 
         assert "os_env_vars" in call_args
         env_vars = call_args["os_env_vars"]

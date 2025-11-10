@@ -349,7 +349,7 @@ class AttachmentDownloadAction(OpenjdAction):
             # Successfully launched VFS, running a echo step with openjd
             # for the session to proceed to the next action
             # LINUX and VIRTUAL only
-            session.run_task(
+            session._run_attachment_sync_task(
                 step_script=StepScript_2023_09(
                     actions=StepActions_2023_09(
                         onRun=Action_2023_09(
@@ -367,7 +367,7 @@ class AttachmentDownloadAction(OpenjdAction):
                 worker_manifest_properties_list=download_manifest_properties_list,
             )
             assert self._step_script is not None
-            session.run_task(
+            session._run_attachment_sync_task(
                 step_script=self._step_script,
                 task_parameter_values=dict[str, ParameterValue](),
                 os_env_vars={

@@ -194,7 +194,7 @@ class AttachmentUploadAction(OpenjdAction):
         if self._task_id is not None:
             env_vars["DEADLINE_TASK_ID"] = self._task_id
 
-        session.run_task(
+        session._run_attachment_sync_task(
             step_script=self._step_script,
             task_parameter_values=dict[str, ParameterValue](),
             os_env_vars=env_vars,
