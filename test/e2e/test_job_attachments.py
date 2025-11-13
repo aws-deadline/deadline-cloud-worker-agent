@@ -914,7 +914,7 @@ if __name__ == "__main__":
             job_bundle_path,
             job_parameters,
             priority=99,
-            max_retries_per_task=0,
+            max_retries_per_task=2,
             config=config,
             queue_parameter_definitions=[],
         )
