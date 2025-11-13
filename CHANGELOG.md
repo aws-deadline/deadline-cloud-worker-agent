@@ -1,3 +1,11 @@
+## 0.28.18 (2025-11-13)
+
+### Experimental
+These changes are experimental and only available through the use of feature flags
+
+* ASSET_SYNC_JOB_USER_FEATURE - job attachment upload failures when session environment changes python search path (#810) ([`8a7806d`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/8a7806dd20cd49b2be202ae4052eeee4fd39f506))
+
+
 ## 0.28.17 (2025-10-31)
 
 ### Experimental
