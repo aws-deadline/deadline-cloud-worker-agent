@@ -1,6 +1,6 @@
 
 specificationVersion: 'jobtemplate-2023-09'
-name: "Output Sync No Input Job"
+name: '{{Param.JobName}}'
 description: |
   This job bundle is for testing job attachments output sync with no input.
 
@@ -11,6 +11,9 @@ jobEnvironments:
     PYTHONUNBUFFERED: "True"
 
 parameterDefinitions:
+- name: JobName
+  type: STRING
+  default: "Output Sync No Input Job"
 - name: CommandRunner
   type: STRING
 - name: FilesPerTask

@@ -395,6 +395,7 @@ def submit_job_from_create_job_API(
     queue: Queue,
     debug_snapshot_dir: str,
     storage_profile: bool = False,
+    job_name: Optional[str] = None,
 ) -> Job:
     """Submit a job using the Deadline create job API.
 
@@ -446,6 +447,10 @@ def submit_job_from_create_job_API(
     # Load parameters file
     with open(f"{debug_snapshot_dir}/parameters_param.json", "r") as f:
         parameters = json.load(f)
+
+    # Override job name if provided
+    if job_name is not None:
+        parameters["JobName"] = {"string": job_name}
 
     create_job_kwargs = {
         "farmId": farm.id,

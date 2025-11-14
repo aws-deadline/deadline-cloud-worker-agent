@@ -67,6 +67,7 @@ class Asset:
 
 class TestJobAttachments:
     JOB_OUTPUT_PATH = os.path.join(os.getcwd(), "job_output")
+    ASSET_SYNC_JOB_USER_FEATURE = "ASSET_SYNC_JOB_USER_FEATURE"
 
     @pytest.mark.usefixtures("asset_sync_class_worker")
     @pytest.mark.parametrize(
@@ -81,6 +82,7 @@ class TestJobAttachments:
         submission_os: str,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
         tmp_path: pathlib.Path,
     ) -> None:
         # Test that submits a job that has storage profile and confirm that the final output path and content is as we expect
@@ -169,10 +171,17 @@ class TestJobAttachments:
             "inputManifestHash": test_disambiguator,
         }
 
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+        job_name = f"{asset_sync_feature}_StorageProfilePathMappingJob"
+
         # Create and submit job using boto3 directly
         template = {
             "specificationVersion": "jobtemplate-2023-09",
-            "name": "StorageProfilePathMappingJob",
+            "name": job_name,
             "parameterDefinitions": [
                 {
                     "name": "DataDir",
@@ -302,6 +311,7 @@ if __name__ == "__main__":
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
         asset_sync_class_worker: EC2InstanceWorker,
         append_string_script: str,
     ) -> None:
@@ -317,13 +327,21 @@ if __name__ == "__main__":
             {"name": "StringToAppend", "value": test_run_uuid},
             {"name": "DataDir", "value": job_bundle_path},
         ]
+
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+        job_name = f"{asset_sync_feature}_AppendStringJob"
+
         try:
             with open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file:
                 template_file.write(
                     json.dumps(
                         {
                             "specificationVersion": "jobtemplate-2023-09",
-                            "name": "AppendStringJob",
+                            "name": job_name,
                             "parameterDefinitions": [
                                 {
                                     "name": "DataDir",
@@ -434,6 +452,7 @@ if __name__ == "__main__":
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
     ) -> None:
         # Tests that if a job has no job output files in the output directory, the job does not fail. This tests prevents regressions in the output code
 
@@ -454,11 +473,20 @@ if __name__ == "__main__":
                     },
                 ]
 
+                asset_sync_feature = (
+                    asset_sync_worker_config.worker_env_var.get(
+                        self.ASSET_SYNC_JOB_USER_FEATURE, "False"
+                    )
+                    if asset_sync_worker_config.worker_env_var
+                    else "False"
+                )
+                job_name = f"{asset_sync_feature}_NoOutputJob"
+
                 template_file.write(
                     json.dumps(
                         {
                             "specificationVersion": "jobtemplate-2023-09",
-                            "name": "NoOutputJob",
+                            "name": job_name,
                             "parameterDefinitions": [
                                 {
                                     "name": "OutputFilePath",
@@ -542,17 +570,23 @@ if __name__ == "__main__":
         job_bundle_path: str = os.path.join(
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "linux_bundle"
         )
-        if asset_sync_worker_config.worker_env_var:
-            job_parameters: List[Dict[str, str]] = [
-                {
-                    "name": "AssetSync",
-                    "value": asset_sync_worker_config.worker_env_var.get(
-                        "ASSET_SYNC_JOB_USER_FEATURE", "False"
-                    ),
-                },
-            ]
-        else:
-            job_parameters = []
+
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+
+        job_parameters: List[Dict[str, str]] = [
+            {
+                "name": "JobName",
+                "value": f"{asset_sync_feature}_Step-Step Dataflow Linux_{file_system}",
+            },
+            {
+                "name": "AssetSync",
+                "value": asset_sync_feature,
+            },
+        ]
 
         job = submit_job_from_bundle(
             deadline_client=deadline_client,
@@ -609,12 +643,26 @@ if __name__ == "__main__":
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "windows_bundle"
         )
 
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+
+        job_parameters: List[Dict[str, str]] = [
+            {
+                "name": "JobName",
+                "value": f"{asset_sync_feature}_Step-Step Dataflow Win",
+            },
+        ]
+
         submit_start_time = time.perf_counter()
         job = submit_job_from_bundle(
             deadline_client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.queue_a,
             bundle_path=job_bundle_path,
+            job_parameters=job_parameters,
         )
         LOG.info(f"Job {job.id} submitted in {time.perf_counter() - submit_start_time:.2f} seconds")
 
@@ -656,6 +704,7 @@ if __name__ == "__main__":
         deadline_resources: DeadlineResources,
         asset_sync_class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
     ) -> None:
         # Test that when submitting a job with job attachments to a queue with a role that cannot read the S3 bucket, the worker will fail the job attachments sync
 
@@ -672,13 +721,20 @@ if __name__ == "__main__":
             else '''set /p input=<"{{Param.DataDir}}\\files\\test_input_file"\n powershell -Command "echo ($env:input+\'hi\') | Out-File -encoding utf8 {{Param.DataDir}}\\output_file -NoNewLine"'''
         )
 
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+        job_name = f"{asset_sync_feature}_JobAttachmentToNonValidRoleQueue"
+
         try:
             with open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file:
                 template_file.write(
                     json.dumps(
                         {
                             "specificationVersion": "jobtemplate-2023-09",
-                            "name": "JobAttachmentToNonValidRoleQueue",
+                            "name": job_name,
                             "parameterDefinitions": [
                                 {
                                     "name": "DataDir",
@@ -783,7 +839,7 @@ if __name__ == "__main__":
     @pytest.mark.parametrize(
         "hash_string_script",
         [
-            (
+            pytest.param(
                 "#!/usr/bin/env bash\n\n"
                 "folder_path={{Param.DataDir}}/files\n"
                 'combined_contents=""\n'
@@ -804,7 +860,8 @@ if __name__ == "__main__":
                 "}\n"
                 "$sha256 = [System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($combinedContent))\n"
                 '$hashString = [System.BitConverter]::ToString($sha256).Replace("-", "").ToLower()\n'
-                "Set-Content -Path $OutputFile -Value $hashString -NoNewLine"
+                "Set-Content -Path $OutputFile -Value $hashString -NoNewLine",
+                id="hash_script",
             )
         ],
     )
@@ -813,6 +870,7 @@ if __name__ == "__main__":
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
         hash_string_script: str,
         tmp_path: pathlib.Path,
     ) -> None:
@@ -850,12 +908,20 @@ if __name__ == "__main__":
         job_parameters: List[Dict[str, str]] = [
             {"name": "DataDir", "value": job_bundle_path},
         ]
+
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+        job_name = f"{asset_sync_feature}_AssetsSync"
+
         with open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file:
             template_file.write(
                 json.dumps(
                     {
                         "specificationVersion": "jobtemplate-2023-09",
-                        "name": "AssetsSync",
+                        "name": job_name,
                         "parameterDefinitions": [
                             {
                                 "name": "DataDir",
@@ -979,6 +1045,7 @@ if __name__ == "__main__":
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
         tmp_path: pathlib.Path,
     ) -> None:
         # Test that submits a job that has step step dependencies and confirm that the final output is as we expect
@@ -1012,13 +1079,21 @@ if __name__ == "__main__":
             if os.environ["OPERATING_SYSTEM"] == "linux"
             else '''set /p input=<"{{Param.DataDir}}\\files\\step_one_output"\n powershell -Command "echo ($env:input+\'Hello\') | Out-File -encoding utf8 {{Param.DataDir}}\\files\\output_file -NoNewLine"'''
         )
+
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+        job_name = f"{asset_sync_feature}_StepDependencyJob"
+
         # Create a template that uses step-step dependencies, appending the word "Hello" to the input file once in each step
         with open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file:
             template_file.write(
                 json.dumps(
                     {
                         "specificationVersion": "jobtemplate-2023-09",
-                        "name": "StepDependencyJob",
+                        "name": job_name,
                         "parameterDefinitions": [
                             {
                                 "name": "DataDir",
@@ -1146,6 +1221,7 @@ if __name__ == "__main__":
         deadline_resources: DeadlineResources,
         asset_sync_class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
         tmp_path: pathlib.Path,
     ) -> None:
         # Submits a job with input job attachments, deleting the input files from the Job Attadchments bucket before the job starts, and verifying the job syncInputAttachments step fails
@@ -1165,6 +1241,14 @@ if __name__ == "__main__":
         ]
 
         queue_to_use = deadline_resources.queue_a
+
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+        job_name = f"{asset_sync_feature}_JobAttachmentThatGetsDeleted"
+
         with open(
             os.path.join(job_bundle_path, "parameter_values.json"), "w+"
         ) as parameter_values_file:
@@ -1183,7 +1267,7 @@ if __name__ == "__main__":
                 json.dumps(
                     {
                         "specificationVersion": "jobtemplate-2023-09",
-                        "name": "JobAttachmentThatGetsDeleted",
+                        "name": job_name,
                         "parameterDefinitions": [
                             {
                                 "name": "DataDir",
@@ -1340,7 +1424,7 @@ if __name__ == "__main__":
         # Submit another job and verify that the worker still works properly and finishes the job
 
         sleep_job = submit_sleep_job(
-            "Test Success Sleep Job after syncInputJobAttachments fail",
+            f"{asset_sync_feature}_Success Sleep Job after syncInputJobAttachments fail",
             deadline_client,
             deadline_resources.farm,
             queue_to_use,
@@ -1355,6 +1439,7 @@ if __name__ == "__main__":
         deadline_resources,
         asset_sync_class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
         tmp_path: pathlib.Path,
     ) -> None:
         """
@@ -1376,6 +1461,13 @@ with open(output_path, "w") as f:
 
         os.makedirs(job_bundle_path, exist_ok=True)
 
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+        job_name = f"{asset_sync_feature}_Test Job with Job Attachments and Embedded Files"
+
         # Create input file for job attachments
         input_file = os.path.join(job_bundle_path, "input.txt")
         with open(input_file, "w") as f:
@@ -1390,7 +1482,7 @@ with open(output_path, "w") as f:
                 json.dumps(
                     {
                         "specificationVersion": "jobtemplate-2023-09",
-                        "name": "Test Job with Job Attachments and Embedded Files",
+                        "name": job_name,
                         "parameterDefinitions": [
                             {
                                 "name": "DataDir",
@@ -1524,10 +1616,17 @@ with open(output_path, "w") as f:
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
     ) -> None:
         """Test output-only job attachments with small files on both Windows and Linux"""
         job_bundle_path: str = os.path.join(
             os.path.dirname(__file__), "job_attachment_bundle", "output_only"
+        )
+
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
         )
 
         # Use smaller parameters for E2E testing to avoid long-running test
@@ -1540,6 +1639,7 @@ with open(output_path, "w") as f:
             bundle_path=job_bundle_path,
             max_retries_per_task=0,
             job_parameters=[
+                {"name": "JobName", "value": f"{asset_sync_feature}_Output Sync No Input Job"},
                 {"name": "FilesPerTask", "value": "1"},
                 {"name": "Tasks", "value": "1-5"},
                 {"name": "FileSize", "value": "50"},
@@ -1576,6 +1676,7 @@ with open(output_path, "w") as f:
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
     ) -> None:
         """
         Test job submission using the Create Job API with a complex job attachment bundle.
@@ -1592,6 +1693,12 @@ with open(output_path, "w") as f:
         )
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
 
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+
         # Create Job API
         job = submit_job_from_create_job_API(
             deadline_client=deadline_client,
@@ -1600,6 +1707,7 @@ with open(output_path, "w") as f:
             queue=deadline_resources.queue_a,
             debug_snapshot_dir=job_bundle_path,
             storage_profile=True,
+            job_name=f"{asset_sync_feature}_Complex Manifest Test",
         )
 
         job.wait_until_complete(client=deadline_client)
@@ -1638,6 +1746,7 @@ with open(output_path, "w") as f:
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
     ) -> None:
         """
         Test job submission using the Create Job API with a complex job attachment bundle.
@@ -1653,6 +1762,12 @@ with open(output_path, "w") as f:
         )
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
 
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+
         # Create Job API
         submit_start_time = time.perf_counter()
         job = submit_job_from_create_job_API(
@@ -1662,6 +1777,7 @@ with open(output_path, "w") as f:
             queue=deadline_resources.queue_a,
             debug_snapshot_dir=job_bundle_path,
             storage_profile=False,
+            job_name=f"{asset_sync_feature}_Complex Manifest Test",
         )
 
         LOG.info(f"Job {job.id} submitted in {time.perf_counter() - submit_start_time:.2f} seconds")
@@ -1699,6 +1815,7 @@ with open(output_path, "w") as f:
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
         test_runner_identity: dict[str, str],
     ) -> None:
         """
@@ -1742,6 +1859,13 @@ with open(output_path, "w") as f:
             "totalSize": len(file1_content),
         }
 
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+        job_name = f"{asset_sync_feature}_empty-outputRelativeDirectories-test-{os.environ['OPERATING_SYSTEM']}"
+
         # Upload manifests
         s3.put_object(
             Bucket=s3_bucket,
@@ -1753,7 +1877,7 @@ with open(output_path, "w") as f:
         # Create and submit job using boto3 directly
         template = {
             "specificationVersion": "jobtemplate-2023-09",
-            "name": f"empty-outputRelativeDirectories-test-{os.environ['OPERATING_SYSTEM']}",
+            "name": job_name,
             "parameterDefinitions": [
                 {
                     "name": "AssetPath",
