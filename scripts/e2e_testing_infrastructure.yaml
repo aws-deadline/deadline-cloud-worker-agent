@@ -831,6 +831,14 @@ Resources:
             VCpuCount:
               Min: 2
               Max: 4
+    DependsOn:
+      # When adding storage profile to a fleet,
+      # all queues associated with the fleet need to be updated to allow it first.
+      # The order has to be reversed when removing the storage profile from fleet.
+      - MainQueue
+      - SecondaryQueue
+      - JobsRunAsAgentUserQueue
+      - NonValidRoleQueue
 
   LinuxAutoScalingFleetx86:
     Type: AWS::Deadline::Fleet
@@ -874,6 +882,14 @@ Resources:
             VCpuCount:
               Min: 2
               Max: 4
+    DependsOn:
+      # When adding storage profile to a fleet,
+      # all queues associated with the fleet need to be updated to allow it first.
+      # The order has to be reversed when removing the storage profile from fleet.
+      - MainQueue
+      - SecondaryQueue
+      - JobsRunAsAgentUserQueue
+      - NonValidRoleQueue
 
   WindowsAutoScalingFleetx86:
     Type: AWS::Deadline::Fleet
