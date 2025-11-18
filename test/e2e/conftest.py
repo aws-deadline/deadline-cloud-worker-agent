@@ -1,29 +1,30 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-import boto3
 import dataclasses
 import logging
 import os
-import pytest
-
-from dataclasses import dataclass, field, InitVar
-from typing import Callable, Generator, Type
+import sys
+import traceback
+from collections.abc import Generator
 from contextlib import contextmanager
+from dataclasses import InitVar, dataclass, field
+from typing import Callable, Type
 
+import boto3
+import pytest
 from deadline_test_fixtures import (
+    BootstrapResources,
     DeadlineWorker,
     DeadlineWorkerConfiguration,
     DockerContainerWorker,
+    EC2InstanceWorker,
+    Ec2Tag,
     Farm,
     Fleet,
-    Queue,
-    EC2InstanceWorker,
-    BootstrapResources,
-    PosixSessionUser,
     OperatingSystem,
-    Ec2Tag,
+    PosixSessionUser,
+    Queue,
 )
-import pytest
 
 LOG = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ class DeadlineResources:
 
 
 @pytest.fixture(scope="session")
-def deadline_resources() -> Generator[DeadlineResources, None, None]:
+def deadline_resources() -> DeadlineResources:
     """
     Gets Deadline resources required for running tests.
 
@@ -143,7 +144,7 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
     response = sts_client.get_caller_identity()
     LOG.info("Running tests with credentials from: %s" % response.get("Arn"))
 
-    yield DeadlineResources(
+    return DeadlineResources(
         farm_id=farm_id,
         queue_a_id=queue_a_id,
         queue_b_id=queue_b_id,
@@ -501,3 +502,36 @@ def pytest_collection_modifyitems(items):
     sorted_list.extend(session_worker_tests)
 
     items[:] = sorted_list
+
+
+def _output_thread_stack_traces() -> None:
+    print("\n*** THREAD STACKTRACE - START ***\n", file=sys.stderr)
+
+    for threadId, stack in sys._current_frames().items():
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(f"ThreadID: {threadId}", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
+
+        for filename, lineno, name, line in traceback.extract_stack(stack):
+            print(f'File: "{filename}", line {lineno}, in {name}', file=sys.stderr)
+            if line:
+                print(f"  {line.strip()}", file=sys.stderr)
+        print("", file=sys.stderr)
+
+    print("\n*** THREAD STACKTRACE - END ***\n", file=sys.stderr)
+
+
+def pytest_unconfigure(config):
+    """Pytest hook that runs at the end of the test session to output thread stack traces."""
+    if not os.getenv("DEBUG_THREAD_STACKS"):
+        return
+
+    _output_thread_stack_traces()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Pytest hook that runs at the end of the test session to output thread stack traces."""
+    if not os.getenv("DEBUG_THREAD_STACKS"):
+        return
+
+    _output_thread_stack_traces()

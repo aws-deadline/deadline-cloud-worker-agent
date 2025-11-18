@@ -128,3 +128,11 @@ hatch run e2e-test
 source .e2e_windows_infra.sh
 hatch run e2e-test
 ```
+
+#### Debugging Pytest Hanging
+
+Sometimes you may encounter an issue where the tests complete, but pytest hangs and does not exit.
+This could happen if the test code or the code-under-test creates a Python thread that does not exit.
+There are two pytest hooks `pytest_unconfigure` and `pytest_sessionfinish` that have been
+instrumented with debug tooling for this situation. To use this, set the `DEBUG_THREAD_STACKS`
+environment variable before running the end-to-end tests.
