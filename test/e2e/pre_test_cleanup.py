@@ -13,22 +13,24 @@ This script will automatically run before the tests, if the tests are run with
 hatch run e2e-test
 """
 
-from typing import Any
-import time
-import boto3
-import boto3.session
-
 import logging
 import os
 import sys
+import time
 from dataclasses import dataclass
+from typing import Any
+
+import boto3
+import boto3.session
 from botocore.client import BaseClient
-from botocore.exceptions import ClientError
 from botocore.config import Config
+from botocore.exceptions import ClientError
+from deadline_test_fixtures.deadline.resources import (
+    COMPLETE_TASK_STATUSES,
+    TaskStatus,
+)
 
 from deadline.client.api import _list_jobs_by_filter_expression
-from deadline_test_fixtures.deadline.resources import COMPLETE_TASK_STATUSES, TaskStatus
-
 
 LOG = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -38,6 +40,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 class QueueJob:
     job_id: str
     queue_id: str
+    can_be_cancelled: bool = True
 
 
 def terminate_instances_and_wait(ec2_client: BaseClient, instances: list[str]) -> None:
@@ -154,13 +157,21 @@ def get_incomplete_jobs(
 
 
 def cancel_job(deadline_client: BaseClient, farm_id: str, job: QueueJob) -> None:
-    LOG.info("Cancelling job: %s", job.job_id)
-    deadline_client.update_job(
-        farmId=farm_id,
-        queueId=job.queue_id,
-        jobId=job.job_id,
-        targetTaskRunStatus=TaskStatus.CANCELED,
-    )
+    LOG.info("Attempting to cancel job: %s/%s/%s", farm_id, job.queue_id, job.job_id)
+    try:
+        deadline_client.update_job(
+            farmId=farm_id,
+            queueId=job.queue_id,
+            jobId=job.job_id,
+            targetTaskRunStatus=TaskStatus.CANCELED,
+        )
+    except ClientError as e:
+        # We don't want to block running the tests on jobs that can't be
+        # cancelled.
+        LOG.info(
+            "Error encountered trying to cancel %s/%s/%s: %s", farm_id, job.queue_id, job.job_id, e
+        )
+        job.can_be_cancelled = False
 
 
 def wait_for_jobs_to_be_cancelled(
@@ -170,6 +181,9 @@ def wait_for_jobs_to_be_cancelled(
 
     LOG.info("Waiting for jobs to be cancelled")
     for job in jobs:
+        if not job.can_be_cancelled:
+            continue
+
         tries = 0
         while True:
             response = deadline_client.get_job(
@@ -182,7 +196,9 @@ def wait_for_jobs_to_be_cancelled(
             tries += 1
 
             if tries >= max_retries_seconds:
-                raise RuntimeError(f"Job {job.job_id} failed to cancel in {max_retries_seconds}")
+                raise RuntimeError(
+                    f"Job {farm_id}/{job.queue_id}/{job.job_id} failed to cancel in {max_retries_seconds}"
+                )
 
             time.sleep(1)
 
