@@ -1240,7 +1240,7 @@ if __name__ == "__main__":
             {"name": "DataDir", "value": job_bundle_path},
         ]
 
-        queue_to_use = deadline_resources.queue_a
+        queue_a = deadline_resources.queue_a
 
         asset_sync_feature = (
             asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
@@ -1297,7 +1297,7 @@ if __name__ == "__main__":
 
         config = configparser.ConfigParser()
         set_setting("defaults.farm_id", deadline_resources.farm.id, config)
-        set_setting("defaults.queue_id", queue_to_use.id, config)
+        set_setting("defaults.queue_id", queue_a.id, config)
         job_id: Optional[str] = api.create_job_from_job_bundle(
             job_bundle_path,
             job_parameters,
@@ -1311,7 +1311,7 @@ if __name__ == "__main__":
         job_details = Job.get_job_details(
             client=deadline_client,
             farm=deadline_resources.farm,
-            queue=queue_to_use,
+            queue=queue_a,
             job_id=job_id,
         )
 
@@ -1330,7 +1330,7 @@ if __name__ == "__main__":
         # Find the input manifest
         queue_job_attachment_settings: dict[str, Any] = deadline_client.get_queue(
             farmId=deadline_resources.farm.id,
-            queueId=queue_to_use.id,
+            queueId=queue_a.id,
         )["jobAttachmentSettings"]
 
         job_attachments_bucket_name: str = queue_job_attachment_settings["s3BucketName"]
@@ -1367,7 +1367,7 @@ if __name__ == "__main__":
         deadline_client.update_job(
             farmId=deadline_resources.farm.id,
             jobId=job_id,
-            queueId=queue_to_use.id,
+            queueId=queue_a.id,
             targetTaskRunStatus="READY",
         )
 
@@ -1427,7 +1427,7 @@ if __name__ == "__main__":
             f"Success Sleep Job after syncInputJobAttachments fail[asset_sync_feature={asset_sync_feature}]",
             deadline_client,
             deadline_resources.farm,
-            queue_to_use,
+            queue_a,
         )
 
         sleep_job.wait_until_complete(client=deadline_client)

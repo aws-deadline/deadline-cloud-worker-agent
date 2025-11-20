@@ -4,14 +4,23 @@ import dataclasses
 import logging
 import os
 import sys
+import threading
 import traceback
 from collections.abc import Generator
+from configparser import ConfigParser
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
 from typing import Callable, Type
 
 import boto3
 import pytest
+from botocore.client import BaseClient
+from deadline.client.api import (
+    get_boto3_client,
+    get_queue_user_boto3_session,
+)
+from deadline.client.config import set_setting as set_deadline_setting
+from deadline.job_attachments._aws.aws_clients import get_s3_client, get_s3_transfer_manager
 from deadline_test_fixtures import (
     BootstrapResources,
     DeadlineWorker,
@@ -87,8 +96,34 @@ class DeadlineResources:
         object.__setattr__(self, "queue_a_job_storage_profile_id", job_storage_profile_id)
 
 
+def _shutdown_s3_transfer_manager(
+    s3_client: BaseClient,
+    desc: str,
+) -> None:
+    """
+    The s3transfer.manager.TransferManager maintains concurrent.futures.Exeuctor instance (by
+    default a ThreadPoolExecutor) which needs to be shut down. The deadline library maintains an
+    lru_cache mapping s3 client -> TransferManager, so these instances are long-lived for the life
+    of the Python process.
+
+    This helper method will obtain the TransferManager instance mapped to a s3 client instance and
+    shut it down.
+
+    Parameters:
+        s3_client: The boto3 s3 client instance to use to lookup the TransferManager instance
+        desc: A description for the shutdown context
+    """
+    num_threads_before = threading.active_count()
+    s3_transfer_manager = get_s3_transfer_manager(s3_client)
+    LOG.info(f"Shutting down S3 Transfer Manager: {desc}")
+    s3_transfer_manager.shutdown()
+    num_threads_after = threading.active_count()
+    num_threads_joined = num_threads_before - num_threads_after
+    LOG.info(f"Shut down S3 Transfer Manager: {desc} (num threads joined: {num_threads_joined})")
+
+
 @pytest.fixture(scope="session")
-def deadline_resources() -> DeadlineResources:
+def deadline_resources() -> Generator[DeadlineResources, None, None]:
     """
     Gets Deadline resources required for running tests.
 
@@ -144,7 +179,7 @@ def deadline_resources() -> DeadlineResources:
     response = sts_client.get_caller_identity()
     LOG.info("Running tests with credentials from: %s" % response.get("Arn"))
 
-    return DeadlineResources(
+    yield DeadlineResources(
         farm_id=farm_id,
         queue_a_id=queue_a_id,
         queue_b_id=queue_b_id,
@@ -157,6 +192,47 @@ def deadline_resources() -> DeadlineResources:
         windows_job_storage_profile_id=windows_job_storage_profile_id,
         fleet_storage_profile_id=fleet_storage_profile_id,
         windows_fleet_storage_profile_id=windows_fleet_storage_profile_id,
+    )
+
+    # HACK: Cleanup the s3transfer.manager.TransferManager instances that are held in lru_cache.
+    # Each one maintains a concurrent.futures.ThreadPoolExecutor instance which contains a pool
+    # of threads. This must be explicitly shutdown since the threads are non-daemon and will keep
+    # the Python process open.
+    config = ConfigParser()
+    set_deadline_setting("defaults.farm_id", farm_id, config)
+    deadline = get_boto3_client("deadline", config=config)
+
+    # For job attachment upload, deadline Python library assumes the role of the queue like below to
+    # create a s3 boto client. Only the queues below use the deadline Python library to submit jobs
+    queues_to_shutdown = (
+        ("queue_a", queue_a_id),
+        ("non_valid_role_queue_id", non_valid_role_queue_id),
+    )
+    for queue_label, queue_id in queues_to_shutdown:
+        set_deadline_setting("defaults.queue_id", queue_id, config)
+        queue = deadline.get_queue(
+            farmId=farm_id,
+            queueId=queue_id,
+        )
+        queue_role_session = get_queue_user_boto3_session(
+            deadline=deadline,
+            config=config,
+            farm_id=farm_id,
+            queue_id=queue_id,
+            queue_display_name=queue["displayName"],
+        )
+        queue_s3_client = get_s3_client(queue_role_session)
+        _shutdown_s3_transfer_manager(
+            s3_client=queue_s3_client,
+            desc=f"for queue {queue_label} ({queue_id})",
+        )
+
+    # The wait_for_job_output function in e2e.utils does not provide a session, so the default
+    # s3 client is used like below
+    default_s3_client = get_s3_client()
+    _shutdown_s3_transfer_manager(
+        s3_client=default_s3_client,
+        desc="for the default s3 client",
     )
 
 
