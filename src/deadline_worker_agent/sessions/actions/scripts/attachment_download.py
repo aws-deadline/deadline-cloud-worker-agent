@@ -200,6 +200,7 @@ def perform_download(
         queue_id=_queue_id,
         summary=download_summary_statistics.convert_to_summary_statistics(),
     )
+    print(f"Summary Statistics for file downloads:\n{download_summary_statistics}")
     return download_summary_statistics
 
 

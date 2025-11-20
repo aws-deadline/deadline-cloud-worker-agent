@@ -212,7 +212,6 @@ class TestAttachmentUpload:
             diff="/base/manifest.json",
             include=["output/**"],
             name="output",
-            print_function_callback=print,
         )
         mock_manifest_snapshot.assert_any_call(
             root="/local/path4",
@@ -220,7 +219,6 @@ class TestAttachmentUpload:
             diff=None,
             include=["./**"],
             name="output",
-            print_function_callback=print,
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
@@ -257,7 +255,6 @@ class TestAttachmentUpload:
             diff="/base/manifest.json",
             include=["output/**"],
             name="output",
-            print_function_callback=print,
         )
         mock_manifest_snapshot.assert_any_call(
             root="/local/path2",
@@ -265,7 +262,6 @@ class TestAttachmentUpload:
             diff=None,
             include=["output/**"],
             name="output",
-            print_function_callback=print,
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
@@ -318,6 +314,7 @@ class TestAttachmentUpload:
             "DEADLINE_SESSIONACTION_START_TIME": "1234567890.0",
         },
     )
+    @patch("builtins.print")
     @patch.object(attachment_upload_mod, "ProgressTracker")
     @patch.object(attachment_upload_mod.config_file, "get_cache_directory")
     @patch.object(attachment_upload_mod, "S3AssetUploader")
@@ -326,6 +323,7 @@ class TestAttachmentUpload:
         mock_uploader_class: Mock,
         mock_get_cache_directory: Mock,
         mock_progress_tracker: Mock,
+        mock_print: Mock,
         mock_record_attachment_upload_telemetry_event: Mock,
     ):
         # GIVEN
@@ -467,6 +465,18 @@ class TestAttachmentUpload:
             upload_summary=progress_tracker_stub.get_summary_statistics(),
             manifest_total_bytes=expected_total_bytes,
             manifest_total_files=expected_total_files,
+        )
+
+        # Verify print statements
+        mock_print.assert_any_call(
+            "Found 1 file totaling 123 B in output directory: /local/path/one"
+        )
+        mock_print.assert_any_call(
+            "Found 2 files totaling 1.11 KB in output directory: /local/path/two"
+        )
+        mock_print.assert_any_call("Uploaded output manifest to manifest_key")
+        mock_print.assert_any_call(
+            f"Summary Statistics for file uploads:\n{progress_tracker_stub.get_summary_statistics()}"
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.upload_output_assets")

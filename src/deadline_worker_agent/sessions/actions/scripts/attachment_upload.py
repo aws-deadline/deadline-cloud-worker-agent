@@ -25,6 +25,7 @@ from dataclasses import asdict
 import glob
 
 from deadline.client.config import config_file
+from deadline.job_attachments.api import human_readable_file_size
 from deadline.job_attachments.asset_manifests.decode import decode_manifest
 from deadline.job_attachments.progress_tracker import ProgressTracker, ProgressStatus
 
@@ -179,7 +180,6 @@ def snapshot(
             # when the code reaches here, it's guaranteed output_relative_directories contains value
             include=[glob.escape(subdir) + "/**" for subdir in output_relative_directories],
             name="output",
-            print_function_callback=print,
         )
 
         if output_manifest:
@@ -314,10 +314,26 @@ def upload_output_assets(
                 print(f"Error reading output manifest: {e}")
                 continue
 
-            all_manifests_total_files += len(output_manifest.paths)
-            all_manifests_total_bytes += sum([path.size for path in output_manifest.paths])
+            total_file_count = len(output_manifest.paths)
+            all_manifests_total_files += total_file_count
+            total_file_size = sum([path.size for path in output_manifest.paths])
+            all_manifests_total_bytes += total_file_size
 
-            # Upload the assets to S3
+            print(
+                f"Found {total_file_count} file{'' if total_file_count == 1 else 's'}"
+                f" totaling {human_readable_file_size(total_file_size)}"
+                f" in output directory: {manifest_props.local_root_path}"
+            )
+            print(
+                f"Uploading {total_file_count} output file{'' if total_file_count == 1 else 's'}"
+                f" to S3: {s3_settings.s3BucketName}/{s3_settings.full_cas_prefix()}"
+            )
+
+            progress_tracker_per_root = ProgressTracker(
+                status=ProgressStatus.UPLOAD_IN_PROGRESS,
+                total_files=total_file_count,
+                total_bytes=total_file_size,
+            )
             key, data = asset_uploader.upload_assets(
                 job_attachment_settings=s3_settings,
                 manifest=output_manifest,
@@ -328,11 +344,12 @@ def upload_output_assets(
                 source_root=Path(manifest_props.root_path),
                 asset_root=Path(manifest_props.local_root_path),
                 s3_check_cache_dir=config_file.get_cache_directory(),
-                progress_tracker=progress_tracker,
+                progress_tracker=progress_tracker_per_root,
             )
 
+            print(f"Uploaded output manifest to {key}")
             print(
-                f"Uploaded assets from {manifest_props.local_root_path}, to {s3_settings.to_s3_root_uri()}/Manifests/{key}, hashed data {data}"
+                f"Summary Statistics for file uploads:\n{progress_tracker_per_root.get_summary_statistics()}"
             )
 
             output_manifest_info_list.append(

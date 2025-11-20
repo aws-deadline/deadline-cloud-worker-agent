@@ -297,7 +297,10 @@ class TestPerformDownload:
         ) as m:
             yield m
 
-    def test_perform_download_success(self, mock_success_telemetry, mock_download_files):
+    @patch("builtins.print")
+    def test_perform_download_success(
+        self, mock_print, mock_success_telemetry, mock_download_files
+    ):
         """Test successful download with telemetry recording."""
         # GIVEN
         from deadline.job_attachments.progress_tracker import SummaryStatistics
@@ -326,6 +329,11 @@ class TestPerformDownload:
         mock_download_files.assert_called_once()
         mock_success_telemetry.assert_called_once_with(
             queue_id="queue-unknown", summary=mock_summary_stats
+        )
+
+        # Verify print statement
+        mock_print.assert_called_with(
+            f"Summary Statistics for file downloads:\n{mock_download_summary}"
         )
 
     def test_perform_download_failure(self, mock_fail_telemetry, mock_download_files):
