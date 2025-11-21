@@ -908,14 +908,14 @@ def record_attachment_download_latencies_telemetry_event(
 
 def record_attachment_upload_telemetry_event(
     queue_id: str,
-    upload_summary: SummaryStatistics,
+    upload_summaries: list[SummaryStatistics],
     manifest_total_files: int,
     manifest_total_bytes: int,
 ) -> None:
     """Calls the telemetry client to record an event capturing the attachment_upload summary."""
     details = {
         "queue_id": queue_id,
-        "upload_summary": asdict(upload_summary),
+        "upload_summary": [asdict(summary) for summary in upload_summaries],
         "manifest_summary": {
             "total_files": manifest_total_files,
             "total_bytes": manifest_total_bytes,

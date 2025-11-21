@@ -291,14 +291,9 @@ def upload_output_assets(
     asset_uploader: S3AssetUploader = S3AssetUploader()
     output_manifest_info_list = []
 
-    # Create a dummy ProgressTracker just to get the output summary statistics (actual files & bytes uploaded)
-    progress_tracker = ProgressTracker(
-        status=ProgressStatus.NONE,
-        total_files=0,
-        total_bytes=0,
-    )
     all_manifests_total_files = 0
     all_manifests_total_bytes = 0
+    all_upload_summaries = []
 
     # Process each worker manifest property for upload
     for manifest_props in worker_manifest_properties:
@@ -351,6 +346,7 @@ def upload_output_assets(
             print(
                 f"Summary Statistics for file uploads:\n{progress_tracker_per_root.get_summary_statistics()}"
             )
+            all_upload_summaries.append(progress_tracker_per_root.get_summary_statistics())
 
             output_manifest_info_list.append(
                 UploadManifestInfo(
@@ -360,14 +356,9 @@ def upload_output_assets(
                 )
             )
 
-    progress_tracker.set_total_files(
-        total_bytes=all_manifests_total_bytes,
-        total_files=all_manifests_total_files,
-    )
-
     record_attachment_upload_telemetry_event(
         queue_id=_queue_id,
-        upload_summary=progress_tracker.get_summary_statistics(),
+        upload_summaries=all_upload_summaries,
         manifest_total_bytes=all_manifests_total_bytes,
         manifest_total_files=all_manifests_total_files,
     )

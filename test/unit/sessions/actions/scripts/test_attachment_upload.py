@@ -462,7 +462,10 @@ class TestAttachmentUpload:
         # Verify telemetry
         mock_record_attachment_upload_telemetry_event.assert_called_once_with(
             queue_id="queue-unknown",
-            upload_summary=progress_tracker_stub.get_summary_statistics(),
+            upload_summaries=[
+                progress_tracker_stub.get_summary_statistics(),
+                progress_tracker_stub.get_summary_statistics(),
+            ],
             manifest_total_bytes=expected_total_bytes,
             manifest_total_files=expected_total_files,
         )
