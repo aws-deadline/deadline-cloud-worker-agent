@@ -17,7 +17,7 @@ parameterDefinitions:
   type: PATH
   objectType: DIRECTORY
   dataFlow: INOUT
-  default: ./data_dir2
+  default: "./[data_]dir2"
   description: This directory is the secondary directory for both the input and output for all steps.
 - name: InputDir
   type: PATH

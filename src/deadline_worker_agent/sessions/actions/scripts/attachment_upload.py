@@ -22,6 +22,7 @@ import json
 from typing import cast, Any, Callable, Optional, TypeVar
 from pathlib import Path
 from dataclasses import asdict
+import glob
 
 from deadline.client.config import config_file
 from deadline.job_attachments.asset_manifests.decode import decode_manifest
@@ -176,7 +177,7 @@ def snapshot(
             diff=root_path_to_base_manifest.get(manifest_props.root_path),
             # include patterns for output directories (with recursive wildcard)
             # when the code reaches here, it's guaranteed output_relative_directories contains value
-            include=[subdir + "/**" for subdir in output_relative_directories],
+            include=[glob.escape(subdir) + "/**" for subdir in output_relative_directories],
             name="output",
             print_function_callback=print,
         )

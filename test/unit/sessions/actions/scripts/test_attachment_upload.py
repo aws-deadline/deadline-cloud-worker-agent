@@ -268,6 +268,44 @@ class TestAttachmentUpload:
             print_function_callback=print,
         )
 
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
+    def test_snapshot_with_special_characters_in_directory_names(
+        self, mock_manifest_snapshot: Mock
+    ):
+        # GIVEN - Test that glob.escape is used for directory names with special characters
+        mock_worker_props = Mock()
+        mock_worker_props.local_root_path = "/local/path"
+        mock_worker_props.root_path = "/source/path"
+        mock_worker_props.local_output_relative_directories.return_value = [
+            "output[test]",  # Contains glob special characters
+            "output*dir",  # Contains glob wildcard
+            "output?dir",  # Contains glob single char wildcard
+            "[data_]*dir2?",  # Complex case with multiple special chars
+        ]
+
+        mock_snapshot_result = Mock()
+        mock_snapshot_result.manifest = "/snapshot/manifest.json"
+        mock_manifest_snapshot.return_value = mock_snapshot_result
+
+        # WHEN
+        result = snapshot([mock_worker_props], {"/source/path": None})
+
+        # THEN
+        assert result == {"/source/path": "/snapshot/manifest.json"}
+        mock_manifest_snapshot.assert_called_once_with(
+            root="/local/path",
+            destination="manifest_snapshot",
+            diff=None,
+            include=[
+                "output[[]test]/**",  # Escaped brackets
+                "output[*]dir/**",  # Escaped asterisk
+                "output[?]dir/**",  # Escaped question mark
+                "[[]data_][*]dir2[?]/**",  # Complex case with multiple special chars
+            ],
+            name="output",
+            print_function_callback=print,
+        )
+
     @patch.dict(
         "os.environ",
         {
