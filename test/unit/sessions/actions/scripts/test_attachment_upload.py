@@ -299,7 +299,6 @@ class TestAttachmentUpload:
                 "[[]data_][*]dir2[?]/**",  # Complex case with multiple special chars
             ],
             name="output",
-            print_function_callback=print,
         )
 
     @patch.dict(

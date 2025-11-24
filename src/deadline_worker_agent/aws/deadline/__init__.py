@@ -915,7 +915,7 @@ def record_attachment_upload_telemetry_event(
     """Calls the telemetry client to record an event capturing the attachment_upload summary."""
     details = {
         "queue_id": queue_id,
-        "upload_summary": [asdict(summary) for summary in upload_summaries],
+        "upload_summaries": [asdict(summary) for summary in upload_summaries],
         "manifest_summary": {
             "total_files": manifest_total_files,
             "total_bytes": manifest_total_bytes,
