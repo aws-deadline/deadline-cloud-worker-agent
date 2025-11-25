@@ -29,8 +29,7 @@ User Guide
 
 ## Compatibility
 
-The worker agent requires Python 3.9 or higher. There are additional platform-specific requirements
-listed below:
+The worker agent requires Python 3.9 or higher and is supported on Linux and Windows.  The platform-specific requirements are listed below:
 
 **Linux:**
 
@@ -42,8 +41,6 @@ listed below:
 *   Windows Server 2022 is recommended and tested
 *   Requires CPython implementation of Python
 *   **Python must be installed for all users** (e.g. in `C:\Program Files`)
-
-**MacOS is intended to be used for testing only and is subject to change.**
 
 ## Versioning
 
