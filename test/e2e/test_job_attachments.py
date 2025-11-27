@@ -598,7 +598,7 @@ if __name__ == "__main__":
             job_parameters=job_parameters,
         )
 
-        job.wait_until_complete(client=deadline_client)
+        job.wait_until_complete(client=deadline_client, max_retries=42)
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # Validate S3 setup and manifest integrity
