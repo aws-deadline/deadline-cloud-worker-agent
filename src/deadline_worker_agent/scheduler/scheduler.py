@@ -233,7 +233,10 @@ class WorkerScheduler:
             If the value is None, then no local session logs will be written.
         """
         self._deadline = deadline
-        self._executor = ThreadPoolExecutor(max_workers=100)
+        self._executor = ThreadPoolExecutor(
+            max_workers=100,
+            thread_name_prefix="WorkerSchedulerSessions",
+        )
         self._sessions = SessionMap(cleanup_session_user_processes=cleanup_session_user_processes)
         self._wakeup = Event()
         self._shutdown = stop or Event()
@@ -487,6 +490,7 @@ class WorkerScheduler:
         # fast to get to transitioning to STOPPED state after this.
         timeout_event = Event()
         timer = Timer(interval=timeout.total_seconds(), function=timeout_event.set)
+        timer.name = "UpdateWorkerStoppingTimeout"
 
         try:
             update_worker(

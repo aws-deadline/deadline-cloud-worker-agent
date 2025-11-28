@@ -206,4 +206,5 @@ class HostMetricsLogger:
             interval_s (float): The interval in seconds to print the host metrics at.
         """
         self._timer = Timer(self.interval_s, self.log_metrics)
+        self._timer.name = "HostMetricsLogger"
         self._timer.start()

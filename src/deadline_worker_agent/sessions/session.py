@@ -221,7 +221,10 @@ class Session:
         self._job_details = job_details
         self._report_action_update = action_update_callback
         self._env = env
-        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix=id,
+        )
         self._worker_manifest_properties_by_local_root: dict[str, WorkerManifestProperties] = {}
 
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
@@ -418,8 +421,7 @@ class Session:
         This code will loop until Session.stop() is called from another thread.
         """
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            self._executor = executor
+        with self._executor:
             while not self._stop.wait(timeout=0.1):
                 # Start session action if needed
                 with (

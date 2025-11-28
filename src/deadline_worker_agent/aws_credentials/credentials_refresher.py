@@ -145,6 +145,7 @@ class AwsCredentialsRefresher:
             refresh_in = timedelta(minutes=1)
 
         self._timer = Timer(refresh_in.total_seconds(), self._refresh)
+        self._timer.name = f"AwsCredentialsRefresher({self._resource['resource']})"
         self._timer.start()
         _logger.info(
             AwsCredentialsLogEvent(

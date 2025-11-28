@@ -98,7 +98,10 @@ class Worker:
         self._deadline_client = deadline_client
         self._s3_client = s3_client
         self._logs_client = logs_client
-        self._executor = ThreadPoolExecutor(max_workers=3)
+        self._executor = ThreadPoolExecutor(
+            max_workers=3,
+            thread_name_prefix="Worker",
+        )
         self._farm_id = farm_id
         self._fleet_id = fleet_id
         self._worker_id = worker_id

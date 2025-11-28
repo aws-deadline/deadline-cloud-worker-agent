@@ -419,6 +419,8 @@ class CloudWatchLogStreamThread(Thread):
         self._log_stream_name = log_stream_name
         self._stop_event = stop_event
         self._prev_request_times: Deque[float] = deque()
+        if "name" not in kwargs:  # pragma: no cover
+            kwargs["name"] = f"CloudWatchLogStreamThread({log_group_name}-{log_stream_name})"
 
         super().__init__(*args, **kwargs)
 
