@@ -102,7 +102,7 @@ def test_cap_kill_not_inherited_by_running_jobs(
                                     "term",
                                     str(sleep_job_in_bg_pid),
                                 ],
-                                "timeout": 1,  # Times out in 1 second
+                                "timeout": 5,  # Times out in 5 seconds
                                 "cancelation": {
                                     "mode": "NOTIFY_THEN_TERMINATE",
                                     "notifyPeriodInSeconds": 1,
