@@ -1,3 +1,13 @@
+## 0.28.19 (2025-12-09)
+
+### Experimental
+These changes are experimental and only available through the use of feature flags
+
+* ASSET_SYNC_JOB_USER_FEATURE - Improve logging for attachment upload and download (#826) ([`557d6f5`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/557d6f5a07702ccef346e0807ef97adbfffd05a3))
+
+* ASSET_SYNC_JOB_USER_FEATURE - Escape special characters in output directory patterns when generate diff for upload (#828) ([`7022f96`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/7022f962d05d6f079180d419d93794a18e8ba3cf))
+
+
 ## 0.28.18 (2025-11-13)
 
 ### Experimental
