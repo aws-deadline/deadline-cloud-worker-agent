@@ -835,6 +835,15 @@ def record_uncaught_exception_telemetry_event(exception_type: str) -> None:
     )
 
 
+def record_asset_sync_filesystem_event(queue_id: str, file_system: str) -> None:
+    """Calls the telemetry client to record what filesystem was used"""
+    details: Dict[str, Any] = {"queue_id": queue_id, "filesystem": file_system}
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.sync_inputs_filesystem",
+        event_details=details,
+    )
+
+
 def record_sync_inputs_telemetry_event(queue_id: str, summary: SummaryStatistics) -> None:
     """Calls the telemetry client to record an event capturing the sync-inputs summary."""
     details: Dict[str, Any] = asdict(summary)

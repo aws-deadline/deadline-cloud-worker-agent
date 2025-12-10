@@ -29,6 +29,7 @@ from deadline.job_attachments.os_file_permission import (
     WindowsPermissionEnum,
 )
 from deadline.job_attachments._utils import _get_unique_dest_dir_name
+from deadline_worker_agent.aws.deadline import record_asset_sync_filesystem_event
 
 from openjd.sessions import (
     LOG as OPENJD_LOG,
@@ -232,6 +233,9 @@ class AttachmentDownloadAction(OpenjdAction):
             manifests=manifest_properties_list,
             fileSystem=session._job_attachment_details.job_attachments_file_system,
         )
+
+        # emit telemetry event on what fileSystem we are using
+        record_asset_sync_filesystem_event(session._queue_id, attachments.fileSystem)
 
         storage_profiles_path_mapping_rules_dict: dict[str, str] = {
             str(rule.source_path): str(rule.destination_path)
