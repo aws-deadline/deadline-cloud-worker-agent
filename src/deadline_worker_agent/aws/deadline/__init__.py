@@ -835,7 +835,7 @@ def record_uncaught_exception_telemetry_event(exception_type: str) -> None:
     )
 
 
-def record_asset_sync_filesystem_event(queue_id: str, file_system: str) -> None:
+def _record_asset_sync_filesystem_event(queue_id: str, file_system: str) -> None:
     """Calls the telemetry client to record what filesystem was used"""
     details: Dict[str, Any] = {"queue_id": queue_id, "filesystem": file_system}
     _get_deadline_telemetry_client().record_event(
