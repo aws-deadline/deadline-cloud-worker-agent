@@ -1,14 +1,23 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from socket import AddressFamily
-from typing import Generator, NamedTuple
+from typing import Generator, NamedTuple, Optional
 from unittest.mock import MagicMock, patch
 
-from psutil._common import snicaddr
 from pytest import fixture, mark, param
 
 from deadline_worker_agent.api_models import IpAddresses
 from deadline_worker_agent.startup import host_properties as host_properties_mod
+
+
+class MockNetworkAddress(NamedTuple):
+    """Mock network address structure matching psutil's snicaddr"""
+
+    address: str
+    family: AddressFamily
+    broadcast: Optional[str]
+    netmask: str
+    ptp: Optional[str]
 
 
 @fixture
@@ -133,10 +142,10 @@ class TestGetIpAddresses:
         net_if_addrs: dict[str, list[DetectedAddress]],
     ) -> Generator[MagicMock, None, None]:
         with patch.object(host_properties_mod.psutil, "net_if_addrs") as mock_psutil_net_if_addrs:
-            return_value: dict[str, list[snicaddr]] = {}
+            return_value: dict[str, list[MockNetworkAddress]] = {}
             for nic, addresses in net_if_addrs.items():
                 return_value[nic] = [
-                    snicaddr(
+                    MockNetworkAddress(
                         address=address.address,
                         family=address.family,
                         # These are ignored
