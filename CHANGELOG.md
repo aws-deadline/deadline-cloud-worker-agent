@@ -1,3 +1,14 @@
+## 0.28.20 (2025-12-29)
+
+
+### Features
+* Added telemetry for filesystem type detection (#843) ([`ddee082`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/ddee0827a127c1b74599d934f653a2631558ebf8))
+
+### Bug Fixes
+* Fixed false positive "low transfer rate" failures when syncing job attachments with many small files (#805)
+ ([`3af802b`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/3af802b0a2204864ee3093834e1916ff87100656))
+
+
 ## 0.28.19 (2025-12-09)
 
 ### Experimental
