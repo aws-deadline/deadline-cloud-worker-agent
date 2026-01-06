@@ -465,8 +465,6 @@ class TestAttachmentUpload:
                 progress_tracker_stub.get_summary_statistics(),
                 progress_tracker_stub.get_summary_statistics(),
             ],
-            manifest_total_bytes=expected_total_bytes,
-            manifest_total_files=expected_total_files,
         )
 
         # Verify print statements
