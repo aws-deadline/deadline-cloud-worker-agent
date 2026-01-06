@@ -9,7 +9,6 @@ from unittest.mock import ANY, MagicMock, Mock, call, patch
 import logging
 
 from deadline_worker_agent.api_models import ManifestInfo
-from deadline_worker_agent.feature_flag import MANIFEST_REPORTING_FEATURE
 
 from openjd.sessions import (
     ActionState,
@@ -708,10 +707,6 @@ class TestSchedulerSync:
         else:
             assert status_as_boto.get("processExitCode", "FAIL") == expected_result
 
-    @pytest.mark.skipif(
-        not MANIFEST_REPORTING_FEATURE,
-        reason="Only relevant when MANIFEST_REPORTING_FEATURE is enabled",
-    )
     def test_updated_action_to_boto_with_empty_manifests(self, scheduler: WorkerScheduler) -> None:
         # GIVEN
         manifests = [
