@@ -809,6 +809,8 @@ def _get_deadline_telemetry_client() -> TelemetryClient:
         __cached_telemetry_client = get_telemetry_client(
             "deadline-cloud-worker-agent", ".".join(version.split(".")[:3])
         )
+        # Override service name to ensure consistency for all telemetry from worker agent
+        __cached_telemetry_client._system_metadata["service"] = "deadline-cloud-worker-agent"
         __cached_telemetry_client.update_common_details(
             {"openjd-sessions-version": ".".join(openjd_sessions_version.split(".")[:3])}
         )
