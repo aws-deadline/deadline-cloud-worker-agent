@@ -5,13 +5,13 @@ from time import sleep, monotonic
 from typing import Any, Callable, Dict, Optional, TypeVar, cast
 from threading import Event
 from dataclasses import asdict, dataclass
-from functools import wraps
+from functools import wraps, cache
 import random
 
 from botocore.retries.standard import RetryContext
 from botocore.exceptions import ClientError
 
-from deadline.client.api import get_telemetry_client, TelemetryClient
+from deadline.client.api import TelemetryClient
 from deadline.client import version as deadline_client_lib_version
 from deadline.job_attachments.progress_tracker import SummaryStatistics
 from openjd.model import version as openjd_model_version
@@ -38,8 +38,6 @@ from ...log_sync.cloudwatch import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,
     LOG_CONFIG_OPTION_STREAM_NAME_KEY,
 )
-
-__cached_telemetry_client: Optional[TelemetryClient] = None
 
 _logger = logging.getLogger(__name__)
 
@@ -802,25 +800,22 @@ def update_worker_schedule(
     return response
 
 
+@cache
 def _get_deadline_telemetry_client() -> TelemetryClient:
     """Wrapper around the Deadline Client Library telemetry client, in order to set package-specific information"""
-    global __cached_telemetry_client
-    if not __cached_telemetry_client:
-        __cached_telemetry_client = get_telemetry_client(
-            "deadline-cloud-worker-agent", ".".join(version.split(".")[:3])
-        )
-        # Override service name to ensure consistency for all telemetry from worker agent
-        __cached_telemetry_client._system_metadata["service"] = "deadline-cloud-worker-agent"
-        __cached_telemetry_client.update_common_details(
-            {"openjd-sessions-version": ".".join(openjd_sessions_version.split(".")[:3])}
-        )
-        __cached_telemetry_client.update_common_details(
-            {"openjd-model-version": ".".join(openjd_model_version.split(".")[:3])}
-        )
-        __cached_telemetry_client.update_common_details(
-            {"deadline-cloud": ".".join(deadline_client_lib_version.split(".")[:3])}
-        )
-    return __cached_telemetry_client
+    client = TelemetryClient(
+        package_name="deadline-cloud-worker-agent", package_ver=".".join(version.split(".")[:3])
+    )
+    client.update_common_details(
+        {"openjd-sessions-version": ".".join(openjd_sessions_version.split(".")[:3])}
+    )
+    client.update_common_details(
+        {"openjd-model-version": ".".join(openjd_model_version.split(".")[:3])}
+    )
+    client.update_common_details(
+        {"deadline-cloud": ".".join(deadline_client_lib_version.split(".")[:3])}
+    )
+    return client
 
 
 def record_worker_start_telemetry_event(capabilities: Capabilities) -> None:

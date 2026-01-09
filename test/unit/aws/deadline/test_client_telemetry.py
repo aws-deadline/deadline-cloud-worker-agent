@@ -266,21 +266,23 @@ def test_record_decorator_fails():
 
 def test_get_deadline_telemetry_client_sets_service_name():
     """
-    Tests that _get_deadline_telemetry_client() sets the service name in system metadata
-    to ensure consistency for all telemetry from worker agent.
+    Tests that _get_deadline_telemetry_client() creates a TelemetryClient with the correct
+    service name by directly constructing the client.
     """
-    # Clear the cached client to ensure fresh initialization
-    deadline_mod.__cached_telemetry_client = None
+    # Clear the cache to ensure fresh initialization
+    _get_deadline_telemetry_client.cache_clear()
 
     mock_telemetry_client = MagicMock()
-    mock_telemetry_client._system_metadata = {}
 
-    with patch("deadline_worker_agent.aws.deadline.get_telemetry_client") as mock_get_client:
-        mock_get_client.return_value = mock_telemetry_client
+    with patch("deadline_worker_agent.aws.deadline.TelemetryClient") as mock_telemetry_constructor:
+        mock_telemetry_constructor.return_value = mock_telemetry_client
 
         # WHEN
         client = _get_deadline_telemetry_client()
 
         # THEN
         assert client is mock_telemetry_client
-        assert mock_telemetry_client._system_metadata["service"] == "deadline-cloud-worker-agent"
+        mock_telemetry_constructor.assert_called_once_with(
+            package_name="deadline-cloud-worker-agent",
+            package_ver=".".join(deadline_mod.version.split(".")[:3]),
+        )
