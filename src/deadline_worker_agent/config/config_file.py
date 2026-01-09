@@ -17,7 +17,7 @@ from tomlkit.items import Bool, Comment, SingleKey, String, Table, Trivia, White
 try:
     from tomllib import load as load_toml, TOMLDecodeError
 except ModuleNotFoundError:
-    from tomli import load as load_toml, TOMLDecodeError
+    from tomli import load as load_toml, TOMLDecodeError  # type: ignore[no-redef]
 
 from ..capabilities import Capabilities
 from .errors import ConfigurationError
