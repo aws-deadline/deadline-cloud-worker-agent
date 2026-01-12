@@ -12,7 +12,6 @@ import pytest
 
 import deadline_worker_agent.sessions.actions as actions_module
 from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
-from deadline_worker_agent.feature_flag import MANIFEST_REPORTING_FEATURE
 from openjd.sessions import SessionUser
 from openjd.model import ParameterValue
 from openjd.model.v2023_09 import (
@@ -175,7 +174,6 @@ class TestStart:
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
                 "DEADLINE_SESSIONACTION_START_TIME": "1234567890.0",
-                "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
             },
             log_task_banner=False,
         )
@@ -242,7 +240,6 @@ class TestStart:
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
                 "DEADLINE_SESSIONACTION_START_TIME": "1234567890.0",
-                "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
             },
             log_task_banner=False,
         )

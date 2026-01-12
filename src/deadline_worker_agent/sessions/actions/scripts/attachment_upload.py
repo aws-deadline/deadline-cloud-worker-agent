@@ -360,14 +360,9 @@ def upload_output_assets(
     return output_manifest_info_list
 
 
-def is_manifest_reporting_enabled() -> bool:
-    """Check if manifest reporting feature is enabled."""
-    return os.environ.get("MANIFEST_REPORTING_FEATURE", "false").lower() == "true"
-
-
 def should_use_task_chunking_format() -> bool:
     """Determine if task chunking format (without task_id) should be used."""
-    return is_manifest_reporting_enabled() and not os.environ.get("DEADLINE_TASK_ID")
+    return not os.environ.get("DEADLINE_TASK_ID")
 
 
 def build_s3_manifest_path() -> str:
@@ -458,11 +453,9 @@ def main(args=None):
         )
         latencies.upload_output_assets = time.perf_counter_ns() - start_t
 
-        # Check if manifest reporting feature is enabled via environment variable
-        if is_manifest_reporting_enabled():
-            # ja_upload: is a key word that is detected in the worker agent log filter
-            # We're printing the manifest info to the logs so that we can re-load it as a manifest info in the worker agent process
-            print(f"ja_upload: {json.dumps([asdict(info) for info in manifest_infos])}")
+        # ja_upload: is a key word that is detected in the worker agent log filter
+        # We're printing the manifest info to the logs so that we can re-load it as a manifest info in the worker agent process
+        print(f"ja_upload: {json.dumps([asdict(info) for info in manifest_infos])}")
 
     # Always record latencies telemetry regardless of whether upload occurred
     total = time.perf_counter_ns() - total_start_time
