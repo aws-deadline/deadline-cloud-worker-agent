@@ -291,8 +291,6 @@ def upload_output_assets(
     asset_uploader: S3AssetUploader = S3AssetUploader()
     output_manifest_info_list = []
 
-    all_manifests_total_files = 0
-    all_manifests_total_bytes = 0
     all_upload_summaries = []
 
     # Process each worker manifest property for upload
@@ -310,9 +308,7 @@ def upload_output_assets(
                 continue
 
             total_file_count = len(output_manifest.paths)
-            all_manifests_total_files += total_file_count
             total_file_size = sum([path.size for path in output_manifest.paths])
-            all_manifests_total_bytes += total_file_size
 
             print(
                 f"Found {total_file_count} file{'' if total_file_count == 1 else 's'}"
@@ -359,8 +355,6 @@ def upload_output_assets(
     record_attachment_upload_telemetry_event(
         queue_id=_queue_id,
         upload_summaries=all_upload_summaries,
-        manifest_total_bytes=all_manifests_total_bytes,
-        manifest_total_files=all_manifests_total_files,
     )
 
     return output_manifest_info_list

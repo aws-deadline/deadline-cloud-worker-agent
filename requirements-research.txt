@@ -1,3 +1,3 @@
-ipykernel==6.31.*
+ipykernel==7.1.*
 matplotlib==3.10.*
 pandas==2.3.*

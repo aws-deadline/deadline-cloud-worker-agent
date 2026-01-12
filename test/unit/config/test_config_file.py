@@ -13,7 +13,7 @@ import pytest
 try:
     from tomllib import TOMLDecodeError
 except ModuleNotFoundError:
-    from tomli import TOMLDecodeError
+    from tomli import TOMLDecodeError  # type: ignore[no-redef]
 
 from deadline_worker_agent.config.errors import ConfigurationError
 from deadline_worker_agent.config.config_file import (
