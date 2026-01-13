@@ -291,7 +291,7 @@ def session_worker(
     stop_worker(request, worker)
 
 
-@pytest.fixture(scope="class", params=[True, False])
+@pytest.fixture(scope="class", params=[True])
 def asset_sync_worker_config(
     request: pytest.FixtureRequest,
     posix_job_user: PosixSessionUser,
@@ -301,7 +301,8 @@ def asset_sync_worker_config(
     windows_job_users: list[str],
 ) -> DeadlineWorkerConfiguration:
     """
-    Parametrized worker configuration fixture that tests ASSET_SYNC_JOB_USER_FEATURE with both True and False values.
+    Worker configuration fixture for ASSET_SYNC_JOB_USER_FEATURE testing.
+    The ASSET_SYNC_JOB_USER_FEATURE flag and related fixture params will be removed in upcoming PRs.
 
     This fixture ensures the environment variable is set before worker initialization,
     allowing proper testing of the asset sync feature flag behavior.
