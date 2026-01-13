@@ -35,6 +35,7 @@ from deadline_worker_agent.api_models import (
 )
 from deadline_worker_agent.feature_flag import (
     ASSET_SYNC_JOB_USER_FEATURE,
+    MANIFEST_REPORTING_FEATURE,
 )
 
 if TYPE_CHECKING:
@@ -1139,7 +1140,7 @@ class Session:
             self.add_local_manifest_path(
                 local_root_path=value["root"], manifest_path=value["manifest"]
             )
-        if message_type == ActionOutputMessageKind.JA_UPLOAD:
+        if MANIFEST_REPORTING_FEATURE and message_type == ActionOutputMessageKind.JA_UPLOAD:
             try:
                 manifest_list_data = json.loads(value)
                 self._upload_manifest_list = [
@@ -1428,8 +1429,10 @@ class Session:
 
             # Only include manifests for successfully completed RunStepTaskActions
             session_manifests = None
-            if completed_status == "SUCCEEDED" and isinstance(
-                current_action.definition, RunStepTaskAction
+            if (
+                MANIFEST_REPORTING_FEATURE
+                and completed_status == "SUCCEEDED"
+                and isinstance(current_action.definition, RunStepTaskAction)
             ):
                 # Always report empty list for successful task runs to differentiate from old workers
                 session_manifests = manifests if manifests is not None else []

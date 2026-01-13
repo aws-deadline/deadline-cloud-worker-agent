@@ -105,13 +105,7 @@ Workflow before proceeding.
             * The Session Action uses an Open Job Description version that the Worker Agent doesn't understand; or
             * Otherwise unable to be run by the Worker Agent (e.g. compatibility reasons, or failures
             in a `AssumeQueueRoleForWorker` request).
-        4. Manifest information for `taskRun` Session Actions that have generated output manifests. The `manifests`
-        field contains an array of manifest objects that must have the same length and order as the 
-        `attachments/manifests` field in the job attachment details for job entity resource obtained from 
-        BatchGetJobEntity API. Each manifest object includes `outputManifestPath` and `outputManifestHash` 
-        properties indicating the location and hash of uploaded output manifest files. If a manifest had no 
-        outputs, the list should still contain an empty object without path and hash properties.
-        5. Any other updates as dictated by a Worker-Initiated Drain workflow.
+        4. Any other updates as dictated by a Worker-Initiated Drain workflow.
     * Response: Success(200) cases:
         1. `assignedSessions` empty -> End any locally active Sessions that the worker is
         holding as active, and then loop.

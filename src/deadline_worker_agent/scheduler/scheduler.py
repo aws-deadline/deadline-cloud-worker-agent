@@ -69,6 +69,7 @@ from ..log_messages import (
     WorkerLogEvent,
     WorkerLogEventOp,
 )
+from ..feature_flag import MANIFEST_REPORTING_FEATURE
 from .log import LOGGER
 from .session_cleanup import SessionUserCleanupManager
 from .session_queue import SessionActionQueue, SessionActionStatus
@@ -608,8 +609,8 @@ class WorkerScheduler:
         if action_updated.end_time:
             updated_action["endedAt"] = action_updated.end_time
 
-        # Add manifest information if available
-        if action_updated.manifests is not None:
+        # Add manifest information if available and feature flag is enabled
+        if MANIFEST_REPORTING_FEATURE and action_updated.manifests is not None:
             updated_action["manifests"] = action_updated.manifests
 
         # Truncate message to max bytes allowed by UpdateWorkerSchedule API

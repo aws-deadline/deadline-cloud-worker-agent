@@ -73,7 +73,7 @@ class TestAttachmentUploadPathFormat:
     )
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.decode_manifest")
     @patch("builtins.open")
-    def test_old_format_when_task_id_present(
+    def test_old_format_when_feature_disabled(
         self,
         mock_open,
         mock_decode_manifest,
@@ -83,7 +83,52 @@ class TestAttachmentUploadPathFormat:
         mock_worker_manifest_properties,
         mock_root_path_to_output_manifest,
     ):
-        """Test that old format is used when task_id is present."""
+        """Test that old format is used when MANIFEST_REPORTING_FEATURE=false."""
+        # Arrange
+        mock_env_vars["MANIFEST_REPORTING_FEATURE"] = "false"
+        mock_s3_settings.partial_session_action_manifest_prefix.return_value = "test/path"
+        mock_s3_settings.from_s3_root_uri.return_value = MagicMock()
+
+        mock_uploader = MagicMock()
+        mock_uploader_class.return_value = mock_uploader
+        mock_uploader.upload_assets.return_value = ("key", "data")
+
+        mock_decode_manifest.return_value = MagicMock()
+        mock_open.return_value.__enter__.return_value.read.return_value = "{}"
+
+        with patch.dict(os.environ, mock_env_vars):
+            # Act
+            upload_output_assets(
+                "s3://bucket/root",
+                mock_worker_manifest_properties,
+                mock_root_path_to_output_manifest,
+            )
+
+            # Assert: Should call old format method with task_id
+            mock_s3_settings.partial_session_action_manifest_prefix.assert_called_once()
+            call_args = mock_s3_settings.partial_session_action_manifest_prefix.call_args[1]
+            assert "task_id" in call_args
+            assert call_args["task_id"] == "task-def"
+
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.S3AssetUploader")
+    @patch(
+        "deadline_worker_agent.sessions.actions.scripts.attachment_upload.JobAttachmentS3Settings"
+    )
+    @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.decode_manifest")
+    @patch("builtins.open")
+    def test_old_format_when_feature_enabled_but_task_id_present(
+        self,
+        mock_open,
+        mock_decode_manifest,
+        mock_s3_settings,
+        mock_uploader_class,
+        mock_env_vars,
+        mock_worker_manifest_properties,
+        mock_root_path_to_output_manifest,
+    ):
+        """Test that old format is used when MANIFEST_REPORTING_FEATURE=true but task_id is present."""
+        # Arrange
+        mock_env_vars["MANIFEST_REPORTING_FEATURE"] = "true"
         # Keep task_id present
         mock_s3_settings.partial_session_action_manifest_prefix.return_value = "test/path"
         mock_s3_settings.from_s3_root_uri.return_value = MagicMock()
@@ -125,7 +170,9 @@ class TestAttachmentUploadPathFormat:
         mock_worker_manifest_properties,
         mock_root_path_to_output_manifest,
     ):
-        """Test that new format is used."""
+        """Test that new format is used when MANIFEST_REPORTING_FEATURE=true."""
+        # Arrange
+        mock_env_vars["MANIFEST_REPORTING_FEATURE"] = "true"
         # Remove task_id to simulate new format
         del mock_env_vars["DEADLINE_TASK_ID"]
 
@@ -173,7 +220,7 @@ class TestAttachmentUploadPathFormat:
         mock_root_path_to_output_manifest,
     ):
         """Test that old format is used by default when feature flag not set."""
-        # Arrange
+        # Arrange: No MANIFEST_REPORTING_FEATURE in environment
         mock_s3_settings.partial_session_action_manifest_prefix.return_value = "test/path"
         mock_s3_settings.from_s3_root_uri.return_value = MagicMock()
 

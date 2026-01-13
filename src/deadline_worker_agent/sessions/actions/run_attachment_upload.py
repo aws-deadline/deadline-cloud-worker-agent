@@ -25,6 +25,7 @@ from openjd.model.v2023_09 import (
 )
 from openjd.model import ParameterValue
 
+from ...feature_flag import MANIFEST_REPORTING_FEATURE
 from ...log_messages import SessionActionLogKind
 from ..attachment_models import WorkerManifestProperties
 from .openjd_action import OpenjdAction
@@ -187,6 +188,7 @@ class AttachmentUploadAction(OpenjdAction):
             "DEADLINE_SESSIONACTION_ID": self._id,
             "DEADLINE_SESSIONACTION_START_TIME": str(self._start_time),
             "DEADLINE_STEP_ID": self._step_id,
+            "MANIFEST_REPORTING_FEATURE": str(MANIFEST_REPORTING_FEATURE),
         }
 
         if self._task_id is not None:

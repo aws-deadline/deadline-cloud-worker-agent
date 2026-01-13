@@ -8,6 +8,7 @@ import pytest
 from openjd.sessions import ActionState, ActionStatus
 
 from deadline_worker_agent.api_models import ManifestInfo
+from deadline_worker_agent.feature_flag import MANIFEST_REPORTING_FEATURE
 from deadline_worker_agent.scheduler.session_action_status import SessionActionStatus
 
 
@@ -36,6 +37,10 @@ def action_complete_time() -> datetime:
     return datetime(2023, 1, 2, 3, 4, 5)
 
 
+@pytest.mark.skipif(
+    not MANIFEST_REPORTING_FEATURE,
+    reason="Only relevant when MANIFEST_REPORTING_FEATURE is enabled",
+)
 class TestAttachmentUploadHandling:
     """Test the handling of attachment upload completion"""
 
