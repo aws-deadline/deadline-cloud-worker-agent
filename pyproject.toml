@@ -19,7 +19,7 @@ dependencies = [
     "openjd-model >= 0.8.1, < 0.9",
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",
-    "tomlkit == 0.13.*",
+    "tomlkit >= 0.13,< 0.15",
     "typing_extensions ~= 4.8",
     "psutil >= 5.9,< 8.0",
     "pydantic >= 2.10, < 3",
