@@ -1,3 +1,16 @@
+## 0.28.21 (2026-01-14)
+
+
+### Features
+* This is the first Worker Agent release which fully supports [OpenJD chunking](https://github.com/OpenJobDescription/openjd-specifications/blob/mainline/rfcs/0001-task-chunking.md).
+* Report output job attachment manifest locations to the service.(#865) ([`d748589`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/d7485896b739c2d5017638a15d294cea5c8fae23))
+
+
+### Bug Fixes
+* Worker fails to detect and upload output files when job outputs have file permissions scoped to exclude the worker-agent user. (#865) ([`d748589`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/d7485896b739c2d5017638a15d294cea5c8fae23))
+
+
+
 ## 0.28.20 (2025-12-29)
 
 
