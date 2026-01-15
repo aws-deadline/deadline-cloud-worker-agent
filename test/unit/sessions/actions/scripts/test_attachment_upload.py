@@ -1,4 +1,5 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+from deadline_worker_agent.aws.deadline import hash_summary_telemetry_callback
 
 import json
 import pytest
@@ -7,6 +8,7 @@ from unittest.mock import Mock, call, patch, mock_open
 from typing import Optional, Generator
 
 import deadline_worker_agent.sessions.actions.scripts.attachment_upload as attachment_upload_mod
+from deadline.client.config import config_file
 from deadline.job_attachments.asset_manifests.decode import decode_manifest
 from deadline.job_attachments.progress_tracker import ProgressStatus, ProgressTracker
 from deadline.job_attachments.models import JobAttachmentS3Settings
@@ -212,6 +214,8 @@ class TestAttachmentUpload:
             diff="/base/manifest.json",
             include=["output/**"],
             name="output",
+            hash_cache_dir=config_file.get_cache_directory(),
+            telemetry_callback=hash_summary_telemetry_callback,
         )
         mock_manifest_snapshot.assert_any_call(
             root="/local/path4",
@@ -219,6 +223,8 @@ class TestAttachmentUpload:
             diff=None,
             include=["./**"],
             name="output",
+            hash_cache_dir=config_file.get_cache_directory(),
+            telemetry_callback=hash_summary_telemetry_callback,
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
@@ -255,6 +261,8 @@ class TestAttachmentUpload:
             diff="/base/manifest.json",
             include=["output/**"],
             name="output",
+            hash_cache_dir=config_file.get_cache_directory(),
+            telemetry_callback=hash_summary_telemetry_callback,
         )
         mock_manifest_snapshot.assert_any_call(
             root="/local/path2",
@@ -262,6 +270,8 @@ class TestAttachmentUpload:
             diff=None,
             include=["output/**"],
             name="output",
+            hash_cache_dir=config_file.get_cache_directory(),
+            telemetry_callback=hash_summary_telemetry_callback,
         )
 
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
@@ -299,6 +309,8 @@ class TestAttachmentUpload:
                 "[[]data_][*]dir2[?]/**",  # Complex case with multiple special chars
             ],
             name="output",
+            hash_cache_dir=config_file.get_cache_directory(),
+            telemetry_callback=hash_summary_telemetry_callback,
         )
 
     @patch.dict(

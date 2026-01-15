@@ -13,7 +13,7 @@ from botocore.exceptions import ClientError
 
 from deadline.client.api import TelemetryClient
 from deadline.client import version as deadline_client_lib_version
-from deadline.job_attachments.progress_tracker import SummaryStatistics
+from deadline.job_attachments.upload import SummaryStatistics
 from openjd.model import version as openjd_model_version
 from openjd.sessions import version as openjd_sessions_version
 
@@ -984,3 +984,7 @@ def record_success_fail_telemetry_event(**decorator_kwargs: Any) -> Callable[[F]
         return cast(F, wrapper)
 
     return inner
+
+
+def hash_summary_telemetry_callback(hash_summary: SummaryStatistics):
+    _get_deadline_telemetry_client().record_hashing_summary(hash_summary)

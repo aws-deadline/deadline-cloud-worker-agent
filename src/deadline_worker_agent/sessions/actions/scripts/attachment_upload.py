@@ -42,6 +42,7 @@ from deadline_worker_agent.aws.deadline import (
     record_attachment_upload_latencies_telemetry_event,
     record_attachment_upload_telemetry_event,
     record_success_fail_telemetry_event,
+    hash_summary_telemetry_callback,
 )
 from deadline_worker_agent.sessions.attachment_models import (
     WorkerManifestProperties,
@@ -180,6 +181,8 @@ def snapshot(
             # when the code reaches here, it's guaranteed output_relative_directories contains value
             include=[glob.escape(subdir) + "/**" for subdir in output_relative_directories],
             name="output",
+            hash_cache_dir=config_file.get_cache_directory(),
+            telemetry_callback=hash_summary_telemetry_callback,
         )
 
         if output_manifest:
