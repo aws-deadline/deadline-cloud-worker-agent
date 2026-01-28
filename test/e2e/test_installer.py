@@ -73,6 +73,8 @@ class TestWindowsInstaller:
             allow_shutdown=False,
             start_service=False,
             fleet=deadline_resources.scaling_fleet,
+            # TODO: Temporary workaround due to AWS CLI v2 upgrade causing canary failures when copying over AWS models for deadline
+            service_model_path=None,
         )
 
     @pytest.fixture(scope="class")

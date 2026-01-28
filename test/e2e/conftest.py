@@ -276,6 +276,8 @@ def worker_config(
             posix_env_override_job_user,
         ],
         windows_job_users=windows_job_users,
+        # TODO: Temporary workaround due to AWS CLI v2 upgrade causing canary failures when copying over AWS models for deadline
+        service_model_path=None,
     )
 
 
