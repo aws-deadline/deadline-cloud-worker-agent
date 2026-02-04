@@ -45,7 +45,6 @@ from ..api_models import (
     WorkerStatus,
     EnvironmentAction,
     TaskRunAction,
-    SyncInputJobAttachmentsAction,
     AttachmentDownloadAction,
 )
 from ..aws.deadline import (
@@ -1375,10 +1374,7 @@ class WorkerScheduler:
         self,
         *,
         assigned_session_actions: list[
-            EnvironmentAction
-            | TaskRunAction
-            | SyncInputJobAttachmentsAction
-            | AttachmentDownloadAction
+            EnvironmentAction | TaskRunAction | AttachmentDownloadAction
         ],
         failure_message: str,
     ) -> None:

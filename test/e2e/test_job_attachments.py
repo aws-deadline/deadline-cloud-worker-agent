@@ -67,7 +67,6 @@ class Asset:
 
 class TestJobAttachments:
     JOB_OUTPUT_PATH = os.path.join(os.getcwd(), "job_output")
-    ASSET_SYNC_JOB_USER_FEATURE = "ASSET_SYNC_JOB_USER_FEATURE"
 
     @pytest.mark.usefixtures("asset_sync_class_worker")
     @pytest.mark.parametrize(
@@ -171,12 +170,7 @@ class TestJobAttachments:
             "inputManifestHash": test_disambiguator,
         }
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-        job_name = f"StorageProfilePathMappingJob[asset_sync_feature={asset_sync_feature}]"
+        job_name = "StorageProfilePathMappingJob"
 
         # Create and submit job using boto3 directly
         template = {
@@ -516,12 +510,7 @@ if __name__ == "__main__":
             {"name": "DataDir", "value": job_bundle_path},
         ]
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-        job_name = f"AppendStringJob[asset_sync_feature={asset_sync_feature}]"
+        job_name = "AppendStringJob"
 
         try:
             with open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file:
@@ -661,14 +650,7 @@ if __name__ == "__main__":
                     },
                 ]
 
-                asset_sync_feature = (
-                    asset_sync_worker_config.worker_env_var.get(
-                        self.ASSET_SYNC_JOB_USER_FEATURE, "False"
-                    )
-                    if asset_sync_worker_config.worker_env_var
-                    else "False"
-                )
-                job_name = f"NoOutputJob[asset_sync_feature={asset_sync_feature}]"
+                job_name = "NoOutputJob"
 
                 template_file.write(
                     json.dumps(
@@ -759,20 +741,10 @@ if __name__ == "__main__":
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "linux_bundle"
         )
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-
         job_parameters: List[Dict[str, str]] = [
             {
                 "name": "JobName",
-                "value": f"Step-Step Dataflow Linux_{file_system}[asset_sync_feature={asset_sync_feature}]",
-            },
-            {
-                "name": "AssetSync",
-                "value": asset_sync_feature,
+                "value": f"Step-Step Dataflow Linux_{file_system}",
             },
         ]
 
@@ -831,16 +803,10 @@ if __name__ == "__main__":
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "windows_bundle"
         )
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-
         job_parameters: List[Dict[str, str]] = [
             {
                 "name": "JobName",
-                "value": f"Step-Step Dataflow Win[asset_sync_feature={asset_sync_feature}]",
+                "value": "Step-Step Dataflow Win",
             },
         ]
 
@@ -909,12 +875,7 @@ if __name__ == "__main__":
             else '''set /p input=<"{{Param.DataDir}}\\files\\test_input_file"\n powershell -Command "echo ($env:input+\'hi\') | Out-File -encoding utf8 {{Param.DataDir}}\\output_file -NoNewLine"'''
         )
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-        job_name = f"JobAttachmentToNonValidRoleQueue[asset_sync_feature={asset_sync_feature}]"
+        job_name = "JobAttachmentToNonValidRoleQueue"
 
         try:
             with open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file:
@@ -1097,12 +1058,7 @@ if __name__ == "__main__":
             {"name": "DataDir", "value": job_bundle_path},
         ]
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-        job_name = f"AssetsSync[asset_sync_feature={asset_sync_feature}]"
+        job_name = "AssetsSync"
 
         with open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file:
             template_file.write(
@@ -1268,12 +1224,7 @@ if __name__ == "__main__":
             else '''set /p input=<"{{Param.DataDir}}\\files\\step_one_output"\n powershell -Command "echo ($env:input+\'Hello\') | Out-File -encoding utf8 {{Param.DataDir}}\\files\\output_file -NoNewLine"'''
         )
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-        job_name = f"StepDependencyJob[asset_sync_feature={asset_sync_feature}]"
+        job_name = "StepDependencyJob"
 
         # Create a template that uses step-step dependencies, appending the word "Hello" to the input file once in each step
         with open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file:
@@ -1430,12 +1381,7 @@ if __name__ == "__main__":
 
         queue_a = deadline_resources.queue_a
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-        job_name = f"JobAttachmentThatGetsDeleted[asset_sync_feature={asset_sync_feature}]"
+        job_name = "JobAttachmentThatGetsDeleted"
 
         with open(
             os.path.join(job_bundle_path, "parameter_values.json"), "w+"
@@ -1492,6 +1438,7 @@ if __name__ == "__main__":
             priority=99,
             config=config,
             queue_parameter_definitions=[],
+            max_retries_per_task=0,
         )
 
         assert job_id is not None
@@ -1612,7 +1559,7 @@ if __name__ == "__main__":
         # Submit another job and verify that the worker still works properly and finishes the job
 
         sleep_job = submit_sleep_job(
-            f"Success Sleep Job after syncInputJobAttachments fail[asset_sync_feature={asset_sync_feature}]",
+            "Success Sleep Job after syncInputJobAttachments fail",
             deadline_client,
             deadline_resources.farm,
             queue_a,
@@ -1649,12 +1596,7 @@ with open(output_path, "w") as f:
 
         os.makedirs(job_bundle_path, exist_ok=True)
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-        job_name = f"JA and Embedded Files[asset_sync_feature={asset_sync_feature}]"
+        job_name = "JA and Embedded Files"
 
         # Create input file for job attachments
         input_file = os.path.join(job_bundle_path, "input.txt")
@@ -1811,12 +1753,6 @@ with open(output_path, "w") as f:
             os.path.dirname(__file__), "job_attachment_bundle", "output_only"
         )
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-
         # Use smaller parameters for E2E testing to avoid long-running test
         # python is only available on windows, python3 is only available on linux
         command_runner = "python" if os.environ["OPERATING_SYSTEM"] == "windows" else "python3"
@@ -1829,7 +1765,7 @@ with open(output_path, "w") as f:
             job_parameters=[
                 {
                     "name": "JobName",
-                    "value": f"Output Sync No Input Job[asset_sync_feature={asset_sync_feature}]",
+                    "value": "Output Sync No Input Job",
                 },
                 {"name": "FilesPerTask", "value": "1"},
                 {"name": "Tasks", "value": "1-5"},
@@ -1884,12 +1820,6 @@ with open(output_path, "w") as f:
         )
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-
         # Create Job API
         job = submit_job_from_create_job_API(
             deadline_client=deadline_client,
@@ -1898,7 +1828,7 @@ with open(output_path, "w") as f:
             queue=deadline_resources.queue_a,
             debug_snapshot_dir=job_bundle_path,
             storage_profile=True,
-            job_name=f"Complex Manifest Test[asset_sync_feature={asset_sync_feature}]",
+            job_name="Complex Manifest Test",
         )
 
         job.wait_until_complete(client=deadline_client)
@@ -1953,12 +1883,6 @@ with open(output_path, "w") as f:
         )
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-
         # Create Job API
         submit_start_time = time.perf_counter()
         job = submit_job_from_create_job_API(
@@ -1968,7 +1892,7 @@ with open(output_path, "w") as f:
             queue=deadline_resources.queue_a,
             debug_snapshot_dir=job_bundle_path,
             storage_profile=False,
-            job_name=f"Complex Manifest Test[asset_sync_feature={asset_sync_feature}]",
+            job_name="Complex Manifest Test",
         )
 
         LOG.info(f"Job {job.id} submitted in {time.perf_counter() - submit_start_time:.2f} seconds")
@@ -2050,12 +1974,7 @@ with open(output_path, "w") as f:
             "totalSize": len(file1_content),
         }
 
-        asset_sync_feature = (
-            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
-            if asset_sync_worker_config.worker_env_var
-            else "False"
-        )
-        job_name = f"empty-outputRelativeDirectories-test-{os.environ['OPERATING_SYSTEM']}[asset_sync_feature={asset_sync_feature}]"
+        job_name = f"empty-outputRelativeDirectories-test-{os.environ['OPERATING_SYSTEM']}"
 
         # Upload manifests
         s3.put_object(

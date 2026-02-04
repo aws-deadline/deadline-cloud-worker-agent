@@ -11,10 +11,8 @@ from typing import Any, Callable, Iterable, Generic, Literal, TypeVar, TYPE_CHEC
 from openjd.model import UnsupportedSchema
 from openjd.sessions import ActionState, ActionStatus
 
-from ..feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 from ..api_models import (
     EnvironmentAction as EnvironmentActionApiModel,
-    SyncInputJobAttachmentsAction as SyncInputJobAttachmentsActionApiModel,
     AttachmentDownloadAction as AttachmentDownloadActionApiModel,
     AttachmentUploadAction as AttachmentUploadActionApiModel,
     TaskRunAction as TaskRunActionApiModel,
@@ -31,7 +29,6 @@ from ..sessions.actions import (
     ExitEnvironmentAction,
     RunStepTaskAction,
     SessionActionDefinition,
-    SyncInputJobAttachmentsAction,
     AttachmentUploadAction,
     AttachmentDownloadAction,
 )
@@ -52,7 +49,6 @@ if TYPE_CHECKING:
         "D",
         EnvironmentActionApiModel,
         TaskRunActionApiModel,
-        SyncInputJobAttachmentsActionApiModel,
         AttachmentDownloadActionApiModel,
         AttachmentUploadActionApiModel,
     )
@@ -77,10 +73,6 @@ class SessionActionQueueEntry(Generic[D]):
 
 EnvironmentQueueEntry = SessionActionQueueEntry[EnvironmentActionApiModel]
 TaskRunQueueEntry = SessionActionQueueEntry[TaskRunActionApiModel]
-SyncInputJobAttachmentsQueueEntry = SessionActionQueueEntry[SyncInputJobAttachmentsActionApiModel]
-SyncInputJobAttachmentsStepDependenciesQueueEntry = SessionActionQueueEntry[
-    SyncInputJobAttachmentsActionApiModel
-]
 AttachmentUploadActionQueueEntry = SessionActionQueueEntry[AttachmentUploadActionApiModel]
 AttachmentDownloadActionQueueEntry = SessionActionQueueEntry[AttachmentDownloadActionApiModel]
 AttachmentDownloadActionStepDependenciesQueueEntry = SessionActionQueueEntry[
@@ -104,8 +96,6 @@ class SessionActionQueue:
     _actions: list[
         EnvironmentQueueEntry
         | TaskRunQueueEntry
-        | SyncInputJobAttachmentsQueueEntry
-        | SyncInputJobAttachmentsStepDependenciesQueueEntry
         | AttachmentUploadActionQueueEntry
         | AttachmentDownloadActionQueueEntry
         | AttachmentDownloadActionStepDependenciesQueueEntry
@@ -114,8 +104,6 @@ class SessionActionQueue:
         str,
         EnvironmentQueueEntry
         | TaskRunQueueEntry
-        | SyncInputJobAttachmentsQueueEntry
-        | SyncInputJobAttachmentsStepDependenciesQueueEntry
         | AttachmentUploadActionQueueEntry
         | AttachmentDownloadActionQueueEntry
         | AttachmentDownloadActionStepDependenciesQueueEntry,
@@ -177,12 +165,7 @@ class SessionActionQueue:
                     ),
                 )
             elif action_type == "SYNC_INPUT_JOB_ATTACHMENTS":
-                if ASSET_SYNC_JOB_USER_FEATURE:
-                    action_definition = cast(AttachmentDownloadActionApiModel, action_definition)
-                else:
-                    action_definition = cast(
-                        SyncInputJobAttachmentsActionApiModel, action_definition
-                    )
+                action_definition = cast(AttachmentDownloadActionApiModel, action_definition)
 
                 if "stepId" in action_definition:
                     identifier = StepDetailsIdentifier(
@@ -325,7 +308,6 @@ class SessionActionQueue:
         actions: Iterable[
             EnvironmentActionApiModel
             | TaskRunActionApiModel
-            | SyncInputJobAttachmentsActionApiModel
             | AttachmentDownloadActionApiModel
             | AttachmentUploadActionApiModel
         ],
@@ -334,8 +316,6 @@ class SessionActionQueue:
         queue_entries: list[
             TaskRunQueueEntry
             | EnvironmentQueueEntry
-            | SyncInputJobAttachmentsQueueEntry
-            | SyncInputJobAttachmentsStepDependenciesQueueEntry
             | AttachmentDownloadActionQueueEntry
             | AttachmentDownloadActionStepDependenciesQueueEntry
             | AttachmentUploadActionQueueEntry
@@ -364,30 +344,16 @@ class SessionActionQueue:
                     )
                 elif action_type == "SYNC_INPUT_JOB_ATTACHMENTS":
                     action = cast(AttachmentDownloadActionApiModel, action)
-                    if ASSET_SYNC_JOB_USER_FEATURE:
-                        action = cast(AttachmentDownloadActionApiModel, action)
-                        if "stepId" not in action:
-                            queue_entry = AttachmentDownloadActionQueueEntry(
-                                cancel=cancel_event,
-                                definition=action,
-                            )
-                        else:
-                            queue_entry = AttachmentDownloadActionStepDependenciesQueueEntry(
-                                cancel=cancel_event,
-                                definition=action,
-                            )
+                    if "stepId" not in action:
+                        queue_entry = AttachmentDownloadActionQueueEntry(
+                            cancel=cancel_event,
+                            definition=action,
+                        )
                     else:
-                        action = cast(SyncInputJobAttachmentsActionApiModel, action)
-                        if "stepId" not in action:
-                            queue_entry = SyncInputJobAttachmentsQueueEntry(
-                                cancel=cancel_event,
-                                definition=action,
-                            )
-                        else:
-                            queue_entry = SyncInputJobAttachmentsStepDependenciesQueueEntry(
-                                cancel=cancel_event,
-                                definition=action,
-                            )
+                        queue_entry = AttachmentDownloadActionStepDependenciesQueueEntry(
+                            cancel=cancel_event,
+                            definition=action,
+                        )
                 else:
                     raise NotImplementedError(f"Unknown action type '{action_type}'")
                 self._actions_by_id[action_id] = queue_entry
@@ -527,107 +493,55 @@ class SessionActionQueue:
 
             elif action_type == "SYNC_INPUT_JOB_ATTACHMENTS":
                 action_definition = action_queue_entry.definition
-                if ASSET_SYNC_JOB_USER_FEATURE:
-                    action_definition = cast(AttachmentDownloadActionApiModel, action_definition)
-                    if "stepId" not in action_definition:
-                        action_queue_entry = cast(
-                            AttachmentDownloadActionQueueEntry, action_queue_entry
-                        )
-                        try:
-                            job_attachment_details = self._job_entities.job_attachment_details()
-                        except UnsupportedSchema as e:
-                            raise JobEntityUnsupportedSchemaError(
-                                action_id, SessionActionLogKind.JA_SYNC_INPUT, e._version
-                            ) from e
-                        except ValueError as e:
-                            raise JobAttachmentDetailsError(
-                                action_id, SessionActionLogKind.JA_SYNC_INPUT, str(e)
-                            ) from e
-                        next_action = AttachmentDownloadAction(
-                            id=action_id,
-                            session_id=self._session_id,
-                            job_attachment_details=job_attachment_details,
-                        )
-                    else:
-                        action_queue_entry = cast(
-                            AttachmentDownloadActionStepDependenciesQueueEntry, action_queue_entry
-                        )
-
-                        try:
-                            step_details = self._job_entities.step_details(
-                                step_id=action_definition["stepId"],
-                            )
-                        except UnsupportedSchema as e:
-                            raise JobEntityUnsupportedSchemaError(
-                                action_id,
-                                SessionActionLogKind.JA_DEP_SYNC,
-                                e._version,
-                                step_id=action_definition["stepId"],
-                            ) from e
-                        except ValueError as e:
-                            raise StepDetailsError(
-                                action_id,
-                                SessionActionLogKind.JA_DEP_SYNC,
-                                str(e),
-                                step_id=action_definition["stepId"],
-                            ) from e
-                        next_action = AttachmentDownloadAction(
-                            id=action_id,
-                            session_id=self._session_id,
-                            step_details=step_details,
-                        )
-
-                else:
-                    action_definition = cast(
-                        SyncInputJobAttachmentsActionApiModel, action_definition
+                action_definition = cast(AttachmentDownloadActionApiModel, action_definition)
+                if "stepId" not in action_definition:
+                    action_queue_entry = cast(
+                        AttachmentDownloadActionQueueEntry, action_queue_entry
                     )
-                    if "stepId" not in action_definition:
-                        action_queue_entry = cast(
-                            SyncInputJobAttachmentsQueueEntry, action_queue_entry
-                        )
-                        try:
-                            job_attachment_details = self._job_entities.job_attachment_details()
-                        except UnsupportedSchema as e:
-                            raise JobEntityUnsupportedSchemaError(
-                                action_id, SessionActionLogKind.JA_SYNC_INPUT, e._version
-                            ) from e
-                        except ValueError as e:
-                            raise JobAttachmentDetailsError(
-                                action_id, SessionActionLogKind.JA_SYNC_INPUT, str(e)
-                            ) from e
-                        next_action = SyncInputJobAttachmentsAction(
-                            id=action_id,
-                            session_id=self._session_id,
-                            job_attachment_details=job_attachment_details,
-                        )
-                    else:
-                        action_queue_entry = cast(
-                            SyncInputJobAttachmentsStepDependenciesQueueEntry, action_queue_entry
-                        )
+                    try:
+                        job_attachment_details = self._job_entities.job_attachment_details()
+                    except UnsupportedSchema as e:
+                        raise JobEntityUnsupportedSchemaError(
+                            action_id, SessionActionLogKind.JA_SYNC_INPUT, e._version
+                        ) from e
+                    except ValueError as e:
+                        raise JobAttachmentDetailsError(
+                            action_id, SessionActionLogKind.JA_SYNC_INPUT, str(e)
+                        ) from e
+                    next_action = AttachmentDownloadAction(
+                        id=action_id,
+                        session_id=self._session_id,
+                        job_attachment_details=job_attachment_details,
+                    )
+                else:
+                    action_queue_entry = cast(
+                        AttachmentDownloadActionStepDependenciesQueueEntry, action_queue_entry
+                    )
 
-                        try:
-                            step_details = self._job_entities.step_details(
-                                step_id=action_definition["stepId"],
-                            )
-                        except UnsupportedSchema as e:
-                            raise JobEntityUnsupportedSchemaError(
-                                action_id,
-                                SessionActionLogKind.JA_DEP_SYNC,
-                                e._version,
-                                step_id=action_definition["stepId"],
-                            ) from e
-                        except ValueError as e:
-                            raise StepDetailsError(
-                                action_id,
-                                SessionActionLogKind.JA_DEP_SYNC,
-                                str(e),
-                                step_id=action_definition["stepId"],
-                            ) from e
-                        next_action = SyncInputJobAttachmentsAction(
-                            id=action_id,
-                            session_id=self._session_id,
-                            step_details=step_details,
+                    try:
+                        step_details = self._job_entities.step_details(
+                            step_id=action_definition["stepId"],
                         )
+                    except UnsupportedSchema as e:
+                        raise JobEntityUnsupportedSchemaError(
+                            action_id,
+                            SessionActionLogKind.JA_DEP_SYNC,
+                            e._version,
+                            step_id=action_definition["stepId"],
+                        ) from e
+                    except ValueError as e:
+                        raise StepDetailsError(
+                            action_id,
+                            SessionActionLogKind.JA_DEP_SYNC,
+                            str(e),
+                            step_id=action_definition["stepId"],
+                        ) from e
+                    next_action = AttachmentDownloadAction(
+                        id=action_id,
+                        session_id=self._session_id,
+                        step_details=step_details,
+                    )
+
             else:
                 raise ValueError(
                     f'Unknown action type "{action_type}". Complete action = {action_definition}'

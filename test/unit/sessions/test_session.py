@@ -7,7 +7,7 @@ from collections.abc import Generator, Iterable
 from concurrent.futures import wait
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from threading import Event, RLock
+from threading import RLock
 from types import TracebackType
 from typing import Literal, Optional
 from unittest.mock import ANY, MagicMock, patch
@@ -47,8 +47,6 @@ from deadline_worker_agent.api_models import (
 from deadline_worker_agent.sessions import Session
 import deadline_worker_agent.sessions.session as session_mod
 from deadline_worker_agent.sessions.session import (
-    LOW_TRANSFER_RATE_THRESHOLD,
-    LOW_TRANSFER_COUNT_THRESHOLD,
     CurrentAction,
     SessionActionStatus,
 )
@@ -69,16 +67,7 @@ from deadline_worker_agent.log_messages import (
     SessionActionLogEventSubtype,
 )
 from deadline.job_attachments.models import (
-    Attachments,
-    JobAttachmentsFileSystem,
-    JobAttachmentsFileSystem,
     UploadManifestInfo,
-)
-from deadline.job_attachments.os_file_permission import (
-    FileSystemPermissionSettings,
-    PosixFileSystemPermissionSettings,
-    WindowsFileSystemPermissionSettings,
-    WindowsPermissionEnum,
 )
 import deadline_worker_agent.sessions.log_config as log_config_mod
 from deadline_worker_agent.sessions.job_entities.job_attachment_details import (
@@ -86,12 +75,6 @@ from deadline_worker_agent.sessions.job_entities.job_attachment_details import (
 )
 from deadline_worker_agent.sessions.attachment_models import (
     WorkerManifestProperties,
-)
-
-from deadline.job_attachments.progress_tracker import (
-    ProgressReportMetadata,
-    ProgressStatus,
-    SummaryStatistics,
 )
 
 
@@ -161,18 +144,6 @@ def action_update_callback() -> MagicMock:
 def action_update_lock() -> MagicMock:
     """MagicMock action as the action update lock"""
     return MagicMock()
-
-
-@pytest.fixture(autouse=True)
-def mock_telemetry_event_for_sync_inputs() -> Generator[MagicMock, None, None]:
-    with patch.object(session_mod, "record_sync_inputs_telemetry_event") as mock_telemetry_event:
-        yield mock_telemetry_event
-
-
-@pytest.fixture(autouse=True)
-def mock_telemetry_event_for_sync_outputs() -> Generator[MagicMock, None, None]:
-    with patch.object(session_mod, "record_sync_outputs_telemetry_event") as mock_telemetry_event:
-        yield mock_telemetry_event
 
 
 @pytest.fixture
@@ -534,15 +505,6 @@ class TestSessionOuterRun:
             yield mock_inner_run
 
     @pytest.fixture(autouse=True)
-    def mock_sync_asset_inputs(
-        self,
-        session: Session,
-    ) -> Generator[MagicMock, None, None]:
-        """Fixture to patch Session.sync_asset_inputs with a MagicMock and return it"""
-        with patch.object(session, "sync_asset_inputs") as mock_sync_asset_inputs:
-            yield mock_sync_asset_inputs
-
-    @pytest.fixture(autouse=True)
     def mock_cleanup(
         self,
         session: Session,
@@ -663,326 +625,6 @@ class TestSessionOuterRun:
         # THEN
         # it did not error
         session_action_queue._job_entities.cache_entities.assert_called_once()
-
-
-class TestSessionSyncAssetInputs:
-    @pytest.fixture(autouse=True)
-    def mock_asset_sync(self, session: Session) -> Generator[MagicMock, None, None]:
-        with patch.object(session, "_asset_sync") as mock_asset_sync:
-            yield mock_asset_sync
-
-    # This overrides the job_attachments_file_system fixture in tests/unit/conftest.py which feeds into
-    # the job_attachment_details fixture
-    @pytest.mark.parametrize(
-        "job_attachments_file_system", [e.value for e in JobAttachmentsFileSystem]
-    )
-    @pytest.mark.skipif(os.name != "posix", reason="Posix-only test.")
-    def test_asset_loading_method(
-        self,
-        session: Session,
-        job_attachments_file_system: JobAttachmentsFileSystem,
-        mock_asset_sync: MagicMock,
-        mock_telemetry_event_for_sync_inputs: MagicMock,
-        job_attachment_details: JobAttachmentDetails,
-    ) -> None:
-        """Tests that the job_attachments_file_system specified in session._job_details is properly passed to the sync_inputs function"""
-        # GIVEN
-        mock_ja_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
-        mock_ja_sync_inputs.return_value = (SummaryStatistics(), {})
-        cancel = Event()
-
-        # WHEN
-        session.sync_asset_inputs(  # type: ignore
-            cancel=cancel,
-            job_attachment_details=job_attachment_details,
-        )
-
-        # THEN
-        mock_ja_sync_inputs.assert_called_with(
-            s3_settings=ANY,
-            queue_id=ANY,
-            job_id=ANY,
-            session_dir=ANY,
-            attachments=Attachments(
-                manifests=ANY,
-                fileSystem=job_attachments_file_system,
-            ),
-            fs_permission_settings=PosixFileSystemPermissionSettings(
-                os_user="some-user",
-                os_group="some-group",
-                dir_mode=0o20,
-                file_mode=0o20,
-            ),
-            storage_profiles_path_mapping_rules={},
-            step_dependencies=None,
-            on_downloading_files=ANY,
-            os_env_vars=None,
-        )
-
-        mock_telemetry_event_for_sync_inputs.assert_called_once_with(
-            "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            SummaryStatistics(),
-        )
-
-    def test_sync_asset_inputs_with_fs_permission_settings(
-        self,
-        session: Session,
-        mock_asset_sync: MagicMock,
-        job_attachment_details: JobAttachmentDetails,
-    ):
-        """
-        Tests that sync_inputs function is called with the correct fs_permission_settings
-        argument based on the current OS.
-        """
-        # GIVEN
-        mock_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
-        mock_sync_inputs.return_value = ({}, {})
-        cancel = Event()
-
-        expected_fs_permission_settings: Optional[FileSystemPermissionSettings] = None
-        if os.name == "posix":
-            expected_fs_permission_settings = PosixFileSystemPermissionSettings(
-                os_user="some-user",
-                os_group="some-group",
-                dir_mode=0o20,
-                file_mode=0o20,
-            )
-        elif os.name == "nt":
-            expected_fs_permission_settings = WindowsFileSystemPermissionSettings(
-                os_user="SomeUser",
-                dir_mode=WindowsPermissionEnum.WRITE,
-                file_mode=WindowsPermissionEnum.WRITE,
-            )
-
-        # WHEN
-        session.sync_asset_inputs(  # type: ignore
-            cancel=cancel,
-            job_attachment_details=job_attachment_details,
-        )
-
-        # THEN
-        mock_sync_inputs.assert_called_with(
-            s3_settings=ANY,
-            queue_id=ANY,
-            job_id=ANY,
-            session_dir=ANY,
-            attachments=Attachments(
-                manifests=ANY,
-                fileSystem=ANY,
-            ),
-            fs_permission_settings=expected_fs_permission_settings,
-            storage_profiles_path_mapping_rules={},
-            step_dependencies=None,
-            on_downloading_files=ANY,
-            os_env_vars=None,
-        )
-
-    @pytest.mark.parametrize(
-        "sync_asset_inputs_args_sequence, expected_error",
-        [
-            (
-                [
-                    {
-                        "job_attachment_details": JobAttachmentDetails(
-                            manifests=[],
-                            job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
-                        )
-                    }
-                ],
-                False,
-            ),
-            (
-                [
-                    {
-                        "job_attachment_details": JobAttachmentDetails(
-                            manifests=[],
-                            job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
-                        )
-                    },
-                    {"step_dependencies": ["step-1"]},
-                ],
-                False,
-            ),
-            (
-                [{"step_dependencies": ["step-1"]}],
-                True,
-            ),
-            ([{"job_attachment_details": None}], True),
-            ([{"step_dependencies": None}], True),
-            ([{"job_attachment_details": None}, {"step_dependencies": None}], True),
-        ],
-    )
-    def test_sync_asset_inputs(
-        self,
-        session: Session,
-        mock_asset_sync: MagicMock,
-        mock_telemetry_event_for_sync_inputs: MagicMock,
-        sync_asset_inputs_args_sequence: list[dict[str, JobAttachmentDetails | list[str]]],
-        expected_error: bool,
-    ):
-        """
-        Tests 'sync_asset_inputs' with a sequence of arguments and checks if it raises an error as expected.
-        For each test case, 'sync_asset_inputs' is called with each argument in the 'sync_asset_inputs_args_sequence'.
-        It then checks whether the function raises an error or not, which should match the 'expected_error'.
-        Also, asserts that 'record_sync_inputs_telemetry_event' is called with the correct arguments.
-        """
-        # GIVEN
-        mock_ja_sync_inputs: MagicMock = mock_asset_sync.sync_inputs
-        mock_ja_sync_inputs.return_value = (SummaryStatistics(), {})
-        cancel = Event()
-
-        if expected_error:
-            # WHEN
-            with pytest.raises(RuntimeError) as raise_ctx:
-                for args in sync_asset_inputs_args_sequence:
-                    session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore
-            # THEN
-            assert (
-                raise_ctx.value.args[0]
-                == "Job attachments must be synchronized before downloading Step dependencies."
-            )
-        else:
-            # WHEN
-            for args in sync_asset_inputs_args_sequence:
-                session.sync_asset_inputs(cancel=cancel, **args)  # type: ignore
-            # THEN
-            for call in mock_telemetry_event_for_sync_inputs.call_args_list:
-                assert call[0] == (
-                    "queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    SummaryStatistics(),
-                )
-            assert mock_telemetry_event_for_sync_inputs.call_count == len(
-                sync_asset_inputs_args_sequence
-            )
-
-    def test_sync_asset_inputs_cancellation_by_low_transfer_rate(
-        self,
-        session: Session,
-        mock_asset_sync: MagicMock,
-    ):
-        """
-        Tests that the session is canceled if it observes a series of alarmingly low transfer rates.
-        """
-
-        # Mock out the Job Attachment's sync_inputs function to report multiple consecutive low transfer rates
-        # (lower than the threshold) via callback function.
-        def mock_sync_inputs(on_downloading_files, *args, **kwargs):
-            low_transfer_rate_report = ProgressReportMetadata(
-                status=ProgressStatus.DOWNLOAD_IN_PROGRESS,
-                progress=0.0,
-                transferRate=LOW_TRANSFER_RATE_THRESHOLD / 2,
-                progressMessage="",
-                processedFiles=0,
-            )
-            for _ in range(LOW_TRANSFER_COUNT_THRESHOLD):
-                on_downloading_files(low_transfer_rate_report)
-            return ({}, {})
-
-        mock_asset_sync.sync_inputs = mock_sync_inputs
-        mock_cancel = MagicMock(spec=Event)
-
-        with (
-            patch.object(session, "update_action") as mock_update_action,
-            patch.object(
-                session_mod, "record_sync_inputs_fail_telemetry_event"
-            ) as mock_record_sync_inputs_fail_telemetry_event,
-        ):
-            session.sync_asset_inputs(  # type: ignore
-                cancel=mock_cancel,
-                job_attachment_details=JobAttachmentDetails(
-                    manifests=[],
-                    job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
-                ),
-            )
-        mock_cancel.set.assert_called_once()
-        mock_update_action.assert_called_with(
-            ActionStatus(
-                state=ActionState.FAILED,
-                fail_message=(
-                    f"Input syncing failed due to successive low transfer rates (< {LOW_TRANSFER_RATE_THRESHOLD / 1000} KB/s). "
-                    f"The transfer rate was below the threshold for the last {session._seconds_to_minutes_str(LOW_TRANSFER_COUNT_THRESHOLD)}."
-                ),
-            ),
-        )
-        mock_record_sync_inputs_fail_telemetry_event.assert_called_once_with(
-            queue_id="queue-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            failure_reason=(
-                "Insufficient download speed: "
-                f"Input syncing failed due to successive low transfer rates (< {LOW_TRANSFER_RATE_THRESHOLD / 1000} KB/s). "
-                f"The transfer rate was below the threshold for the last {session._seconds_to_minutes_str(LOW_TRANSFER_COUNT_THRESHOLD)}."
-            ),
-        )
-
-    @pytest.mark.parametrize(
-        "seconds, expected_str",
-        [
-            (0, "0 seconds"),
-            (1, "1 second"),
-            (30, "30 seconds"),
-            (60, "1 minute"),
-            (61, "1 minute 1 second"),
-            (90, "1 minute 30 seconds"),
-            (120, "2 minutes"),
-            (121, "2 minutes 1 second"),
-            (150, "2 minutes 30 seconds"),
-        ],
-    )
-    def test_seconds_to_minutes_str(self, session: Session, seconds: int, expected_str: str):
-        assert session._seconds_to_minutes_str(seconds) == expected_str
-
-
-class TestSessionSyncAssetOutputs:
-    @pytest.fixture(autouse=True)
-    def mock_asset_sync(self, session: Session) -> Generator[MagicMock, None, None]:
-        with patch.object(session, "_asset_sync") as mock_asset_sync:
-            yield mock_asset_sync
-
-    def _setup_sync_asset_outputs_test(
-        self,
-        action_id: str,
-        step_id: str,
-        task_id: str,
-        action_start_time: datetime,
-        session: Session,
-        job_attachment_details: JobAttachmentDetails,
-        mock_asset_sync: MagicMock,
-    ) -> CurrentAction:
-        """Helper method to set up common test fixtures for sync_asset_outputs tests"""
-        # Set up sync methods
-        mock_asset_sync.sync_outputs.return_value = SummaryStatistics()
-        mock_asset_sync.sync_outputs_with_manifests.return_value = (
-            SummaryStatistics(),
-            {},
-        )
-
-        # Create current action
-        current_action = CurrentAction(
-            definition=RunStepTaskAction(
-                details=StepDetails(
-                    step_template=StepTemplate(
-                        name="Test",
-                        script=StepScript(
-                            actions=StepActions(
-                                onRun=Action(
-                                    command=CommandString("echo"),
-                                    args=[ArgString("hello")],
-                                ),
-                            ),
-                        ),
-                    ),
-                    step_id=step_id,
-                ),
-                id=action_id,
-                task_id=task_id,
-                task_parameter_values=dict[str, ParameterValue](),
-            ),
-            start_time=action_start_time,
-        )
-
-        # Set job attachment details
-        session._job_attachment_details = job_attachment_details
-
-        return current_action
 
 
 class TestSessionInnerRun:
@@ -1376,16 +1018,13 @@ class TestSessionActionUpdatedImpl:
             manifests=None,
         )
 
-        with (
-            patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs,
-        ):
-            # WHEN
-            future = session._action_updated_impl(
-                action_status=failed_action_status,
-                now=action_complete_time,
-            )
-            if future:
-                wait([future])
+        # WHEN
+        future = session._action_updated_impl(
+            action_status=failed_action_status,
+            now=action_complete_time,
+        )
+        if future:
+            wait([future])
 
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
@@ -1393,7 +1032,6 @@ class TestSessionActionUpdatedImpl:
             message=expected_next_action_message,
             ignore_env_exits=True,
         )
-        mock_sync_asset_outputs.assert_not_called()
         assert session._current_action is None, "Current session action emptied"
 
     def test_failed_task_run(
@@ -1448,16 +1086,13 @@ class TestSessionActionUpdatedImpl:
             manifests=None,
         )
 
-        with (
-            patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs,
-        ):
-            # WHEN
-            future = session._action_updated_impl(
-                action_status=failed_action_status,
-                now=action_complete_time,
-            )
-            if future:
-                wait([future])
+        # WHEN
+        future = session._action_updated_impl(
+            action_status=failed_action_status,
+            now=action_complete_time,
+        )
+        if future:
+            wait([future])
 
         # THEN
         mock_report_action_update.assert_called_once_with(expected_action_update)
@@ -1466,89 +1101,7 @@ class TestSessionActionUpdatedImpl:
             ignore_env_exits=True,
         )
         assert session._current_action is None, "Current session action emptied"
-        mock_sync_asset_outputs.assert_not_called()
 
-    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", False)
-    def test_success_task_run(
-        self,
-        action_id: str,
-        session_action_queue: MagicMock,
-        session: Session,
-        action_start_time: datetime,
-        action_complete_time: datetime,
-        step_id: str,
-        success_action_status: ActionStatus,
-        task_id: str,
-        mock_report_action_update: MagicMock,
-    ) -> None:
-        """Tests that if a task run succeeds (the Open Job Description action), that job attachment output
-        sync is performed, and AFTER that, the action success is returned."""
-        # GIVEN
-        current_action = CurrentAction(
-            definition=RunStepTaskAction(
-                details=StepDetails(
-                    step_template=StepTemplate(
-                        name="Test",
-                        script=StepScript(
-                            actions=StepActions(
-                                onRun=Action(
-                                    command=CommandString("echo"),
-                                    args=[ArgString("hello")],
-                                ),
-                            ),
-                        ),
-                    ),
-                    step_id=step_id,
-                ),
-                id=action_id,
-                task_id=task_id,
-                task_parameter_values=dict[str, ParameterValue](),
-            ),
-            start_time=action_start_time,
-        )
-        session._current_action = current_action
-        queue_cancel_all: MagicMock = session_action_queue.cancel_all
-
-        expected_action_update = SessionActionStatus(
-            id=action_id,
-            status=success_action_status,
-            start_time=action_start_time,
-            completed_status="SUCCEEDED",
-            end_time=action_complete_time,
-            manifests=[],
-        )
-
-        def mock_now(*arg, **kwarg) -> datetime:
-            return action_complete_time
-
-        with (
-            patch.object(session_mod, "datetime") as mock_datetime,
-            patch.object(session, "_sync_asset_outputs") as mock_sync_asset_outputs,
-        ):
-            mock_datetime.now.side_effect = mock_now
-
-            # Assert that reporting the action update happens AFTER syncing the output job
-            # attachments.
-            def sync_asset_outputs_side_effect(*, current_action: CurrentAction) -> None:
-                mock_report_action_update.assert_not_called()
-
-            mock_sync_asset_outputs.side_effect = sync_asset_outputs_side_effect
-
-            # WHEN
-            future = session._action_updated_impl(
-                action_status=success_action_status,
-                now=action_complete_time,
-            )
-            if future:
-                wait([future])
-
-        # THEN
-        mock_report_action_update.assert_called_once_with(expected_action_update)
-        queue_cancel_all.assert_not_called()
-        assert session._current_action is None, "Current session action emptied"
-        mock_sync_asset_outputs.assert_called_once_with(current_action=current_action)
-
-    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_success_task_run_attachment_upload(
         self,
         action_id: str,
@@ -1622,7 +1175,6 @@ class TestSessionActionUpdatedImpl:
             )
         )
 
-    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_success_task_run_attachment_upload_with_no_output_manifest(
         self,
         session: Session,
@@ -1666,7 +1218,6 @@ class TestSessionActionUpdatedImpl:
             expected_manifest_list,
         )
 
-    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_success_task_run_attachment_upload_with_manifest(
         self,
         session: Session,
@@ -1753,91 +1304,6 @@ class TestSessionActionUpdatedImpl:
             expected_manifest_list,
         )
 
-    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", False)
-    def test_success_task_run_fail_output_sync(
-        self,
-        action_id: str,
-        session_action_queue: MagicMock,
-        session: Session,
-        action_start_time: datetime,
-        action_complete_time: datetime,
-        step_id: str,
-        success_action_status: ActionStatus,
-        task_id: str,
-        mock_report_action_update: MagicMock,
-    ) -> None:
-        """Tests that if a task run succeeds (the Open Job Description action), but the job attachment output
-        sync fails, the action failure is returned, and any pending actions are marked as
-        NEVER_ATTEMPTED."""
-        # GIVEN
-        current_action = CurrentAction(
-            definition=RunStepTaskAction(
-                details=StepDetails(
-                    step_template=StepTemplate(
-                        name="Test",
-                        script=StepScript(
-                            actions=StepActions(
-                                onRun=Action(
-                                    command=CommandString("echo"),
-                                    args=[ArgString("hello")],
-                                ),
-                            ),
-                        ),
-                    ),
-                    step_id=step_id,
-                ),
-                id=action_id,
-                task_id=task_id,
-                task_parameter_values=dict[str, ParameterValue](),
-            ),
-            start_time=action_start_time,
-        )
-        session._current_action = current_action
-        queue_cancel_all: MagicMock = session_action_queue.cancel_all
-        sync_outputs_exception_msg = "syncing outputs fail message"
-        sync_outputs_exception = Exception(sync_outputs_exception_msg)
-        expected_fail_action_status = ActionStatus(
-            state=ActionState.FAILED,
-            fail_message=f"Failed to sync job output attachments for {current_action.definition.id}: {sync_outputs_exception_msg}",
-        )
-        expected_action_update = SessionActionStatus(
-            id=action_id,
-            status=expected_fail_action_status,
-            start_time=action_start_time,
-            completed_status="FAILED",
-            end_time=action_complete_time,
-            manifests=None,
-        )
-
-        def mock_now(*arg, **kwarg) -> datetime:
-            return action_complete_time
-
-        with (
-            patch.object(session_mod, "datetime") as mock_datetime,
-            patch.object(
-                session, "_sync_asset_outputs", side_effect=sync_outputs_exception
-            ) as mock_sync_asset_outputs,
-        ):
-            mock_datetime.now.side_effect = mock_now
-
-            # WHEN
-            future = session._action_updated_impl(
-                action_status=success_action_status,
-                now=action_complete_time,
-            )
-            if future:
-                wait([future])
-
-        # THEN
-        mock_report_action_update.assert_called_once_with(expected_action_update)
-        queue_cancel_all.assert_called_once_with(
-            message=expected_fail_action_status.fail_message,
-            ignore_env_exits=True,
-        )
-        assert session._current_action is None, "Current session action emptied"
-        mock_sync_asset_outputs.assert_called_once_with(current_action=current_action)
-
-    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", False)
     def test_logs_succeeded(
         self,
         action_complete_time: datetime,
@@ -1917,7 +1383,6 @@ class TestSessionActionUpdatedImpl:
         assert mock_mod_logger.info.call_args.args[0].status == "CANCELED"
         assert mock_mod_logger.info.call_args.args[0].action_id == current_action.definition.id
 
-    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_action_output_capture_filter_integration_on_output_sync_creation(
         self,
         action_id: str,
@@ -1979,7 +1444,6 @@ class TestSessionActionUpdatedImpl:
         assert session._output_sync_target_action == current_action
         assert session._current_action is None
 
-    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_action_output_filter_removed_on_output_sync_completion(
         self,
         session: Session,
@@ -2053,7 +1517,6 @@ class TestSessionActionUpdatedImpl:
         assert len(session._upload_manifest_list) == 1
         assert all(isinstance(item, UploadManifestInfo) for item in session._upload_manifest_list)
 
-    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_progress_update_excludes_manifests(
         self,
         session: Session,
@@ -2107,7 +1570,6 @@ class TestSessionActionUpdatedImpl:
         assert isinstance(call_args, SessionActionStatus)
         assert call_args.manifests is None  # Should be None for progress updates
 
-    @patch("deadline_worker_agent.sessions.session.ASSET_SYNC_JOB_USER_FEATURE", True)
     def test_failed_task_excludes_manifests(
         self,
         session: Session,

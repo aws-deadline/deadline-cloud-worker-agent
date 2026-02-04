@@ -293,7 +293,7 @@ def session_worker(
     stop_worker(request, worker)
 
 
-@pytest.fixture(scope="class", params=[True])
+@pytest.fixture(scope="class")
 def asset_sync_worker_config(
     request: pytest.FixtureRequest,
     posix_job_user: PosixSessionUser,
@@ -303,19 +303,8 @@ def asset_sync_worker_config(
     windows_job_users: list[str],
 ) -> DeadlineWorkerConfiguration:
     """
-    Worker configuration fixture for ASSET_SYNC_JOB_USER_FEATURE testing.
-    The ASSET_SYNC_JOB_USER_FEATURE flag and related fixture params will be removed in upcoming PRs.
-
-    This fixture ensures the environment variable is set before worker initialization,
-    allowing proper testing of the asset sync feature flag behavior.
+    Worker configuration fixture for asset sync testing.
     """
-    asset_sync_feature = request.param
-    worker_env_var = {
-        **dict(worker_config.worker_env_var or {}),
-        "ASSET_SYNC_JOB_USER_FEATURE": str(asset_sync_feature),
-    }
-    LOG.info(f"worker_env_var: {worker_env_var}")
-
     return dataclasses.replace(
         worker_config,
         job_users=[
@@ -324,7 +313,6 @@ def asset_sync_worker_config(
             posix_env_override_job_user,
         ],
         windows_job_users=windows_job_users,
-        worker_env_var=worker_env_var,
     )
 
 

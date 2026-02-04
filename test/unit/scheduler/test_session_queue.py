@@ -28,8 +28,6 @@ from deadline_worker_agent.scheduler.session_queue import (
     EnvironmentQueueEntry,
     TaskRunQueueEntry,
     SessionActionQueue,
-    SyncInputJobAttachmentsQueueEntry,
-    SyncInputJobAttachmentsStepDependenciesQueueEntry,
     AttachmentDownloadActionQueueEntry,
     AttachmentUploadActionQueueEntry,
 )
@@ -39,13 +37,11 @@ from deadline_worker_agent.sessions.actions import (
     ExitEnvironmentAction,
     RunStepTaskAction,
     SessionActionDefinition,
-    SyncInputJobAttachmentsAction,
     AttachmentDownloadAction,
     AttachmentUploadAction,
 )
 from deadline_worker_agent.sessions.errors import (
     EnvironmentDetailsError,
-    JobAttachmentDetailsError,
     JobEntityUnsupportedSchemaError,
     StepDetailsError,
 )
@@ -64,11 +60,9 @@ from deadline_worker_agent.api_models import (
     EntityIdentifier,
     EnvironmentAction,
     TaskRunAction,
-    SyncInputJobAttachmentsAction as SyncInputJobAttachmentsActionBoto,
     AttachmentDownloadAction as AttachmentDownloadActionBoto,
     AttachmentUploadAction as AttachmentUploadActionBoto,
 )
-from deadline_worker_agent.feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 
 
 _TEST_ENVIRONMENT_SCRIPT = EnvironmentScript(
@@ -190,78 +184,6 @@ class TestSessionActionQueueDequeue:
         assert len(session_queue._actions) == 0
         assert len(session_queue._actions_by_id) == 0
 
-    @pytest.mark.skipif(
-        ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test will be removed after releasing the asset sync job user feature",
-    )
-    @pytest.mark.parametrize(
-        "action, expected",
-        [
-            pytest.param(
-                SyncInputJobAttachmentsQueueEntry(
-                    Mock(),  # cancel event
-                    SyncInputJobAttachmentsActionBoto(
-                        sessionActionId="id",
-                        actionType="SYNC_INPUT_JOB_ATTACHMENTS",
-                    ),
-                ),
-                SyncInputJobAttachmentsAction(
-                    id="id",
-                    session_id="session-1234",
-                    job_attachment_details=JobAttachmentDetails(
-                        job_attachments_file_system=JobAttachmentsFileSystem.COPIED,
-                        manifests=[],
-                    ),
-                ),
-                id="sync input job attachments",
-            ),
-            pytest.param(
-                SyncInputJobAttachmentsStepDependenciesQueueEntry(
-                    Mock(),  # cancel event
-                    SyncInputJobAttachmentsActionBoto(
-                        sessionActionId="id",
-                        actionType="SYNC_INPUT_JOB_ATTACHMENTS",
-                        stepId="step-2",
-                    ),
-                ),
-                SyncInputJobAttachmentsAction(
-                    id="id",
-                    session_id="session-1234",
-                    step_details=StepDetails(
-                        step_template=_TEST_STEP_TEMPLATE,
-                        dependencies=["step-1"],
-                        step_id="step-1234",
-                    ),
-                ),
-                id="sync input job attachments with step Id",
-            ),
-        ],
-    )
-    def test_sync_input_job_attachments_actions(
-        self,
-        action: (
-            SyncInputJobAttachmentsQueueEntry | SyncInputJobAttachmentsStepDependenciesQueueEntry
-        ),
-        expected: SyncInputJobAttachmentsAction,
-        session_queue: SessionActionQueue,
-    ) -> None:
-        # GIVEN
-        session_queue._actions = [action]
-        session_queue._actions_by_id[action.definition["sessionActionId"]] = action
-
-        # WHEN
-        result = session_queue.dequeue()
-
-        # THEN
-        assert type(result) is type(expected)
-        assert result.id == expected.id  # type: ignore
-        assert len(session_queue._actions) == 0
-        assert len(session_queue._actions_by_id) == 0
-
-    @pytest.mark.skipif(
-        not ASSET_SYNC_JOB_USER_FEATURE,
-        reason="This test will be run unconditionally after releasing the asset sync job user featuer",
-    )
     @pytest.mark.parametrize(
         "action, expected",
         [
@@ -406,39 +328,11 @@ class TestSessionActionQueueDequeue:
                 StepDetailsError,
                 id="Step Details Error",
             ),
-            pytest.param(
-                SyncInputJobAttachmentsQueueEntry(
-                    Mock(),  # cancel event
-                    SyncInputJobAttachmentsActionBoto(
-                        sessionActionId="id",
-                        actionType="SYNC_INPUT_JOB_ATTACHMENTS",
-                    ),
-                ),
-                JobAttachmentDetailsError,
-                id="Job Attachments Details Error",
-            ),
-            pytest.param(
-                SyncInputJobAttachmentsStepDependenciesQueueEntry(
-                    Mock(),  # cancel event
-                    SyncInputJobAttachmentsActionBoto(
-                        sessionActionId="id",
-                        actionType="SYNC_INPUT_JOB_ATTACHMENTS",
-                        stepId="step-2",
-                    ),
-                ),
-                StepDetailsError,
-                id="Job Attachments Step Details Error",
-            ),
         ),
     )
     def test_handle_job_entity_error_on_dequeue(
         self,
-        queue_entry: (
-            EnvironmentQueueEntry
-            | TaskRunQueueEntry
-            | SyncInputJobAttachmentsQueueEntry
-            | SyncInputJobAttachmentsStepDependenciesQueueEntry
-        ),
+        queue_entry: (EnvironmentQueueEntry | TaskRunQueueEntry),
         error_type: type[Exception],
         session_queue: SessionActionQueue,
     ) -> None:
@@ -486,12 +380,7 @@ class TestSessionActionQueueDequeue:
     )
     def test_handle_unsupported_schema_on_dequeue(
         self,
-        queue_entry: (
-            EnvironmentQueueEntry
-            | TaskRunQueueEntry
-            | SyncInputJobAttachmentsQueueEntry
-            | SyncInputJobAttachmentsStepDependenciesQueueEntry
-        ),
+        queue_entry: (EnvironmentQueueEntry | TaskRunQueueEntry),
         session_queue: SessionActionQueue,
     ) -> None:
         # GIVEN
@@ -624,19 +513,11 @@ class TestIdentifiers:
                             parameters={},
                         ),
                     ),
-                    SyncInputJobAttachmentsQueueEntry(
+                    AttachmentDownloadActionQueueEntry(
                         Mock(),  # cancel event
-                        SyncInputJobAttachmentsActionBoto(
+                        AttachmentDownloadActionBoto(
                             sessionActionId="id",
                             actionType="SYNC_INPUT_JOB_ATTACHMENTS",
-                        ),
-                    ),
-                    SyncInputJobAttachmentsStepDependenciesQueueEntry(
-                        Mock(),  # cancel event
-                        SyncInputJobAttachmentsActionBoto(
-                            sessionActionId="id",
-                            actionType="SYNC_INPUT_JOB_ATTACHMENTS",
-                            stepId="step-2",
                         ),
                     ),
                 ],
@@ -657,12 +538,6 @@ class TestIdentifiers:
                             jobId="job-12ca328a79904b28ad708aeac7dbb2a8",
                         )
                     ),
-                    StepDetailsIdentifier(
-                        stepDetails=StepDetailsIdentifierFields(
-                            jobId="job-12ca328a79904b28ad708aeac7dbb2a8",
-                            stepId="step-2",
-                        ),
-                    ),
                 ],
                 id="Multiple Entities",
             ),
@@ -674,8 +549,6 @@ class TestIdentifiers:
         queue_entries: list[
             EnvironmentQueueEntry
             | TaskRunQueueEntry
-            | SyncInputJobAttachmentsQueueEntry
-            | SyncInputJobAttachmentsStepDependenciesQueueEntry
             | AttachmentDownloadActionQueueEntry
             | AttachmentUploadActionQueueEntry
         ],

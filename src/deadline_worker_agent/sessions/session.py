@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import json
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -17,10 +16,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
     Generator,
     Iterable,
-    List,
     Literal,
     Optional,
     Tuple,
@@ -28,13 +25,9 @@ from typing import (
 )
 from deadline_worker_agent.api_models import (
     EntityIdentifier,
-    SyncInputJobAttachmentsAction,
     AttachmentDownloadAction,
     AttachmentUploadAction,
     ManifestInfo,
-)
-from deadline_worker_agent.feature_flag import (
-    ASSET_SYNC_JOB_USER_FEATURE,
 )
 
 if TYPE_CHECKING:
@@ -56,36 +49,17 @@ from openjd.sessions import (
     EnvironmentIdentifier,
     EnvironmentModel,
     LOG as OPENJD_LOG,
-    PathMappingRule,
-    PosixSessionUser,
     StepScriptModel,
     Session as OPENJDSession,
     SessionUser,
-    WindowsSessionUser,
 )
 
 from deadline.job_attachments.asset_sync import AssetSync
 from deadline.job_attachments.models import (
-    Attachments,
-    JobAttachmentS3Settings,
-    ManifestProperties,
-    PathFormat,
     UploadManifestInfo,
 )
-from deadline.job_attachments.os_file_permission import (
-    FileSystemPermissionSettings,
-    PosixFileSystemPermissionSettings,
-    WindowsFileSystemPermissionSettings,
-    WindowsPermissionEnum,
-)
-from deadline.job_attachments.progress_tracker import ProgressReportMetadata, SummaryStatistics
+from deadline.job_attachments.progress_tracker import ProgressReportMetadata
 
-from ..aws.deadline import (
-    record_success_fail_telemetry_event,
-    record_sync_inputs_fail_telemetry_event,
-    record_sync_inputs_telemetry_event,
-    record_sync_outputs_telemetry_event,
-)
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
 from ..log_messages import (
@@ -110,15 +84,6 @@ OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS: dict[
     ActionState.TIMEOUT: "FAILED",
 }
 TIME_DELTA_ZERO = timedelta()
-
-# During a SYNC_INPUT_JOB_ATTACHMENTS session action, the transfer rate is periodically reported through
-# a callback function. If a transfer rate lower than LOW_TRANSFER_RATE_THRESHOLD is observed in a series
-# for LOW_TRANSFER_COUNT_THRESHOLD times, it is considered concerning or potentially stalled, and the
-# session action is canceled.
-LOW_TRANSFER_RATE_THRESHOLD = 10 * 10**3  # 10 KB/s
-LOW_TRANSFER_COUNT_THRESHOLD = (
-    60  # Each progress report takes 1 sec at the longest, so 60 reports amount to 1 min in total.
-)
 
 logger = getLogger(__name__)
 
@@ -541,11 +506,7 @@ class Session:
         self,
         *,
         actions: Iterable[
-            EnvironmentAction
-            | TaskRunAction
-            | SyncInputJobAttachmentsAction
-            | AttachmentDownloadAction
-            | AttachmentUploadAction
+            EnvironmentAction | TaskRunAction | AttachmentDownloadAction | AttachmentUploadAction
         ],
     ) -> None:
         """Replaces the assigned actions
@@ -560,7 +521,7 @@ class Session:
 
         Parameters
         ----------
-        actions : Iterable[EnvironmentAction | TaskRunAction | SyncInputJobAttachmentsAction | AttachmentDownloadAction | AttachmentUploadAction]
+        actions : Iterable[EnvironmentAction | TaskRunAction | AttachmentDownloadAction | AttachmentUploadAction]
             The new sequence of actions to be assigned to the session. The order of the actions
             provided is used as the processing order
         """
@@ -571,11 +532,7 @@ class Session:
         self,
         *,
         actions: Iterable[
-            EnvironmentAction
-            | TaskRunAction
-            | SyncInputJobAttachmentsAction
-            | AttachmentDownloadAction
-            | AttachmentUploadAction
+            EnvironmentAction | TaskRunAction | AttachmentDownloadAction | AttachmentUploadAction
         ],
     ) -> None:
         """Replaces the assigned actions
@@ -926,184 +883,6 @@ class Session:
         progress and status message are passed in by Job Attachments."""
         return True
 
-    @record_success_fail_telemetry_event()  # type: ignore
-    def sync_asset_inputs(
-        self,
-        *,
-        cancel: Event,
-        job_attachment_details: JobAttachmentDetails | None = None,
-        step_dependencies: list[str] | None = None,
-    ) -> None:
-        """Sync the inputs on session start using Job Attachments"""
-        if self._asset_sync is None:
-            return
-
-        low_transfer_count = 0
-        last_processed_files = 0
-
-        def progress_handler(job_attachments_download_status: ProgressReportMetadata) -> bool:
-            """
-            Callback for Job Attachments' sync_inputs() to track the download progress.
-            Returns True if the operation should continue as normal or False to cancel.
-            """
-            # Check the transfer rate from the progress report. It monitors for a series of
-            # alarmingly low transfer rates, and if the count exceeds the specified threshold,
-            # cancels the download and fails the current (SYNC_INPUT_JOB_ATTACHMENTS) action.
-            nonlocal low_transfer_count, last_processed_files
-            transfer_rate = job_attachments_download_status.transferRate
-
-            # File completion acts as heartbeat to prevent false positive of low transfer rate
-            # due to files with small sizes < ~50bytes
-            if job_attachments_download_status.processedFiles > last_processed_files:
-                low_transfer_count = 0
-            last_processed_files = job_attachments_download_status.processedFiles
-
-            if transfer_rate < LOW_TRANSFER_RATE_THRESHOLD:
-                low_transfer_count += 1
-            else:
-                low_transfer_count = 0
-            if low_transfer_count >= LOW_TRANSFER_COUNT_THRESHOLD:
-                cancel.set()
-                action_status = ActionStatus(
-                    state=ActionState.FAILED,
-                    fail_message=(
-                        f"Input syncing failed due to successive low transfer rates (< {LOW_TRANSFER_RATE_THRESHOLD / 1000} KB/s). "
-                        f"The transfer rate was below the threshold for the last {self._seconds_to_minutes_str(LOW_TRANSFER_COUNT_THRESHOLD)}."
-                    ),
-                )
-                self.update_action(action_status)
-                # Send the telemetry data of input syncing failure due to insufficient download speed.
-                record_sync_inputs_fail_telemetry_event(
-                    queue_id=self._queue_id,
-                    failure_reason=(f"Insufficient download speed: {action_status.fail_message}"),
-                )
-                return False
-
-            self.update_action(
-                action_status=ActionStatus(
-                    state=ActionState.RUNNING,
-                    status_message=job_attachments_download_status.progressMessage,
-                    progress=job_attachments_download_status.progress,
-                ),
-            )
-            return not cancel.is_set()
-
-        if not (job_attachment_settings := self._job_details.job_attachment_settings):
-            raise RuntimeError("Job attachment settings were not contained in JOB_DETAILS entity")
-
-        if job_attachment_details:
-            self._job_attachment_details = job_attachment_details
-
-        # Validate that job attachment details have been provided before syncing step dependencies.
-        if self._job_attachment_details is None:
-            raise RuntimeError(
-                "Job attachments must be synchronized before downloading Step dependencies."
-            )
-
-        assert job_attachment_settings.s3_bucket_name is not None
-        assert job_attachment_settings.root_prefix is not None
-
-        s3_settings = JobAttachmentS3Settings(
-            s3BucketName=job_attachment_settings.s3_bucket_name,
-            rootPrefix=job_attachment_settings.root_prefix,
-        )
-
-        manifest_properties_list: list[ManifestProperties] = []
-        if not step_dependencies:
-            for manifest_properties in self._job_attachment_details.manifests:
-                manifest_properties_list.append(
-                    ManifestProperties(
-                        rootPath=manifest_properties.root_path,
-                        fileSystemLocationName=manifest_properties.file_system_location_name,
-                        rootPathFormat=PathFormat(manifest_properties.root_path_format),
-                        inputManifestPath=manifest_properties.input_manifest_path,
-                        inputManifestHash=manifest_properties.input_manifest_hash,
-                        outputRelativeDirectories=manifest_properties.output_relative_directories,
-                    )
-                )
-
-        attachments = Attachments(
-            manifests=manifest_properties_list,
-            fileSystem=self._job_attachment_details.job_attachments_file_system,
-        )
-
-        storage_profiles_path_mapping_rules_dict: dict[str, str] = {
-            str(rule.source_path): str(rule.destination_path)
-            for rule in self._job_details.path_mapping_rules
-        }
-
-        fs_permission_settings: Optional[FileSystemPermissionSettings] = None
-        if self._os_user is not None:
-            if os.name == "posix":
-                if not isinstance(self._os_user, PosixSessionUser):
-                    raise ValueError(f"The user must be a posix-user. Got {type(self._os_user)}")
-                fs_permission_settings = PosixFileSystemPermissionSettings(
-                    os_user=self._os_user.user,
-                    os_group=self._os_user.group,
-                    dir_mode=0o20,
-                    file_mode=0o20,
-                )
-            else:
-                if not isinstance(self._os_user, WindowsSessionUser):
-                    raise ValueError(f"The user must be a windows-user. Got {type(self._os_user)}")
-                if self._os_user.user is not None:
-                    fs_permission_settings = WindowsFileSystemPermissionSettings(
-                        os_user=self._os_user.user,
-                        dir_mode=WindowsPermissionEnum.WRITE,
-                        file_mode=WindowsPermissionEnum.WRITE,
-                    )
-
-        # Add path mapping rules for root paths in job attachments
-        self.logger.info("Syncing inputs using Job Attachments")
-        download_summary_statistics: SummaryStatistics
-        path_mapping_rules: List[Dict[str, str]]
-        (download_summary_statistics, path_mapping_rules) = self._asset_sync.sync_inputs(
-            s3_settings=s3_settings,
-            attachments=attachments,
-            queue_id=self._queue_id,  # only used for error message
-            job_id=self._queue._job_id,  # only used for error message
-            session_dir=self._session.working_directory,
-            fs_permission_settings=fs_permission_settings,  # type: ignore[arg-type]
-            storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
-            step_dependencies=step_dependencies,
-            on_downloading_files=progress_handler,
-            os_env_vars=self._env,
-        )
-
-        self.logger.info(f"Summary Statistics for file downloads:\n{download_summary_statistics}")
-
-        # Send the summary stats of input syncing through the telemetry client.
-        record_sync_inputs_telemetry_event(self._queue_id, download_summary_statistics)
-
-        job_attachment_path_mappings = [
-            PathMappingRule.from_dict(rule) for rule in path_mapping_rules
-        ]
-
-        # Open Job Description session implementation details -- path mappings are sorted.
-        # bisect.insort only supports the 'key' arg in 3.10 or later, so
-        # we first extend the list and sort it afterwards.
-        if self._session._path_mapping_rules:
-            self._session._path_mapping_rules.extend(job_attachment_path_mappings)
-        else:
-            self._session._path_mapping_rules = job_attachment_path_mappings
-
-        # Open Job Description Sessions sort the path mapping rules based on length of the parts make
-        # rules that are subsets of each other behave in a predictable manner. We must
-        # sort here since we're modifying that internal list appending to the list.
-        self._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
-
-    def _seconds_to_minutes_str(self, seconds: int) -> str:
-        minutes = seconds // 60
-        remaining_seconds = seconds % 60
-        if minutes > 0 and remaining_seconds > 0:
-            return f"{minutes} minute{'s' if minutes != 1 else ''} {remaining_seconds} second{'s' if remaining_seconds != 1 else ''}"
-        elif minutes > 0:
-            return f"{minutes} minute{'s' if minutes != 1 else ''}"
-        elif remaining_seconds == 0:
-            return "0 seconds"
-        else:
-            return f"{remaining_seconds} second{'s' if remaining_seconds != 1 else ''}"
-
     def update_action(self, action_status: ActionStatus) -> None:
         """Callback called on every Open Job Description status/progress update and the completion/exit of the
         current action.
@@ -1271,91 +1050,34 @@ class Session:
             action_status.state == ActionState.SUCCESS
             and isinstance(current_action.definition, RunStepTaskAction)
             and self._asset_sync is not None
-        ):
             # Job attachment details check to make sure the queue has job attachment configured
-            if ASSET_SYNC_JOB_USER_FEATURE and self._job_attachment_details:
-                # Finished task run for a run step task action.
-                # This session has attachment, create attachment upload action and insert to the front of queue
+            and self._job_attachment_details is not None
+        ):
+            # Finished task run for a run step task action.
+            # This session has attachment, create attachment upload action and insert to the front of queue
+            assert current_action.definition.step_id is not None
+            action = AttachmentUploadAction(
+                sessionActionId=current_action.definition._id,
+                actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
+                stepId=current_action.definition.step_id,
+                startTime=current_action.start_time.timestamp(),
+            )
+            if current_action.definition.task_id is not None:
+                action["taskId"] = current_action.definition.task_id
 
-                assert current_action.definition.step_id is not None
-                action = AttachmentUploadAction(
-                    sessionActionId=current_action.definition._id,
-                    actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
-                    stepId=current_action.definition.step_id,
-                    startTime=current_action.start_time.timestamp(),
-                )
-                if current_action.definition.task_id is not None:
-                    action["taskId"] = current_action.definition.task_id
-
-                if not self._action_output_log_filter:
-                    self._action_output_log_filter = ActionOutputCaptureFilter(
-                        session_id=self.id, callback=self._action_output_log_filter_callback
-                    )
-
-                OPENJD_LOG.addFilter(self._action_output_log_filter)
-
-                self._queue.insert_front(action=action)
-                self._output_sync_target_action = self._current_action
-                self._current_action = None
-
-            else:
-                # Synchronizing job output attachments is currently bundled together with the
-                # RunStepTaskAction. The synchronization happens after the task run succeeds,
-                # and both must be successful in order to mark the action as SUCCEEDED.
-
-                # Banner matching the subsection banner generated by openjd-sessions
-                self.logger.info("----------------------------------------------")
-                self.logger.info("Uploading output files to Job Attachments")
-                self.logger.info("----------------------------------------------")
-                future: Future = self._executor.submit(
-                    self._sync_asset_outputs,
-                    current_action=current_action,
+            if not self._action_output_log_filter:
+                self._action_output_log_filter = ActionOutputCaptureFilter(
+                    session_id=self.id, callback=self._action_output_log_filter_callback
                 )
 
-                on_done_with_sync_asset_outputs = partial(
-                    self._on_done_with_sync_asset_outputs,
-                    is_unsuccessful=is_unsuccessful,
-                    action_status=action_status,
-                    current_action=current_action,
-                )
-                future.add_done_callback(on_done_with_sync_asset_outputs)
-                # Returning the future just to make this method easier to test.
-                # Tests need to wait on the future to avoid race conditions
-                return future
+            OPENJD_LOG.addFilter(self._action_output_log_filter)
+
+            self._queue.insert_front(action=action)
+            self._output_sync_target_action = self._current_action
+            self._current_action = None
         else:
             self._handle_action_update(is_unsuccessful, action_status, current_action, now)
         return None
-
-    def _on_done_with_sync_asset_outputs(
-        self,
-        future: Future[None],
-        is_unsuccessful: bool,
-        action_status: ActionStatus,
-        current_action: CurrentAction,
-    ):
-        try:
-            future.result()
-        except Exception as e:
-            # Log and fail the task run action if we are unable to sync output job attachments
-            fail_message = (
-                f"Failed to sync job output attachments for {current_action.definition.id}: {e}"
-            )
-            self.logger.warning(fail_message)
-            action_status = ActionStatus(state=ActionState.FAILED, fail_message=fail_message)
-            is_unsuccessful = True
-        finally:
-            # The time when the action is completed should be the moment when
-            # the synchronization have been finished.
-            now = datetime.now(tz=timezone.utc)
-            with (
-                # NOTE: Acquire the locks here to ensure thread-safe access during action update.
-                # Lock acquisition order is important. Must be:
-                #     1.  action update lock (scheduler owned)
-                #     2.  current action lock
-                self._action_update_lock,
-                self._current_action_lock,
-            ):
-                self._handle_action_update(is_unsuccessful, action_status, current_action, now)
 
     def _handle_action_update(
         self,
@@ -1445,81 +1167,6 @@ class Session:
                     manifests=session_manifests,
                 )
             )
-
-    @record_success_fail_telemetry_event(metric_name="sync_asset_outputs")  # type: ignore
-    def _sync_asset_outputs(
-        self,
-        *,
-        current_action: CurrentAction,
-    ) -> None:
-        """Sync the outputs after a TASK_RUN if using Job Attachments"""
-        if not (queue_settings := self._job_details.job_attachment_settings):
-            return
-        if not (job_attachment_details := self._job_attachment_details):
-            return
-        if self._asset_sync is None:
-            # Shouldn't get here, but let's be defensive.
-            return
-
-        # assist type check
-        assert queue_settings.root_prefix is not None
-
-        # Turn worker agent job attachment settings into job attachment settings
-        s3_settings = JobAttachmentS3Settings(
-            s3BucketName=queue_settings.s3_bucket_name,
-            rootPrefix=queue_settings.root_prefix,
-        )
-
-        manifest_properties_list: list[ManifestProperties] = []
-        for manifest_properties in job_attachment_details.manifests:
-            manifest_properties_list.append(
-                ManifestProperties(
-                    rootPath=manifest_properties.root_path,
-                    fileSystemLocationName=manifest_properties.file_system_location_name,
-                    rootPathFormat=PathFormat(manifest_properties.root_path_format),
-                    inputManifestPath=manifest_properties.input_manifest_path,
-                    inputManifestHash=manifest_properties.input_manifest_hash,
-                    outputRelativeDirectories=manifest_properties.output_relative_directories,
-                )
-            )
-
-        attachments = Attachments(
-            manifests=manifest_properties_list,
-            fileSystem=job_attachment_details.job_attachments_file_system,
-        )
-
-        storage_profiles_path_mapping_rules_dict: dict[str, str] = {
-            str(rule.source_path): str(rule.destination_path)
-            for rule in self._job_details.path_mapping_rules
-        }
-
-        self.logger.info("Started syncing outputs using Job Attachments")
-        # avoid circular import
-        from .actions import RunStepTaskAction
-
-        assert isinstance(current_action.definition, RunStepTaskAction)
-        assert current_action.definition.task_id is not None
-
-        upload_summary_statistics: SummaryStatistics = self._asset_sync.sync_outputs(
-            s3_settings=s3_settings,
-            attachments=attachments,
-            queue_id=self._queue_id,
-            job_id=self._queue._job_id,
-            step_id=current_action.definition.step_id,  # type: ignore[arg-type]
-            task_id=current_action.definition.task_id,
-            session_action_id=current_action.definition.id,
-            start_time=current_action.start_time.timestamp(),
-            session_dir=self._session.working_directory,
-            storage_profiles_path_mapping_rules=storage_profiles_path_mapping_rules_dict,
-            on_uploading_files=self._notifier_callback,
-        )
-
-        self.logger.info(f"Summary Statistics for file uploads:\n{upload_summary_statistics}")
-
-        # Send the summary stats of output syncing through the telemetry client.
-        record_sync_outputs_telemetry_event(self._queue_id, upload_summary_statistics)
-
-        self.logger.info("Finished syncing outputs using Job Attachments")
 
     def run_task(
         self,

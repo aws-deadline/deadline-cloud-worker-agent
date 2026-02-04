@@ -10,7 +10,6 @@ from uuid import uuid4
 
 from boto3 import Session as _Session
 
-from ..feature_flag import ASSET_SYNC_JOB_USER_FEATURE
 from ..api_models import (
     AssignedSession,
     AssumeFleetRoleForWorkerResponse,
@@ -19,7 +18,6 @@ from ..api_models import (
     CreateWorkerResponse,
     EnvironmentAction,
     HostProperties,
-    SyncInputJobAttachmentsAction,
     AttachmentDownloadAction,
     TaskRunAction,
     UpdatedSessionActionInfo,
@@ -164,17 +162,6 @@ class DeadlineClient:
                 mapped_action["parameters"] = parameters
             return mapped_action
 
-        def parse_sync_input_job_attachments_action(
-            action: dict, action_id: str
-        ) -> SyncInputJobAttachmentsAction:
-            mapped_action = SyncInputJobAttachmentsAction(
-                sessionActionId=action_id,
-                actionType="SYNC_INPUT_JOB_ATTACHMENTS",
-            )
-            if step_id := action.get("stepId", None):
-                mapped_action["stepId"] = step_id
-            return mapped_action
-
         def parse_attachment_download_action(
             action: dict, action_id: str
         ) -> AttachmentDownloadAction:
@@ -190,10 +177,7 @@ class DeadlineClient:
             str,
             Callable[
                 [Any, str],
-                EnvironmentAction
-                | TaskRunAction
-                | SyncInputJobAttachmentsAction
-                | AttachmentDownloadAction,
+                EnvironmentAction | TaskRunAction | AttachmentDownloadAction,
             ],
         ] = {
             "envEnter": lambda action, action_id: EnvironmentAction(
@@ -207,22 +191,13 @@ class DeadlineClient:
                 environmentId=action["environmentId"],
             ),
             "taskRun": parse_task_run_action,
-            "syncInputJobAttachments": (
-                parse_sync_input_job_attachments_action
-                if not ASSET_SYNC_JOB_USER_FEATURE
-                else parse_attachment_download_action
-            ),
+            "syncInputJobAttachments": parse_attachment_download_action,
         }
 
         # Map the new session action structure to our internal model
         mapped_sessions: dict[str, AssignedSession] = {}
         for session_id, session in response["assignedSessions"].items():
-            mapped_actions: list[
-                EnvironmentAction
-                | TaskRunAction
-                | SyncInputJobAttachmentsAction
-                | AttachmentDownloadAction
-            ] = []
+            mapped_actions: list[EnvironmentAction | TaskRunAction | AttachmentDownloadAction] = []
             for session_action in session["sessionActions"]:
                 assert len(session_action["definition"].items()) == 1
                 (definition,) = session_action["definition"].items()
