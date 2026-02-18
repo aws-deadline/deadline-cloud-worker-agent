@@ -14,6 +14,7 @@ import os
 import logging
 
 from e2e.conftest import DeadlineResources
+from e2e.utils import windows_replace_and_verify
 from deadline_test_fixtures import (
     Job,
     Farm,
@@ -125,12 +126,11 @@ class TestWindowsJobUserOverride:
     ) -> None:
         class_worker.stop_worker_service()
 
-        cmd_result = class_worker.send_command(
-            "(Get-Content -Path C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml -Raw) -replace '# windows_job_user = \"job-user\"', 'windows_job_user = \"config-override\"' | Set-Content -Path C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
-        )
-
-        assert cmd_result.exit_code == 0, (
-            f"Setting the job user override via CLI failed: {cmd_result}"
+        windows_replace_and_verify(
+            worker=class_worker,
+            file_path="C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml",
+            old_pattern='# windows_job_user = "job-user"',
+            new_pattern='windows_job_user = "config-override"',
         )
 
         class_worker.start_worker_service()
@@ -156,11 +156,12 @@ class TestWindowsJobUserOverride:
         assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # reset config file
-        cmd_result = class_worker.send_command(
-            "(Get-Content -Path C:\\ProgramData\Amazon\\Deadline\\Config\\worker.toml -Raw) -replace 'windows_job_user = \"config-override\"', '# windows_job_user = \"job-user\"' | Set-Content -Path C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
+        windows_replace_and_verify(
+            worker=class_worker,
+            file_path="C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml",
+            old_pattern='windows_job_user = "config-override"',
+            new_pattern='# windows_job_user = "job-user"',
         )
-
-        assert cmd_result.exit_code == 0, f"Failed to reset config file: {cmd_result}"
 
     def test_installer_user_override(
         self,
@@ -224,11 +225,12 @@ class TestWindowsJobUserOverride:
         assert override_worker_agent_job.task_run_status == TaskStatus.SUCCEEDED
 
         # reset config file
-        cmd_result = class_worker.send_command(
-            "(Get-Content -Path C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml -Raw) -replace 'windows_job_user = \"installer-override\"', '# windows_job_user = \"job-user\"' | Set-Content -Path C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
+        windows_replace_and_verify(
+            worker=class_worker,
+            file_path="C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml",
+            old_pattern='windows_job_user = "installer-override"',
+            new_pattern='# windows_job_user = "job-user"',
         )
-
-        assert cmd_result.exit_code == 0, f"Failed to reset config file: {cmd_result}"
 
     def test_env_var_user_override(
         self,
