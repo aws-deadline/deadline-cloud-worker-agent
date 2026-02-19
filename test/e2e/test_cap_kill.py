@@ -226,13 +226,13 @@ def test_worker_subprocesses_have_no_capabilities(
     job.assert_single_task_log_contains(
         deadline_client=deadline_client,
         logs_client=logs_client,
-        expected_pattern=re.escape("Current: =\n"),
+        expected_pattern=r"Current: =\s*\n",
     )
 
     job.assert_single_task_log_contains(
         deadline_client=deadline_client,
         logs_client=logs_client,
-        expected_pattern=re.escape("Ambient set =\n"),
+        expected_pattern=r"Ambient set =\s*\n",
     )
 
 
