@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -1191,6 +1192,16 @@ class Session:
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
     ) -> None:
+        # Forward any AWS endpoint URL overrides from the host environment so that
+        # customers can direct S3 (or other service) traffic to custom endpoints.
+        endpoint_overrides = {
+            k: v for k, v in os.environ.items() if k.startswith("AWS_ENDPOINT_URL")
+        }
+        if endpoint_overrides:
+            if os_env_vars is None:
+                os_env_vars = {}
+            os_env_vars.update(endpoint_overrides)
+
         self._session._run_task_without_session_env(
             step_script=step_script,
             task_parameter_values=task_parameter_values,

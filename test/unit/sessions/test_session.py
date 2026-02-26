@@ -2524,3 +2524,51 @@ class TestRunAttachmentSyncTask:
             )
 
         assert exc_info.value is expected_exception
+
+    def test_forwards_aws_endpoint_url_overrides(
+        self,
+        session: Session,
+        mock_openjd_session: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Tests that AWS_ENDPOINT_URL* env vars from the host are forwarded."""
+        # GIVEN
+        monkeypatch.setenv("AWS_ENDPOINT_URL_S3", "https://custom-s3-endpoint")
+        monkeypatch.setenv("AWS_ENDPOINT_URL", "https://custom-global-endpoint")
+        monkeypatch.setenv("UNRELATED_VAR", "should-not-appear")
+        step_script_model = MagicMock()
+
+        # WHEN
+        session._run_attachment_sync_task(
+            step_script=step_script_model,
+            task_parameter_values={},
+            os_env_vars={"DEADLINE_QUEUE_ID": "queue-1"},
+        )
+
+        # THEN
+        call_kwargs = mock_openjd_session._run_task_without_session_env.call_args[1]
+        assert call_kwargs["os_env_vars"]["AWS_ENDPOINT_URL_S3"] == "https://custom-s3-endpoint"
+        assert call_kwargs["os_env_vars"]["AWS_ENDPOINT_URL"] == "https://custom-global-endpoint"
+        assert call_kwargs["os_env_vars"]["DEADLINE_QUEUE_ID"] == "queue-1"
+        assert "UNRELATED_VAR" not in call_kwargs["os_env_vars"]
+
+    def test_forwards_aws_endpoint_url_overrides_when_no_env_vars(
+        self,
+        session: Session,
+        mock_openjd_session: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Tests that AWS_ENDPOINT_URL* env vars are forwarded even when os_env_vars is None."""
+        # GIVEN
+        monkeypatch.setenv("AWS_ENDPOINT_URL_S3", "https://custom-s3-endpoint")
+        step_script_model = MagicMock()
+
+        # WHEN
+        session._run_attachment_sync_task(
+            step_script=step_script_model,
+            task_parameter_values={},
+        )
+
+        # THEN
+        call_kwargs = mock_openjd_session._run_task_without_session_env.call_args[1]
+        assert call_kwargs["os_env_vars"]["AWS_ENDPOINT_URL_S3"] == "https://custom-s3-endpoint"

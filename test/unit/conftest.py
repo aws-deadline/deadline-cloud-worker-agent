@@ -189,6 +189,13 @@ def logs_client() -> MagicMock:
 
 
 @pytest.fixture(autouse=True)
+def clear_aws_endpoint_url_env_vars(monkeypatch: pytest.MonkeyPatch):
+    for key in list(os.environ):
+        if key.startswith("AWS_ENDPOINT_URL"):
+            monkeypatch.delenv(key)
+
+
+@pytest.fixture(autouse=True)
 def patch_windows_session_user_validate():
     with patch.object(WindowsSessionUser, "_validate_username_password"):
         yield
