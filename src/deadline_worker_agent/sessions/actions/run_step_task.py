@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from concurrent.futures import Executor
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING, cast
 
 from openjd.model import TaskParameterSet
 
@@ -10,6 +10,8 @@ from ...log_messages import SessionActionLogKind
 from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
+    from openjd.model.v2023_09 import StepScript
+
     from ..job_entities import StepDetails
     from ..session import Session
 
@@ -77,8 +79,9 @@ class RunStepTaskAction(OpenjdAction):
         if self.task_id is not None:
             env_vars["DEADLINE_TASK_ID"] = self.task_id
 
+        # The service resolves step template syntax sugar, so script is always present.
         session.run_task(
-            step_script=self._details.step_template.script,
+            step_script=cast("StepScript", self._details.step_template.script),
             task_parameter_values=self._task_parameter_values,
             os_env_vars=env_vars,
         )
