@@ -504,3 +504,40 @@ def upload_directory_to_s3(s3_client: Any, local_dir: str, bucket: str, s3_prefi
 
             LOG.info(f"Uploading {file_path} to s3://{bucket}/{s3_key}")
             s3_client.upload_file(str(file_path), bucket, s3_key)
+
+
+def windows_replace_and_verify(
+    worker: EC2InstanceWorker,
+    file_path: str,
+    old_pattern: str,
+    new_pattern: str,
+) -> None:
+    """
+    Performs a PowerShell string replacement in a file and verifies it succeeded.
+
+    PowerShell's -replace operator returns exit code 0 even when no replacement occurs,
+    so this function adds verification to ensure the replacement actually happened.
+
+    Args:
+        worker: The EC2 worker instance to execute commands on
+        file_path: Windows path to the file to modify (e.g., "C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml")
+        old_pattern: Pattern to replace (regex pattern used in PowerShell -replace)
+        new_pattern: Replacement string
+
+    Raises:
+        AssertionError: If replacement command or verification fails
+    """
+    # Perform replacement
+    cmd_result = worker.send_command(
+        f"(Get-Content -Path {file_path} -Raw) -replace '{old_pattern}', '{new_pattern}' | Set-Content -Path {file_path}"
+    )
+    assert cmd_result.exit_code == 0, f"Replacement command failed: {cmd_result}"
+
+    # Verify the replacement actually happened - PowerShell's -replace silently
+    # returns the original string if the pattern isn't found
+    verify_result = worker.send_command(f"Get-Content {file_path}")
+    assert verify_result.exit_code == 0, f"Failed to read config file: {verify_result}"
+    assert new_pattern in verify_result.stdout, (
+        f"Config replacement failed - template format may have changed. "
+        f"Config contents:\n{verify_result.stdout}"
+    )
