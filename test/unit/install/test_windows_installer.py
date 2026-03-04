@@ -17,6 +17,7 @@ from deadline_worker_agent import installer as installer_mod
 from deadline_worker_agent.installer import ParsedCommandLineArguments, win_installer, install
 from deadline_worker_agent.windows.win_service import WorkerAgentWindowsService
 
+import pywintypes
 import win32con
 import win32netcon
 import win32profile
@@ -996,3 +997,24 @@ class TestProvisionDirectories:
             agent_user_permission=None,
             users_group_permission=FileSystemPermissionEnum.LIST_DIRECTORY_AND_READ,
         )
+
+
+class TestGetEffectiveUserRights:
+    """Tests for get_effective_user_rights"""
+
+    @patch.object(win_installer, "win32api")
+    @patch.object(win_installer, "win32security")
+    @patch.object(win_installer, "win32net")
+    def test_skips_sid_with_no_rights(self, mock_win32net, mock_win32security, mock_win32api):
+        """SID with no assigned rights (ERROR_FILE_NOT_FOUND) properly returns an empty set"""
+        mock_win32security.LookupAccountName.return_value = (Mock(), None, None)
+        mock_win32net.NetUserGetLocalGroups.return_value = []
+        mock_win32security.LsaEnumerateAccountRights.side_effect = pywintypes.error(
+            winerror.ERROR_FILE_NOT_FOUND,
+            "LsaEnumerateAccountRights",
+            "Le fichier spécifié est introuvable.",
+        )
+
+        result = win_installer.get_effective_user_rights("testuser")
+
+        assert result == set()

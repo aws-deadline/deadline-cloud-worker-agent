@@ -723,7 +723,7 @@ def get_effective_user_rights(user: str) -> set[str]:
             try:
                 account_rights = win32security.LsaEnumerateAccountRights(policy_handle, sid)
             except pywintypes.error as e:
-                if e.strerror == "The system cannot find the file specified.":
+                if e.winerror == winerror.ERROR_FILE_NOT_FOUND:
                     # Account is not directly assigned any rights
                     continue
                 else:
