@@ -228,7 +228,7 @@ class TestWindowsJobUserOverride:
         windows_replace_and_verify(
             worker=class_worker,
             file_path="C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml",
-            old_pattern='windows_job_user = "installer-override"',
+            old_pattern=f'windows_job_user = "{WINDOWS_JOB_USER}"',
             new_pattern='# windows_job_user = "job-user"',
         )
 
