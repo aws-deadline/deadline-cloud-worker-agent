@@ -3,7 +3,7 @@
 set -e
 
 pip install --upgrade pip
-pip install --upgrade hatch "virtualenv<21"
+pip install --upgrade hatch
 
 if [ "$TEST_TYPE" ]
 then
