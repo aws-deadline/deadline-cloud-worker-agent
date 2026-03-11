@@ -1,3 +1,21 @@
+## 0.29.0 (2026-03-16)
+
+### BREAKING CHANGES
+* Job attachment downloads and uploads now run as the job user instead of the worker agent user. Previously available as the opt-in `ASSET_SYNC_JOB_USER_FEATURE` feature flag, this behavior is now the default and the legacy code path has been removed. Attachment sync operations are now run as OpenJD session actions under the job user's OS identity (`jobRunAsUser`).
+* The `ASSET_SYNC_JOB_USER_FEATURE` environment variable is no longer recognized. The feature flag module has been removed as this behavior is now always enabled.
+* The following APIs have been removed in favour of the new OpenJD-based attachment actions:
+  * `SyncInputJobAttachmentsAction` — replaced by `AttachmentDownloadAction`
+  * `SyncInputJobAttachmentsActionType` — replaced by `AttachmentDownloadActionType`
+  * `Session.sync_asset_inputs()` — attachment downloads are now handled by `AttachmentDownloadAction` running as an OpenJD session action
+  * `Session._sync_asset_outputs()` — attachment uploads are now handled by `AttachmentUploadAction` running as an OpenJD session action
+
+### Features
+* remove deprecated sync input and output code path replaced by attachment download and upload (#877) ([`ddb37e1`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/ddb37e1ee34e6f8afed0aec70637310a02e6a8b2))
+
+### Bug Fixes
+* **installer, windows**: SIDs with no LSA rights could fail the install on non-english locales (#891) ([`3182322`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/318232239cb60cb29e012b312a75786971001115))
+
+
 ## 0.28.21 (2026-01-14)
 
 
