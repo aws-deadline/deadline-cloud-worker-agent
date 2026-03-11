@@ -129,6 +129,15 @@ source .e2e_windows_infra.sh
 hatch run e2e-test
 ```
 
+You can also override the `openjd-sessions` and/or `deadline-cloud` packages installed on the worker
+by pointing to local wheel files. This is useful when testing against unreleased or locally-built versions.
+Both variables accept a path (glob patterns are supported, but must resolve to exactly one file).
+
+```
+export OPENJD_SESSIONS_WHL_PATH=/path/to/openjd_sessions-*.whl
+export DEADLINE_WHL_PATH=/path/to/deadline_cloud-*.whl
+```
+
 #### Debugging Pytest Hanging
 
 Sometimes you may encounter an issue where the tests complete, but pytest hangs and does not exit.

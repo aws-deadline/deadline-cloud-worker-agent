@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-FROM public.ecr.aws/docker/library/python:3.9-buster
+FROM public.ecr.aws/docker/library/python:3.11-bookworm
 
 ENV AGENT_USER=agentuser
 ENV JOB_USER=jobuser
