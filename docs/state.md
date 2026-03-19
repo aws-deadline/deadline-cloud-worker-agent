@@ -21,14 +21,20 @@ The structure of the persistence directory is:
 ```txt
 <PERSISTENT_DIR>/
 ├── credentials/
-│   ├── <WORKER_ID>.json
+│   └── <WORKER_ID>.json
 ├── queues/
-│   ├── <QUEUE_1_ID>
-│   │   ├── get_aws_credentials.sh
-│   │   └── iam_credentials.json
-│   └── <QUEUE_2_ID>
-│       ├── get_aws_credentials.sh
-│       └── iam_credentials.json
+│   ├── <QUEUE_1_ID>/
+│   │   ├── config
+│   │   ├── credentials
+│   │   ├── get_aws_credentials.sh    # POSIX
+│   │   ├── get_aws_credentials.cmd   # Windows
+│   │   └── aws_credentials.json
+│   └── <QUEUE_2_ID>/
+│       ├── config
+│       ├── credentials
+│       ├── get_aws_credentials.sh    # POSIX
+│       ├── get_aws_credentials.cmd   # Windows
+│       └── aws_credentials.json
 └── worker.json
 ```
 
@@ -139,7 +145,7 @@ Structure:
         ├── credentials
         ├── get_aws_credentials.sh    # POSIX
         ├── get_aws_credentials.cmd   # Windows
-        └── iam_credentials.json
+        └── aws_credentials.json
 ```
 
 When the worker agent is assigned a worker session for a queue with an associate IAM role, the
@@ -152,7 +158,7 @@ This is done using the following procedure:
 2.  write `config` file
 3.  write `credentials` file
 4.  write `get_aws_credentials.sh` on POSIX or `get_aws_credentials.cmd` on Windows
-5.  write `iam_credentials.json` containing the temporary credentials in the format expected
+5.  write `aws_credentials.json` containing the temporary credentials in the format expected
     by the AWS CLI and SDKs
 
 
