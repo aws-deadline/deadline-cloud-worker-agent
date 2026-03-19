@@ -95,7 +95,7 @@
 #  *                                                                                         *
 #  *******************************************************************************************
 #
-# To disallow instance profiles (recommended for production), uncomment the line below:
+# To disallow instance profiles, uncomment the line below:
 #
 # allow_ec2_instance_profile = false
 
