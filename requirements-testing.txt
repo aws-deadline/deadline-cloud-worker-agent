@@ -6,7 +6,7 @@ deadline-cloud-test-fixtures >= 0.18.6, <0.19
 flaky == 3.8.*
 pytest == 9.0.*; python_version >= "3.10"
 pytest ~= 8.4; python_version < "3.10"
-pytest-cov == 7.0.*
+pytest-cov == 7.1.*
 pytest-timeout == 2.4.*
 pytest-xdist == 3.8.*
 rich == 14.3.*
