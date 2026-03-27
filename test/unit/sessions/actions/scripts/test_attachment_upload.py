@@ -646,6 +646,7 @@ class TestTelemetry:
         },
     )  # Mock the environment variables
     @patch.object(attachment_upload_mod, "record_attachment_upload_latencies_telemetry_event")
+    @patch.object(attachment_upload_mod, "upload_output_assets")
     @patch.object(attachment_upload_mod, "snapshot")
     @patch.object(attachment_upload_mod, "merge")
     @patch.object(attachment_upload_mod, "parse_worker_manifest_properties")
@@ -654,6 +655,7 @@ class TestTelemetry:
         mock_parse: Mock,
         mock_merge: Mock,
         mock_snapshot: Mock,
+        mock_upload: Mock,
         mock_latencies_telemetry: Mock,
         root_path_to_output_manifest: Optional[Mock],
     ):

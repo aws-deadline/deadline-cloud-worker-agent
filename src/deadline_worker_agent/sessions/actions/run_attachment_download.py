@@ -29,7 +29,10 @@ from deadline.job_attachments.os_file_permission import (
     WindowsPermissionEnum,
 )
 from deadline.job_attachments._utils import _get_unique_dest_dir_name
-from deadline_worker_agent.aws.deadline import _record_attachment_download_filesystem_event
+from deadline_worker_agent.aws.deadline import (
+    _record_attachment_download_filesystem_event,
+    record_vfs_mount_telemetry_event,
+)
 
 from openjd.sessions import (
     LOG as OPENJD_LOG,
@@ -425,6 +428,7 @@ class AttachmentDownloadAction(OpenjdAction):
                 fs_permission_settings=fs_permission_settings,
                 merged_manifests_by_root=merged_manifests_by_root,
                 os_env_vars=dict(session._env),  # type: ignore
+                on_mount_complete=record_vfs_mount_telemetry_event,
             )
         else:
             return False
