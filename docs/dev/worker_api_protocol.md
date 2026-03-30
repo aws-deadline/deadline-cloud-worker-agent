@@ -31,6 +31,7 @@ The steps to take are:
         `CREATE_IN_PROGRESS` -> Perform exponential backoff, and then retry.
         * `reason` is `STATUS_CONFLICT`, `resourceId` is the Worker's Fleet ID, and `context["status"]` is
         not `CREATE_IN_PROGRESS` -> Stop. Exit the application. The Fleet for this Worker cannot be joined.
+        * `reason` is `CONCURRENT_MODIFICATION` -> Perform exponential backoff, and then retry.
         * Otherwise -> Stop. Exit the application.
 2. Invoke the `AssumeFleetRoleForWorker` API with (farmId, fleetId, workerId)
     * Use the AWS Credentials that the Worker Agent was started with access to. i.e. The default credentials

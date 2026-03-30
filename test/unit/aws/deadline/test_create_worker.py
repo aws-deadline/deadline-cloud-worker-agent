@@ -132,6 +132,17 @@ def test_success(
             None,
             id="Fleet-CREATE_IN_PROGRESS",
         ),
+        pytest.param(
+            ClientError(
+                {
+                    "Error": {"Code": "ConflictException", "Message": "A message"},
+                    "reason": "CONCURRENT_MODIFICATION",
+                },
+                "CreateWorker",
+            ),
+            None,
+            id="ConcurrentModification",
+        ),
     ],
 )
 def test_retries_when_appropriate(

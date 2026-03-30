@@ -449,6 +449,8 @@ def create_worker(
                         )
                     else:
                         raise DeadlineRequestUnrecoverableError(e)
+                elif exception_reason == "CONCURRENT_MODIFICATION":
+                    _logger.info(f"CreateWorker conflict. Retrying in {delay} seconds...")
                 else:
                     # Unknown exception_reason. Treat as unrecoverable
                     raise DeadlineRequestUnrecoverableError(e)
