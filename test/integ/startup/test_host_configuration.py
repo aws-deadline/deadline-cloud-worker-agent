@@ -22,7 +22,10 @@ from queue import Empty, SimpleQueue
 
 from deadline_worker_agent.config.cli_args import ParsedCommandLineArguments
 from deadline_worker_agent.config.config import Configuration
-from deadline_worker_agent.startup.host_configuration_script import HostConfigurationScriptRunner
+from deadline_worker_agent.startup.host_configuration_script import (
+    HostConfigurationScriptRunner,
+    _HostConfigTimer,
+)
 from deadline_worker_agent.log_messages import (
     LogRecordStringTranslationFilter,
     WorkerHostConfigurationLogEvent,
@@ -365,6 +368,103 @@ Get-ChildItem env: | ForEach-Object { "$($_.Name)=$($_.Value)" }
             _windows_file_permissions_test(script_file)
             # Test the log file
             _windows_file_permissions_test(win32_runner._logfile)
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Posix-only test — uses sleep shell command",
+    )
+    def test_timer_ticker_logs_appear_during_script_execution(
+        self,
+        message_queue: SimpleQueue,
+        queue_handler: QueueHandler,
+        tmp_path: Path,
+    ) -> None:
+        """Verifies that the _HostConfigTimer emits 'Host Config Time' progress logs
+        to CloudWatch while the host configuration script is running.
+
+        Uses patched short intervals so the test completes quickly while still
+        exercising the real HostConfigurationScriptRunner.run() code path end-to-end.
+        """
+        # A script that sleeps long enough for at least one ticker interval to fire.
+        # With the patched interval of 0.3s and a 1s sleep, we expect multiple ticks.
+        script = "sleep 1\nexit 0"
+        timeout = 300
+
+        runner = self._create_host_configuration_script_runner(
+            script=script,
+            timeout=timeout,
+            tmp=tmp_path,
+            queue_handler=queue_handler,
+        )
+
+        with (
+            patch.object(_HostConfigTimer, "_NORMAL_INTERVAL_S", 0.3),
+            patch.object(_HostConfigTimer, "_ACCELERATED_INTERVAL_S", 0.1),
+        ):
+            exit_code = runner.run()
+
+        assert exit_code == 0
+
+        messages = collect_queue_messages(message_queue)
+
+        # The timer should have emitted at least one "Host Config Time" progress message
+        ticker_messages = [m for m in messages if "Host Config Time" in m]
+        assert len(ticker_messages) >= 1, (
+            f"Expected at least one ticker message containing 'Host Config Time', "
+            f"but found none. All messages: {messages}"
+        )
+
+        # Verify the ticker message contains the expected elapsed/remaining format
+        for msg in ticker_messages:
+            assert "Elapsed:" in msg
+            assert "Remaining:" in msg
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Posix-only test — uses sleep shell command",
+    )
+    def test_timer_timeout_expiration_log_appears(
+        self,
+        message_queue: SimpleQueue,
+        queue_handler: QueueHandler,
+        tmp_path: Path,
+    ) -> None:
+        """Verifies that when the host configuration timeout expires while the script
+        is still running, the _HostConfigTimer emits a timeout warning log.
+
+        Uses a very short timeout (1s) with a script that sleeps longer (3s) so the
+        timer reaches zero and logs the expiration message before the script finishes.
+        """
+        # Script runs longer than the timeout so the timer hits zero
+        script = "sleep 3\nexit 0"
+        timeout = 1
+
+        runner = self._create_host_configuration_script_runner(
+            script=script,
+            timeout=timeout,
+            tmp=tmp_path,
+            queue_handler=queue_handler,
+        )
+
+        with (
+            patch.object(_HostConfigTimer, "_NORMAL_INTERVAL_S", 0.3),
+            patch.object(_HostConfigTimer, "_ACCELERATED_INTERVAL_S", 0.2),
+            patch.object(_HostConfigTimer, "_ACCELERATE_THRESHOLD_S", 60),
+        ):
+            runner.run()
+
+        messages = collect_queue_messages(message_queue)
+
+        # The timer should have emitted the timeout expiration warning
+        timeout_messages = [m for m in messages if "timeout expired" in m.lower()]
+        assert len(timeout_messages) >= 1, (
+            f"Expected a timeout expiration message containing 'timeout expired', "
+            f"but found none. All messages: {messages}"
+        )
+
+        # Verify the warning contains the expected details
+        timeout_msg = timeout_messages[0]
+        assert "Worker may be terminated by the service" in timeout_msg
 
 
 def _windows_file_permissions_test(file_path: str) -> None:

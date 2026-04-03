@@ -1,9 +1,10 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+import time
 from datetime import timedelta
 from logging import Logger
 from pathlib import Path
-from threading import Event
+from threading import Event, Thread
 from openjd.model import SymbolTable
 from typing import Optional
 import sys
@@ -29,6 +30,94 @@ from ..log_messages import WorkerHostConfigurationLogEvent, WorkerHostConfigurat
 
 if sys.platform == "win32":
     from ..windows.win_admin_runner import _WindowsScriptRunner
+
+
+class _HostConfigTimer:
+    """Periodically logs elapsed and remaining time while the host configuration script runs.
+
+    The host configuration timeout is enforced server-side — the service backend kills the worker
+    when the timeout is reached. This timer provides client-side visibility into the countdown
+    so operators can see progress in the logs before the worker is terminated.
+
+    Logs every 30s normally, accelerating to every 10s when ≤60s remain.
+    """
+
+    _NORMAL_INTERVAL_S: int = 30
+    _ACCELERATED_INTERVAL_S: int = 10
+    _ACCELERATE_THRESHOLD_S: int = 60
+
+    def __init__(
+        self,
+        *,
+        timeout_seconds: int,
+        logger: Logger,
+        farm_id: str,
+        fleet_id: str,
+        worker_id: str,
+    ) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._logger = logger
+        self._farm_id = farm_id
+        self._fleet_id = fleet_id
+        self._worker_id = worker_id
+        self._stop_event = Event()
+        self._thread: Optional[Thread] = None
+
+    def start(self) -> None:
+        self._thread = Thread(target=self._run, daemon=True, name="host-config-timer")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+
+    def _run(self) -> None:
+        start_time = time.monotonic()
+
+        while not self._stop_event.is_set():
+            elapsed = time.monotonic() - start_time
+            remaining = max(0, self._timeout_seconds - elapsed)
+
+            interval = (
+                self._ACCELERATED_INTERVAL_S
+                if remaining <= self._ACCELERATE_THRESHOLD_S
+                else self._NORMAL_INTERVAL_S
+            )
+
+            self._stop_event.wait(timeout=interval)
+            if self._stop_event.is_set():
+                break
+
+            elapsed = time.monotonic() - start_time
+            remaining = max(0, self._timeout_seconds - elapsed)
+
+            self._logger.info(
+                WorkerHostConfigurationLogEvent(
+                    farm_id=self._farm_id,
+                    fleet_id=self._fleet_id,
+                    worker_id=self._worker_id,
+                    message=(
+                        f"Host Config Time — Elapsed: {int(elapsed)}s, Remaining: {int(remaining)}s"
+                    ),
+                    status=WorkerHostConfigurationStatus.RUNNING,
+                )
+            )
+
+            if remaining <= 0:
+                self._logger.warning(
+                    WorkerHostConfigurationLogEvent(
+                        farm_id=self._farm_id,
+                        fleet_id=self._fleet_id,
+                        worker_id=self._worker_id,
+                        message=(
+                            f"Host config timeout expired ({self._timeout_seconds}s). "
+                            f"Worker may be terminated by the service."
+                        ),
+                        status=WorkerHostConfigurationStatus.FAILED,
+                    )
+                )
+                break
 
 
 class HostConfigurationScriptRunner(ScriptRunnerBase):
@@ -139,11 +228,22 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
             logger=self._logger_adapter, section_title="Running Host Configuration Script"
         )
 
-        with FileContext(script_file_path) as _:
-            if sys.platform == "win32":
-                exit_code = self._run_win32(script_file_path)
-            else:
-                exit_code = self._run_posix()
+        timer = _HostConfigTimer(
+            timeout_seconds=self._host_configuration_timeout_seconds,
+            logger=self._log,
+            farm_id=self._configuration.farm_id,
+            fleet_id=self._configuration.fleet_id,
+            worker_id=self._worker_id,
+        )
+        timer.start()
+        try:
+            with FileContext(script_file_path) as _:
+                if sys.platform == "win32":
+                    exit_code = self._run_win32(script_file_path)
+                else:
+                    exit_code = self._run_posix()
+        finally:
+            timer.stop()
 
         self._log_section_banner(
             logger=self._logger_adapter,
