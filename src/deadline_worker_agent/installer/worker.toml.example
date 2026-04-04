@@ -74,6 +74,16 @@
 # profile = "my_aws_profile_name"
 
 
+# The AWS region to use for the Worker Agent. If not set here, the region is resolved using
+# boto3's default region resolution (e.g. AWS_DEFAULT_REGION, AWS_REGION environment variables,
+# AWS config file, or EC2 instance metadata). Standard AWS environment variables take precedence
+# over this setting.
+#
+# Uncomment the line below and replace the value with your AWS region:
+#
+# region = "us-west-2"
+
+
 # The "allow_ec2_instance_profile" setting controls whether the Worker will run with an EC2 instance
 # profile associated to the host instance. This value is overridden when the
 # DEADLINE_WORKER_ALLOW_INSTANCE_PROFILE environment variable is set using one of the following

@@ -169,6 +169,7 @@ class WorkerConfigSection(BaseModel):
 class AwsConfigSection(BaseModel):
     profile: Optional[str] = Field(min_length=1, max_length=64, default=None)
     allow_ec2_instance_profile: Optional[bool] = None
+    region: Optional[str] = Field(min_length=1, default=None)
 
 
 class LoggingConfigSection(BaseModel):

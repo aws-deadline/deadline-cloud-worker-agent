@@ -96,7 +96,12 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
             worker_bootstrap = bootstrap_worker(config=config)
         except NoRegionError:
             _logger.warn(
-                "The Worker Agent was started with no AWS region specified. Refer to the Deadline Cloud Worker Agent documentation for guidance: https://github.com/aws-deadline/deadline-cloud-worker-agent/blob/release/README.md#running-outside-of-an-operating-system-service"
+                "The Worker Agent was started with no AWS region specified. "
+                "You can set the region using standard AWS environment variables "
+                "(AWS_DEFAULT_REGION, AWS_REGION), or in the worker configuration file "
+                "(worker.toml) under [aws] as 'region'. Refer to the Deadline Cloud Worker "
+                "Agent documentation for guidance: "
+                "https://github.com/aws-deadline/deadline-cloud-worker-agent/blob/release/README.md#running-outside-of-an-operating-system-service"
             )
             raise
         if worker_bootstrap.log_config is None:

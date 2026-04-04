@@ -19,6 +19,17 @@ from deadline_worker_agent.config.cli_args import ParsedCommandLineArguments
 
 
 @pytest.fixture(autouse=True)
+def mock_config_file_load() -> Generator[MagicMock, None, None]:
+    """Patches ConfigFile.load in the config module so Configuration.__init__ doesn't
+    try to read a real config file when loading the region."""
+    with patch.object(config_mod.ConfigFile, "load") as mock_load:
+        mock_config_file = MagicMock()
+        mock_config_file.aws.region = None
+        mock_load.return_value = mock_config_file
+        yield mock_load
+
+
+@pytest.fixture(autouse=True)
 def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
     """Patches the WorkerSettings class import in the deadline_worker_agent.config.config module
     module and returns the Mock instance"""
@@ -1090,6 +1101,61 @@ class TestInit:
             config.host_metrics_logging_interval_seconds
             is mock_worker_settings.host_metrics_logging_interval_seconds
         )
+
+
+class TestRegion:
+    """Tests for Configuration.region loaded from config file"""
+
+    def test_region_from_config_file(
+        self,
+        mock_config_file_load: MagicMock,
+    ) -> None:
+        """Asserts that region is loaded from the config file"""
+        # GIVEN
+        mock_config_file_load.return_value.aws.region = "us-west-2"
+        cli_args = ParsedCommandLineArguments()
+        cli_args.farm_id = "farm_id"
+        cli_args.fleet_id = "fleet_id"
+
+        # WHEN
+        config = config_mod.Configuration(parsed_cli_args=cli_args)
+
+        # THEN
+        assert config.region == "us-west-2"
+
+    def test_region_none_when_not_in_config_file(
+        self,
+        mock_config_file_load: MagicMock,
+    ) -> None:
+        """Asserts that region is None when not set in the config file"""
+        # GIVEN
+        mock_config_file_load.return_value.aws.region = None
+        cli_args = ParsedCommandLineArguments()
+        cli_args.farm_id = "farm_id"
+        cli_args.fleet_id = "fleet_id"
+
+        # WHEN
+        config = config_mod.Configuration(parsed_cli_args=cli_args)
+
+        # THEN
+        assert config.region is None
+
+    def test_region_none_when_config_file_missing(
+        self,
+        mock_config_file_load: MagicMock,
+    ) -> None:
+        """Asserts that region is None when the config file does not exist"""
+        # GIVEN
+        mock_config_file_load.side_effect = FileNotFoundError()
+        cli_args = ParsedCommandLineArguments()
+        cli_args.farm_id = "farm_id"
+        cli_args.fleet_id = "fleet_id"
+
+        # WHEN
+        config = config_mod.Configuration(parsed_cli_args=cli_args)
+
+        # THEN
+        assert config.region is None
 
 
 class TestLog:
