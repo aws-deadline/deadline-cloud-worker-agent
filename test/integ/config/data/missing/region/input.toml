@@ -1,0 +1,4 @@
+[aws]
+
+# Some prior content that should be preserved
+profile = "my_profile"

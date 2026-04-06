@@ -1,0 +1,13 @@
+[aws]
+
+# Some prior content that should be preserved
+profile = "my_profile"
+
+
+# The AWS region to use for the Worker Agent. If not set here, the region is resolved using
+# boto3's default region resolution (e.g. AWS_DEFAULT_REGION, AWS_REGION environment variables,
+# AWS config file, or EC2 instance metadata). Standard AWS environment variables take precedence
+# over this setting.
+#
+# Uncomment the line below and replace the value with your AWS region:
+region = "us-west-2"

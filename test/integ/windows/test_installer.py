@@ -205,6 +205,7 @@ def test_update_config_file_updates_values(setup_example_config):
         deadline_config_sub_directory=deadline_config_sub_directory,
         farm_id=farm_id,
         fleet_id=fleet_id,
+        region="us-west-2",
         shutdown_on_stop=shutdown_on_stop,
         allow_ec2_instance_profile=allow_ec2_instance_profile,
     )
@@ -222,6 +223,7 @@ def test_update_config_file_updates_values(setup_example_config):
     assert config_doc["worker"]["fleet_id"] == fleet_id
     assert config_doc["os"]["shutdown_on_stop"] == shutdown_on_stop
     assert config_doc["aws"]["allow_ec2_instance_profile"] == allow_ec2_instance_profile
+    assert config_doc["aws"]["region"] == "us-west-2"
 
 
 def test_update_config_file_creates_backup(setup_example_config):
@@ -232,6 +234,7 @@ def test_update_config_file_creates_backup(setup_example_config):
         deadline_config_sub_directory=deadline_config_sub_directory,
         farm_id="test_farm",
         fleet_id="test_fleet",
+        region="us-west-2",
         allow_ec2_instance_profile=True,
     )
 

@@ -143,6 +143,18 @@ replace the username as desired. This value is overridden when the DEADLINE_WORK
 environment variable or if the --windows-job-user command-line flag is specified.
 """.lstrip(),
     )
+    REGION = ModifiableSettingData(
+        setting_name="region",
+        table_name="aws",
+        preceding_comment="""
+The AWS region to use for the Worker Agent. If not set here, the region is resolved using
+boto3's default region resolution (e.g. AWS_DEFAULT_REGION, AWS_REGION environment variables,
+AWS config file, or EC2 instance metadata). Standard AWS environment variables take precedence
+over this setting.
+
+Uncomment the line below and replace the value with your AWS region:
+""".lstrip(),
+    )
 
 
 class SettingModification(NamedTuple):

@@ -428,7 +428,8 @@ fi
     --fleet-id "${fleet_id}"                \
     "${allow_ec2_instance_profile_flag}"    \
     "${shutdown_on_stop_flag}"              \
-    --session-root-dir "${session_root_dir}"
+    --session-root-dir "${session_root_dir}" \
+    --region "${region}"
 
 if ! [[ "${no_install_service}" == "yes" ]]; then
     # Set up the service
