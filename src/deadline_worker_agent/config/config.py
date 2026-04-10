@@ -17,6 +17,7 @@ from openjd.sessions import PosixSessionUser, SessionUser
 from ..capabilities import Capabilities
 from .cli_args import ParsedCommandLineArguments, get_argument_parser
 from .errors import ConfigurationError
+from .config_file import ConfigFile
 from .settings import WorkerSettings
 
 if sys.platform == "win32":
@@ -89,6 +90,8 @@ class Configuration:
     """Whether or not the Worker Agent logs are structured logs."""
     session_root_dir: Path
     """Path to the root directory where worker session directories are created under"""
+    region: Optional[str]
+    """The AWS region to use. If None, boto3's default region resolution is used."""
 
     # Used to optimize the memory allocation and attribute lookup speed. Tells python to not create a dict
     # for the attributes.
@@ -112,6 +115,7 @@ class Configuration:
         "retain_session_dir",
         "structured_logs",
         "session_root_dir",
+        "region",
     )
 
     def __init__(
@@ -213,6 +217,21 @@ class Configuration:
         self.retain_session_dir = settings.retain_session_dir
         self.structured_logs = settings.structured_logs
         self.session_root_dir = settings.session_root_dir
+
+        # Region is loaded directly from the config file as a fallback.
+        # It is only used if boto3 cannot resolve a region on its own
+        # (e.g. via AWS_DEFAULT_REGION, AWS_REGION, AWS config file, or IMDS).
+        self.region: Optional[str] = None
+        try:
+            config_file = ConfigFile.load()
+            self.region = config_file.aws.region
+        except FileNotFoundError:
+            # No config file present — region will rely on boto3 default resolution
+            pass
+        except ConfigurationError:
+            # Config file exists but has errors unrelated to region — already
+            # reported by WorkerSettings loading above, so we just skip region.
+            pass
 
         self._validate()
 

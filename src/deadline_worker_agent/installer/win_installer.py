@@ -314,6 +314,7 @@ def update_config_file(
     deadline_config_sub_directory: str,
     farm_id: str,
     fleet_id: str,
+    region: str,
     allow_ec2_instance_profile: bool,
     shutdown_on_stop: Optional[bool] = None,
     windows_job_user: Optional[str] = None,
@@ -327,6 +328,7 @@ def update_config_file(
     Parameters:
     - farm_id (str): The farm ID to set in the configuration.
     - fleet_id (str): The fleet ID to set in the configuration.
+    - region (str): The AWS region to set in the configuration.
     - allow_ec2_instance_profile (bool): Whether the agent should be configured to run with[out] an EC2 instance profile.
     - shutdown_on_stop (Optional[bool]): The shutdown_on_stop value to set. Does nothing if set to None.
     - windows_job_user (Optional[str]): The OS username to be used when running jobs. Overrides the queue's jobRunAs configuration.
@@ -351,6 +353,10 @@ def update_config_file(
         SettingModification(
             setting=ModifiableSetting.FLEET_ID,
             value=fleet_id,
+        ),
+        SettingModification(
+            setting=ModifiableSetting.REGION,
+            value=region,
         ),
         SettingModification(
             setting=ModifiableSetting.WINDOWS_JOB_USER,
@@ -980,6 +986,7 @@ def start_windows_installer(
         deadline_config_sub_directory=str(agent_dirs.deadline_config_subdir),
         farm_id=farm_id,
         fleet_id=fleet_id,
+        region=region,
         # This always sets shutdown_on_stop even if the user did not provide
         # any "shutdown" option to be consistent with POSIX installer
         shutdown_on_stop=allow_shutdown,

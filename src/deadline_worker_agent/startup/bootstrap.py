@@ -198,6 +198,11 @@ def bootstrap_worker(config: Configuration, *, use_existing_worker: bool = True)
     # Session that will store AWS Credentials used during the initial bootstrapping until
     # we have obtained Fleet Role Credentials from the service.
     bootstrap_session = Session(profile_name=config.profile)
+
+    # Use the config file region only as a fallback when boto3 cannot resolve one
+    # (e.g. no AWS_DEFAULT_REGION, AWS_REGION, AWS config, or IMDS).
+    if bootstrap_session.region_name is None and config.region is not None:
+        bootstrap_session = Session(profile_name=config.profile, region_name=config.region)
     configure_session_events(boto3_session=bootstrap_session)
 
     # raises: SystemExit

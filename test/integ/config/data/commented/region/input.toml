@@ -1,0 +1,4 @@
+[aws]
+
+# The AWS region to use for the Worker Agent.
+# region = "us-east-1"

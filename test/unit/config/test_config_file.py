@@ -268,6 +268,34 @@ class TestAwsConfigSection:
         # THEN
         assert aws_config.profile == aws_config_section_data["profile"]
 
+    def test_valid_region(self) -> None:
+        """Asserts that AwsConfigSection accepts a valid region string"""
+        # GIVEN
+        data: dict[str, Any] = {"region": "us-west-2"}
+
+        # WHEN
+        aws_config = AwsConfigSection.parse_obj(data)
+
+        # THEN
+        assert aws_config.region == "us-west-2"
+
+    def test_absent_region(self) -> None:
+        """Asserts that absent a 'region' value, the attribute defaults to None"""
+        # WHEN
+        aws_config = AwsConfigSection.parse_obj({})
+
+        # THEN
+        assert aws_config.region is None
+
+    def test_empty_region(self) -> None:
+        """Asserts that an empty string region raises a ValidationError"""
+        # GIVEN
+        data: dict[str, Any] = {"region": ""}
+
+        # THEN
+        with pytest.raises(ValidationError):
+            AwsConfigSection.parse_obj(data)
+
     @pytest.mark.parametrize(
         argnames="profile",
         argvalues=(
@@ -705,6 +733,7 @@ worker_persistence_dir = "/my/worker/persistence"
 [aws]
 profile = "my_aws_profile_name"
 allow_ec2_instance_profile = true
+region = "us-west-2"
 
 [logging]
 verbose = true
@@ -780,6 +809,7 @@ class TestConfigFileLoad:
 
         assert config.aws.profile == "my_aws_profile_name"
         assert config.aws.allow_ec2_instance_profile is True
+        assert config.aws.region == "us-west-2"
 
         assert config.logging.verbose is True
         assert config.logging.worker_logs_dir == Path("/var/log/amazon/deadline")

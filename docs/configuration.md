@@ -41,3 +41,20 @@ arguments.
 
 Consult [`worker.toml.example`](../src/deadline_worker_agent/installer/worker.toml.example) which
 contains embedded documentation in comments.
+
+## AWS Region
+
+The AWS region can be configured using any of the following methods, listed in priority order:
+
+1.  boto3 default region resolution (`AWS_DEFAULT_REGION`, `AWS_REGION` environment variables,
+    AWS config file, EC2 instance metadata)
+2.  `region` setting in the `[aws]` section of `worker.toml`
+
+The config file region is only used as a fallback when boto3 cannot resolve a region on its own.
+
+To set the region in the config file, add the following to `worker.toml`:
+
+```toml
+[aws]
+region = "us-west-2"
+```
