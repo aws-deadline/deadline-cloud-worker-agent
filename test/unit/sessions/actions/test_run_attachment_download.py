@@ -496,6 +496,7 @@ class TestVFS:
                 fs_permission_settings=ANY,
                 merged_manifests_by_root=merged_manifests_by_root,
                 os_env_vars=session._env,
+                on_mount_complete=ANY,
             )
 
     def test_start_vfs_windows_platform(

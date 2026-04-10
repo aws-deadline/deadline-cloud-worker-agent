@@ -841,6 +841,15 @@ def _record_attachment_download_filesystem_event(queue_id: str, file_system: str
     )
 
 
+def record_vfs_mount_telemetry_event(successfully_mounted: bool) -> None:
+    """Calls the telemetry client to record whether a VFS mount succeeded."""
+    details: Dict[str, Any] = {"successfully_mounted": successfully_mounted}
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.job_attachments.vfs_mount",
+        event_details=details,
+    )
+
+
 def record_sync_inputs_telemetry_event(queue_id: str, summary: SummaryStatistics) -> None:
     """Calls the telemetry client to record an event capturing the sync-inputs summary."""
     details: Dict[str, Any] = asdict(summary)

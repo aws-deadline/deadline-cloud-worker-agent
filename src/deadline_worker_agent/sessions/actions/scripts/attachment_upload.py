@@ -49,6 +49,10 @@ from deadline_worker_agent.sessions.attachment_models import (
 
 _queue_id = os.environ.get("DEADLINE_QUEUE_ID", "queue-unknown")  # Just for telemetry
 
+# Configuration constants for the S3AssetUploader used during output uploads.
+S3_MAX_POOL_CONNECTIONS = 50
+SMALL_FILE_THRESHOLD_MULTIPLIER = 20
+
 F = TypeVar("F", bound=Callable[..., Any])
 
 
@@ -288,7 +292,10 @@ def upload_output_assets(
     s3_settings = JobAttachmentS3Settings.from_s3_root_uri(s3_uri)
 
     # Initialize the S3 asset uploader
-    asset_uploader: S3AssetUploader = S3AssetUploader()
+    asset_uploader: S3AssetUploader = S3AssetUploader(
+        s3_max_pool_connections=S3_MAX_POOL_CONNECTIONS,
+        small_file_threshold_multiplier=SMALL_FILE_THRESHOLD_MULTIPLIER,
+    )
     output_manifest_info_list = []
 
     all_upload_summaries = []
