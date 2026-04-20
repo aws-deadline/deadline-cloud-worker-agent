@@ -66,8 +66,15 @@ jobs:
     concurrency:
       group: windowse2erelease
 
+  ManualTestGate:
+    needs: [TagRelease, LinuxE2ETests, WindowsE2ETests]
+    runs-on: ubuntu-latest
+    environment: release-gate
+    steps:
+      - run: echo "Manual testing approved for ${{ needs.TagRelease.outputs.tag }}"
+
   PreRelease:
-    needs: [TagRelease, WindowsE2ETests, LinuxE2ETests]
+    needs: [TagRelease, ManualTestGate]
     uses: aws-deadline/.github/.github/workflows/reusable_prerelease.yml@mainline
     permissions:
       id-token: write
