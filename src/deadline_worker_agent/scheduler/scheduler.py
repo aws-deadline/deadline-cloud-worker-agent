@@ -1101,6 +1101,10 @@ class WorkerScheduler:
                 "DEADLINE_FLEET_ID": self._fleet_id,
                 "DEADLINE_WORKER_ID": self._worker_id,
             }
+            # Expose job attachment bucket for plugin delivery mechanisms
+            if job_details.job_attachment_settings:
+                env["DEADLINE_JA_S3_BUCKET"] = job_details.job_attachment_settings.s3_bucket_name
+                env["DEADLINE_JA_ROOT_PREFIX"] = job_details.job_attachment_settings.root_prefix
             if queue_credentials:
                 env.update(
                     {
