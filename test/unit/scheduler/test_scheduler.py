@@ -35,6 +35,7 @@ from deadline_worker_agent.scheduler.scheduler import (
 )
 from deadline_worker_agent.scheduler.session_action_status import SessionActionStatus
 from deadline_worker_agent.sessions.job_entities.job_details import (
+    JobAttachmentSettings,
     JobDetails,
     JobRunAsUser,
     JobRunAsWindowsUser,
@@ -1826,3 +1827,153 @@ class TestSessionLogPath:
 
         # THEN
         assert result == queue_log_dir / f"{session_id}.log"
+
+
+class TestSessionEnvVars:
+    """Tests for session environment variable construction."""
+
+    @pytest.fixture
+    def queue_id(self) -> str:
+        return "queue-abcdef0123456789abcdef0123456789"
+
+    @pytest.fixture
+    def session_id(self) -> str:
+        return "session-abcdef0123456789abcdef0123456789"
+
+    @pytest.fixture
+    def assigned_sessions(
+        self,
+        queue_id: str,
+        session_id: str,
+    ) -> dict[str, AssignedSession]:
+        return {
+            session_id: AssignedSession(
+                queueId=queue_id,
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs",
+                    options={
+                        "logGroupName": "logGroup",
+                        "logStreamName": "logStreamName",
+                    },
+                    parameters={"interval": "15"},
+                ),
+                sessionActions=[
+                    EnvironmentAction(
+                        actionType="ENV_ENTER",
+                        environmentId="env-1",
+                        sessionActionId="action-1",
+                    ),
+                    TaskRunAction(
+                        actionType="TASK_RUN",
+                        parameters={},
+                        sessionActionId="action-2",
+                        stepId="step-1",
+                        taskId="task-1",
+                    ),
+                ],
+            ),
+        }
+
+    @pytest.fixture
+    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+        with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
+            yield job_entities_mock
+
+    def test_env_includes_job_attachment_vars_when_settings_present(
+        self,
+        scheduler: WorkerScheduler,
+        mock_session: MagicMock,
+        assigned_sessions: dict[str, AssignedSession],
+        mock_job_entities: MagicMock,
+    ) -> None:
+        """
+        GIVEN job_details with job_attachment_settings
+        WHEN _start_session constructs the env dict
+        THEN env contains DEADLINE_JA_S3_BUCKET and DEADLINE_JA_ROOT_PREFIX
+        """
+        # GIVEN
+        job_entity_mock = MagicMock()
+        job_entity_mock.job_details.return_value = JobDetails(
+            log_group_name="/aws/deadline/queue-0000",
+            schema_version=SpecificationRevision.v2023_09,
+            job_run_as_user=JobRunAsUser(
+                posix=(
+                    PosixSessionUser(user="username", group="group") if os.name == "posix" else None
+                ),
+                windows=(
+                    WindowsSessionUser(user="username", password="password")
+                    if os.name == "nt"
+                    else None
+                ),
+            ),
+            job_attachment_settings=JobAttachmentSettings(
+                s3_bucket_name="my-bucket",
+                root_prefix="my-prefix",
+            ),
+            queue_role_arn="arn:aws:iam::123456789012:role/QueueRole",
+        )
+        mock_job_entities.return_value = job_entity_mock
+        scheduler._job_run_as_user_override = JobsRunAsUserOverride(run_as_agent=True)
+
+        # Mock queue credentials with proper string values for session attributes
+        mock_queue_creds = MagicMock()
+        mock_queue_creds.session.credential_process_profile_name = "test-profile"
+        mock_queue_creds.session.aws_config.path = "/tmp/aws_config"
+        mock_queue_creds.session.aws_credentials.path = "/tmp/aws_credentials"
+
+        with (
+            patch.object(scheduler, "_executor"),
+            patch.object(scheduler, "_get_queue_aws_credentials", return_value=mock_queue_creds),
+            patch.object(scheduler_mod, "AssetSync"),
+        ):
+            # WHEN
+            scheduler._create_new_sessions(assigned_sessions=assigned_sessions)
+
+        # THEN
+        mock_session.assert_called_once()
+        env = mock_session.call_args.kwargs["env"]
+        assert env["DEADLINE_JA_S3_BUCKET"] == "my-bucket"
+        assert env["DEADLINE_JA_ROOT_PREFIX"] == "my-prefix"
+
+    def test_env_excludes_job_attachment_vars_when_settings_none(
+        self,
+        scheduler: WorkerScheduler,
+        mock_session: MagicMock,
+        assigned_sessions: dict[str, AssignedSession],
+        mock_job_entities: MagicMock,
+    ) -> None:
+        """
+        GIVEN job_details with job_attachment_settings = None
+        WHEN _start_session constructs the env dict
+        THEN env does NOT contain DEADLINE_JA_S3_BUCKET or DEADLINE_JA_ROOT_PREFIX
+        """
+        # GIVEN
+        job_entity_mock = MagicMock()
+        job_entity_mock.job_details.return_value = JobDetails(
+            log_group_name="/aws/deadline/queue-0000",
+            schema_version=SpecificationRevision.v2023_09,
+            job_run_as_user=JobRunAsUser(
+                posix=(
+                    PosixSessionUser(user="username", group="group") if os.name == "posix" else None
+                ),
+                windows=(
+                    WindowsSessionUser(user="username", password="password")
+                    if os.name == "nt"
+                    else None
+                ),
+            ),
+            job_attachment_settings=None,
+        )
+        mock_job_entities.return_value = job_entity_mock
+        scheduler._job_run_as_user_override = JobsRunAsUserOverride(run_as_agent=True)
+
+        with patch.object(scheduler, "_executor"):
+            # WHEN
+            scheduler._create_new_sessions(assigned_sessions=assigned_sessions)
+
+        # THEN
+        mock_session.assert_called_once()
+        env = mock_session.call_args.kwargs["env"]
+        assert "DEADLINE_JA_S3_BUCKET" not in env
+        assert "DEADLINE_JA_ROOT_PREFIX" not in env
