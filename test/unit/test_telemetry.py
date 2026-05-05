@@ -1,6 +1,5 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from typing import Any, Dict
 import json
 import platform
 import pytest
@@ -8,60 +7,45 @@ import uuid
 import time
 
 from unittest.mock import patch, MagicMock
-from dataclasses import asdict
 from urllib import request
 
-from deadline.client import api, config
-from deadline.client.api._telemetry import (
+from deadline_worker_agent.telemetry import (
     TelemetryClient,
     TelemetryEvent,
     _swallow_exceptions,
-    get_deadline_cloud_library_telemetry_client,
-    get_telemetry_client,
-    record_success_fail_telemetry_event,
-    record_function_latency_telemetry_event,
 )
-from deadline.job_attachments.progress_tracker import SummaryStatistics
 
 
 @pytest.fixture(scope="function", name="mock_telemetry_client")
-def fixture_telemetry_client(fresh_deadline_config):
-    config.set_setting("defaults.aws_profile_name", "SomeRandomProfileName")
-    with patch.object(api.TelemetryClient, "_start_threads"), patch.object(
-        api._telemetry, "get_monitor_id", side_effect=["monitor-id"]
-    ), patch.object(api._telemetry, "get_monitor_id", side_effect=[None]), patch.object(
-        api._telemetry,
-        "get_user_and_identity_store_id",
-        side_effect=[("user-id", "identity-store-id")],
-    ), patch.object(
-        api._telemetry, "get_deadline_endpoint_url", side_effect=["https://fake-endpoint-url"]
+def fixture_telemetry_client():
+    with (
+        patch.object(TelemetryClient, "_start_threads"),
+        patch("deadline_worker_agent.telemetry.boto3.client") as mock_boto_client,
     ):
+        mock_boto_client.return_value.meta.endpoint_url = "https://fake-endpoint-url"
         client = TelemetryClient(
-            package_name="deadline-cloud-library",
-            package_ver="0.1.2.1234",
-            config=config.config_file.read_config(),
+            package_name="deadline-cloud-worker-agent",
+            package_ver="1.2.3.4567",
         )
         assert client.is_initialized
         return client
 
 
-def test_opt_out_config(fresh_deadline_config):
+def test_opt_out_config():
     """Ensures the telemetry client doesn't fully initialize if the opt out config setting is set"""
-    # GIVEN
-    config.set_setting("defaults.aws_profile_name", "SomeRandomProfileName")
-    config.set_setting("telemetry.opt_out", "true")
-    # WHEN
-    client = TelemetryClient(
-        "deadline-cloud-library", "test-version", config=config.config_file.read_config()
-    )
-    # THEN
+    with (
+        patch.object(TelemetryClient, "_start_threads"),
+        patch(
+            "deadline_worker_agent.telemetry.TelemetryClient._read_opt_out_from_config",
+            return_value=True,
+        ),
+    ):
+        client = TelemetryClient("deadline-cloud-worker-agent", "1.0.0")
     assert not client.is_initialized
     assert not hasattr(client, "endpoint")
     assert not hasattr(client, "event_queue")
     assert not hasattr(client, "processing_thread")
     # Ensure nothing blows up if we try recording telemetry after we've opted out
-    client.record_hashing_summary(SummaryStatistics(), from_gui=True)
-    client.record_upload_summary(SummaryStatistics(), from_gui=False)
     client.record_error({}, str(type(Exception)))
 
 
@@ -74,50 +58,32 @@ def test_opt_out_config(fresh_deadline_config):
         pytest.param("on"),
     ],
 )
-def test_opt_out_env_var(fresh_deadline_config, monkeypatch, env_var_value):
+def test_opt_out_env_var(monkeypatch, env_var_value):
     """Ensures the telemetry client doesn't fully initialize if the opt out env var is set"""
-    # GIVEN
-    config.set_setting("defaults.aws_profile_name", "SomeRandomProfileName")
     monkeypatch.setenv("DEADLINE_CLOUD_TELEMETRY_OPT_OUT", env_var_value)
-    config.set_setting(
-        "telemetry.opt_out", "false"
-    )  # Ensure we ignore the config file if env var is set
-    # WHEN
-    client = TelemetryClient(
-        "deadline-cloud-library", "test-version", config=config.config_file.read_config()
-    )
-    # THEN
+    with patch.object(TelemetryClient, "_start_threads"):
+        client = TelemetryClient("deadline-cloud-worker-agent", "1.0.0")
     assert not client.is_initialized
     assert not hasattr(client, "endpoint")
     assert not hasattr(client, "event_queue")
     assert not hasattr(client, "processing_thread")
     # Ensure nothing blows up if we try recording telemetry after we've opted out
-    client.record_hashing_summary(SummaryStatistics(), from_gui=True)
-    client.record_upload_summary(SummaryStatistics(), from_gui=False)
     client.record_error({}, str(type(Exception)))
 
 
-def test_initialize_failure_then_success(fresh_deadline_config):
+def test_initialize_failure_then_success():
     """
-    Tests that a failure in initializing set keeps the property as false, but trying again
+    Tests that a failure in initializing keeps the property as false, but trying again
     without an exception initializes everything successfully.
     """
-    config.set_setting("defaults.aws_profile_name", "SomeRandomProfileName")
-    with patch.object(api.TelemetryClient, "_start_threads"), patch.object(
-        api._telemetry, "get_monitor_id", side_effect=["monitor-id"]
-    ), patch.object(
-        api._telemetry,
-        "get_user_and_identity_store_id",
-        side_effect=[("user-id", "identity-store-id")],
-    ), patch.object(
-        api._telemetry,
-        "get_deadline_endpoint_url",
-        side_effect=[Exception("Boto3 blew up!"), "https://fake-endpoint-url"],
+    with (
+        patch.object(TelemetryClient, "_start_threads"),
+        patch("deadline_worker_agent.telemetry.boto3.client") as mock_boto_client,
     ):
+        mock_boto_client.side_effect = Exception("Boto3 blew up!")
         client = TelemetryClient(
-            package_name="deadline-cloud-library",
-            package_ver="0.1.2.1234",
-            config=config.config_file.read_config(),
+            package_name="deadline-cloud-worker-agent",
+            package_ver="1.2.3.4567",
         )
 
         assert not client.is_initialized
@@ -125,44 +91,63 @@ def test_initialize_failure_then_success(fresh_deadline_config):
         assert not hasattr(client, "event_queue")
         assert not hasattr(client, "processing_thread")
 
-        client.initialize(config=config.config_file.read_config())
+        mock_boto_client.side_effect = None
+        mock_boto_client.return_value.meta.endpoint_url = "https://fake-endpoint-url"
+        client.initialize()
         assert client.is_initialized
         assert client.endpoint == "https://management.fake-endpoint-url/2023-10-12/telemetry"
-        assert client._system_metadata["user_id"] == "user-id"
-        assert client._system_metadata["monitor_id"] == "monitor-id"
 
 
-def test_get_telemetry_identifier(fresh_deadline_config, mock_telemetry_client):
-    """Ensures that getting the local-user-id handles empty/malformed strings"""
-    # Confirm that we generate a new UUID if the setting doesn't exist, and write to config
-    uuid.UUID(mock_telemetry_client.telemetry_id, version=4)  # Should not raise ValueError
-    assert config.get_setting("telemetry.identifier") == mock_telemetry_client.telemetry_id
+def test_get_telemetry_identifier():
+    """Ensures that getting the telemetry identifier handles empty/malformed strings"""
+    with (
+        patch.object(TelemetryClient, "_start_threads"),
+        patch("deadline_worker_agent.telemetry.boto3.client") as mock_boto_client,
+        patch(
+            "deadline_worker_agent.config.config_file.ConfigFile.load",
+            side_effect=FileNotFoundError,
+        ),
+        patch("deadline_worker_agent.telemetry._get_setting", return_value=""),
+    ):
+        mock_boto_client.return_value.meta.endpoint_url = "https://fake"
+        client = TelemetryClient("deadline-cloud-worker-agent", "1.0.0")
 
-    # Confirm we generate a new UUID if the local_user_id is not a valid UUID
-    config.set_setting("telemetry.identifier", "bad-id")
-    telemetry_id = mock_telemetry_client._get_telemetry_identifier()
-    assert telemetry_id != "bad-id"
-    uuid.UUID(telemetry_id, version=4)  # Should not raise ValueError
+    # Should have generated a valid UUID
+    uuid.UUID(client.telemetry_id, version=4)
 
-    # Confirm the new user id was saved and is retrieved properly
-    assert config.get_setting("telemetry.identifier") == telemetry_id
-    assert mock_telemetry_client._get_telemetry_identifier() == telemetry_id
+
+def test_get_telemetry_identifier_uses_existing():
+    """Uses existing identifier from worker config if valid."""
+    test_id = str(uuid.uuid4())
+    mock_config = MagicMock()
+    mock_config.telemetry.identifier = test_id
+
+    with (
+        patch.object(TelemetryClient, "_start_threads"),
+        patch("deadline_worker_agent.telemetry.boto3.client") as mock_boto_client,
+        patch(
+            "deadline_worker_agent.config.config_file.ConfigFile.load",
+            return_value=mock_config,
+        ),
+    ):
+        mock_boto_client.return_value.meta.endpoint_url = "https://fake"
+        client = TelemetryClient("deadline-cloud-worker-agent", "1.0.0")
+
+    assert client.telemetry_id == test_id
 
 
 @pytest.mark.timeout(5)  # Timeout in case we don't exit the while loop
-def test_process_event_queue_thread(fresh_deadline_config, mock_telemetry_client):
+def test_process_event_queue_thread(mock_telemetry_client):
     """Test that the queue processing thread function exits cleanly after getting None"""
-    # GIVEN
     queue_mock = MagicMock()
     queue_mock.get.side_effect = [TelemetryEvent(), None]
     mock_telemetry_client.event_queue = queue_mock
-    # WHEN
-    with patch.object(request, "urlopen") as urlopen_mock, patch.object(
-        TelemetryClient, "get_account_id", return_value=None
-    ), patch.object(api._telemetry, "get_boto3_session"):
+    with (
+        patch.object(request, "urlopen"),
+        patch.object(TelemetryClient, "get_account_id", return_value=None),
+        patch("deadline_worker_agent.telemetry.boto3.Session"),
+    ):
         mock_telemetry_client._process_event_queue_thread()
-        urlopen_mock.assert_called_once()
-    # THEN
     assert queue_mock.get.call_count == 2
 
 
@@ -174,110 +159,54 @@ def test_process_event_queue_thread(fresh_deadline_config, mock_telemetry_client
         (500, TelemetryClient.MAX_RETRY_ATTEMPTS),
     ],
 )
-@pytest.mark.timeout(5)  # Timeout in case we don't exit the while loop
+@pytest.mark.timeout(5)
 def test_process_event_queue_thread_retries_and_exits(
-    fresh_deadline_config, mock_telemetry_client, http_code, attempt_count
+    mock_telemetry_client, http_code, attempt_count
 ):
     """Test that the thread exits cleanly after getting an unexpected exception"""
-    # GIVEN
     http_error = request.HTTPError("http://test.com", http_code, "Http Error", {}, None)  # type: ignore
     queue_mock = MagicMock()
     queue_mock.get.side_effect = [TelemetryEvent(), None]
     mock_telemetry_client.event_queue = queue_mock
-    # WHEN
-    with patch.object(request, "urlopen", side_effect=http_error) as urlopen_mock, patch.object(
-        time, "sleep"
-    ) as sleep_mock, patch.object(
-        TelemetryClient, "get_account_id", return_value=None
-    ), patch.object(api._telemetry, "get_boto3_session"):
+    with (
+        patch.object(request, "urlopen", side_effect=http_error),
+        patch.object(time, "sleep"),
+        patch.object(TelemetryClient, "get_account_id", return_value=None),
+        patch("deadline_worker_agent.telemetry.boto3.Session"),
+    ):
         mock_telemetry_client._process_event_queue_thread()
-        urlopen_mock.call_count = attempt_count
-        sleep_mock.call_count = attempt_count
-    # THEN
     assert queue_mock.get.call_count == 1
 
 
-@pytest.mark.timeout(5)  # Timeout in case we don't exit the while loop
-def test_process_event_queue_thread_handles_unexpected_error(
-    fresh_deadline_config, mock_telemetry_client
-):
+@pytest.mark.timeout(5)
+def test_process_event_queue_thread_handles_unexpected_error(mock_telemetry_client):
     """Test that the thread exits cleanly after getting an unexpected exception"""
-    # GIVEN
     queue_mock = MagicMock()
     queue_mock.get.side_effect = [TelemetryEvent(), None]
     mock_telemetry_client.event_queue = queue_mock
-    # WHEN
-    with patch.object(
-        request, "urlopen", side_effect=Exception("Some error")
-    ) as urlopen_mock, patch.object(
-        TelemetryClient, "get_account_id", return_value=None
-    ), patch.object(api._telemetry, "get_boto3_session"):
+    with (
+        patch.object(request, "urlopen", side_effect=Exception("Some error")),
+        patch.object(TelemetryClient, "get_account_id", return_value=None),
+        patch("deadline_worker_agent.telemetry.boto3.Session"),
+    ):
         mock_telemetry_client._process_event_queue_thread()
-        urlopen_mock.assert_called_once()
-    # THEN
     assert queue_mock.get.call_count == 1
 
 
-def test_record_hashing_summary(fresh_deadline_config, mock_telemetry_client):
-    """Tests that recording a hashing summary sends the expected TelemetryEvent to the thread queue"""
-    # GIVEN
-    queue_mock = MagicMock()
-    test_summary = SummaryStatistics(total_bytes=123, total_files=12, total_time=12345)
-    expected_summary = asdict(test_summary)
-    expected_summary["usage_mode"] = "CLI"
-    expected_event = TelemetryEvent(
-        event_type="com.amazon.rum.deadline.job_attachments.hashing_summary",
-        event_details=expected_summary,
-    )
-    mock_telemetry_client.event_queue = queue_mock
-
-    # WHEN
-    mock_telemetry_client.record_hashing_summary(test_summary)
-
-    # THEN
-    queue_mock.put_nowait.assert_called_once_with(expected_event)
-
-
-def test_record_upload_summary(fresh_deadline_config, mock_telemetry_client):
-    """Tests that recording an upload summary sends the expected TelemetryEvent to the thread queue"""
-    # GIVEN
-    queue_mock = MagicMock()
-    test_summary = SummaryStatistics(total_bytes=123, total_files=12, total_time=12345)
-    expected_summary = asdict(test_summary)
-    expected_summary["usage_mode"] = "GUI"
-    expected_event = TelemetryEvent(
-        event_type="com.amazon.rum.deadline.job_attachments.upload_summary",
-        event_details=expected_summary,
-    )
-    mock_telemetry_client.event_queue = queue_mock
-
-    # WHEN
-    mock_telemetry_client.record_upload_summary(test_summary, from_gui=True)
-
-    # THEN
-    queue_mock.put_nowait.assert_called_once_with(expected_event)
-
-
-def test_record_error(fresh_deadline_config, mock_telemetry_client):
+def test_record_error(mock_telemetry_client):
     """Test that recording an error sends the expected TelemetryEvent to the thread queue"""
-    # GIVEN
     queue_mock = MagicMock()
     test_error_details = {"some_field": "some_value"}
     test_exc = Exception("some exception")
-    expected_event_details = {
-        "some_field": "some_value",
-        "exception_type": str(type(test_exc)),
-        "usage_mode": "CLI",
-    }
     expected_event = TelemetryEvent(
-        event_type="com.amazon.rum.deadline.error", event_details=expected_event_details
+        event_type="com.amazon.rum.deadline.error",
+        event_details={
+            "some_field": "some_value",
+            "exception_type": str(type(test_exc)),
+        },
     )
     mock_telemetry_client.event_queue = queue_mock
-
-    # WHEN
     mock_telemetry_client.record_error(test_error_details, str(type(test_exc)))
-
-    # THEN
     queue_mock.put_nowait.assert_called_once_with(expected_event)
 
 
@@ -305,7 +234,6 @@ def test_record_error(fresh_deadline_config, mock_telemetry_client):
     ],
 )
 def test_get_prefixed_endpoint(
-    fresh_deadline_config,
     mock_telemetry_client: TelemetryClient,
     endpoint: str,
     prefix: str,
@@ -315,116 +243,33 @@ def test_get_prefixed_endpoint(
     assert mock_telemetry_client._get_prefixed_endpoint(endpoint, prefix) == expected_result
 
 
-def test_record_decorator_success(fresh_deadline_config):
-    """Tests that recording a decorator successful metric"""
-    with patch.object(
-        api._telemetry, "get_deadline_endpoint_url", side_effect=["https://fake-endpoint-url"]
+@pytest.mark.timeout(5)
+def test_process_event_queue_thread_merges_common_details_into_payload(mock_telemetry_client):
+    """Common details are merged into the event payload at send time."""
+    mock_telemetry_client.update_common_details({"common_key": "common_value"})
+    queue_mock = MagicMock()
+    queue_mock.get.side_effect = [
+        TelemetryEvent(
+            event_type="com.amazon.rum.deadline.test",
+            event_details={"probe": 1},
+        ),
+        None,
+    ]
+    mock_telemetry_client.event_queue = queue_mock
+
+    with (
+        patch.object(request, "urlopen") as urlopen_mock,
+        patch.object(TelemetryClient, "get_account_id", return_value=None),
+        patch("deadline_worker_agent.telemetry.boto3.Session"),
     ):
-        # GIVEN
-        queue_mock = MagicMock()
-        expected_summary: Dict[str, Any] = dict()
-        expected_summary["is_success"] = True
-        expected_summary["usage_mode"] = "CLI"
-        expected_event = TelemetryEvent(
-            event_type="com.amazon.rum.deadline.successful",
-            event_details=expected_summary,
-        )
-        telemetry_client = get_deadline_cloud_library_telemetry_client()
-        telemetry_client.event_queue = queue_mock
+        mock_telemetry_client._process_event_queue_thread()
 
-        @record_success_fail_telemetry_event()
-        def successful():
-            return
-
-        # WHEN
-        successful()  # type:ignore
-
-        # THEN
-        queue_mock.put_nowait.assert_called_once_with(expected_event)
-
-
-def test_record_decorator_fails(fresh_deadline_config):
-    """Tests that recording a decorator failed metric"""
-    with patch.object(
-        api._telemetry, "get_deadline_endpoint_url", side_effect=["https://fake-endpoint-url"]
-    ):
-        # GIVEN
-        queue_mock = MagicMock()
-        expected_summary: Dict[str, Any] = dict()
-        expected_summary["is_success"] = False
-        expected_summary["exception_type"] = "RuntimeError"
-        expected_summary["usage_mode"] = "CLI"
-        expected_event = TelemetryEvent(
-            event_type="com.amazon.rum.deadline.fails",
-            event_details=expected_summary,
-        )
-        telemetry_client = get_deadline_cloud_library_telemetry_client()
-        telemetry_client.event_queue = queue_mock
-
-        @record_success_fail_telemetry_event()
-        def fails():
-            raise RuntimeError("foobar")
-
-        # WHEN
-        with pytest.raises(RuntimeError):
-            fails()  # type:ignore
-
-        # THEN
-        queue_mock.put_nowait.assert_called_once_with(expected_event)
-
-
-def test_latency_decorator(fresh_deadline_config):
-    """Tests that the latency recording decorator works"""
-    with patch.object(
-        api._telemetry, "get_deadline_endpoint_url", side_effect=["https://fake-endpoint-url"]
-    ), patch.object(time, "perf_counter_ns", return_value=0):
-        # GIVEN
-        queue_mock = MagicMock()
-        expected_summary: Dict[str, Any] = dict()
-        expected_summary["latency"] = 0
-        expected_summary["function_call"] = "test_call"
-        expected_summary["usage_mode"] = "CLI"
-        expected_event = TelemetryEvent(
-            event_type="com.amazon.rum.deadline.latency",
-            event_details=expected_summary,
-        )
-        telemetry_client = get_deadline_cloud_library_telemetry_client()
-        telemetry_client.event_queue = queue_mock
-
-        @record_function_latency_telemetry_event()
-        def test_call():
-            return
-
-        # WHEN
-        test_call()  # type:ignore
-
-        # THEN
-        queue_mock.put_nowait.assert_called_once_with(expected_event)
-
-
-def test_get_telemetry_client_caches_by_package_name(fresh_deadline_config):
-    """
-    Verify that get_telemetry_client returns different clients for different package names.
-    """
-    import deadline.client.api._telemetry as telemetry_mod
-
-    telemetry_mod.__cached_telemetry_clients = {}
-
-    def fake_init(self, **kwargs):
-        self._initialized = True
-        self.package_name = kwargs["package_name"]
-
-    with patch.object(TelemetryClient, "__init__", fake_init):
-        client_a = get_telemetry_client("package-a", "1.0.0")
-        client_b = get_telemetry_client("package-b", "2.0.0")
-        client_a_again = get_telemetry_client("package-a", "1.0.0")
-
-        assert client_a is not client_b
-        assert client_a is client_a_again
-        assert client_a.package_name == "package-a"
-        assert client_b.package_name == "package-b"
-
-    telemetry_mod.__cached_telemetry_clients = {}
+    assert urlopen_mock.call_count == 1
+    sent_request = urlopen_mock.call_args[0][0]
+    body = json.loads(sent_request.data.decode("utf-8"))
+    details = json.loads(body["RumEvents"][0]["details"])
+    assert details["common_key"] == "common_value"
+    assert details["probe"] == 1
 
 
 class TestSwallowExceptionsDecorator:
@@ -449,7 +294,7 @@ class TestSwallowExceptionsDecorator:
         def fails():
             raise RuntimeError("boom")
 
-        with patch("deadline.client.api._telemetry.logger") as mock_logger:
+        with patch("deadline_worker_agent.telemetry.logger") as mock_logger:
             fails()
             mock_logger.debug.assert_called_once()
             assert "fails" in mock_logger.debug.call_args[0][1]
@@ -465,67 +310,62 @@ class TestSwallowExceptionsDecorator:
 class TestTelemetryClientSwallowExceptions:
     """Tests that decorated TelemetryClient methods don't propagate exceptions"""
 
-    def test_set_opt_out_swallows_exception(self, fresh_deadline_config, mock_telemetry_client):
-        with patch.object(config.config_file, "get_setting", side_effect=RuntimeError("boom")):
+    def test_set_opt_out_swallows_exception(self, mock_telemetry_client):
+        with patch(
+            "deadline_worker_agent.telemetry.os.environ.get", side_effect=RuntimeError("boom")
+        ):
             mock_telemetry_client.set_opt_out()
 
-    def test_initialize_swallows_exception(self, fresh_deadline_config, mock_telemetry_client):
+    def test_initialize_swallows_exception(self, mock_telemetry_client):
         mock_telemetry_client._initialized = False
         mock_telemetry_client.telemetry_opted_out = False
-        with patch.object(
-            api._telemetry, "get_deadline_endpoint_url", side_effect=RuntimeError("boom")
+        with patch(
+            "deadline_worker_agent.telemetry.boto3.client", side_effect=RuntimeError("boom")
         ):
             mock_telemetry_client.initialize()
         assert not mock_telemetry_client.is_initialized
 
-    def test_record_event_swallows_exception(self, fresh_deadline_config, mock_telemetry_client):
+    def test_record_event_swallows_exception(self, mock_telemetry_client):
         with patch.object(
             mock_telemetry_client, "_put_telemetry_record", side_effect=RuntimeError("boom")
         ):
             mock_telemetry_client.record_event(
                 event_type="com.amazon.rum.deadline.test",
                 event_details={},
-                from_gui=False,
             )
 
-    def test_exit_cleanly_swallows_exception(self, fresh_deadline_config, mock_telemetry_client):
+    def test_exit_cleanly_swallows_exception(self, mock_telemetry_client):
         mock_telemetry_client.event_queue = MagicMock()
         mock_telemetry_client.event_queue.put_nowait.side_effect = RuntimeError("boom")
         mock_telemetry_client._exit_cleanly()
 
-    def test_init_swallows_get_telemetry_identifier_exception(self, fresh_deadline_config):
-        config.set_setting("defaults.aws_profile_name", "SomeRandomProfileName")
-        with patch.object(api.TelemetryClient, "_start_threads"), patch.object(
-            api._telemetry, "get_monitor_id", side_effect=[None]
-        ), patch.object(
-            api._telemetry,
-            "get_user_and_identity_store_id",
-            side_effect=[("user-id", "identity-store-id")],
-        ), patch.object(
-            api._telemetry, "get_deadline_endpoint_url", side_effect=["https://fake-endpoint-url"]
-        ), patch.object(config.config_file, "get_setting", side_effect=RuntimeError("boom")):
+    def test_init_swallows_get_telemetry_identifier_exception(self):
+        with (
+            patch.object(TelemetryClient, "_start_threads"),
+            patch("deadline_worker_agent.telemetry.boto3.client") as mock_boto,
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.load",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch("deadline_worker_agent.telemetry._get_setting", side_effect=RuntimeError("boom")),
+        ):
+            mock_boto.return_value.meta.endpoint_url = "https://fake"
             client = TelemetryClient(
-                package_name="deadline-cloud-library",
-                package_ver="0.1.2.1234",
-                config=config.config_file.read_config(),
+                package_name="deadline-cloud-worker-agent",
+                package_ver="1.0.0",
             )
             assert client.telemetry_id is not None
 
-    def test_init_swallows_get_system_metadata_exception(self, fresh_deadline_config):
-        config.set_setting("defaults.aws_profile_name", "SomeRandomProfileName")
-        with patch.object(api.TelemetryClient, "_start_threads"), patch.object(
-            api._telemetry, "get_monitor_id", side_effect=[None]
-        ), patch.object(
-            api._telemetry,
-            "get_user_and_identity_store_id",
-            side_effect=[("user-id", "identity-store-id")],
-        ), patch.object(
-            api._telemetry, "get_deadline_endpoint_url", side_effect=["https://fake-endpoint-url"]
-        ), patch.object(platform, "uname", side_effect=RuntimeError("boom")):
+    def test_init_swallows_get_system_metadata_exception(self):
+        with (
+            patch.object(TelemetryClient, "_start_threads"),
+            patch("deadline_worker_agent.telemetry.boto3.client") as mock_boto,
+            patch.object(platform, "uname", side_effect=RuntimeError("boom")),
+        ):
+            mock_boto.return_value.meta.endpoint_url = "https://fake"
             client = TelemetryClient(
-                package_name="deadline-cloud-library",
-                package_ver="0.1.2.1234",
-                config=config.config_file.read_config(),
+                package_name="deadline-cloud-worker-agent",
+                package_ver="1.0.0",
             )
             assert "version" not in client._system_metadata
 
@@ -533,19 +373,14 @@ class TestTelemetryClientSwallowExceptions:
 class TestGetAccountId:
     """Tests for the background-thread account ID resolution."""
 
-    def test_prefers_credential_account_id(self, fresh_deadline_config, mock_telemetry_client):
-        """When credentials expose account_id, it is used directly without any STS call."""
+    def test_prefers_credential_account_id(self, mock_telemetry_client):
         session_mock = MagicMock()
         session_mock.get_credentials.return_value.account_id = "111122223333"
-        # Bypass the @lru_cache so each test gets a fresh call.
         mock_telemetry_client.get_account_id.cache_clear()
         assert mock_telemetry_client.get_account_id(session_mock) == "111122223333"
         session_mock.client.assert_not_called()
 
-    def test_falls_back_to_sts_when_credentials_lack_account_id(
-        self, fresh_deadline_config, mock_telemetry_client
-    ):
-        """When credentials don't expose account_id, a short-timeout STS call is used."""
+    def test_falls_back_to_sts_when_credentials_lack_account_id(self, mock_telemetry_client):
         session_mock = MagicMock()
         session_mock.get_credentials.return_value.account_id = None
         session_mock.client.return_value.get_caller_identity.return_value = {
@@ -553,14 +388,8 @@ class TestGetAccountId:
         }
         mock_telemetry_client.get_account_id.cache_clear()
         assert mock_telemetry_client.get_account_id(session_mock) == "444455556666"
-        # The STS client must be built with a short-timeout Config.
-        args, kwargs = session_mock.client.call_args
-        assert args[0] == "sts"
-        assert kwargs["config"].connect_timeout == 2
-        assert kwargs["config"].read_timeout == 2
 
-    def test_returns_none_when_sts_unreachable(self, fresh_deadline_config, mock_telemetry_client):
-        """When STS is unreachable, get_account_id silently returns None."""
+    def test_returns_none_when_sts_unreachable(self, mock_telemetry_client):
         session_mock = MagicMock()
         session_mock.get_credentials.return_value.account_id = None
         session_mock.client.return_value.get_caller_identity.side_effect = Exception(
@@ -569,8 +398,7 @@ class TestGetAccountId:
         mock_telemetry_client.get_account_id.cache_clear()
         assert mock_telemetry_client.get_account_id(session_mock) is None
 
-    def test_returns_none_when_no_credentials(self, fresh_deadline_config, mock_telemetry_client):
-        """When there are no credentials at all, returns None without calling STS."""
+    def test_returns_none_when_no_credentials(self, mock_telemetry_client):
         session_mock = MagicMock()
         session_mock.get_credentials.return_value = None
         session_mock.client.return_value.get_caller_identity.side_effect = Exception(
@@ -578,75 +406,3 @@ class TestGetAccountId:
         )
         mock_telemetry_client.get_account_id.cache_clear()
         assert mock_telemetry_client.get_account_id(session_mock) is None
-
-
-@pytest.mark.timeout(5)
-def test_process_event_queue_thread_attaches_account_id(
-    fresh_deadline_config, mock_telemetry_client
-):
-    """The background thread resolves the account ID once and attaches it to _common_details."""
-    queue_mock = MagicMock()
-    queue_mock.get.side_effect = [TelemetryEvent(), None]
-    mock_telemetry_client.event_queue = queue_mock
-
-    with patch.object(
-        TelemetryClient, "get_account_id", return_value="111122223333"
-    ) as resolve_mock, patch.object(api._telemetry, "get_boto3_session"), patch.object(
-        request, "urlopen"
-    ):
-        mock_telemetry_client._process_event_queue_thread()
-
-    resolve_mock.assert_called_once()
-    assert mock_telemetry_client._common_details.get("accountId") == "111122223333"
-
-
-@pytest.mark.timeout(5)
-def test_process_event_queue_thread_merges_common_details_into_payload(
-    fresh_deadline_config, mock_telemetry_client
-):
-    """Common details (including a late-resolved account ID) are merged into the event
-    payload at send time, so even an event that was enqueued before resolution completes
-    still includes the resolved accountId in the outgoing request body."""
-    queue_mock = MagicMock()
-    queue_mock.get.side_effect = [
-        TelemetryEvent(
-            event_type="com.amazon.rum.deadline.test",
-            event_details={"probe": 1, "usage_mode": "CLI"},
-        ),
-        None,
-    ]
-    mock_telemetry_client.event_queue = queue_mock
-
-    with patch.object(TelemetryClient, "get_account_id", return_value="111122223333"), patch.object(
-        api._telemetry, "get_boto3_session"
-    ), patch.object(request, "urlopen") as urlopen_mock:
-        mock_telemetry_client._process_event_queue_thread()
-
-    # Inspect the actual HTTP request body sent by urlopen.
-    assert urlopen_mock.call_count == 1
-    sent_request = urlopen_mock.call_args[0][0]
-    body = json.loads(sent_request.data.decode("utf-8"))
-    details = json.loads(body["RumEvents"][0]["details"])
-    assert details["accountId"] == "111122223333"
-    assert details["probe"] == 1
-    assert details["usage_mode"] == "CLI"
-
-
-@pytest.mark.timeout(5)
-def test_process_event_queue_thread_skips_account_id_when_resolution_fails(
-    fresh_deadline_config, mock_telemetry_client
-):
-    """When the account ID can't be resolved, no accountId key is added to common details."""
-    queue_mock = MagicMock()
-    queue_mock.get.side_effect = [TelemetryEvent(), None]
-    mock_telemetry_client.event_queue = queue_mock
-
-    with patch.object(
-        TelemetryClient, "get_account_id", return_value=None
-    ) as resolve_mock, patch.object(api._telemetry, "get_boto3_session"), patch.object(
-        request, "urlopen"
-    ):
-        mock_telemetry_client._process_event_queue_thread()
-
-    resolve_mock.assert_called_once()
-    assert "accountId" not in mock_telemetry_client._common_details

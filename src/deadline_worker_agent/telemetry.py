@@ -8,36 +8,55 @@ import os
 import platform
 import uuid
 import random
-import sys
 import time
 
 from botocore.config import Config as BotocoreConfig
 from configparser import ConfigParser
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from queue import Queue, Full
 from threading import Thread
 from typing import Any, Callable, Dict, Optional, TypeVar, cast
 from urllib import request, error
 
-from ...job_attachments.progress_tracker import SummaryStatistics
-
-from ._session import (
-    get_monitor_id,
-    get_user_and_identity_store_id,
-    get_boto3_client,
-    get_boto3_session,
-)
-from ..config import config_file
-from .. import version
-
-__cached_telemetry_clients: Dict[str, "TelemetryClient"] = {}
+import boto3
 
 logger = logging.getLogger(__name__)
 
-
 # Generic function return type.
 F = TypeVar("F", bound=Callable[..., Any])
+
+_TRUE_VALUES = {"true", "yes", "on", "1"}
+
+# Default config file path, matching the deadline client convention
+_CONFIG_FILE_PATH = os.path.join("~", ".deadline", "config")
+_CONFIG_FILE_PATH_ENV_VAR = "DEADLINE_CONFIG_FILE_PATH"
+
+
+def _get_config_file_path() -> Path:
+    return Path(os.path.expanduser(os.environ.get(_CONFIG_FILE_PATH_ENV_VAR, _CONFIG_FILE_PATH)))
+
+
+def _read_config() -> ConfigParser:
+    config = ConfigParser()
+    config_path = _get_config_file_path()
+    if config_path.is_file():
+        config.read(str(config_path))
+    return config
+
+
+def _get_setting(setting_name: str) -> str:
+    """Read a setting from the legacy deadline config file. Returns empty string if not found."""
+    if "." not in setting_name:
+        return ""
+    section, name = setting_name.split(".", 1)
+    config = _read_config()
+    for config_section in config.sections():
+        if config_section == section or config_section.endswith(f" {section}"):
+            if config.has_option(config_section, name):
+                return config.get(config_section, name)
+    return ""
 
 
 def _swallow_exceptions(func: F) -> F:
@@ -55,14 +74,6 @@ def _swallow_exceptions(func: F) -> F:
             return None
 
     return cast(F, wrapper)
-
-
-def get_deadline_endpoint_url(
-    config: Optional[ConfigParser] = None,
-) -> str:
-    # Use boto3's built-in logic to get the correct endpoint URL
-    client = get_boto3_client("deadline", config=config)
-    return client.meta.endpoint_url
 
 
 @dataclass
@@ -90,8 +101,8 @@ class TelemetryClient:
     UUID recorded in the configuration file), to aggregate data across multiple application
     lifetimes on the same machine.
 
-    Telemetry collection can be opted-out of by running:
-    'deadline config set "telemetry.opt_out" true' or setting the environment variable
+    Telemetry collection can be opted-out of by setting opt_out = true in the [telemetry]
+    section of worker.toml, or setting the environment variable
     'DEADLINE_CLOUD_TELEMETRY_OPT_OUT=true'
     """
 
@@ -108,11 +119,8 @@ class TelemetryClient:
         self,
         package_name: str,
         package_ver: str,
-        config: Optional[ConfigParser] = None,
     ):
-        # Instance-level dicts so every TelemetryClient has its own state (avoid
-        # the mutable-class-attribute pitfall where updates would be shared by
-        # all instances).
+        # Instance-level dicts so every TelemetryClient has its own state
         self._common_details: Dict[str, Any] = {}
         self._system_metadata: Dict[str, Any] = {}
 
@@ -123,42 +131,52 @@ class TelemetryClient:
         # IDs for this session
         self.session_id: str = str(uuid.uuid4())
         try:
-            self.telemetry_id: str = self._get_telemetry_identifier(config=config)
+            self.telemetry_id: str = self._get_telemetry_identifier()
         except Exception:
             logger.debug("Swallowed exception in telemetry __init__", exc_info=True)
             self.telemetry_id = str(uuid.uuid4())
-        # If a different base package is provided, include info from this library as supplementary info
-        if package_name != "deadline-cloud-library":
-            self._common_details["deadline-cloud-version"] = version
         try:
-            self._system_metadata = self._get_system_metadata(config=config)
+            self._system_metadata = self._get_system_metadata()
         except Exception:
             logger.debug("Swallowed exception in telemetry __init__", exc_info=True)
             self._system_metadata = {}
-        self.set_opt_out(config=config)
-        self.initialize(config=config)
+        self.set_opt_out()
+        self.initialize()
 
     @_swallow_exceptions
-    def set_opt_out(self, config: Optional[ConfigParser] = None) -> None:
+    def set_opt_out(self) -> None:
         """
-        Checks whether telemetry has been opted out by checking the DEADLINE_CLOUD_TELEMETRY_OPT_OUT
-        environment variable and the 'telemetry.opt_out' config file setting.
-        Note the environment variable supersedes the config file setting.
+        Checks whether telemetry has been opted out.
+        Priority: env var > worker agent config (worker.toml) > legacy config (~/.deadline/config)
         """
         env_var_value = os.environ.get("DEADLINE_CLOUD_TELEMETRY_OPT_OUT")
         if env_var_value:
-            self.telemetry_opted_out = env_var_value in config_file._TRUE_VALUES
+            self.telemetry_opted_out = env_var_value.lower() in _TRUE_VALUES
         else:
-            self.telemetry_opted_out = config_file.str2bool(
-                config_file.get_setting("telemetry.opt_out", config=config)
-            )
+            self.telemetry_opted_out = self._read_opt_out_from_config()
         logger.info(
             "Deadline Cloud telemetry is "
             + ("not enabled." if self.telemetry_opted_out else "enabled.")
         )
 
+    @staticmethod
+    def _read_opt_out_from_config() -> bool:
+        """Check the worker agent config file for telemetry opt-out, falling back to
+        the deadline client config (~/.deadline/config) if not set."""
+        try:
+            from .config.config_file import ConfigFile
+
+            config_file = ConfigFile.load()
+            if config_file.telemetry.opt_out is not None:
+                return config_file.telemetry.opt_out
+        except Exception:
+            pass
+
+        # Fall back to legacy deadline client config (~/.deadline/config)
+        return _get_setting("telemetry.opt_out").lower() in _TRUE_VALUES
+
     @_swallow_exceptions
-    def initialize(self, config: Optional[ConfigParser] = None) -> None:
+    def initialize(self) -> None:
         """
         Starts up the telemetry background thread after getting settings from the boto3 client.
         Note that if this is called before boto3 is successfully configured / initialized,
@@ -168,8 +186,9 @@ class TelemetryClient:
         if self.telemetry_opted_out:
             return
 
+        endpoint_url = boto3.client("deadline").meta.endpoint_url
         self.endpoint: str = self._get_prefixed_endpoint(
-            f"{get_deadline_endpoint_url(config=config)}/2023-10-12/telemetry",
+            f"{endpoint_url}/2023-10-12/telemetry",
             TelemetryClient.ENDPOINT_PREFIX,
         )
 
@@ -178,14 +197,6 @@ class TelemetryClient:
 
         self._urllib3_context = create_urllib3_context()
         self._urllib3_context.load_verify_locations(cafile=get_cert_path(True))
-
-        user_id, _ = get_user_and_identity_store_id(config=config)
-        if user_id:
-            self._system_metadata["user_id"] = user_id
-
-        monitor_id: Optional[str] = get_monitor_id(config=config)
-        if monitor_id:
-            self._system_metadata["monitor_id"] = monitor_id
 
         self._initialized = True
         self._start_threads()
@@ -201,13 +212,45 @@ class TelemetryClient:
             return prefixed_endpoint
         return endpoint
 
-    def _get_telemetry_identifier(self, config: Optional[ConfigParser] = None):
-        identifier = config_file.get_setting("telemetry.identifier", config=config)
+    def _get_telemetry_identifier(self) -> str:
+        """Get or create a persistent telemetry identifier.
+        Checks worker.toml, then ~/.deadline/config, then generates and persists a new one."""
+        # Check worker agent config
+        try:
+            from .config.config_file import ConfigFile
+
+            config_file = ConfigFile.load()
+            if config_file.telemetry.identifier is not None:
+                return config_file.telemetry.identifier
+        except Exception:
+            pass
+
+        # Fall back to legacy deadline client config
+        identifier = _get_setting("telemetry.identifier")
         try:
             uuid.UUID(identifier, version=4)
-        except ValueError:  # Thrown if the user_id isn't in UUID4 format
+        except ValueError:
             identifier = str(uuid.uuid4())
-            config_file.set_setting("telemetry.identifier", identifier)
+
+        # Persist to worker.toml for future runs
+        try:
+            from .config.config_file import (
+                ConfigFile,
+                ModifiableSetting,
+                SettingModification,
+            )
+
+            ConfigFile.modify_config_file_settings(
+                settings_to_modify=[
+                    SettingModification(
+                        setting=ModifiableSetting.TELEMETRY_IDENTIFIER,
+                        value=identifier,
+                    )
+                ],
+            )
+        except Exception:
+            logger.debug("Failed to persist telemetry identifier to worker.toml")
+
         return identifier
 
     def _start_threads(self) -> None:
@@ -221,14 +264,12 @@ class TelemetryClient:
         )
         self.processing_thread.start()
 
-    def _get_system_metadata(self, config: Optional[ConfigParser]) -> Dict[str, Any]:
+    def _get_system_metadata(self) -> Dict[str, Any]:
         """
         Builds up a dict of non-identifiable metadata about the system environment.
-
-        This will be used in the Rum event metadata, which has a limit of 10 unique values.
         """
         platform_info = platform.uname()
-        metadata: Dict[str, Any] = {
+        return {
             "service": self.package_name,
             "version": self.package_ver,
             "python_version": platform.python_version(),
@@ -236,16 +277,11 @@ class TelemetryClient:
             "osVersion": platform_info.release,
         }
 
-        return metadata
-
     @_swallow_exceptions
     def _exit_cleanly(self):
         try:
             self.event_queue.put_nowait(None)
         except Full:
-            # If the queue is full, it may mean the telemetry processing thread has already joined
-            # since it is daemon and the Python runtime will shut it down on exit.
-            # Ignore the error, since this is a best-effort cleanup.
             pass
         self.processing_thread.join()
 
@@ -279,13 +315,14 @@ class TelemetryClient:
     def _process_event_queue_thread(self):
         """Background thread for processing the telemetry event data queue and sending telemetry requests."""
         # Resolve the AWS account ID once on this background thread so callers
-        # of record_event() are never blocked (e.g. by a slow STS timeout on a
-        # restricted network). The resolved value is stored on _common_details
-        # and merged into every event's payload below, so events enqueued
-        # before resolution completes still include the account ID when sent.
-        account_id = self.get_account_id(get_boto3_session())
-        if account_id:
-            self.update_common_details({"accountId": account_id})
+        # of record_event() are never blocked.
+        try:
+            session = boto3.Session()
+            account_id = self.get_account_id(session)
+            if account_id:
+                self.update_common_details({"accountId": account_id})
+        except Exception:
+            logger.debug("Could not resolve account ID for telemetry", exc_info=True)
 
         while True:
             # Blocks until we get a new entry in the queue
@@ -296,9 +333,7 @@ class TelemetryClient:
 
             headers = {"Accept": "application-json", "Content-Type": "application-json"}
             try:
-                # Merge _common_details into the per-event details at send
-                # time (not enqueue time) so late-resolved fields like
-                # accountId are included.
+                # Merge _common_details into the per-event details at send time
                 details = {**event_data.event_details, **self._common_details}
                 request_body = {
                     "BatchId": str(uuid.uuid4()),
@@ -337,39 +372,12 @@ class TelemetryClient:
             # Silently swallow the error if the event queue is full (due to throttling of the service)
             pass
 
-    def record_vfs_mounting(self, successfully_mounted: bool):
-        details: Dict[str, Any] = {"successfully_mounted": successfully_mounted}
-        event_type = "com.amazon.rum.deadline.job_attachments.vfs_mount"
-        self.record_event(event_type=event_type, event_details=details, from_gui=False)
-
-    def _record_summary_statistics(
-        self, event_type: str, summary: SummaryStatistics, from_gui: bool
-    ):
-        details: Dict[str, Any] = asdict(summary)
-        self.record_event(event_type=event_type, event_details=details, from_gui=from_gui)
-
-    def record_hashing_summary(self, summary: SummaryStatistics, *, from_gui: bool = False):
-        self._record_summary_statistics(
-            "com.amazon.rum.deadline.job_attachments.hashing_summary", summary, from_gui
-        )
-
-    def record_upload_summary(self, summary: SummaryStatistics, *, from_gui: bool = False):
-        self._record_summary_statistics(
-            "com.amazon.rum.deadline.job_attachments.upload_summary", summary, from_gui
-        )
-
-    def record_error(
-        self, event_details: Dict[str, Any], exception_type: str, from_gui: bool = False
-    ):
+    def record_error(self, event_details: Dict[str, Any], exception_type: str):
         event_details["exception_type"] = exception_type
-        # Possibility to add stack trace here
-        self.record_event("com.amazon.rum.deadline.error", event_details, from_gui=from_gui)
+        self.record_event("com.amazon.rum.deadline.error", event_details)
 
     @_swallow_exceptions
-    def record_event(
-        self, event_type: str, event_details: Dict[str, Any], *, from_gui: bool = False
-    ):
-        event_details["usage_mode"] = "GUI" if from_gui else "CLI"
+    def record_event(self, event_type: str, event_details: Dict[str, Any], **kwargs: Any):
         self._put_telemetry_record(
             TelemetryEvent(
                 event_type=event_type,
@@ -379,27 +387,12 @@ class TelemetryClient:
 
     @lru_cache
     def get_account_id(self, boto3_session) -> Optional[str]:
-        """Best-effort AWS account ID lookup for telemetry, cached per
-        (client, session) so it runs at most once per telemetry client
-        instance.
-
-        Prefers ``session.get_credentials().account_id`` (populated for free
-        by SSO, AssumeRole, IMDS/ECS, or a ``credential_process`` that emits
-        ``AccountId``). Deadline Cloud monitor delivers its credentials
-        through ``credential_process`` (see ``_get_boto3_session_for_profile``
-        in ``_session.py``), so if DCM's process output includes
-        ``AccountId`` this fast path covers the common monitor user flow
-        without an STS call. Falls back to ``sts:GetCallerIdentity`` with a
-        short timeout, returning ``None`` on any failure so users on
-        restricted networks without STS access can still run the CLI.
-        """
+        """Best-effort AWS account ID lookup for telemetry, cached per session."""
         try:
             credentials = boto3_session.get_credentials()
             account_id = getattr(credentials, "account_id", None) if credentials else None
             if account_id:
                 return account_id
-            # Short-timeout best-effort fallback; runs on the telemetry background
-            # thread so blocking is fine.
             sts = boto3_session.client(
                 "sts",
                 config=BotocoreConfig(
@@ -414,105 +407,3 @@ class TelemetryClient:
     def update_common_details(self, details: Dict[str, Any]):
         """Updates the dict of common data that is included in every telemetry request."""
         self._common_details.update(details)
-
-
-def get_telemetry_client(
-    package_name: str, package_ver: str, config: Optional[ConfigParser] = None
-) -> TelemetryClient:
-    """
-    Retrieves the cached telemetry client, lazy-loading the first time this is called.
-    :param package_name: Base package name to associate data by.
-    :param package_ver: Base package version to associate data by.
-    :param config: Optional configuration to use for the client. Loads defaults if not given.
-    :return: Telemetry client to make requests with.
-    """
-    global __cached_telemetry_clients
-    cached = __cached_telemetry_clients.get(package_name)
-    if not cached:
-        cached = TelemetryClient(
-            package_name=package_name,
-            package_ver=package_ver,
-            config=config,
-        )
-        __cached_telemetry_clients[package_name] = cached
-    elif not cached.is_initialized:
-        cached.initialize(config=config)
-
-    return cached
-
-
-def get_deadline_cloud_library_telemetry_client(
-    config: Optional[ConfigParser] = None,
-) -> TelemetryClient:
-    """
-    Retrieves the cached telemetry client, specifying the Deadline Cloud Client Library's package information.
-    :param config: Optional configuration to use for the client. Loads defaults if not given.
-    :return: Telemetry client to make requests with.
-    """
-    return get_telemetry_client("deadline-cloud-library", version, config=config)
-
-
-def record_success_fail_telemetry_event(**decorator_kwargs: Any) -> Callable[[F], F]:
-    """
-    Decorator to try catch a function. Sends a success / fail telemetry event.
-    :param ** Python variable arguments. See https://docs.python.org/3/glossary.html#term-parameter.
-    """
-
-    def inner(function: F) -> F:
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            """
-            Wrapper to try-catch a function for telemetry
-            :param * Python variable argument. See https://docs.python.org/3/glossary.html#term-parameter
-            :param ** Python variable argument. See https://docs.python.org/3/glossary.html#term-parameter
-            """
-            success: bool = False
-            try:
-                result = function(*args, **kwargs)
-                success = True
-                return result
-            finally:
-                event_name = decorator_kwargs.get("metric_name", function.__name__)
-
-                event_details: dict = decorator_kwargs.get("event_details", {})
-                event_details["is_success"] = success
-                raised_exception = sys.exc_info()[1]
-                if raised_exception is not None:
-                    event_details["exception_type"] = type(raised_exception).__name__
-
-                get_deadline_cloud_library_telemetry_client().record_event(
-                    event_type=f"com.amazon.rum.deadline.{event_name}",
-                    event_details=event_details,
-                )
-
-        wrapper.__doc__ = function.__doc__
-        return cast(F, wrapper)
-
-    return inner
-
-
-def record_function_latency_telemetry_event(**decorator_kwargs: Any) -> Callable[[F], F]:
-    """
-    Decorator to time a function. Sends a latency telemetry event.
-    :param ** Python variable arguments. See https://docs.python.org/3/glossary.html#term-parameter.
-    """
-
-    def inner(function: F) -> F:
-        @wraps(function)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            start_t = time.perf_counter_ns()
-            ret_val = function(*args, **kwargs)
-            end_t = time.perf_counter_ns()
-
-            latency = end_t - start_t
-
-            event_name = decorator_kwargs.get("metric_name", function.__name__)
-            get_deadline_cloud_library_telemetry_client().record_event(
-                event_type="com.amazon.rum.deadline.latency",
-                event_details={"latency": latency, "function_call": event_name},
-            )
-
-            return ret_val
-
-        return cast(F, wrapper)
-
-    return inner

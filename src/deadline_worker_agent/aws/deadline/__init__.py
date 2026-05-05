@@ -822,7 +822,7 @@ def _get_deadline_telemetry_client() -> TelemetryClient:
             {"deadline-job-attachments": ".".join(deadline_job_attachments_version.split(".")[:3])}
         )
     elif not _telemetry_client._initialized:
-        _telemetry_client._initialize()
+        _telemetry_client.initialize()
     return _telemetry_client
 
 
