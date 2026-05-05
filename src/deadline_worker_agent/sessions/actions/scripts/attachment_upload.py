@@ -24,7 +24,6 @@ from pathlib import Path
 from dataclasses import asdict
 import glob
 
-from deadline.client.config import config_file
 from deadline.job_attachments.api import human_readable_file_size
 from deadline.job_attachments.asset_manifests.decode import decode_manifest
 from deadline.job_attachments.progress_tracker import ProgressTracker, ProgressStatus
@@ -341,7 +340,7 @@ def upload_output_assets(
                 manifest_metadata=manifest_props.as_output_metadata(),
                 source_root=Path(manifest_props.root_path),
                 asset_root=Path(manifest_props.local_root_path),
-                s3_check_cache_dir=config_file.get_cache_directory(),
+                s3_check_cache_dir=None,
                 progress_tracker=progress_tracker_per_root,
             )
 

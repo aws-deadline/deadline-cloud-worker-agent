@@ -22,7 +22,6 @@ import win32security
 import win32file
 import ntsecuritycon
 
-import deadline.client.config.config_file
 from deadline_worker_agent.installer import win_installer
 from deadline_worker_agent.installer.win_installer import (
     add_user_to_group,
@@ -34,7 +33,6 @@ from deadline_worker_agent.installer.win_installer import (
     get_effective_user_rights,
     grant_account_rights,
     provision_directories,
-    update_deadline_client_config,
     is_user_in_group,
     WorkerAgentDirectories,
 )
@@ -362,25 +360,6 @@ def test_provision_directories(
     verify_least_privilege(windows_user, actual_dirs.deadline_config_subdir)
     assert session_root_dir.exists()
     verify_least_privilege(windows_user, session_root_dir, is_session_root=True)
-
-
-def test_update_deadline_client_config(tmp_path: Path) -> None:
-    # GIVEN
-    deadline_client_config_path = tmp_path / "deadline_client_config"
-    deadline_client_config_path.touch(mode=0o644, exist_ok=False)
-
-    with patch(
-        "deadline.client.config.config_file.get_config_file_path",
-        return_value=deadline_client_config_path,
-    ):
-        # WHEN
-        update_deadline_client_config(
-            user="",  # Doesn't matter, config path is mocked out anyway
-            settings={"telemetry.opt_out": "true"},
-        )
-
-        # THEN
-        assert deadline.client.config.config_file.get_setting("telemetry.opt_out") == "true"
 
 
 def test_grant_account_rights(windows_user: str):

@@ -3,7 +3,7 @@
 from botocore.config import Config
 
 from deadline_worker_agent._version import __version__
-from deadline.client import version as deadline_client_lib_version
+from deadline.job_attachments import version as deadline_job_attachments_version
 from openjd.sessions import version as openjd_sessions_version
 import deadline_worker_agent.boto.config as boto_config_mod
 
@@ -24,7 +24,7 @@ class TestDeadlineBotocoreConfig:
         assert isinstance(DEADLINE_BOTOCORE_CONFIG, Config)
         libraries: list[str] = DEADLINE_BOTOCORE_CONFIG.user_agent_extra.split(" ")
         assert libraries[0] == f"deadline_worker_agent/{__version__}"
-        assert libraries[1] == f"deadline_cloud/{deadline_client_lib_version}"
+        assert libraries[1] == f"deadline_job_attachments/{deadline_job_attachments_version}"
         assert libraries[2] == f"openjd_sessions/{openjd_sessions_version}"
 
     def test_does_not_retry(self) -> None:
@@ -67,5 +67,5 @@ class TestOtherBotocoreConfig:
         assert isinstance(OTHER_BOTOCORE_CONFIG, Config)
         libraries: list[str] = OTHER_BOTOCORE_CONFIG.user_agent_extra.split(" ")
         assert libraries[0] == f"deadline_worker_agent/{__version__}"
-        assert libraries[1] == f"deadline_cloud/{deadline_client_lib_version}"
+        assert libraries[1] == f"deadline_job_attachments/{deadline_job_attachments_version}"
         assert libraries[2] == f"openjd_sessions/{openjd_sessions_version}"

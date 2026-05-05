@@ -152,6 +152,13 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(
+        field_name="telemetry_opt_out",
+        expected_type=bool,
+        expected_required=False,
+        expected_default=False,
+        expected_default_factory_return_value=None,
+    ),
+    FieldTestCaseParams(
         field_name="host_metrics_logging",
         expected_type=bool,
         expected_required=False,

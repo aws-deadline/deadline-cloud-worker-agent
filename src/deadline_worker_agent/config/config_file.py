@@ -155,6 +155,27 @@ over this setting.
 Uncomment the line below and replace the value with your AWS region:
 """.lstrip(),
     )
+    TELEMETRY_OPT_OUT = ModifiableSettingData(
+        setting_name="opt_out",
+        table_name="telemetry",
+        preceding_comment="""
+Controls whether telemetry data is collected and sent to AWS. This value is overridden when the
+DEADLINE_CLOUD_TELEMETRY_OPT_OUT environment variable is set using one of the following
+case-insensitive values:
+
+    '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+
+By default, telemetry is enabled. To opt out, uncomment the line below:
+""".lstrip(),
+    )
+    TELEMETRY_IDENTIFIER = ModifiableSettingData(
+        setting_name="identifier",
+        table_name="telemetry",
+        preceding_comment="""
+A unique identifier used to correlate telemetry data across worker agent restarts.
+This is automatically generated and should not normally need to be changed.
+""".lstrip(),
+    )
 
 
 class SettingModification(NamedTuple):
@@ -211,12 +232,21 @@ class OsConfigSection(BaseModel):
         return values
 
 
+class TelemetryConfigSection(BaseModel):
+    opt_out: Optional[bool] = None
+    identifier: Optional[str] = Field(
+        regex=r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=None,
+    )
+
+
 class ConfigFile(BaseModel):
     worker: WorkerConfigSection
     aws: AwsConfigSection
     logging: LoggingConfigSection
     os: OsConfigSection
     capabilities: Capabilities
+    telemetry: TelemetryConfigSection = TelemetryConfigSection()
 
     @classmethod
     def load(cls, config_path: Optional[Path] = None) -> ConfigFile:
@@ -454,5 +484,7 @@ class ConfigFile(BaseModel):
             output_settings["retain_session_dir"] = self.os.retain_session_dir
         if self.capabilities is not None:
             output_settings["capabilities"] = self.capabilities
+        if self.telemetry.opt_out is not None:
+            output_settings["telemetry_opt_out"] = self.telemetry.opt_out
 
         return output_settings

@@ -269,8 +269,8 @@ def test_get_deadline_telemetry_client_sets_service_name():
     Tests that _get_deadline_telemetry_client() creates a TelemetryClient with the correct
     service name by directly constructing the client.
     """
-    # Clear the cache to ensure fresh initialization
-    _get_deadline_telemetry_client.cache_clear()
+    # Clear the cached client to ensure fresh initialization
+    deadline_mod._telemetry_client = None
 
     mock_telemetry_client = MagicMock()
 

@@ -122,11 +122,11 @@ export WORKER_AGENT_WHL_PATH=$(pwd)/$(ls dist/*.whl)
 
 # Linux
 source .e2e_linux_infra.sh
-hatch run e2e-test
+hatch run e2e:test
 
 # Windows
 source .e2e_windows_infra.sh
-hatch run e2e-test
+hatch run e2e:test
 ```
 
 You can also override the `openjd-sessions` and/or `deadline-cloud` packages installed on the worker

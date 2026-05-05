@@ -121,6 +121,7 @@ class WorkerSettings(BaseSettings):
     host_metrics_logging_interval_seconds: float = 60
     retain_session_dir: bool = False
     structured_logs: bool = False
+    telemetry_opt_out: bool = False
     session_root_dir: Path = (
         DEFAULT_WINDOWS_SESSION_ROOT_DIR if os.name == "nt" else DEFAULT_POSIX_SESSION_ROOT_DIR
     )
@@ -152,6 +153,7 @@ class WorkerSettings(BaseSettings):
             },
             "retain_session_dir": {"env": "DEADLINE_WORKER_RETAIN_SESSION_DIR"},
             "structured_logs": {"env": "DEADLINE_WORKER_STRUCTURED_LOGS"},
+            "telemetry_opt_out": {"env": "DEADLINE_CLOUD_TELEMETRY_OPT_OUT"},
             "session_dir_root": {"env": "DEADLINE_WORKER_SESSION_ROOT_DIR"},
         }
 

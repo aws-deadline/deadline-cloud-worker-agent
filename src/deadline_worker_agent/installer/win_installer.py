@@ -15,7 +15,6 @@ from getpass import getpass
 from pathlib import Path
 from typing import Any, Optional, Union
 
-import deadline.client.config.config_file
 import pywintypes
 import win32api
 import win32con
@@ -44,9 +43,6 @@ from ..windows.win_logon import generate_password, users_equal
 # Defaults
 DEFAULT_WA_USER = "deadline-worker"
 DEFAULT_JOB_GROUP = "deadline-job-users"
-
-# Environment variable that overrides the config path used by the Deadline client
-DEADLINE_CLIENT_CONFIG_PATH_OVERRIDE_ENV_VAR = "DEADLINE_CONFIG_FILE_PATH"
 
 
 class InstallerFailedException(Exception):
@@ -319,6 +315,7 @@ def update_config_file(
     shutdown_on_stop: Optional[bool] = None,
     windows_job_user: Optional[str] = None,
     session_root_dir: Optional[Path] = None,
+    telemetry_opt_out: bool = False,
 ) -> None:
     """
     Updates the worker configuration file, creating it from the example if it does not exist.
@@ -379,6 +376,13 @@ def update_config_file(
             SettingModification(
                 setting=ModifiableSetting.SESSION_ROOT_DIR,
                 value=str(session_root_dir),
+            )
+        )
+    if telemetry_opt_out:
+        settings_to_modify.append(
+            SettingModification(
+                setting=ModifiableSetting.TELEMETRY_OPT_OUT,
+                value=True,
             )
         )
 
@@ -469,45 +473,6 @@ def provision_directories(
         deadline_persistence_subdir=Path(deadline_persistence_subdir),
         deadline_config_subdir=Path(deadline_config_subdir),
     )
-
-
-def update_deadline_client_config(
-    user: str,
-    settings: dict[str, str],
-) -> None:
-    """
-    Updates the Deadline Client config for the specified user.
-
-    Args:
-        user (str): The user to update the Deadline Client config for.
-        settings (dict[str, str]]): The key-value pairs of settings to update.
-
-    Raises:
-        InstallerFailedException: _description_
-    """
-    # Build the Deadline client config path for the user
-    deadline_client_config_path = deadline.client.config.config_file.CONFIG_FILE_PATH
-    if not deadline_client_config_path.startswith("~"):
-        raise InstallerFailedException(
-            f"Cannot opt out of telemetry: Expected Deadline client config file path to start with a tilde (~), but got: {deadline_client_config_path}\n"
-            f"This is because the Deadline client program (version {deadline.client.version}) is not compatible with this version of the Worker agent installer\n"
-            f"To opt out of telemetry, please use a compatible version of the Deadline client program or run the following command as the worker user:\n\n"
-            "deadline config set telemetry.opt_out true\n"
-        )
-    user_deadline_client_config_path = f"~{user}" + deadline_client_config_path.removeprefix("~")
-
-    # Opt out of client telemetry for the agent user
-    old_environ = os.environ.copy()
-    try:
-        os.environ[DEADLINE_CLIENT_CONFIG_PATH_OVERRIDE_ENV_VAR] = user_deadline_client_config_path
-        for setting_key, setting_value in settings.items():
-            deadline.client.config.config_file.set_setting(setting_key, setting_value)
-    except Exception as e:
-        logging.error(f"Failed to update Deadline Client configuration for user '{user}': {e}")
-        raise
-    finally:
-        os.environ.clear()
-        os.environ.update(old_environ)
 
 
 def _check_and_stop_service(service_name: str):
@@ -993,15 +958,8 @@ def start_windows_installer(
         allow_ec2_instance_profile=allow_ec2_instance_profile,
         windows_job_user=windows_job_user,
         session_root_dir=session_root_dir,
+        telemetry_opt_out=telemetry_opt_out,
     )
-
-    if telemetry_opt_out:
-        logging.info("Opting out of client telemetry")
-        update_deadline_client_config(
-            user=user_name,
-            settings={"telemetry.opt_out": "true"},
-        )
-        logging.info("Opted out of client telemetry")
 
     # Install the Windows service if specified
     if install_service:

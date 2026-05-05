@@ -71,11 +71,11 @@ export WORKER_AGENT_WHL_PATH=$(pwd)/$(ls dist/*.whl)
 
 # Linux
 source .e2e_linux_infra.sh
-hatch run e2e-test
+hatch run e2e:test
 
 # Windows
 source .e2e_windows_infra.sh
-hatch run e2e-test
+hatch run e2e:test
 ```
 
 ### Using Local Wheel Files for Dependencies
@@ -98,7 +98,7 @@ These can be combined with `WORKER_AGENT_WHL_PATH`:
 export WORKER_AGENT_WHL_PATH=$(pwd)/$(ls dist/*.whl)
 export OPENJD_SESSIONS_WHL_PATH=/path/to/openjd_sessions-*.whl
 export DEADLINE_WHL_PATH=/path/to/deadline_cloud-*.whl
-hatch run e2e-test
+hatch run e2e:test
 ```
 
 ### Debugging Pytest Hanging
@@ -106,7 +106,7 @@ hatch run e2e-test
 If pytest hangs after tests complete (likely due to a non-exiting Python thread), enable thread stack debugging:
 ```sh
 export DEBUG_THREAD_STACKS=1
-hatch run e2e-test
+hatch run e2e:test
 ```
 
 ## Live Service Testing (Manual)

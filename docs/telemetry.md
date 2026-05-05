@@ -7,6 +7,14 @@ You can opt out of telemetry data collection by either:
 
 1. Setting the environment variable: `DEADLINE_CLOUD_TELEMETRY_OPT_OUT=true`
 2. Providing the installer flag: `--telemetry-opt-out`
-3. Setting the config file: `deadline config set telemetry.opt_out true`
+3. Setting `opt_out = true` in the `[telemetry]` section of `worker.toml`:
 
-Note that setting the environment variable supersedes the config file setting.
+```toml
+[telemetry]
+opt_out = true
+```
+
+The priority order is: environment variable > worker agent config file (`worker.toml`) > default (enabled).
+
+Note: The worker agent will also check the legacy Deadline client config file (`~/.deadline/config`)
+as a fallback if the setting is not present in the environment or `worker.toml`.

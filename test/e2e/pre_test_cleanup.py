@@ -10,7 +10,7 @@ You must first follow the E2E test setup instructions in DEVELOPMENT.md and sour
 the environment files before running this script.
 
 This script will automatically run before the tests, if the tests are run with
-hatch run e2e-test
+hatch run e2e:test
 """
 
 import logging

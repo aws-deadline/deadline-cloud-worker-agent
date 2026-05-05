@@ -772,7 +772,7 @@ class TestJobSubmission:
                                     if os.environ["OPERATING_SYSTEM"] == "linux"
                                     else {
                                         "command": "powershell",
-                                        "args": ["{{ Task.File.runScript }}"],
+                                        "args": ["{{ Task.File.runScript }}"],  # type: ignore[dict-item]
                                     }
                                 ),
                             },
@@ -807,7 +807,7 @@ class TestJobSubmission:
                                         if os.environ["OPERATING_SYSTEM"] == "linux"
                                         else {
                                             "command": "powershell",
-                                            "args": ["{{ Env.File.runScript }}"],
+                                            "args": ["{{ Env.File.runScript }}"],  # type: ignore[dict-item]
                                         }
                                     )
                                     if expected_canceled_action == "envEnter"

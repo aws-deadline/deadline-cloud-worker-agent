@@ -11,13 +11,8 @@ test = "pytest test/unit --numprocesses=auto {args}"
 # See: https://pytest-xdist.readthedocs.io/en/stable/known-limitations.html#output-stdout-and-stderr-from-workers
 version = "hatch version"
 metadata = "hatch project metadata {args:}"
-e2e-test= [
-  "python test/e2e/pre_test_cleanup.py",
-  "pytest --no-cov test/e2e {args:}",
-  "echo pytest done",
-]
 integ-test = "pytest --no-cov test/integ {args:}"
-typing = "mypy {args:src test}"
+typing = "mypy {args:src test/unit test/integ}"
 style = [
   "ruff check {args:.}",
   "ruff format --check {args:.}"
@@ -44,6 +39,29 @@ python = ["3.9", "3.10", "3.11"]
 
 [envs.default.env-vars]
 RUN_AS_ADMIN="true"
+
+[envs.e2e]
+detached = true
+pre-install-commands = [
+  "pip install -r requirements-e2e.txt"
+]
+
+[envs.e2e.scripts]
+sync = "pip install -r requirements-e2e.txt"
+test = [
+  "python test/e2e/pre_test_cleanup.py",
+  "pytest --no-cov test/e2e {args:}",
+  "echo pytest done",
+]
+typing = "mypy {args:test/e2e}"
+style = [
+  "ruff check {args:test/e2e}",
+  "ruff format --check {args:test/e2e}",
+]
+lint = [
+  "style",
+  "typing",
+]
 
 [envs.release]
 detached = true

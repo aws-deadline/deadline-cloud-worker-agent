@@ -315,12 +315,10 @@ class TestAttachmentUpload:
     )
     @patch("builtins.print")
     @patch.object(attachment_upload_mod, "ProgressTracker")
-    @patch.object(attachment_upload_mod.config_file, "get_cache_directory")
     @patch.object(attachment_upload_mod, "S3AssetUploader")
     def test_upload_output_assets(
         self,
         mock_uploader_class: Mock,
-        mock_get_cache_directory: Mock,
         mock_progress_tracker: Mock,
         mock_print: Mock,
         mock_record_attachment_upload_telemetry_event: Mock,
@@ -441,7 +439,7 @@ class TestAttachmentUpload:
                     manifest_metadata=worker_props[0].as_output_metadata(),
                     source_root=Path(worker_props[0].root_path),
                     asset_root=Path(worker_props[0].local_root_path),
-                    s3_check_cache_dir=mock_get_cache_directory.return_value,
+                    s3_check_cache_dir=None,
                     progress_tracker=progress_tracker_stub,
                 ),
                 call(
@@ -452,7 +450,7 @@ class TestAttachmentUpload:
                     manifest_metadata=worker_props[1].as_output_metadata(),
                     source_root=Path(worker_props[1].root_path),
                     asset_root=Path(worker_props[1].local_root_path),
-                    s3_check_cache_dir=mock_get_cache_directory.return_value,
+                    s3_check_cache_dir=None,
                     progress_tracker=progress_tracker_stub,
                 ),
             ],

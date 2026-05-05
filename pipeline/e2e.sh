@@ -16,4 +16,4 @@ then
   fi
 fi
 
-hatch run e2e-test
+hatch run e2e:test

@@ -39,7 +39,6 @@ confirm=""
 region="unset"
 scripts_path="unset"
 worker_agent_program="deadline-worker-agent"
-client_library_program="deadline"
 allow_shutdown="no"
 disallow_instance_profile="no"
 no_install_service="no"
@@ -79,10 +78,10 @@ usage()
     echo "        Do not use the primary/effective group of the Worker Agent user specifeid in --user as"
     echo "        this is not a secure configuration. Defaults to $default_job_group."
     echo "    --scripts-path SCRIPTS_PATH"
-    echo "        An optional path to the directory that the Worker Agent and Deadline Cloud Library are"
+    echo "        An optional path to the directory that the Worker Agent is"
     echo "        installed. This is used as the program path when creating the systemd service for the "
-    echo "        Worker Agent. If not specified, the first program named 'deadline-worker-agent' and"
-    echo "        'deadline' found in the search path will be used."
+    echo "        Worker Agent. If not specified, the first program named 'deadline-worker-agent'"
+    echo "        found in the search path will be used."
     echo "    --python-interpreter-path"
     echo "        Path to the Python interpreter for the worker agent. If a Python virtual environment is "
     echo "        being used, this path should reference the Python executable of the virtual environment."
@@ -201,11 +200,6 @@ else
         echo "ERROR: Could not find deadline-worker-agent in scripts path: \"${worker_agent_program}\""
         exit 1
     fi
-    client_library_program="${scripts_path}"/deadline
-    if [[ ! -f "${client_library_program}" ]]; then
-        echo "ERROR: Could not find deadline in scripts path: \"${client_library_program}\""
-        exit 1
-    fi
     set -e
 fi
 if [[ "${python_interpreter_path}" == "unset" ]]; then
@@ -282,7 +276,6 @@ echo "Worker job group: ${job_group}"
 echo "Scripts path: ${scripts_path}"
 echo "Session root directory: ${session_root_dir}"
 echo "Worker agent program path: ${worker_agent_program}"
-echo "Deadline client program path: ${client_library_program}"
 echo "Allow worker agent shutdown: ${allow_shutdown}"
 echo "Start systemd service: ${start_service}"
 echo "Telemetry opt-out: ${telemetry_opt_out}"
@@ -431,6 +424,23 @@ fi
     --session-root-dir "${session_root_dir}" \
     --region "${region}"
 
+if [[ "${telemetry_opt_out}" == "yes" ]]; then
+    # Set telemetry opt-out in the worker agent configuration file
+    echo "Opting out of telemetry collection"
+    worker_config="/etc/amazon/deadline/worker.toml"
+    if grep -q '^\[telemetry\]' "$worker_config" 2>/dev/null; then
+        # Section exists, update or add the opt_out setting within it
+        sed -i '/^\[telemetry\]/,/^\[/{s/^opt_out.*/opt_out = true/; t}' "$worker_config"
+        # If opt_out wasn't already present, add it after the section header
+        if ! grep -q '^opt_out' "$worker_config"; then
+            sed -i '/^\[telemetry\]/a opt_out = true' "$worker_config"
+        fi
+    else
+        # Append a new [telemetry] section
+        printf '\n[telemetry]\nopt_out = true\n' >> "$worker_config"
+    fi
+fi
+
 if ! [[ "${no_install_service}" == "yes" ]]; then
     # Set up the service
     echo "Installing systemd service to /etc/systemd/system/deadline-worker.service"
@@ -494,12 +504,6 @@ EOF
         systemctl start deadline-worker
         echo "Done starting the service"
     fi
-fi
-
-if [[ "${telemetry_opt_out}" == "yes" ]]; then
-    # Set the Deadline Client Lib configuration setting
-    echo "Opting out of telemetry collection"
-    sudo -u "$wa_user" "$client_library_program" config set telemetry.opt_out true
 fi
 
 echo "Done"
