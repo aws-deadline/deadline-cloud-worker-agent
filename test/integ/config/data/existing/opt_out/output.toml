@@ -1,0 +1,10 @@
+[telemetry]
+
+# Controls whether telemetry data is collected and sent to AWS. This value is overridden when the
+# DEADLINE_CLOUD_TELEMETRY_OPT_OUT environment variable is set using one of the following
+# case-insensitive values:
+#
+#     '0', 'off', 'f', 'false', 'n', 'no', '1', 'on', 't', 'true', 'y', 'yes'.
+#
+# By default, telemetry is enabled. To opt out, uncomment the line below:
+opt_out = true

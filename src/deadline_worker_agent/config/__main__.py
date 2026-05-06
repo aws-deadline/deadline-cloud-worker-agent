@@ -164,6 +164,26 @@ def create_argument_parser() -> argparse.ArgumentParser:
         action="store_false",
         dest="backup",
     )
+
+    telemetry_group = parser.add_argument_group("Telemetry", "Settings related to telemetry")
+    parser.set_defaults(telemetry_opt_out=None)
+    telemetry_opt_out_group = telemetry_group.add_mutually_exclusive_group()
+    telemetry_opt_out_group.add_argument(
+        "--telemetry-opt-out",
+        help="Opt out of telemetry data collection",
+        action="store_const",
+        const=True,
+        required=False,
+    )
+    telemetry_opt_out_group.add_argument(
+        "--no-telemetry-opt-out",
+        help="Opt in to telemetry data collection",
+        action="store_const",
+        dest="telemetry_opt_out",
+        const=False,
+        required=False,
+    )
+
     return parser
 
 
@@ -222,6 +242,13 @@ def args_to_setting_modifications(parsed_args: ParsedArguments) -> list[SettingM
             SettingModification(
                 setting=ModifiableSetting.REGION,
                 value=parsed_args.region,
+            )
+        )
+    if parsed_args.telemetry_opt_out is not None:
+        settings_to_modify.append(
+            SettingModification(
+                setting=ModifiableSetting.TELEMETRY_OPT_OUT,
+                value=parsed_args.telemetry_opt_out,
             )
         )
 

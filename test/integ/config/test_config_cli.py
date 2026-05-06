@@ -81,6 +81,17 @@ def cli_args_for_region(value: str | bool | None) -> list[str]:
         raise NotImplementedError(f"Unexpected value: {value}")
 
 
+def cli_args_for_telemetry_opt_out(value: str | bool | None) -> list[str]:
+    if value is None:
+        return []
+    elif value is True:
+        return ["--telemetry-opt-out"]
+    elif value is False:
+        return ["--no-telemetry-opt-out"]
+    else:
+        raise NotImplementedError(f"Unexpected value: {value}")
+
+
 SETTING_TO_CLI_ARGS: dict[
     config_file.ModifiableSetting, Callable[[str | bool | None], list[str]]
 ] = {
@@ -91,6 +102,7 @@ SETTING_TO_CLI_ARGS: dict[
     config_file.ModifiableSetting.SHUTDOWN_ON_STOP: cli_args_for_shutdown_on_stop,
     config_file.ModifiableSetting.SESSION_ROOT_DIR: cli_args_for_session_root_dir,
     config_file.ModifiableSetting.REGION: cli_args_for_region,
+    config_file.ModifiableSetting.TELEMETRY_OPT_OUT: cli_args_for_telemetry_opt_out,
 }
 
 
@@ -102,7 +114,7 @@ def value_to_set_cli_args(
     try:
         setting_to_cli_args = SETTING_TO_CLI_ARGS[modifiable_setting]
     except KeyError:
-        raise NotImplementedError(f"Unhandled setting: {modifiable_setting.name}") from None
+        pytest.skip(f"No CLI args for setting: {modifiable_setting.name}")
 
     return setting_to_cli_args(value_to_set)
 

@@ -1,0 +1,5 @@
+[telemetry]
+
+# A unique identifier used to correlate telemetry data across worker agent restarts.
+# This is automatically generated and should not normally need to be changed.
+identifier = "old-value"

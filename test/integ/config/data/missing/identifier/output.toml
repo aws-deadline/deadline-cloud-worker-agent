@@ -1,0 +1,12 @@
+[telemetry]
+
+# Some prior content that should be preserved
+prior_setting_1 = 1
+
+# More content to preserve
+prior_setting_2 = "abc"  # and here's an inline comment
+
+
+# A unique identifier used to correlate telemetry data across worker agent restarts.
+# This is automatically generated and should not normally need to be changed.
+identifier = "new-value"

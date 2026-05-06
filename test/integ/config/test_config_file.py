@@ -13,9 +13,9 @@ def test(
     setting_name: str,
     value_to_set: str | bool,
     worker_config_path: Path,
+    modifiable_setting: config_file.ModifiableSetting,
 ) -> None:
     # GIVEN
-    modifiable_setting = getattr(config_file.ModifiableSetting, setting_name.upper())
     settings_to_modify = [
         config_file.SettingModification(
             setting=modifiable_setting,
