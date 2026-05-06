@@ -162,7 +162,8 @@ class TelemetryClient:
     @staticmethod
     def _read_opt_out_from_config() -> bool:
         """Check the worker agent config file for telemetry opt-out, falling back to
-        the deadline client config (~/.deadline/config) if not set."""
+        the deadline client config (~/.deadline/config) if not set.
+        If found in legacy config, persists to worker.toml."""
         try:
             from .config.config_file import ConfigFile
 
@@ -173,7 +174,29 @@ class TelemetryClient:
             pass
 
         # Fall back to legacy deadline client config (~/.deadline/config)
-        return _get_setting("telemetry.opt_out").lower() in _TRUE_VALUES
+        legacy_value = _get_setting("telemetry.opt_out").lower() in _TRUE_VALUES
+
+        # Persist to worker.toml if opted out via legacy config
+        if legacy_value:
+            try:
+                from .config.config_file import (
+                    ConfigFile,
+                    ModifiableSetting,
+                    SettingModification,
+                )
+
+                ConfigFile.modify_config_file_settings(
+                    settings_to_modify=[
+                        SettingModification(
+                            setting=ModifiableSetting.TELEMETRY_OPT_OUT,
+                            value=True,
+                        )
+                    ],
+                )
+            except Exception:
+                logger.debug("Failed to persist telemetry opt-out to worker.toml")
+
+        return legacy_value
 
     @_swallow_exceptions
     def initialize(self) -> None:

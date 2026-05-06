@@ -136,6 +136,145 @@ def test_get_telemetry_identifier_uses_existing():
     assert client.telemetry_id == test_id
 
 
+class TestFallbackMechanism:
+    """Tests for the legacy config fallback and persistence to worker.toml"""
+
+    def test_opt_out_from_worker_toml(self):
+        """opt_out in worker.toml is used directly without fallback."""
+        mock_config = MagicMock()
+        mock_config.telemetry.opt_out = True
+
+        with patch(
+            "deadline_worker_agent.config.config_file.ConfigFile.load",
+            return_value=mock_config,
+        ):
+            result = TelemetryClient._read_opt_out_from_config()
+
+        assert result is True
+
+    def test_opt_out_falls_back_to_legacy_config(self):
+        """When worker.toml has no opt_out, reads from ~/.deadline/config."""
+        mock_config = MagicMock()
+        mock_config.telemetry.opt_out = None
+
+        with (
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.load",
+                return_value=mock_config,
+            ),
+            patch(
+                "deadline_worker_agent.telemetry._get_setting", return_value="true"
+            ) as mock_get_setting,
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.modify_config_file_settings",
+            ) as mock_modify,
+        ):
+            result = TelemetryClient._read_opt_out_from_config()
+
+        assert result is True
+        mock_get_setting.assert_called_once_with("telemetry.opt_out")
+        mock_modify.assert_called_once()
+
+    def test_opt_out_legacy_false_does_not_persist(self):
+        """When legacy config has opt_out=false, does not write to worker.toml."""
+        mock_config = MagicMock()
+        mock_config.telemetry.opt_out = None
+
+        with (
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.load",
+                return_value=mock_config,
+            ),
+            patch("deadline_worker_agent.telemetry._get_setting", return_value="false"),
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.modify_config_file_settings",
+            ) as mock_modify,
+        ):
+            result = TelemetryClient._read_opt_out_from_config()
+
+        assert result is False
+        mock_modify.assert_not_called()
+
+    def test_opt_out_no_worker_toml_falls_back(self):
+        """When worker.toml doesn't exist, falls back to legacy config."""
+        with (
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.load",
+                side_effect=FileNotFoundError,
+            ),
+            patch("deadline_worker_agent.telemetry._get_setting", return_value="true"),
+        ):
+            result = TelemetryClient._read_opt_out_from_config()
+
+        assert result is True
+
+    def test_identifier_from_legacy_config_persists_to_worker_toml(self):
+        """Identifier from legacy config is persisted to worker.toml."""
+        test_id = str(uuid.uuid4())
+
+        with (
+            patch.object(TelemetryClient, "_start_threads"),
+            patch("deadline_worker_agent.telemetry.boto3.client") as mock_boto,
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.load",
+                side_effect=FileNotFoundError,
+            ),
+            patch("deadline_worker_agent.telemetry._get_setting", return_value=test_id),
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.modify_config_file_settings",
+            ) as mock_modify,
+        ):
+            mock_boto.return_value.meta.endpoint_url = "https://fake"
+            client = TelemetryClient("test", "1.0.0")
+
+        assert client.telemetry_id == test_id
+        mock_modify.assert_called_once()
+
+    def test_identifier_generated_when_legacy_invalid(self):
+        """A new UUID is generated when legacy config has invalid identifier."""
+        with (
+            patch.object(TelemetryClient, "_start_threads"),
+            patch("deadline_worker_agent.telemetry.boto3.client") as mock_boto,
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.load",
+                side_effect=FileNotFoundError,
+            ),
+            patch("deadline_worker_agent.telemetry._get_setting", return_value="not-a-uuid"),
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.modify_config_file_settings",
+            ) as mock_modify,
+        ):
+            mock_boto.return_value.meta.endpoint_url = "https://fake"
+            client = TelemetryClient("test", "1.0.0")
+
+        assert client.telemetry_id != "not-a-uuid"
+        uuid.UUID(client.telemetry_id, version=4)
+        mock_modify.assert_called_once()
+
+    def test_identifier_from_worker_toml_does_not_persist(self):
+        """When identifier exists in worker.toml, no write occurs."""
+        test_id = str(uuid.uuid4())
+        mock_config = MagicMock()
+        mock_config.telemetry.identifier = test_id
+
+        with (
+            patch.object(TelemetryClient, "_start_threads"),
+            patch("deadline_worker_agent.telemetry.boto3.client") as mock_boto,
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.load",
+                return_value=mock_config,
+            ),
+            patch(
+                "deadline_worker_agent.config.config_file.ConfigFile.modify_config_file_settings",
+            ) as mock_modify,
+        ):
+            mock_boto.return_value.meta.endpoint_url = "https://fake"
+            client = TelemetryClient("test", "1.0.0")
+
+        assert client.telemetry_id == test_id
+        mock_modify.assert_not_called()
+
+
 @pytest.mark.timeout(5)  # Timeout in case we don't exit the while loop
 def test_process_event_queue_thread(mock_telemetry_client):
     """Test that the queue processing thread function exits cleanly after getting None"""
