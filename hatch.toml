@@ -1,10 +1,11 @@
 [envs.default]
+installer = "uv"
 pre-install-commands = [
-  "pip install -r requirements-testing.txt"
+  "uv pip install -r requirements-testing.txt"
 ]
 
 [envs.default.scripts]
-sync = "pip install -r requirements-testing.txt"
+sync = "uv pip install -r requirements-testing.txt"
 test = "pytest test/unit --numprocesses=auto {args}"
 # Don't pass --numprocesses here so that tests run sequentially.
 # pytest-xdist does not allow live output of stdout, meaning integ tests only show output after the test is done
@@ -44,7 +45,7 @@ RUN_AS_ADMIN="true"
 detached = true
 
 [envs.e2e.scripts]
-sync = "pip install -r requirements-e2e.txt"
+sync = "uv pip install -r requirements-e2e.txt"
 test = [
   "sync",
   "python test/e2e/pre_test_cleanup.py",

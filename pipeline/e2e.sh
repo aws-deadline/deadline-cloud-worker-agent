@@ -2,8 +2,12 @@
 # Set the -e option
 set -e
 
-pip install --upgrade pip
-pip install --upgrade hatch "virtualenv<21"
+if command -v uv > /dev/null 2>&1; then
+  uv pip install --upgrade hatch "virtualenv<21"
+else
+  pip install --upgrade pip
+  pip install --upgrade hatch "virtualenv<21"
+fi
 
 if [ "$TEST_TYPE" ]
 then
