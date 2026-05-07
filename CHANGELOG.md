@@ -1,3 +1,12 @@
+## 0.29.1 (2026-05-07)
+
+### Features
+* Job attachment S3 bucket and root prefix are now exposed as `DEADLINE_JA_S3_BUCKET` and `DEADLINE_JA_ROOT_PREFIX` environment variables in the session environment when job attachment settings are configured. This allows plugins to access job attachment storage locations without additional API calls. (#917)
+* Added progress timer logging during host configuration script execution. The agent now periodically logs elapsed and remaining time (every 30s, accelerating to every 10s when ≤60s remain) and emits a warning when the server-side timeout is reached, improving observability for host configuration timeouts. (`d30e925`)
+* Added region configuration support to `worker.toml` and the installer, allowing you to explicitly configure the AWS region for the worker agent. (`0690a0f`)
+* Added `[telemetry]` section to `worker.toml` with `opt_out` and `identifier` settings, and `--telemetry-opt-out` / `--no-telemetry-opt-out` CLI flags to `python -m deadline_worker_agent.config`. (#920)
+* Removed dependency on the `deadline` package (client library/CLI/config) and use `deadline-job-attachments` directly. Telemetry settings previously stored in `~/.deadline/config` are read as a temporary fallback if not specified. This fallback will be removed in a future release. (#920)
+
 ## 0.29.0 (2026-03-16)
 
 ### BREAKING CHANGES
