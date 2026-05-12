@@ -21,7 +21,12 @@ from .config_file import ConfigFile
 from .settings import WorkerSettings
 
 if sys.platform == "win32":
-    from ..windows.win_logon import reset_user_password, PasswordResetException, users_equal
+    from ..windows.win_logon import (
+        reset_user_password,
+        PasswordResetException,
+        users_equal,
+    )
+    from ..windows.win_user_util import is_domain_user
 
 if TYPE_CHECKING:
     from _win32typing import PyHKEY, PyHANDLE
@@ -116,6 +121,7 @@ class Configuration:
         "structured_logs",
         "session_root_dir",
         "region",
+        "_windows_job_user_domain_settings",
     )
 
     def __init__(
@@ -180,22 +186,45 @@ class Configuration:
                     f"Windows job user override must not be the user running the worker agent: {getpass.getuser()}."
                     " If you wish to run jobs as the agent user, set run_jobs_as_agent_user = true in the agent configuration file."
                 )
-            try:
-                cache_entry = reset_user_password(settings.windows_job_user)
-            except PasswordResetException as e:
-                raise ConfigurationError(
-                    f"Failed to reset password for user {settings.windows_job_user}: {e}"
-                ) from e
-            self.job_run_as_user_overrides = JobsRunAsUserOverride(
-                run_as_agent=settings.run_jobs_as_agent_user,
-                job_user=cache_entry.windows_session_user,
-                logon_token=cache_entry.logon_token,
-                user_profile=cache_entry.user_profile,
-            )
+            if is_domain_user(settings.windows_job_user):
+                # Domain users cannot have their password reset locally.
+                # They must provide a password ARN to fetch credentials from Secrets Manager.
+                if not settings.windows_job_user_password_arn:
+                    raise ConfigurationError(
+                        f"Domain user '{settings.windows_job_user}' requires 'windows_job_user_password_arn' "
+                        "to be set. Domain user passwords must be managed externally via Secrets Manager."
+                    )
+                # For domain users, we defer credential resolution to runtime via the credentials resolver.
+                # Store the settings so the scheduler can use WindowsCredentialsResolver.
+                from ..sessions.job_entities.job_details import JobRunAsWindowsUser
+
+                self.job_run_as_user_overrides = JobsRunAsUserOverride(
+                    run_as_agent=settings.run_jobs_as_agent_user,
+                )
+                self._windows_job_user_domain_settings = JobRunAsWindowsUser(
+                    user=settings.windows_job_user,
+                    passwordArn=settings.windows_job_user_password_arn,
+                )
+            else:
+                try:
+                    cache_entry = reset_user_password(settings.windows_job_user)
+                except PasswordResetException as e:
+                    raise ConfigurationError(
+                        f"Failed to reset password for user {settings.windows_job_user}: {e}"
+                    ) from e
+                self.job_run_as_user_overrides = JobsRunAsUserOverride(
+                    run_as_agent=settings.run_jobs_as_agent_user,
+                    job_user=cache_entry.windows_session_user,
+                    logon_token=cache_entry.logon_token,
+                    user_profile=cache_entry.user_profile,
+                )
         else:
             self.job_run_as_user_overrides = JobsRunAsUserOverride(
                 run_as_agent=settings.run_jobs_as_agent_user
             )
+
+        if not hasattr(self, "_windows_job_user_domain_settings"):
+            self._windows_job_user_domain_settings = None
 
         self.farm_id = settings.farm_id
         self.fleet_id = settings.fleet_id

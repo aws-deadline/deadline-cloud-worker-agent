@@ -201,13 +201,19 @@ def ensure_user_profile_exists(username: str, password: str):
     logon_token = None
     user_profile = None
     try:
+        # Parse domain from username for LogonUser
+        logon_domain = None
+        logon_username = username
+        if "\\" in username:
+            logon_domain, logon_username = username.split("\\", 1)
+
         # https://timgolden.me.uk/pywin32-docs/win32security__LogonUser_meth.html
         logon_token = win32security.LogonUser(
-            Username=username,
+            Username=logon_username,
             LogonType=win32security.LOGON32_LOGON_INTERACTIVE,
             LogonProvider=win32security.LOGON32_PROVIDER_DEFAULT,
             Password=password,
-            Domain=None,
+            Domain=logon_domain,
         )
         # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
         user_profile = win32profile.LoadUserProfile(
@@ -277,7 +283,11 @@ def is_user_in_group(group_name: str, user_name: str) -> bool:
         logging.error(f"Failed to get group members of '{group_name}': {e}")
         raise
 
-    return any(group_member["name"] == user_name for group_member in group_members_info[0])
+    return any(
+        group_member["name"].lower() == user_name.lower()
+        or group_member["name"].lower() == user_name.split("\\")[-1].lower()
+        for group_member in group_members_info[0]
+    )
 
 
 def add_user_to_group(group_name: str, user_name: str) -> None:
@@ -298,6 +308,14 @@ def add_user_to_group(group_name: str, user_name: str) -> None:
             [user_info],
         )
         logging.info(f"User {user_name} is added to group {group_name}.")
+    except pywintypes.error as e:
+        if e.winerror == 1378:  # ERROR_MEMBER_IN_ALIAS - already a member
+            logging.info(f"User {user_name} is already a member of group {group_name}.")
+        else:
+            logging.error(
+                f"An error occurred during adding user {user_name} to the user group {group_name}: {e}"
+            )
+            raise
     except Exception as e:
         logging.error(
             f"An error occurred during adding user {user_name} to the user group {group_name}: {e}"
@@ -802,13 +820,7 @@ def start_windows_installer(
         logging.error(f"Not a valid value for Fleet id: {fleet_id}")
         print_helping_info_and_exit()
 
-    # Validate that the --user argument is not a domain user. The installer does not currently support this.
-    if is_domain_user(user_name):
-        raise InstallerFailedException(
-            "running worker agent as a domain user is not currently supported. You can "
-            "have jobs run as a domain user by configuring the queue job run user to specify a "
-            "domain user account."
-        )
+    is_agent_domain_user = is_domain_user(user_name)
 
     # Check that user has Administrator privileges
     if not shell.IsUserAnAdmin():
@@ -833,7 +845,14 @@ def start_windows_installer(
     print_banner()
 
     if not password:
-        if check_account_existence(user_name):
+        if is_agent_domain_user:
+            password = getpass("Domain agent user password: ")
+            try:
+                WindowsSessionUser(user_name, password=password)
+            except BadCredentialsException:
+                print("ERROR: Password incorrect")
+                sys.exit(1)
+        elif check_account_existence(user_name):
             password = getpass("Agent user password: ")
             try:
                 WindowsSessionUser(user_name, password=password)
@@ -887,7 +906,15 @@ def start_windows_installer(
 
     # Check if the worker agent user exists, and create it if not
     agent_user_created = False
-    if check_account_existence(user_name):
+    if is_agent_domain_user:
+        # Domain users must already exist — verify the account is resolvable
+        if not check_account_existence(user_name):
+            raise InstallerFailedException(
+                f"Domain user '{user_name}' does not exist. "
+                "Domain users must be created in Active Directory before running the installer."
+            )
+        logging.info(f"Using existing domain user ({user_name}) as worker agent user")
+    elif check_account_existence(user_name):
         logging.info(f"Using existing user ({user_name}) as worker agent user")
 
         # This is only to verify the credentials. It will raise a BadCredentialsError if the
@@ -902,6 +929,12 @@ def start_windows_installer(
 
     if is_user_in_group("Administrators", user_name):
         logging.info(f"Agent user '{user_name}' is already an administrator")
+    elif is_agent_domain_user:
+        logging.error(
+            f"Domain user '{user_name}' is not in the Administrators group. "
+            "Please add the user to the Administrators group in Active Directory before running the installer."
+        )
+        sys.exit(1)
     elif not agent_user_created and not grant_required_access:
         logging.error(
             f"The Worker Agent user needs to run as an administrator, but the supplied user ({user_name}) exists "
@@ -939,7 +972,9 @@ def start_windows_installer(
     else:
         create_local_queue_user_group(group_name)
 
-    if is_user_in_group(group_name, user_name):
+    if is_agent_domain_user:
+        logging.info(f"Skipping local group membership for domain user '{user_name}'")
+    elif is_user_in_group(group_name, user_name):
         logging.info(f"Agent user '{user_name}' is already in group '{group_name}'")
     else:
         # Add the worker agent user to the job group
