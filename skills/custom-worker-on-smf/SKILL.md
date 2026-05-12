@@ -12,6 +12,10 @@ tags: [deadline-cloud, worker-agent, smf, fleet, host-config, deploy, testing, l
 
 # Deploy Custom Worker Agent on SMF
 
+> **⚠️ WARNING:** Replacing the Worker Agent on SMF is strictly for **testing purposes**
+> and is **not supported**. Do not use this in production. AWS support cannot assist
+> with issues arising from custom agent installations on SMF fleets.
+
 ## Overview
 
 Service Managed Fleets (SMF) ship with a released Worker Agent version. To test
