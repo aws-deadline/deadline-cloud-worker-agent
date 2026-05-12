@@ -1,6 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 import json
+import sys
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, call, patch, mock_open
@@ -539,6 +540,45 @@ class TestAttachmentUpload:
             worker_manifest_properties=[mock_worker_props],
             root_path_to_base_manifest={"/source/path": "/base/manifest.json"},
         )
+
+
+class TestUTF8Reconfiguration:
+    """Test that PYTHONIOENCODING=utf-8 prevents UnicodeEncodeError for non-ASCII paths."""
+
+    def test_attachment_upload_handles_non_ascii_with_pythonioencoding(self, tmp_path):
+        """Test that PYTHONIOENCODING=utf-8 allows printing non-ASCII paths.
+        Regression test for https://github.com/aws-deadline/deadline-cloud-worker-agent/issues/928
+
+        Verifies that setting PYTHONIOENCODING=utf-8 in the subprocess environment
+        (as done in run_attachment_upload.py and run_attachment_download.py) prevents
+        UnicodeEncodeError when printing paths with Cyrillic or Unicode characters.
+        """
+        import os
+        import subprocess
+
+        output_file = tmp_path / "output.txt"
+        script = (
+            "import sys; "
+            f"f = open(r'{output_file}', 'w', encoding='utf-8'); "
+            "f.write('ja_snapshot: Фон — копия.jpg\\n'); "
+            "f.write('Arctostaphylos \\u2018Sunset\\u2019.cgeo\\n'); "
+            "f.write(sys.stdout.encoding + '\\n'); "
+            "f.close()"
+        )
+
+        # PYTHONIOENCODING=utf-8 ensures the subprocess can print non-ASCII characters
+        # regardless of the system's default encoding (e.g., cp1252 on Windows)
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            env=env,
+        )
+        assert result.returncode == 0
+
+        output = output_file.read_text(encoding="utf-8")
+        assert "utf-8" in output.lower()
+        assert "Фон" in output
 
 
 class TestTelemetry:

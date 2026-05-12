@@ -243,6 +243,7 @@ class TestStart:
             task_parameter_values=dict[str, ParameterValue](),
             os_env_vars={
                 "DEADLINE_QUEUE_ID": TestStart.QUEUE_ID,
+                "PYTHONIOENCODING": "utf-8",
             },
             log_task_banner=False,
         )

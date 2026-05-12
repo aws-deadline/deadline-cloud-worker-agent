@@ -379,6 +379,11 @@ class AttachmentDownloadAction(OpenjdAction):
                 task_parameter_values=dict[str, ParameterValue](),
                 os_env_vars={
                     "DEADLINE_QUEUE_ID": session._queue_id,
+                    # Ensure UTF-8 encoding for stdout/stderr to prevent UnicodeEncodeError
+                    # on Windows where the default console encoding (cp1252) cannot encode
+                    # non-ASCII characters in file paths.
+                    # See: https://github.com/aws-deadline/deadline-cloud-worker-agent/issues/928
+                    "PYTHONIOENCODING": "utf-8",
                 },
                 log_task_banner=False,
             )

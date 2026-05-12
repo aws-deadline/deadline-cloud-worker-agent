@@ -174,6 +174,7 @@ class TestStart:
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
                 "DEADLINE_SESSIONACTION_START_TIME": "1234567890.0",
+                "PYTHONIOENCODING": "utf-8",
             },
             log_task_banner=False,
         )
@@ -240,6 +241,7 @@ class TestStart:
                 "DEADLINE_STEP_ID": step_id,
                 "DEADLINE_TASK_ID": task_id,
                 "DEADLINE_SESSIONACTION_START_TIME": "1234567890.0",
+                "PYTHONIOENCODING": "utf-8",
             },
             log_task_banner=False,
         )
