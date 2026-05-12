@@ -1014,6 +1014,41 @@ class TestEnforceNoInstanceProfile:
         )
         assert result is None
 
+    def test_imds_none_then_recovers(
+        self,
+        get_metadata_mock: MagicMock,
+    ) -> None:
+        """When _get_metadata returns None initially but succeeds on retry with 404,
+        the function should return normally."""
+        # GIVEN
+        success_response = MagicMock()
+        success_response.status_code = 404
+
+        get_metadata_mock.side_effect = [None, success_response]
+
+        # WHEN/THEN (no error raised)
+        bootstrap_mod._enforce_no_instance_profile()
+
+        # THEN
+        assert get_metadata_mock.call_count == 2
+
+    def test_imds_none_all_retries_exhausted_raises(
+        self,
+        get_metadata_mock: MagicMock,
+    ) -> None:
+        """When _get_metadata always returns None, IMDSUnreachableError should be raised
+        after IMDS_RETRY_MAX_ATTEMPTS + 1 calls (1 initial + retries)."""
+        # GIVEN
+        get_metadata_mock.return_value = None
+
+        # THEN
+        with raises(bootstrap_mod.IMDSUnreachableError):
+            # WHEN
+            bootstrap_mod._enforce_no_instance_profile()
+
+        # THEN - 1 initial call + IMDS_RETRY_MAX_ATTEMPTS retries
+        assert get_metadata_mock.call_count == 1 + bootstrap_mod.IMDS_RETRY_MAX_ATTEMPTS
+
 
 class TestEnforceNoInstanceProfileOrStopWorker:
     @fixture(autouse=True)
@@ -1085,6 +1120,40 @@ class TestEnforceNoInstanceProfileOrStopWorker:
 
         # THEN
         with raises(bootstrap_mod.InstanceProfileAttachedError) as raise_ctx:
+            # WHEN
+            bootstrap_mod._enforce_no_instance_profile_or_stop_worker(
+                config=config,
+                worker_id=worker_id,
+                deadline_client=client,
+            )
+
+        # THEN
+        assert raise_ctx.value is exception
+        mock_enforce_no_instance_profile.assert_called_once_with()
+        update_worker_mock.assert_called_once_with(
+            deadline_client=client,
+            farm_id=config.farm_id,
+            fleet_id=config.fleet_id,
+            worker_id=worker_id,
+            status=WorkerStatus.STOPPED,
+        )
+
+    def test_imds_unreachable_stops_worker(
+        self,
+        mock_enforce_no_instance_profile: MagicMock,
+        update_worker_mock: MagicMock,
+        config: Configuration,
+        worker_id: str,
+        client: MagicMock,
+    ) -> None:
+        """When _enforce_no_instance_profile raises IMDSUnreachableError,
+        the worker should be stopped and the error re-raised."""
+        # GIVEN
+        exception = bootstrap_mod.IMDSUnreachableError(attempts=5)
+        mock_enforce_no_instance_profile.side_effect = exception
+
+        # THEN
+        with raises(bootstrap_mod.IMDSUnreachableError) as raise_ctx:
             # WHEN
             bootstrap_mod._enforce_no_instance_profile_or_stop_worker(
                 config=config,
