@@ -53,6 +53,13 @@ _logger = _logging.getLogger(__name__)
 INSTANCE_PROFILE_REMOVAL_ATTEMPTS = 120
 INSTANCE_PROFILE_CHECK_DURATION_SECONDS = 1
 
+# The number of retry attempts and backoff parameters for IMDS connectivity errors during the
+# instance profile security check. These are separate from the profile removal polling loop.
+IMDS_RETRY_MAX_ATTEMPTS = 5
+IMDS_RETRY_INITIAL_BACKOFF_SECONDS = 1.0
+IMDS_RETRY_BACKOFF_FACTOR = 2.0
+IMDS_RETRY_MAX_BACKOFF_SECONDS = 16.0
+
 
 class WorkerDeregisteredError(Exception):
     """Exception raised when Worker is deregistered"""
@@ -76,6 +83,24 @@ class InstanceProfileAttachedError(Exception):
         return (
             "Worker's EC2 instance profile not allowed but attached after "
             f"{INSTANCE_PROFILE_REMOVAL_ATTEMPTS} attempts"
+        )
+
+
+class IMDSUnreachableError(Exception):
+    """
+    Exception raised when IMDS cannot be reached after retries during the instance profile
+    security check. This indicates a transient IMDS failure rather than "not running on EC2",
+    and the worker must not proceed to avoid bypassing the security check.
+    """
+
+    def __init__(self, *, attempts: int) -> None:
+        self._attempts = attempts
+
+    def __str__(self) -> str:  # pragma: no cover
+        return (
+            "IMDS could not be reached after "
+            f"{self._attempts} attempts during instance profile security check. "
+            "Worker cannot confirm instance profile status and must exit."
         )
 
 
@@ -246,7 +271,7 @@ def bootstrap_worker(config: Configuration, *, use_existing_worker: bool = True)
         )
         return bootstrap_worker(config, use_existing_worker=False)
 
-    # raises: InstanceProfileAttachedError
+    # raises: InstanceProfileAttachedError, IMDSUnreachableError
     _enforce_no_instance_profile_or_stop_worker(
         config=config,
         deadline_client=deadline_client,
@@ -539,6 +564,9 @@ def _enforce_no_instance_profile_or_stop_worker(
 
     If the maximum number of retries is reached, the Worker will attempt to be stopped. This is a
     best-effort attempt and will utilize boto3's default retry behavior.
+
+    If IMDS becomes unreachable (non-timeout error) after retries, the Worker will also be stopped
+    and the error re-raised to cause a non-zero exit.
     """
 
     _logger.debug("Allow instance profile: %s", config.allow_instance_profile)
@@ -547,7 +575,7 @@ def _enforce_no_instance_profile_or_stop_worker(
 
     try:
         _enforce_no_instance_profile()
-    except InstanceProfileAttachedError:
+    except (InstanceProfileAttachedError, IMDSUnreachableError):
         try:
             update_worker(
                 deadline_client=deadline_client,
@@ -621,15 +649,48 @@ def _enforce_no_instance_profile() -> None:
         the host EC2 instance)
     2.  The maximum number of attempts (see INSTANCE_PROFILE_REMOVAL_ATTEMPTS) is reached
         (raises InstanceProfileAttachedError)
+    3.  IMDS returns None — retries with exponential backoff up to IMDS_RETRY_MAX_ATTEMPTS,
+        then raises IMDSUnreachableError. A None response during the security check is treated
+        as a transient IMDS failure, NOT as "not running on EC2", because this function is only
+        called when we already know we need to enforce the instance profile check.
 
     The function will sleep for a number of seconds (see INSTANCE_PROFILE_CHECK_DURATION_SECONDS)
     between attempts.
+
+    Raises:
+        InstanceProfileAttachedError: If the instance profile is still attached after all attempts.
+        IMDSUnreachableError: If IMDS cannot be reached after retries.
     """
     for i in range(INSTANCE_PROFILE_REMOVAL_ATTEMPTS):
-        response = _get_metadata("iam/info")
-        if response is None:
-            _logger.warning("Not running on EC2 but --no-allow-instance-profile argument specified")
-            break
+        # Query IMDS with retry — if IMDS is unreachable (returns None), we cannot
+        # assume "not on EC2" during the security check. Retry with backoff.
+        response = None
+        backoff = IMDS_RETRY_INITIAL_BACKOFF_SECONDS
+        attempts = 0
+        while response is None:
+            response = _get_metadata("iam/info")
+            if response is not None:
+                break
+            attempts += 1
+            if attempts > IMDS_RETRY_MAX_ATTEMPTS:
+                _logger.error(
+                    "IMDS could not be reached after %d attempts. "
+                    "Cannot confirm instance profile status. Worker must exit.",
+                    attempts,
+                )
+                raise IMDSUnreachableError(attempts=attempts)
+            _logger.warning(
+                "IMDS returned no response during instance profile check "
+                "(attempt %d of %d, retry %d of %d). Retrying in %.1fs.",
+                i + 1,
+                INSTANCE_PROFILE_REMOVAL_ATTEMPTS,
+                attempts,
+                IMDS_RETRY_MAX_ATTEMPTS,
+                backoff,
+            )
+            sleep(backoff)
+            backoff = min(backoff * IMDS_RETRY_BACKOFF_FACTOR, IMDS_RETRY_MAX_BACKOFF_SECONDS)
+
         _logger.info("IMDS /iam/info response %d", response.status_code)
         if response.status_code == 404:
             _logger.info("Instance profile disassociated, proceeding to run tasks.")

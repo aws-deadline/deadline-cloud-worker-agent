@@ -187,6 +187,11 @@ class AttachmentUploadAction(OpenjdAction):
             "DEADLINE_SESSIONACTION_ID": self._id,
             "DEADLINE_SESSIONACTION_START_TIME": str(self._start_time),
             "DEADLINE_STEP_ID": self._step_id,
+            # Ensure UTF-8 encoding for stdout/stderr to prevent UnicodeEncodeError
+            # on Windows where the default console encoding (cp1252) cannot encode
+            # non-ASCII characters in file paths.
+            # See: https://github.com/aws-deadline/deadline-cloud-worker-agent/issues/928
+            "PYTHONIOENCODING": "utf-8",
         }
 
         if self._task_id is not None:
