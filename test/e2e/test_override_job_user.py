@@ -126,6 +126,22 @@ class TestWindowsJobUserOverride:
     ) -> None:
         class_worker.stop_worker_service()
 
+        @backoff.on_exception(
+            backoff.constant,
+            Exception,
+            max_time=45,
+            interval=5,
+        )
+        def check_worker_process_stopped() -> None:
+            cmd_result = class_worker.send_command(
+                "IF(Get-Process pythonservice -ErrorAction SilentlyContinue)"
+                '{throw "Agent process still running"}'
+                "ELSE{echo 'Agent process stopped'}"
+            )
+            assert cmd_result.exit_code == 0
+
+        check_worker_process_stopped()
+
         windows_replace_and_verify(
             worker=class_worker,
             file_path="C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml",
