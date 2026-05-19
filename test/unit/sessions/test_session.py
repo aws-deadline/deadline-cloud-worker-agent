@@ -1915,6 +1915,35 @@ class TestSessionCleanup:
         # THEN
         mock_queue_cancel_all.assert_called_once_with(
             message=session._stop_fail_message,
+            cancel_outcome="NEVER_ATTEMPTED",
+        )
+
+    @pytest.mark.parametrize(
+        argnames="stop_fail_message",
+        argvalues=("spot interruption", "some other message", None),
+        ids=("msg-spot", "msg-other", "msg-None"),
+    )
+    def test_calls_queue_cancel_all_interrupted(
+        self,
+        session: Session,
+        session_action_queue: MagicMock,
+        current_action: CurrentAction,
+        stop_fail_message: str | None,
+    ) -> None:
+        """Tests that Session._cleanup() cancels all queued actions with cancel_outcome="INTERRUPTED"
+        when _stop_current_action_result is "INTERRUPTED", and passes through the fail message."""
+        # GIVEN
+        session._stop_current_action_result = "INTERRUPTED"
+        session._stop_fail_message = stop_fail_message
+        mock_queue_cancel_all: MagicMock = session_action_queue.cancel_all
+
+        # WHEN
+        session._cleanup()
+
+        # THEN
+        mock_queue_cancel_all.assert_called_once_with(
+            message=stop_fail_message,
+            cancel_outcome="INTERRUPTED",
         )
 
     def test_calls_openjd_cleanup(

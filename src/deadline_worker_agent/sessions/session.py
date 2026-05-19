@@ -448,6 +448,9 @@ class Session:
 
         self._queue.cancel_all(
             message=self._stop_fail_message,
+            cancel_outcome=self._stop_current_action_result
+            if self._stop_current_action_result == "INTERRUPTED"
+            else "NEVER_ATTEMPTED",
         )
 
         # After canceling the running action, we exit any active environments

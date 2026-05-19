@@ -78,7 +78,7 @@ AttachmentDownloadActionQueueEntry = SessionActionQueueEntry[AttachmentDownloadA
 AttachmentDownloadActionStepDependenciesQueueEntry = SessionActionQueueEntry[
     AttachmentDownloadActionApiModel
 ]
-CancelOutcome = Literal["FAILED", "NEVER_ATTEMPTED"]
+CancelOutcome = Literal["FAILED", "NEVER_ATTEMPTED", "INTERRUPTED"]
 
 
 class SessionActionQueue:
@@ -203,8 +203,8 @@ class SessionActionQueue:
             The identifier of the action to be canceled
         message : str | None
             An optional message to include explaining why this action was canceled
-        cancel_outcome : Literal["NEVER_ATTEMPTED", "FAILED"]
-            Whether to fail the action or mark it as never attempted
+        cancel_outcome : Literal["NEVER_ATTEMPTED", "FAILED", "INTERRUPTED"]
+            The status to report for the canceled action
         """
         action: SessionActionQueueEntry
         action = self._actions_by_id.pop(id)
@@ -237,6 +237,7 @@ class SessionActionQueue:
         *,
         message: str | None = None,
         ignore_env_exits: bool = True,
+        cancel_outcome: CancelOutcome = "NEVER_ATTEMPTED",
     ) -> None:
         """Cancels all queued actions
 
@@ -246,6 +247,8 @@ class SessionActionQueue:
             An optional message to include explaining why this action was canceled
         ignore_env_exits : bool
             If True, ENV_EXIT actions will not be canceled. Defaults to canceling ENV_EXIT actions.
+        cancel_outcome : CancelOutcome
+            The status to report for the canceled actions. Defaults to NEVER_ATTEMPTED.
         """
 
         action_ids = [
@@ -261,7 +264,7 @@ class SessionActionQueue:
                 self._cancel(
                     id=action_id,
                     message=message,
-                    cancel_outcome="NEVER_ATTEMPTED",
+                    cancel_outcome=cancel_outcome,
                 )
         if action_ids:
             logger.info(

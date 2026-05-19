@@ -470,6 +470,57 @@ class TestCancelAll:
                 id="env-exit", message=message, cancel_outcome=cancel_outcome
             )
 
+    def test_cancel_all_with_interrupted_outcome(
+        self,
+        session_queue: SessionActionQueue,
+    ) -> None:
+        """Tests that when SessionActionQueue.cancel_all(..., cancel_outcome="INTERRUPTED") is
+        called, all canceled actions are reported with cancel_outcome="INTERRUPTED"."""
+
+        # GIVEN
+        session_queue._actions = [
+            TaskRunQueueEntry(
+                Mock(),  # cancel event
+                TaskRunAction(
+                    sessionActionId="task-run-1",
+                    actionType="TASK_RUN",
+                    taskId="taskId1",
+                    stepId="stepId1",
+                    parameters=OrderedDict(
+                        strP={"string": "stringValue"},
+                    ),
+                ),
+            ),
+            TaskRunQueueEntry(
+                Mock(),  # cancel event
+                TaskRunAction(
+                    sessionActionId="task-run-2",
+                    actionType="TASK_RUN",
+                    taskId="taskId2",
+                    stepId="stepId2",
+                    parameters=OrderedDict(
+                        strP={"string": "stringValue"},
+                    ),
+                ),
+            ),
+        ]
+        session_queue._actions_by_id = {"task-run-1": dict(), "task-run-2": dict()}  # type: ignore
+        with patch.object(session_queue, "_cancel") as cancel_mock:
+            # WHEN
+            session_queue.cancel_all(
+                message="spot interruption",
+                cancel_outcome="INTERRUPTED",
+            )
+
+        # THEN
+        assert cancel_mock.call_count == 2
+        cancel_mock.assert_any_call(
+            id="task-run-1", message="spot interruption", cancel_outcome="INTERRUPTED"
+        )
+        cancel_mock.assert_any_call(
+            id="task-run-2", message="spot interruption", cancel_outcome="INTERRUPTED"
+        )
+
 
 class TestIdentifiers:
     @pytest.mark.parametrize(

@@ -360,14 +360,26 @@ reported as `NEVER_ATTEMPTED` must not report `startedAt` or `endedAt` times. Th
 must not queue additional Session Actions to the Session except for `envExit` Session Actions that
 correspond to already completed `envEnter` Session Actions for the same Session.
 
+**Exception:** If a `syncInputJobAttachments` Session Action is reported as `INTERRUPTED`, then the Worker Agent
+must report all queued `taskRun` Session Actions after it as `INTERRUPTED` (not `NEVER_ATTEMPTED`). This ensures
+that the interruption reason (e.g. spot interruption) is propagated to the task run actions and is visible
+to the user in the console. Session Actions reported as `INTERRUPTED` in this manner must not report
+`startedAt` or `endedAt` times.
+
 #### Handling Unsuccessful `envEnter` Session Actions
 
-If the Worker Agent reports this Session Action as `FAILED`, `INTERRUPTED`, or `CANCELED`, then the Worker Agent must
+If the Worker Agent reports this Session Action as `FAILED` or `CANCELED`, then the Worker Agent must
 also report all queued Session Actions after it in the Session as `NEVER_ATTEMPTED`; except for
 `envExit` actions that correspond this `envEnter` or to already completed `envEnter` Session Actions.
 The service must not queue additional Session Actions to the Session except for `envExit` Session Actions
 that correspond to the failed `envEnter` and all already completed `envEnter` Session Actions for the
 same Session.
+
+If the Worker Agent reports this Session Action as `INTERRUPTED`, then the Worker Agent must
+report all queued `taskRun` Session Actions after it as `INTERRUPTED` (not `NEVER_ATTEMPTED`); except for
+`envExit` actions that correspond to this `envEnter` or to already completed `envEnter` Session Actions
+which follow existing behavior. This ensures that the interruption reason is propagated to the task run
+actions and is visible to the user.
 
 #### Handling Unsuccessful `envExit` Session Actions
 
@@ -448,7 +460,7 @@ immediately call the `UpdateWorkerSchedule` API:
         * `updatedSession Actions` must update all actively running Session Actions with
         `completedStatus=INTERRUPTED`.
         * `updatedSession Actions` must update all other Session Actions that have not yet been run with
-        `completedStatus=NEVER_ATTEMPTED`.
+        `completedStatus=INTERRUPTED`.
     * Response: Success(200) -> Continue
     * Response: ThrottlingException(429), InternalServerException(500) -> Perform exponential backoff,
     and then retry. Do not let retries prevent the Worker Agent from completing the drain; it is more important
