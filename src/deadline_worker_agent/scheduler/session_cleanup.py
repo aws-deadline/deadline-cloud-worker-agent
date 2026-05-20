@@ -82,8 +82,12 @@ class SessionUserCleanupManager:
 
     @staticmethod
     def _extract_username(user: str):
-        parts = user.split("\\")
-        return parts[-1].lower()
+        """Extracts the bare username from DDL (DOMAIN\\user), UPN (user@domain), or local format."""
+        if "\\" in user:
+            return user.split("\\")[-1].lower()
+        if "@" in user:
+            return user.split("@")[0].lower()
+        return user.lower()
 
     @staticmethod
     def _is_current_user(user: SessionUser):

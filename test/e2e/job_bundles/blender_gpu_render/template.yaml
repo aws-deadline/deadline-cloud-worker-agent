@@ -1,0 +1,22 @@
+specificationVersion: jobtemplate-2023-09
+name: Blender GPU Render
+steps:
+  - name: RenderFrame
+    hostRequirements:
+      attributes:
+        - name: attr.worker.os.family
+          allOf:
+            - windows
+    script:
+      actions:
+        onRun:
+          command: "C:\\Blender\\blender-4.5.7-windows-x64\\blender.exe"
+          args:
+            - "-b"
+            - "--factory-startup"
+            - "-E"
+            - "CYCLES"
+            - "--python-expr"
+            - "import bpy; prefs = bpy.context.preferences.addons['cycles'].preferences; prefs.refresh_devices(); prefs.compute_device_type = 'CUDA'; devices = prefs.get_devices_for_type('CUDA'); [setattr(d, 'use', True) for d in prefs.devices]; bpy.context.scene.cycles.device = 'GPU'; bpy.ops.mesh.primitive_monkey_add(); bpy.context.scene.render.filepath = 'C:/Temp/render_output'; print('Rendering with GPU using devices:', [d.name for d in prefs.devices if d.use]); bpy.ops.render.render(write_still=True); print('RENDER COMPLETE')"
+            - "-f"
+            - "1"

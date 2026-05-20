@@ -1,0 +1,78 @@
+specificationVersion: 'jobtemplate-2023-09'
+name: 'Domain User Whoami with Attachments'
+description: |
+  Verifies domain user can read input attachments and write output attachments.
+
+parameterDefinitions:
+- name: ExpectedUser
+  type: STRING
+  default: "domain-job-user"
+- name: InputDir
+  type: PATH
+  objectType: DIRECTORY
+  dataFlow: IN
+  default: .
+- name: OutputDir
+  type: PATH
+  objectType: DIRECTORY
+  dataFlow: OUT
+  default: ./output
+
+steps:
+- name: WhoamiWithAttachments
+  hostRequirements:
+    attributes:
+      - name: attr.worker.os.family
+        allOf:
+          - windows
+  script:
+    actions:
+      onRun:
+        command: powershell
+        args: ["-File", "{{Task.File.Run}}"]
+    embeddedFiles:
+    - name: Run
+      filename: run.ps1
+      type: TEXT
+      data: |
+        Write-Output "=== Domain User Job Attachments Test ==="
+        Write-Output "Expected user pattern: {{Param.ExpectedUser}}"
+        Write-Output ""
+
+        Write-Output "--- Step 1: Verifying input attachment ---"
+        $inputFile = Join-Path '{{Param.InputDir}}' 'hello.txt'
+        Write-Output "Looking for input file: $inputFile"
+        if (Test-Path $inputFile) {
+          Write-Output "SUCCESS: Input file found"
+          Write-Output "Contents:"
+          Get-Content $inputFile | ForEach-Object { Write-Output "  $_" }
+        } else {
+          Write-Output "FAIL: Input file not found at $inputFile"
+          Write-Output "Directory contents:"
+          Get-ChildItem '{{Param.InputDir}}' | ForEach-Object { Write-Output "  $($_.Name)" }
+          exit 1
+        }
+        Write-Output ""
+
+        Write-Output "--- Step 2: Running whoami ---"
+        $actual = whoami
+        Write-Output "Result: $actual"
+        Write-Output ""
+
+        Write-Output "--- Step 3: Writing output attachment ---"
+        $outputDir = '{{Param.OutputDir}}'
+        New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+        $outputFile = Join-Path $outputDir 'whoami.txt'
+        $actual | Set-Content $outputFile
+        Write-Output "Written to: $outputFile"
+        Write-Output "Contents: $actual"
+        Write-Output ""
+
+        Write-Output "--- Step 4: Validating user identity ---"
+        if ($actual -notlike '{{Param.ExpectedUser}}') {
+          Write-Output "FAIL: expected '{{Param.ExpectedUser}}' but got '$actual'"
+          exit 1
+        }
+        Write-Output "PASS: whoami returned '$actual' matching '{{Param.ExpectedUser}}'"
+        Write-Output ""
+        Write-Output "=== All checks passed ==="

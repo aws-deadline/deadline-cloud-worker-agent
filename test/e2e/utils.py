@@ -541,3 +541,43 @@ def windows_replace_and_verify(
         f"Config replacement failed - template format may have changed. "
         f"Config contents:\n{verify_result.stdout}"
     )
+
+
+def job_failure_message(
+    job: Job,
+    deadline_client: DeadlineClient,
+    queue: Queue,
+    deadline_resources: DeadlineResources,
+) -> str:
+    """Build a detailed failure message with job identifiers, console links, and logs."""
+    import boto3
+
+    region = deadline_client._real_client.meta.region_name
+    console_url = (
+        f"https://{region}.console.aws.amazon.com/deadline/home?region={region}"
+        f"#/farms/{job.farm.id}/queues/{queue.id}/jobs/{job.id}"
+    )
+    worker_log_url = (
+        f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}"
+        f"#logsV2:log-groups/log-group/$252Faws$252Fdeadline$252F{job.farm.id}$252F{deadline_resources.fleet.id}"
+    )
+
+    logs_client = boto3.client("logs")
+    try:
+        job_logs = job.get_logs(deadline_client=deadline_client, logs_client=logs_client)
+        session_logs = "\n".join(
+            f"  {log.session_id}: {log.log.messages}"
+            for log in job_logs.sessions
+        ) if hasattr(job_logs, "sessions") else str(job_logs)
+    except Exception as e:
+        session_logs = f"(failed to fetch logs: {e})"
+
+    return (
+        f"Job did not succeed (status={job.task_run_status}).\n"
+        f"  farm={job.farm.id}\n"
+        f"  queue={queue.id}\n"
+        f"  job={job.id}\n"
+        f"  job console: {console_url}\n"
+        f"  worker logs: {worker_log_url}\n"
+        f"  session logs:\n{session_logs}"
+    )

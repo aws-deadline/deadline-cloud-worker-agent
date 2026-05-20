@@ -286,6 +286,7 @@ def is_user_in_group(group_name: str, user_name: str) -> bool:
     return any(
         group_member["name"].lower() == user_name.lower()
         or group_member["name"].lower() == user_name.split("\\")[-1].lower()
+        or group_member["name"].lower() == user_name.split("@")[0].lower()
         for group_member in group_members_info[0]
     )
 
@@ -699,7 +700,12 @@ def get_effective_user_rights(user: str) -> set[str]:
 
     # Get SIDs of all groups the user is in
     # win32net.NetUserGetLocalGroups includes the LG_INCLUDE_INDIRECT flag by default
-    group_names = win32net.NetUserGetLocalGroups(None, user)
+    # NetUserGetLocalGroups requires DDL format (DOMAIN\user) — resolve if needed
+    resolved_user = user
+    if "@" in user:
+        account_name, domain, _ = win32security.LookupAccountSid(None, user_sid)
+        resolved_user = f"{domain}\\{account_name}"
+    group_names = win32net.NetUserGetLocalGroups(None, resolved_user)
     for group in group_names:
         group_sid, _, _ = win32security.LookupAccountName(None, group)
         sids_to_check.append(group_sid)
@@ -929,10 +935,11 @@ def start_windows_installer(
 
     if is_user_in_group("Administrators", user_name):
         logging.info(f"Agent user '{user_name}' is already an administrator")
-    elif is_agent_domain_user:
+    elif is_agent_domain_user and not grant_required_access:
         logging.error(
             f"Domain user '{user_name}' is not in the Administrators group. "
-            "Please add the user to the Administrators group in Active Directory before running the installer."
+            "Please add the user to the Administrators group before running the installer, "
+            "or provide the --grant-required-access option to allow the installer to add it."
         )
         sys.exit(1)
     elif not agent_user_created and not grant_required_access:

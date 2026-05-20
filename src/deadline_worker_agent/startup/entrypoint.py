@@ -211,7 +211,9 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
             _agent_shutdown(deadline_client, config, worker_id, shutdown_requested_by_service)
 
     except ConfigurationError as e:
-        sys.stderr.write(f"ERROR: {e}{os.linesep}")
+        if sys.stderr:
+            sys.stderr.write(f"ERROR: {e}{os.linesep}")
+        _logger.error(f"Configuration error: {e}")
         sys.exit(1)
     except Exception as e:
         if isinstance(e, SystemExit):

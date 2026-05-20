@@ -11,7 +11,6 @@ install cycle on the same instance.
 """
 
 import boto3
-import botocore
 import pytest
 import os
 import time
@@ -19,6 +18,7 @@ import logging
 from typing import Generator
 
 from e2e.conftest import DeadlineResources
+from e2e.utils import job_failure_message
 from deadline_test_fixtures import (
     Job,
     Farm,
@@ -80,11 +80,11 @@ def promote_to_domain_controller(worker: EC2InstanceWorker) -> None:
         LOG.info(f"DC promotion command timed out as expected (reboot): {e}")
 
 
-def create_domain_users(worker: EC2InstanceWorker) -> None:
+def create_domain_users(worker: EC2InstanceWorker, region: str) -> None:
     """Create domain users using the password from the existing WindowsPasswordSecret."""
     LOG.info("Creating domain users...")
     cmd_result = worker.send_command(
-        f"$secret = (aws secretsmanager get-secret-value --secret-id {WINDOWS_PASSWORD_SECRET} --query SecretString --output text --region us-west-2 | ConvertFrom-Json).password; "
+        f"$secret = (aws secretsmanager get-secret-value --secret-id {WINDOWS_PASSWORD_SECRET} --query SecretString --output text --region {region} | ConvertFrom-Json).password; "
         "Import-Module ActiveDirectory; "
         f"New-ADUser -Name '{DOMAIN_AGENT_USER}' "
         f"-SamAccountName '{DOMAIN_AGENT_USER}' "
@@ -141,14 +141,14 @@ def grant_user_rights(worker: EC2InstanceWorker) -> None:
 
 
 def install_agent_as(
-    worker: EC2InstanceWorker, deadline_resources: DeadlineResources, user: str
+    worker: EC2InstanceWorker, deadline_resources: DeadlineResources, user: str, region: str
 ) -> None:
     """Install the worker agent as the specified user."""
     LOG.info(f"Installing worker agent as '{user}'...")
     worker.stop_worker_service()
 
     cmd_result = worker.send_command(
-        f"$password = (aws secretsmanager get-secret-value --secret-id {WINDOWS_PASSWORD_SECRET} --query SecretString --output text --region us-west-2 | ConvertFrom-Json).password; "
+        f"$password = (aws secretsmanager get-secret-value --secret-id {WINDOWS_PASSWORD_SECRET} --query SecretString --output text --region {region} | ConvertFrom-Json).password; "
         "install-deadline-worker "
         "-y "
         f"--farm-id {deadline_resources.farm.id} "
@@ -180,6 +180,7 @@ class TestDomainUser:
         self,
         deadline_resources: DeadlineResources,
         class_worker: EC2InstanceWorker,
+        region: str,
     ) -> EC2InstanceWorker:
         """Promotes the instance to a DC and creates domain users. Shared across all tests."""
         worker = class_worker
@@ -194,7 +195,18 @@ class TestDomainUser:
         cmd_result = worker.send_command("Import-Module ActiveDirectory; Get-ADDomain")
         assert cmd_result.exit_code == 0, f"AD not ready after promotion: {cmd_result}"
 
-        create_domain_users(worker)
+        # Install NVIDIA GRID drivers if on a GPU instance
+        if os.environ.get("WORKER_INSTANCE_TYPE", "").startswith("g"):
+            LOG.info("Installing NVIDIA GRID drivers...")
+            cmd_result = worker.send_command(
+                "aws s3 cp s3://ec2-windows-nvidia-drivers/latest/ C:\\Temp\\ --recursive --exclude '*' --include '*.exe' --region us-east-1; "
+                "$installer = Get-ChildItem C:\\Temp\\*.exe | Select-Object -First 1; "
+                "Start-Process $installer.FullName -ArgumentList '/s /noreboot' -Wait; "
+                "nvidia-smi"
+            )
+            LOG.info(f"GPU driver install result: exit_code={cmd_result.exit_code}")
+
+        create_domain_users(worker, region)
         grant_user_rights(worker)
 
         return worker
@@ -207,10 +219,11 @@ class TestDomainUser:
         agent_user_format: str,
         deadline_resources: DeadlineResources,
         domain_controller: EC2InstanceWorker,
+        region: str,
     ) -> EC2InstanceWorker:
         """Installs the agent as the parameterized user format. Skips if already installed."""
         if TestDomainUser._current_format != agent_user_format:
-            install_agent_as(domain_controller, deadline_resources, agent_user_format)
+            install_agent_as(domain_controller, deadline_resources, agent_user_format, region)
             TestDomainUser._current_format = agent_user_format
         return domain_controller
 
@@ -219,19 +232,25 @@ class TestDomainUser:
         self,
         deadline_resources: DeadlineResources,
         domain_controller: EC2InstanceWorker,
+        region: str,
     ) -> Generator[Queue, None, None]:
         """Create a queue configured to run jobs as the domain job user."""
-        deadline_client = boto3.client("deadline", region_name="us-west-2")
-        secretsmanager_client = boto3.client("secretsmanager", region_name="us-west-2")
+        deadline_client = boto3.client("deadline", region_name=region)
+        secretsmanager_client = boto3.client("secretsmanager", region_name=region)
 
         secret = secretsmanager_client.describe_secret(SecretId=WINDOWS_PASSWORD_SECRET)
         secret_arn = secret["ARN"]
 
         queue_role_arn = os.environ["SESSION_ROLE"]
+        job_attachments_bucket = os.environ["JOB_ATTACHMENTS_BUCKET"]
         response = deadline_client.create_queue(
             farmId=deadline_resources.farm.id,
             displayName="DomainJobUserTestQueue",
             roleArn=queue_role_arn,
+            jobAttachmentSettings={
+                "s3BucketName": job_attachments_bucket,
+                "rootPrefix": "Deadline",
+            },
             allowedStorageProfileIds=[
                 deadline_resources.windows_fleet_storage_profile_id,
             ],
@@ -254,18 +273,34 @@ class TestDomainUser:
 
         yield Queue(id=queue_id, farm=deadline_resources.farm)
 
+        # Teardown: stop association, delete association, delete queue
         try:
+            deadline_client.update_queue_fleet_association(
+                farmId=deadline_resources.farm.id,
+                queueId=queue_id,
+                fleetId=deadline_resources.fleet.id,
+                status="STOP_SCHEDULING_AND_CANCEL_TASKS",
+            )
+            for _ in range(30):
+                resp = deadline_client.get_queue_fleet_association(
+                    farmId=deadline_resources.farm.id,
+                    queueId=queue_id,
+                    fleetId=deadline_resources.fleet.id,
+                )
+                if resp.get("status") == "STOPPED":
+                    break
+                time.sleep(2)
             deadline_client.delete_queue_fleet_association(
                 farmId=deadline_resources.farm.id,
                 queueId=queue_id,
                 fleetId=deadline_resources.fleet.id,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            LOG.warning(f"Failed to clean up queue-fleet association: {e}")
         try:
             deadline_client.delete_queue(farmId=deadline_resources.farm.id, queueId=queue_id)
-        except Exception:
-            pass
+        except Exception as e:
+            LOG.warning(f"Failed to delete queue {queue_id}: {e}")
 
     @staticmethod
     def submit_whoami_job(
@@ -273,38 +308,20 @@ class TestDomainUser:
         deadline_client: DeadlineClient,
         farm: Farm,
         queue: Queue,
+        expected_user: str,
     ) -> Job:
-        return Job.submit(
-            client=deadline_client,
+        from e2e.utils import submit_job_from_bundle
+
+        bundle_path = os.path.join(
+            os.path.dirname(__file__), "job_bundles", "domain_user_whoami"
+        )
+        return submit_job_from_bundle(
+            deadline_client=deadline_client,
             farm=farm,
             queue=queue,
-            priority=98,
-            max_retries_per_task=3,
-            template={
-                "specificationVersion": "jobtemplate-2023-09",
-                "name": f"domain-user whoami {test_name}",
-                "steps": [
-                    {
-                        "hostRequirements": {
-                            "attributes": [
-                                {
-                                    "name": "attr.worker.os.family",
-                                    "allOf": ["windows"],
-                                }
-                            ]
-                        },
-                        "name": "Step0",
-                        "script": {
-                            "actions": {
-                                "onRun": {
-                                    "command": "powershell",
-                                    "args": ["echo", '"I am: $(whoami)"'],
-                                }
-                            }
-                        },
-                    },
-                ],
-            },
+            bundle_path=bundle_path,
+            job_parameters=[{"name": "ExpectedUser", "value": expected_user}],
+            max_retries_per_task=0,
         )
 
     def test_job_runs_as_local_queue_user(
@@ -319,19 +336,13 @@ class TestDomainUser:
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
+            expected_user=r"*\job-user",
         )
 
         job.wait_until_complete(client=deadline_client, max_retries=20)
-
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-            expected_pattern=r"I am:.*job-user",
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
         )
-        assert job.task_run_status == TaskStatus.SUCCEEDED
 
     def test_job_runs_as_domain_queue_user(
         self,
@@ -346,29 +357,26 @@ class TestDomainUser:
             deadline_client,
             deadline_resources.farm,
             domain_job_queue,
+            expected_user=f"{DOMAIN_NETBIOS}\\{DOMAIN_JOB_USER}",
         )
 
         job.wait_until_complete(client=deadline_client, max_retries=20)
-
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-            expected_pattern=rf"(?i){DOMAIN_NETBIOS}\\{DOMAIN_JOB_USER}",
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, domain_job_queue, deadline_resources
         )
-        assert job.task_run_status == TaskStatus.SUCCEEDED
 
     def test_service_identity(
         self,
+        agent_user_format: str,
         domain_controller: EC2InstanceWorker,
     ) -> None:
-        """Verify the service is configured to run as the domain agent user."""
+        """Verify the service is configured to run as the domain agent user in the expected format."""
         cmd_result = domain_controller.send_command(
             "sc.exe qc DeadlineWorker | Select-String SERVICE_START_NAME"
         )
         assert cmd_result.exit_code == 0
-        assert DOMAIN_AGENT_USER.lower() in cmd_result.stdout.lower(), (
-            f"Expected service to run as domain agent user, got: {cmd_result.stdout}"
+        assert agent_user_format.lower() in cmd_result.stdout.lower(), (
+            f"Expected service configured as '{agent_user_format}', got: {cmd_result.stdout}"
         )
+
+

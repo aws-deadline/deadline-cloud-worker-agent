@@ -1,0 +1,16 @@
+specificationVersion: jobtemplate-2023-09
+name: nvidia-smi GPU check
+steps:
+  - name: CheckGPU
+    hostRequirements:
+      attributes:
+        - name: attr.worker.os.family
+          allOf:
+            - windows
+    script:
+      actions:
+        onRun:
+          command: powershell
+          args:
+            - "-Command"
+            - "echo 'Running as:'; whoami; echo '---'; nvidia-smi"
