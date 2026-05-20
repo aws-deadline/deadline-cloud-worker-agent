@@ -35,12 +35,12 @@ def resolve_to_ddl(username: str) -> str:
     """
     Resolves any username format (local, DDL, UPN) to down-level logon name (DOMAIN\\user).
 
-    This calls LookupAccountName + LookupAccountSid which works with all formats.
+    Uses TranslateName which handles all formats natively.
     For local users, returns "COMPUTERNAME\\user".
 
     Raises:
         OSError: If the account cannot be found.
     """
-    sid, domain, _ = win32security.LookupAccountName(None, username)
-    resolved_user, _, _ = win32security.LookupAccountSid(None, sid)
-    return f"{domain}\\{resolved_user}"
+    return win32security.TranslateName(
+        username, win32security.NameUnknown, win32security.NameSamCompatible
+    )

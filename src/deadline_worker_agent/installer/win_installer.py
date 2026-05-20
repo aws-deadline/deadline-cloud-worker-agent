@@ -703,8 +703,9 @@ def get_effective_user_rights(user: str) -> set[str]:
     # NetUserGetLocalGroups requires DDL format (DOMAIN\user) — resolve if needed
     resolved_user = user
     if "@" in user:
-        account_name, domain, _ = win32security.LookupAccountSid(None, user_sid)
-        resolved_user = f"{domain}\\{account_name}"
+        resolved_user = win32security.TranslateName(
+            user, win32security.NameUserPrincipal, win32security.NameSamCompatible
+        )
     group_names = win32net.NetUserGetLocalGroups(None, resolved_user)
     for group in group_names:
         group_sid, _, _ = win32security.LookupAccountName(None, group)
@@ -979,10 +980,15 @@ def start_windows_installer(
     else:
         create_local_queue_user_group(group_name)
 
-    if is_agent_domain_user:
-        logging.info(f"Skipping local group membership for domain user '{user_name}'")
-    elif is_user_in_group(group_name, user_name):
+    if is_user_in_group(group_name, user_name):
         logging.info(f"Agent user '{user_name}' is already in group '{group_name}'")
+    elif is_agent_domain_user and not grant_required_access:
+        logging.error(
+            f"Domain user '{user_name}' is not in the '{group_name}' group. "
+            f"Please add the user to the '{group_name}' group, or provide the "
+            "--grant-required-access option to allow the installer to add it."
+        )
+        sys.exit(1)
     else:
         # Add the worker agent user to the job group
         add_user_to_group(group_name, user_name)
