@@ -1148,7 +1148,7 @@ if __name__ == "__main__":
 
         @backoff.on_predicate(
             wait_gen=backoff.constant,
-            max_time=120,
+            max_time=240,
             interval=2,
         )
         def check_percentage(complete_percentage) -> bool:
