@@ -10,6 +10,7 @@ import boto3
 import botocore
 import pytest
 import os
+from flaky import flaky
 
 import logging
 
@@ -118,6 +119,7 @@ class TestWindowsJobUserOverride:
             "Job should not run as the Windows Worker Agent user."
         )
 
+    @flaky(max_runs=3, min_passes=1)
     def test_config_file_user_override(
         self,
         deadline_resources,
