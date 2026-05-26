@@ -140,23 +140,20 @@ def test_start_windows_installer_fails_when_windows_job_user_is_agent_user(
     argnames="windows_job_user",
     argvalues=(None,),
 )
-def test_start_windows_installer_fails_on_domain_worker_user(
+def test_start_windows_installer_fails_on_nonexistent_domain_worker_user(
     parsed_kwargs: dict,
 ) -> None:
     # GIVEN
     with (
         patch.object(shell, "IsUserAnAdmin", return_value=True),
+        patch.object(win_installer, "check_account_existence", return_value=False),
         pytest.raises(win_installer.InstallerFailedException) as raise_ctx,
     ):
         # WHEN
         win_installer.start_windows_installer(**parsed_kwargs)
 
     # THEN
-    assert str(raise_ctx.value) == (
-        "running worker agent as a domain user is not currently supported. You can "
-        "have jobs run as a domain user by configuring the queue job run user to specify a "
-        "domain user account."
-    )
+    assert "does not exist" in str(raise_ctx.value)
 
 
 class TestCreateLocalQueueUserGroup:

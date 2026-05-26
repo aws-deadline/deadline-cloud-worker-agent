@@ -23,7 +23,7 @@ import secrets
 import string
 
 from .win_session import is_windows_session_zero
-from .win_user_util import is_domain_user
+from .win_user import is_domain_user
 
 if TYPE_CHECKING:
     from _win32typing import PyHKEY, PyHANDLE
@@ -96,11 +96,16 @@ def get_windows_credentials(username: str, password: str) -> _WindowsCredentials
         raise BadCredentialsException(f'Error logging on as "{username}": {e}')
     else:
         # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
+        # lpUserName is used as the base name of the profile directory.
+        # UPN format (user@domain) is not valid as a folder name — use bare username.
+        profile_username = username
+        if "@" in username:
+            profile_username = username.split("@")[0]
         # raises: OSError
         user_profile = LoadUserProfile(
             logon_token,
             {
-                "UserName": username,
+                "UserName": profile_username,
                 "Flags": PI_NOUI,
                 "ProfilePath": None,
             },

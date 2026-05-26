@@ -39,6 +39,7 @@ from ..file_system_operations import (
 )
 from ..windows.win_service import WorkerAgentWindowsService
 from ..windows.win_logon import generate_password, users_equal
+from ..windows.win_user import is_domain_user
 
 # Defaults
 DEFAULT_WA_USER = "deadline-worker"
@@ -65,21 +66,6 @@ def print_banner():
         "|      AWS Deadline Cloud Worker Agent Installer       |\n"
         "===========================================================\n"
     )
-
-
-def is_domain_user(username: str) -> bool:
-    # There are two formats for specifying domain users:
-    #
-    # 1. User Principal Name (UPN), e.g:
-    #
-    #       <USERNAME>@<DOMAIN>
-    #
-    # 2. Down-Level Logon Name, e.g:
-    #
-    #       <DOMAIN>\<USERNAME>
-    #
-    # See https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats
-    return "\\" in username or "@" in username
 
 
 def check_account_existence(account_name: str) -> bool:
@@ -216,10 +202,17 @@ def ensure_user_profile_exists(username: str, password: str):
             Domain=logon_domain,
         )
         # https://timgolden.me.uk/pywin32-docs/win32profile__LoadUserProfile_meth.html
+        # lpUserName is used as the base name of the profile directory.
+        # DDL format (DOMAIN\user) works on modern Windows (it strips the domain internally).
+        # UPN format (user@domain) does NOT work — Windows tries to use it as-is for the folder name.
+        # See: https://support.microsoft.com/en-us/topic/01e698e9-b945-56ad-3c9e-6a3edbc99f81
+        profile_username = username
+        if "@" in username:
+            profile_username = username.split("@")[0]
         user_profile = win32profile.LoadUserProfile(
             logon_token,
             {
-                "UserName": username,
+                "UserName": profile_username,
                 "Flags": win32profile.PI_NOUI,
                 "ProfilePath": None,
             },
@@ -704,7 +697,7 @@ def get_effective_user_rights(user: str) -> set[str]:
     resolved_user = user
     if "@" in user:
         resolved_user = win32security.TranslateName(
-            user, win32security.NameUserPrincipal, win32security.NameSamCompatible
+            user, win32con.NameUserPrincipal, win32con.NameSamCompatible
         )
     group_names = win32net.NetUserGetLocalGroups(None, resolved_user)
     for group in group_names:

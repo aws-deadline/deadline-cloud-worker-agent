@@ -565,10 +565,11 @@ def job_failure_message(
     logs_client = boto3.client("logs")
     try:
         job_logs = job.get_logs(deadline_client=deadline_client, logs_client=logs_client)
-        session_logs = "\n".join(
-            f"  {log.session_id}: {log.log.messages}"
-            for log in job_logs.sessions
-        ) if hasattr(job_logs, "sessions") else str(job_logs)
+        session_logs = (
+            "\n".join(f"  {log.session_id}: {log.log.messages}" for log in job_logs.sessions)
+            if hasattr(job_logs, "sessions")
+            else str(job_logs)
+        )
     except Exception as e:
         session_logs = f"(failed to fetch logs: {e})"
 

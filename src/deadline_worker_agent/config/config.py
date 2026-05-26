@@ -26,10 +26,11 @@ if sys.platform == "win32":
         PasswordResetException,
         users_equal,
     )
-    from ..windows.win_user_util import is_domain_user
+    from ..windows.win_user import is_domain_user
 
 if TYPE_CHECKING:
     from _win32typing import PyHKEY, PyHANDLE
+    from ..sessions.job_entities.job_details import JobRunAsWindowsUser
 
 _logger = _logging.getLogger(__name__)
 
@@ -174,6 +175,8 @@ class Configuration:
 
         settings = WorkerSettings(**settings_kwargs)
 
+        self._windows_job_user_domain_settings: Optional[JobRunAsWindowsUser] = None
+
         if os.name == "posix" and settings.posix_job_user is not None:
             user, group = self._get_user_and_group_from_job_user(settings.posix_job_user)
             self.job_run_as_user_overrides = JobsRunAsUserOverride(
@@ -222,9 +225,6 @@ class Configuration:
             self.job_run_as_user_overrides = JobsRunAsUserOverride(
                 run_as_agent=settings.run_jobs_as_agent_user
             )
-
-        if not hasattr(self, "_windows_job_user_domain_settings"):
-            self._windows_job_user_domain_settings = None
 
         self.farm_id = settings.farm_id
         self.fleet_id = settings.fleet_id

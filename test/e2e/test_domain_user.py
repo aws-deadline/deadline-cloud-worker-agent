@@ -84,6 +84,7 @@ def create_domain_users(worker: EC2InstanceWorker, region: str) -> None:
     """Create domain users using the password from the existing WindowsPasswordSecret."""
     LOG.info("Creating domain users...")
     cmd_result = worker.send_command(
+        "$ErrorActionPreference = 'Stop'; "
         f"$secret = (aws secretsmanager get-secret-value --secret-id {WINDOWS_PASSWORD_SECRET} --query SecretString --output text --region {region} | ConvertFrom-Json).password; "
         "Import-Module ActiveDirectory; "
         f"New-ADUser -Name '{DOMAIN_AGENT_USER}' "
@@ -148,6 +149,7 @@ def install_agent_as(
     worker.stop_worker_service()
 
     cmd_result = worker.send_command(
+        "$ErrorActionPreference = 'Stop'; "
         f"$password = (aws secretsmanager get-secret-value --secret-id {WINDOWS_PASSWORD_SECRET} --query SecretString --output text --region {region} | ConvertFrom-Json).password; "
         "install-deadline-worker "
         "-y "
@@ -156,7 +158,8 @@ def install_agent_as(
         f"--user '{user}' "
         "--password $password "
         "--grant-required-access "
-        "--start"
+        "--start; "
+        "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
     )
     assert cmd_result.exit_code == 0, f"Failed to install worker as '{user}': {cmd_result}"
     LOG.info(f"Worker agent installed as '{user}'")
@@ -312,9 +315,7 @@ class TestDomainUser:
     ) -> Job:
         from e2e.utils import submit_job_from_bundle
 
-        bundle_path = os.path.join(
-            os.path.dirname(__file__), "job_bundles", "domain_user_whoami"
-        )
+        bundle_path = os.path.join(os.path.dirname(__file__), "job_bundles", "domain_user_whoami")
         return submit_job_from_bundle(
             deadline_client=deadline_client,
             farm=farm,
@@ -370,13 +371,12 @@ class TestDomainUser:
         agent_user_format: str,
         domain_controller: EC2InstanceWorker,
     ) -> None:
-        """Verify the service is configured to run as the domain agent user in the expected format."""
+        """Verify the service is configured to run as the domain agent user."""
         cmd_result = domain_controller.send_command(
             "sc.exe qc DeadlineWorker | Select-String SERVICE_START_NAME"
         )
         assert cmd_result.exit_code == 0
-        assert agent_user_format.lower() in cmd_result.stdout.lower(), (
-            f"Expected service configured as '{agent_user_format}', got: {cmd_result.stdout}"
+        # Windows SCM normalizes UPN to DDL, so check for the username portion
+        assert DOMAIN_AGENT_USER.lower() in cmd_result.stdout.lower(), (
+            f"Expected service to run as '{DOMAIN_AGENT_USER}', got: {cmd_result.stdout}"
         )
-
-
