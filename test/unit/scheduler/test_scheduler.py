@@ -1227,10 +1227,10 @@ class TestCreateNewSessions:
         assigned_sessions: dict[str, AssignedSession],
         mock_job_entities: MagicMock,
     ) -> None:
-        """Tests that when windows_domain_user_settings is configured,
+        """Tests that when windows_user_settings is configured,
         the scheduler resolves credentials via WindowsCredentialsResolver
         and uses the resulting session user."""
-        from deadline_worker_agent.config import WindowsDomainUserSettings
+        from deadline_worker_agent.config import WindowsUserSettings
 
         # GIVEN
         mock_session_user = MagicMock()
@@ -1241,8 +1241,8 @@ class TestCreateNewSessions:
         override = JobsRunAsUserOverride(run_as_agent=False)
         object.__setattr__(
             override,
-            "windows_domain_user_settings",
-            WindowsDomainUserSettings(
+            "windows_user_settings",
+            WindowsUserSettings(
                 user="DOMAIN\\job-user",
                 password_arn="arn:aws:secretsmanager:us-west-2:123456789012:secret:test-abc123",
             ),

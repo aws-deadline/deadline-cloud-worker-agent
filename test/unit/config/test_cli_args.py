@@ -178,6 +178,26 @@ class TestArgumentParser:
         # THEN
         assert result.windows_job_user == windows_job_user
 
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-only argument")
+    @pytest.mark.parametrize(
+        argnames="windows_job_user_password_arn",
+        argvalues=[
+            ("arn:aws:secretsmanager:us-west-2:123456789012:secret:my-secret-abc123",),
+        ],
+    )
+    def test_windows_job_user_password_arn(
+        self, arg_parser: ArgumentParser, windows_job_user_password_arn: str
+    ) -> None:
+        """Asserts that the --windows-job-user-password-arn command-line argument is parsed"""
+        # GIVEN
+        args = ["--windows-job-user-password-arn", windows_job_user_password_arn]
+
+        # WHEN
+        result = arg_parser.parse_args(args, namespace=cli_args_mod.ParsedCommandLineArguments())
+
+        # THEN
+        assert result.windows_job_user_password_arn == windows_job_user_password_arn
+
     def test_session_root_dir(
         self,
         arg_parser: ArgumentParser,

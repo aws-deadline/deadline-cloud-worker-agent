@@ -236,14 +236,17 @@
 # windows_job_user = "job-user"
 
 # The ARN of an AWS Secrets Manager secret containing the password of the Windows job user.
-# This is used instead of resetting the password to a random value. This value is overridden
-# when the DEADLINE_WORKER_WINDOWS_JOB_USER_PASSWORD_ARN environment variable is set or if the
-# --windows-job-user-password-arn command-line flag is specified.
+# When set, the agent fetches the password from Secrets Manager instead of resetting it to a
+# random value. This is required for domain users and optional for local users.
+# This value is overridden when the DEADLINE_WORKER_WINDOWS_JOB_USER_PASSWORD_ARN environment
+# variable is set or if the --windows-job-user-password-arn command-line flag is specified.
+#
+# The secret value must be a JSON object with a "password" key: {"password": "value"}
 #
 # To use a Secrets Manager secret for the Windows job user password, uncomment the line below
 # and replace with your secret ARN:
 #
-# windows_job_user_password_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret/my-secret"
+# windows_job_user_password_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:my-secret-abc123"
 
 # AWS Deadline Cloud may tell the worker to stop. If the "shutdown_on_stop" setting below is true, then the
 # Worker will attempt to shutdown the host system after the Worker has been stopped.

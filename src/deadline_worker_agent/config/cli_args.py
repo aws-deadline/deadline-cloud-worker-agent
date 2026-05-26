@@ -18,6 +18,7 @@ class ParsedCommandLineArguments(Namespace):
     run_jobs_as_agent_user: bool | None = None
     posix_job_user: str | None = None
     windows_job_user: str | None = None
+    windows_job_user_password_arn: str | None = None
     disallow_instance_profile: bool | None = None
     logs_dir: Path | None = None
     local_session_logs: bool | None = None
@@ -82,8 +83,17 @@ def get_argument_parser() -> ArgumentParser:
     elif os.name == "nt":
         parser.add_argument(
             "--windows-job-user",
-            help="Overrides the windows user that the Worker Agent impersonates. In doing so, resets the specified user's password to a cryptographically random, unstored value during worker startup. "
+            help="Overrides the windows user that the Worker Agent impersonates. For local users, "
+            "resets the specified user's password to a cryptographically random, unstored value during worker startup "
+            "unless --windows-job-user-password-arn is also specified. Domain users require --windows-job-user-password-arn. "
             "If not set, impersonation behavior defers to what the service sets.",
+            default=None,
+        )
+        parser.add_argument(
+            "--windows-job-user-password-arn",
+            help="The ARN of an AWS Secrets Manager secret containing the password for the Windows job user. "
+            "When set, the agent fetches the password from Secrets Manager instead of resetting it. "
+            'The secret value must be a JSON object with a "password" key: {"password": "value"}.',
             default=None,
         )
 

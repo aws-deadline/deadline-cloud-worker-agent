@@ -146,7 +146,8 @@ When permissions are pre-configured via GPO, the installer detects them and proc
 
 | User Type | Password Reset | Password Source |
 |-----------|---------------|-----------------|
-| Local user (job override) | `NetUserSetInfo` (existing behavior) | Agent generates and resets |
+| Local user (job override) | `NetUserSetInfo` (default) | Agent generates and resets |
+| Local user (job override + password ARN) | **Not reset** — fetched from Secrets Manager | Secrets Manager (`windows_job_user_password_arn`) |
 | Local user (queue configured) | `NetUserSetInfo` via credentials resolver | Secrets Manager |
 | Domain user (job override) | **Not supported** — must provide password externally | Secrets Manager (`windows_job_user_password_arn`) |
 | Domain user (queue configured) | **Not supported** — managed in AD | Secrets Manager |

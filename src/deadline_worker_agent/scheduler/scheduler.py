@@ -982,7 +982,7 @@ class WorkerScheduler:
             # Resolve domain user credentials from Secrets Manager if configured as a config override.
             # This takes precedence over the queue-configured user.
             _domain_settings = getattr(
-                self._job_run_as_user_override, "windows_domain_user_settings", None
+                self._job_run_as_user_override, "windows_user_settings", None
             )
             if (
                 os.name == "nt"
