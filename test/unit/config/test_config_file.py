@@ -157,6 +157,7 @@ def os_config_section_data(
         "run_jobs_as_agent_user": run_jobs_as_agent_user,
         "posix_job_user": posix_job_user,
         "windows_job_user": windows_job_user,
+        "windows_job_user_password_arn": None,
         "shutdown_on_stop": shutdown_on_stop,
         "retain_session_dir": retain_session_dir,
     }
@@ -560,6 +561,52 @@ class TestOsConfigSection:
 
         # THEN
         assert os_config.windows_job_user is None
+
+    @pytest.mark.parametrize(
+        argnames="windows_job_user_password_arn",
+        argvalues=[
+            pytest.param(
+                "arn:aws:secretsmanager:us-west-2:123456789012:secret:my-secret-abc123",
+                id="valid-colon-format",
+            ),
+            pytest.param(
+                "arn:aws:secretsmanager:us-east-1:999999999999:secret/path/to/secret",
+                id="valid-slash-format",
+            ),
+        ],
+    )
+    def test_valid_windows_job_user_password_arn(
+        self,
+        os_config_section_data: dict[str, Any],
+        windows_job_user_password_arn: str,
+    ) -> None:
+        # GIVEN
+        os_config_section_data["windows_job_user_password_arn"] = windows_job_user_password_arn
+
+        # WHEN
+        os_config = OsConfigSection.parse_obj(os_config_section_data)
+
+        # THEN
+        assert os_config.windows_job_user_password_arn == windows_job_user_password_arn
+
+    @pytest.mark.parametrize(
+        argnames="windows_job_user_password_arn",
+        argvalues=[
+            pytest.param("not-an-arn", id="invalid-format"),
+            pytest.param("arn:aws:s3:::my-bucket", id="wrong-service"),
+        ],
+    )
+    def test_nonvalid_windows_job_user_password_arn(
+        self,
+        os_config_section_data: dict[str, Any],
+        windows_job_user_password_arn: str,
+    ) -> None:
+        # GIVEN
+        os_config_section_data["windows_job_user_password_arn"] = windows_job_user_password_arn
+
+        # WHEN / THEN
+        with pytest.raises(ValidationError):
+            OsConfigSection.parse_obj(os_config_section_data)
 
     @pytest.mark.parametrize(
         argnames="retain_session_dir",

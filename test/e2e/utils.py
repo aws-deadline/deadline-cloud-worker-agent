@@ -538,7 +538,8 @@ def windows_replace_and_verify(
     verify_result = worker.send_command(f"Get-Content {file_path}")
     assert verify_result.exit_code == 0, f"Failed to read config file: {verify_result}"
     assert new_pattern in verify_result.stdout, (
-        f"Config replacement failed - template format may have changed. "
+        f"Config replacement failed - expected pattern not found after replacement. "
+        f"Expected: {new_pattern}\n"
         f"Config contents:\n{verify_result.stdout}"
     )
 

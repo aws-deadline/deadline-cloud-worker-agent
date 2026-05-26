@@ -18,7 +18,7 @@ import logging
 from typing import Generator
 
 from e2e.conftest import DeadlineResources
-from e2e.utils import job_failure_message
+from e2e.utils import job_failure_message, windows_replace_and_verify
 from deadline_test_fixtures import (
     Job,
     Farm,
@@ -380,3 +380,63 @@ class TestDomainUser:
         assert DOMAIN_AGENT_USER.lower() in cmd_result.stdout.lower(), (
             f"Expected service to run as '{DOMAIN_AGENT_USER}', got: {cmd_result.stdout}"
         )
+
+    def test_job_runs_as_domain_config_override_user(
+        self,
+        deadline_resources: DeadlineResources,
+        domain_controller: EC2InstanceWorker,
+        deadline_client: DeadlineClient,
+        region: str,
+    ) -> None:
+        """Config-level domain user override resolves credentials and runs jobs as that user."""
+        secretsmanager_client = boto3.client("secretsmanager", region_name=region)
+        secret = secretsmanager_client.describe_secret(SecretId=WINDOWS_PASSWORD_SECRET)
+        secret_arn = secret["ARN"]
+
+        config_path = "C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
+
+        domain_controller.stop_worker_service()
+
+        windows_replace_and_verify(
+            worker=domain_controller,
+            file_path=config_path,
+            old_pattern='# windows_job_user = "job-user"',
+            new_pattern=f'windows_job_user = "{DOMAIN_NETBIOS}\\\\{DOMAIN_JOB_USER}"',
+        )
+        windows_replace_and_verify(
+            worker=domain_controller,
+            file_path=config_path,
+            old_pattern='# windows_job_user_password_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret/my-secret"',
+            new_pattern=f'windows_job_user_password_arn = "{secret_arn}"',
+        )
+
+        domain_controller.start_worker_service()
+
+        try:
+            job = self.submit_whoami_job(
+                "domain config override",
+                deadline_client,
+                deadline_resources.farm,
+                deadline_resources.queue_a,
+                expected_user=f"{DOMAIN_NETBIOS}\\{DOMAIN_JOB_USER}",
+            )
+
+            job.wait_until_complete(client=deadline_client, max_retries=20)
+            assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+                job, deadline_client, deadline_resources.queue_a, deadline_resources
+            )
+        finally:
+            # Always reset config regardless of test outcome
+            domain_controller.stop_worker_service()
+            windows_replace_and_verify(
+                worker=domain_controller,
+                file_path=config_path,
+                old_pattern=f'windows_job_user = "{DOMAIN_NETBIOS}\\\\\\\\{DOMAIN_JOB_USER}"',
+                new_pattern='# windows_job_user = "job-user"',
+            )
+            windows_replace_and_verify(
+                worker=domain_controller,
+                file_path=config_path,
+                old_pattern=f'windows_job_user_password_arn = "{secret_arn}"',
+                new_pattern='# windows_job_user_password_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret/my-secret"',
+            )

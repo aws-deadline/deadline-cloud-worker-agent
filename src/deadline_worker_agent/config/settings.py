@@ -102,7 +102,7 @@ class WorkerSettings(BaseSettings):
     )
     windows_job_user: Optional[str] = Field(regex=r"^.{1,512}$")
     windows_job_user_password_arn: Optional[str] = Field(
-        regex=r"^arn:aws:secretsmanager:[a-z0-9\-]+:\d{12}:secret\/[a-zA-Z0-9/_+=.@-]+$"
+        regex=r"^arn:aws:secretsmanager:[a-z0-9\-]+:\d{12}:secret[:/][a-zA-Z0-9/_+=.@:-]+$"
     )
     allow_instance_profile: bool = True
     capabilities: Capabilities = Field(

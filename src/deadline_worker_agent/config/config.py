@@ -30,9 +30,16 @@ if sys.platform == "win32":
 
 if TYPE_CHECKING:
     from _win32typing import PyHKEY, PyHANDLE
-    from ..sessions.job_entities.job_details import JobRunAsWindowsUser
 
 _logger = _logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class WindowsDomainUserSettings:
+    """Config-level domain user settings for deferred credential resolution."""
+
+    user: str
+    password_arn: str
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,8 @@ class JobsRunAsUserOverride:
         # we need to keep this handle referenced to avoid it being garbage collected.
         logon_token: Optional[PyHANDLE] = None
         user_profile: Optional[PyHKEY] = None
+        # Domain user settings for deferred credential resolution at runtime.
+        windows_domain_user_settings: Optional[WindowsDomainUserSettings] = None
 
 
 # Default paths for the Worker persistence directory subdirectories.
@@ -122,7 +131,6 @@ class Configuration:
         "structured_logs",
         "session_root_dir",
         "region",
-        "_windows_job_user_domain_settings",
     )
 
     def __init__(
@@ -175,8 +183,6 @@ class Configuration:
 
         settings = WorkerSettings(**settings_kwargs)
 
-        self._windows_job_user_domain_settings: Optional[JobRunAsWindowsUser] = None
-
         if os.name == "posix" and settings.posix_job_user is not None:
             user, group = self._get_user_and_group_from_job_user(settings.posix_job_user)
             self.job_run_as_user_overrides = JobsRunAsUserOverride(
@@ -198,15 +204,12 @@ class Configuration:
                         "to be set. Domain user passwords must be managed externally via Secrets Manager."
                     )
                 # For domain users, we defer credential resolution to runtime via the credentials resolver.
-                # Store the settings so the scheduler can use WindowsCredentialsResolver.
-                from ..sessions.job_entities.job_details import JobRunAsWindowsUser
-
                 self.job_run_as_user_overrides = JobsRunAsUserOverride(
                     run_as_agent=settings.run_jobs_as_agent_user,
-                )
-                self._windows_job_user_domain_settings = JobRunAsWindowsUser(
-                    user=settings.windows_job_user,
-                    passwordArn=settings.windows_job_user_password_arn,
+                    windows_domain_user_settings=WindowsDomainUserSettings(
+                        user=settings.windows_job_user,
+                        password_arn=settings.windows_job_user_password_arn,
+                    ),
                 )
             else:
                 try:
@@ -285,6 +288,15 @@ class Configuration:
         ):
             raise ConfigurationError(
                 f"Cannot specify a {'windows' if os.name == 'nt' else 'posix'} job user when the option to run jobs as the agent user is enabled."
+            )
+
+        if (
+            self.job_run_as_user_overrides.run_as_agent
+            and getattr(self.job_run_as_user_overrides, "windows_domain_user_settings", None)
+            is not None
+        ):
+            raise ConfigurationError(
+                "Cannot specify a windows job user when the option to run jobs as the agent user is enabled."
             )
 
         if self.host_metrics_logging_interval_seconds <= 0:

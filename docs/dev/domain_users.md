@@ -52,28 +52,6 @@ The queue user flow is **the same for both local and domain users**:
 
 The only difference: local queue users can fall back to `reset_user_password()` (via `NetUserSetInfo`) if no `passwordArn` is configured. Domain users cannot — they always require a Secrets Manager secret.
 
-## Changes Required
-
-### openjd-sessions
-
-| File | Change | Status |
-|------|--------|--------|
-| `_win32/_helpers.py` | `logon_user()` parses domain from username and passes it to `LogonUserW` | ✅ Done |
-| `_win32/_popen_as_user.py` | `CreateProcessWithLogonW` parses domain from `self.user.user` | ✅ Done |
-| `_session_user.py` | `is_process_user()` uses SID comparison via `LookupAccountName` (cached with `lru_cache`). Uses `sys.platform == "win32"` guard for mypy. | ✅ Done |
-
-### worker-agent
-
-| File | Change | Status |
-|------|--------|--------|
-| `windows/win_user.py` | New module: `is_domain_user()` | ✅ Done |
-| `windows/win_logon.py` | `get_windows_credentials()` parses domain for `LogonUser`. `reset_user_password()` raises for domain users. | ✅ Done |
-| `windows/win_credentials_resolver.py` | Works as-is (password comes from Secrets Manager) | No change needed |
-| `scheduler/session_cleanup.py` | `_extract_username()` handles UPN format (splits on `@`) in addition to DDL | ✅ Done |
-| `installer/win_installer.py` | Accepts domain user as agent user. Skips user creation. Parses domain in `ensure_user_profile_exists`. | ✅ Done |
-| `config/config.py` | Domain job user override requires `windows_job_user_password_arn`. Defers credential resolution to runtime. | ✅ Done |
-| `test/e2e/test_domain_user.py` | E2E tests: promotes instance to DC, creates domain users, verifies jobs run as domain user (DDL + UPN) | ✅ Done |
-
 ## Username Format Handling
 
 Different Win32 APIs accept different username formats. Rather than normalizing to a single format on input, we keep the username in whatever format the user provided and handle each format at the relevant call site.
