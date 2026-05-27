@@ -15,7 +15,7 @@ from flaky import flaky
 import logging
 
 from e2e.conftest import DeadlineResources
-from e2e.utils import windows_replace_and_verify
+from e2e.utils import is_worker_started, is_worker_stopped, windows_replace_and_verify
 from deadline_test_fixtures import (
     Job,
     Farm,
@@ -126,23 +126,24 @@ class TestWindowsJobUserOverride:
         class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
     ) -> None:
+        # Wait for worker to reach STARTED/IDLE via Deadline API before stopping.
+        # After tests 1/2, the worker needs time to finish session cleanup and
+        # return to an idle state. Polling the API is deterministic and avoids
+        # the race condition of stopping mid-transition.
+        assert is_worker_started(
+            deadline_client=deadline_client,
+            farm_id=deadline_resources.farm.id,
+            fleet_id=deadline_resources.fleet.id,
+            worker_id=class_worker.worker_id,
+        ), f"Worker {class_worker.worker_id} did not reach STARTED/IDLE before stop within 180s"
+
         class_worker.stop_worker_service()
-
-        @backoff.on_exception(
-            backoff.constant,
-            Exception,
-            max_time=45,
-            interval=5,
-        )
-        def check_worker_process_stopped() -> None:
-            cmd_result = class_worker.send_command(
-                "IF(Get-Process pythonservice -ErrorAction SilentlyContinue)"
-                '{throw "Agent process still running"}'
-                "ELSE{echo 'Agent process stopped'}"
-            )
-            assert cmd_result.exit_code == 0
-
-        check_worker_process_stopped()
+        assert is_worker_stopped(
+            deadline_client=deadline_client,
+            farm_id=deadline_resources.farm.id,
+            fleet_id=deadline_resources.fleet.id,
+            worker_id=class_worker.worker_id,
+        ), f"Worker {class_worker.worker_id} did not transition to STOPPED within 180s"
 
         windows_replace_and_verify(
             worker=class_worker,
