@@ -12,6 +12,7 @@ if TYPE_CHECKING:
         ActionStatus,
         EnvironmentIdentifier,
         EnvironmentModel,
+        PathMappingRule,
         StepScriptModel,
     )
 
@@ -66,6 +67,15 @@ class SessionRuntime(ABC):
         log_task_banner: bool = True,
     ) -> None:
         """Run a task without entering a session environment (attachment-sync path)."""
+        ...
+
+    @abstractmethod
+    def extend_path_mapping_rules(self, rules: list[PathMappingRule]) -> None:
+        """Add path mapping rules to the session mid-flight.
+
+        The Rust runtime (v1) exposes this as a public API. The Python runtime
+        (v0) lacks it, so the adapter encapsulates the direct attribute access.
+        """
         ...
 
     @abstractmethod

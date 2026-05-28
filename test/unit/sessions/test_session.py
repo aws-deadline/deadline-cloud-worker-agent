@@ -45,6 +45,7 @@ from deadline_worker_agent.api_models import (
     ManifestInfo,
 )
 from deadline_worker_agent.sessions import Session
+from deadline_worker_agent.sessions.runtime import SessionRuntime
 import deadline_worker_agent.sessions.session as session_mod
 from deadline_worker_agent.sessions.session import (
     CurrentAction,
@@ -122,16 +123,18 @@ def action_complete_time() -> datetime:
 
 
 @pytest.fixture
-def mock_openjd_session_cls() -> Generator[MagicMock, None, None]:
-    """Mocks the Worker Agent Session module's import of the Open Job Description Session class"""
-    with patch.object(session_mod, "OPENJDSession") as mock_openjd_session:
-        yield mock_openjd_session
+def mock_create_runtime() -> Generator[MagicMock, None, None]:
+    """Patches create_session_runtime in the session module and yields the mock factory."""
+    with patch.object(session_mod, "create_session_runtime") as mock_create:
+        yield mock_create
 
 
 @pytest.fixture
-def mock_openjd_session(mock_openjd_session_cls: MagicMock) -> MagicMock:
-    """The mocked Open Job Description Session class instance"""
-    return mock_openjd_session_cls.return_value
+def mock_runtime(mock_create_runtime: MagicMock) -> MagicMock:
+    """A MagicMock standing in for the SessionRuntime created by Session.__init__."""
+    runtime = MagicMock(spec=SessionRuntime)
+    mock_create_runtime.return_value = runtime
+    return runtime
 
 
 @pytest.fixture
@@ -152,7 +155,7 @@ def session(
     env: dict[str, str] | None,
     job_details: JobDetails,
     os_user: SessionUser | None,
-    mock_openjd_session_cls: MagicMock,
+    mock_runtime: MagicMock,
     queue_id: str,
     session_action_queue: MagicMock,
     session_id: str,
@@ -355,19 +358,19 @@ class TestSessionInit:
     def test_uses_action_updated_callback(
         self,
         session: Session,
-        mock_openjd_session_cls: MagicMock,
+        mock_create_runtime: MagicMock,
     ) -> None:
         """Asserts that the Session.update_action method is called by the callback supplied to the
         Open Job Description session initializer."""
         # GIVEN
-        mock_openjd_session_cls.assert_called_once()
-        call = mock_openjd_session_cls.call_args_list[0]
+        mock_create_runtime.assert_called_once()
+        config = mock_create_runtime.call_args[0][1]
         action_status = ActionStatus(state=ActionState.SUCCESS)
 
         # THEN
         with patch.object(session, "update_action") as mock_update_action:
             # WHEN
-            call.kwargs["callback"](session.id, action_status)
+            config.action_callback(session.id, action_status)
             mock_update_action.assert_called_once_with(action_status)
 
     def test_creates_current_action_lock(
@@ -419,19 +422,18 @@ class TestSessionInit:
     def test_has_path_mapping_rules(
         self,
         session: Session,
-        mock_openjd_session_cls: MagicMock,
+        mock_create_runtime: MagicMock,
         path_mapping_rules: list[PathMappingRule],
     ):
         """Ensure that when we have path mapping rules that we're passing them to the Open Job Description session"""
         # GIVEN / WHEN / THEN
         assert session is not None
-        mock_openjd_session_cls.assert_called_once()
+        mock_create_runtime.assert_called_once()
+        config = mock_create_runtime.call_args[0][1]
         if path_mapping_rules:
-            assert (
-                path_mapping_rules == mock_openjd_session_cls.call_args.kwargs["path_mapping_rules"]
-            )
+            assert path_mapping_rules == config.path_mapping_rules
         else:
-            assert not mock_openjd_session_cls.call_args.kwargs.get("path_mapping_rules", False)
+            assert not config.path_mapping_rules
 
     @pytest.mark.parametrize(
         "env",
@@ -459,17 +461,18 @@ class TestSessionInit:
     def test_has_env_variables(
         self,
         session: Session,
-        mock_openjd_session_cls: MagicMock,
+        mock_create_runtime: MagicMock,
         env: dict[str, str],
     ):
         """Ensure that when we have env variables that we're passing them to the Open Job Description session"""
         # GIVEN / WHEN / THEN
         assert session is not None
-        mock_openjd_session_cls.assert_called_once()
+        mock_create_runtime.assert_called_once()
+        config = mock_create_runtime.call_args[0][1]
         if env:
-            assert env == mock_openjd_session_cls.call_args.kwargs["os_env_vars"]
+            assert env == config.os_env_vars
         else:
-            assert not mock_openjd_session_cls.call_args.kwargs.get("os_env_vars", False)
+            assert not config.os_env_vars
 
     @pytest.mark.parametrize(
         argnames="session_root_dir",
@@ -481,15 +484,14 @@ class TestSessionInit:
     def test_has_session_root_dir(
         self,
         session: Session,
-        mock_openjd_session_cls: MagicMock,
+        mock_create_runtime: MagicMock,
         session_root_dir: Path,
     ) -> None:
         """Ensure that Session passes session_root_dir when creating the Open Job Description session"""
         # THEN
-        mock_openjd_session_cls.assert_called_once()
-        assert (
-            mock_openjd_session_cls.call_args.kwargs["session_root_directory"] == session_root_dir
-        )
+        mock_create_runtime.assert_called_once()
+        config = mock_create_runtime.call_args[0][1]
+        assert config.session_root_directory == session_root_dir
 
 
 class TestSessionOuterRun:
@@ -811,13 +813,13 @@ class TestSessionCancelActionsImpl:
     def test_cancels_current_action(
         self,
         session: Session,
-        mock_openjd_session: MagicMock,
+        mock_runtime: MagicMock,
         current_action: CurrentAction,
     ) -> None:
         """Asserts that the current action is canceled if cancel_actions() is called with the
         corresponding action ID in the action_ids argument."""
         # GIVEN
-        openjd_cancel_action: MagicMock = mock_openjd_session.cancel_action
+        openjd_cancel_action: MagicMock = mock_runtime.cancel_action
 
         # WHEN
         session._cancel_actions_impl(action_ids=[current_action.definition.id])
@@ -1669,7 +1671,7 @@ class TestSessionActionUpdatedImpl:
         )
 
 
-@pytest.mark.usefixtures("mock_openjd_session")
+@pytest.mark.usefixtures("mock_runtime")
 class TestStartCancelingCurrentAction:
     """Test cases for Session._start_canceling_current_action()"""
 
@@ -1920,10 +1922,10 @@ class TestSessionCleanup:
     def test_calls_openjd_cleanup(
         self,
         session: Session,
-        mock_openjd_session: MagicMock,
+        mock_runtime: MagicMock,
     ) -> None:
         # GIVEN
-        openjd_session_cleanup: MagicMock = mock_openjd_session.cleanup
+        openjd_session_cleanup: MagicMock = mock_runtime.cleanup
 
         # Mock Session._monitor_action which is used to poll the Open Job Description session status
         with patch.object(session, "_monitor_action", return_value=[]):
@@ -1943,7 +1945,7 @@ class TestSessionCleanup:
         session: Session,
         job_attachment_details: JobAttachmentDetails,
         mock_asset_sync: MagicMock,
-        mock_openjd_session: MagicMock,
+        mock_runtime: MagicMock,
     ) -> None:
         # GIVEN
         mock_asset_sync_cleanup: MagicMock = mock_asset_sync.cleanup_session
@@ -1955,7 +1957,7 @@ class TestSessionCleanup:
 
         # THEN
         mock_asset_sync_cleanup.assert_called_once_with(
-            session_dir=mock_openjd_session.working_directory,
+            session_dir=mock_runtime.working_directory,
             file_system=job_attachment_details.job_attachments_file_system,
             os_user=session._os_user.user,
         )
@@ -1965,7 +1967,7 @@ class TestSessionCleanup:
         session: Session,
         job_attachment_details: JobAttachmentDetails,
         mock_asset_sync: MagicMock,
-        mock_openjd_session: MagicMock,
+        mock_runtime: MagicMock,
     ) -> None:
         # GIVEN
         mock_asset_sync_cleanup: MagicMock = mock_asset_sync.cleanup_session
@@ -1977,7 +1979,7 @@ class TestSessionCleanup:
 
         # THEN
         mock_asset_sync_cleanup.assert_called_once_with(
-            session_dir=mock_openjd_session.working_directory,
+            session_dir=mock_runtime.working_directory,
             file_system=job_attachment_details.job_attachments_file_system,
             os_user=None,
         )
@@ -2169,7 +2171,7 @@ class TestSessionStartAction:
         from deadline_worker_agent.sessions.session import Session
 
         # WHEN
-        with patch("deadline_worker_agent.sessions.session.OPENJDSession") as mock_openjd_session:
+        with patch("deadline_worker_agent.sessions.session.create_session_runtime") as mock_create:
             _ = Session(
                 id=session_id,
                 job_details=job_details,
@@ -2186,12 +2188,10 @@ class TestSessionStartAction:
 
         # THEN
         # Verify that the REDACTED_ENV_VARS extension is included in the supported extensions
-        mock_openjd_session.assert_called_once()
-        _, kwargs = mock_openjd_session.call_args
-        assert "revision_extensions" in kwargs
-        revision_extensions = kwargs["revision_extensions"]
+        mock_create.assert_called_once()
+        config = mock_create.call_args[0][1]
         # Check that REDACTED_ENV_VARS is in the list of extensions
-        assert ExtensionName.REDACTED_ENV_VARS.value in revision_extensions.extensions
+        assert ExtensionName.REDACTED_ENV_VARS.value in config.supported_extensions
 
 
 class TestSessionWorkerManifestProperties:
@@ -2482,7 +2482,7 @@ class TestRunAttachmentSyncTask:
     def test_delegates_to_run_task_without_session_env(
         self,
         session: Session,
-        mock_openjd_session: MagicMock,
+        mock_runtime: MagicMock,
         os_env_vars: dict[str, str] | None,
         log_task_banner: bool,
     ) -> None:
@@ -2499,7 +2499,7 @@ class TestRunAttachmentSyncTask:
         )
 
         # THEN
-        mock_openjd_session._run_task_without_session_env.assert_called_once_with(
+        mock_runtime._run_task_without_session_env.assert_called_once_with(
             step_script=step_script_model,
             task_parameter_values=dict[str, ParameterValue](),
             os_env_vars=os_env_vars,
@@ -2509,12 +2509,12 @@ class TestRunAttachmentSyncTask:
     def test_propagates_exception_from_openjd_session(
         self,
         session: Session,
-        mock_openjd_session: MagicMock,
+        mock_runtime: MagicMock,
     ) -> None:
         """Tests that exceptions from the underlying Open Job Description session are propagated."""
         # GIVEN
         expected_exception = RuntimeError("Task execution failed")
-        mock_openjd_session._run_task_without_session_env.side_effect = expected_exception
+        mock_runtime._run_task_without_session_env.side_effect = expected_exception
 
         # WHEN / THEN
         with pytest.raises(RuntimeError) as exc_info:

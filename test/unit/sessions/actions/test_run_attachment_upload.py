@@ -59,11 +59,12 @@ def diff_dir(session_dir: str):
 
 
 @pytest.fixture
-def mock_openjd_session_cls(session_dir: str) -> Generator[MagicMock, None, None]:
-    """Mocks the Worker Agent Session module's import of the Open Job Description Session class"""
-    with patch.object(session_mod, "OPENJDSession") as mock_openjd_session:
-        mock_openjd_session.working_directory = session_dir
-        yield mock_openjd_session
+def mock_runtime(session_dir: str) -> Generator[MagicMock, None, None]:
+    """Patches create_session_runtime and yields a runtime mock with working_directory set."""
+    runtime = MagicMock()
+    runtime.working_directory = session_dir
+    with patch.object(session_mod, "create_session_runtime", return_value=runtime):
+        yield runtime
 
 
 @pytest.fixture
@@ -99,14 +100,14 @@ class TestStart:
         job_details: JobDetails,
         job_user: SessionUser,
         job_attachment_details: JobAttachmentDetails,
-        mock_openjd_session_cls: Mock,
+        mock_runtime: Mock,
     ) -> Mock:
         session = Mock()
         session.id = session_id
         session._job_details = job_details
         session._job_attachment_details = job_attachment_details
         session._os_user = job_user
-        session.openjd_session = mock_openjd_session_cls
+        session.runtime = mock_runtime
         session._queue_id = TestStart.QUEUE_ID
         session._queue._job_id = TestStart.JOB_ID
         session.get_worker_manifest_properties_list = Mock(return_value=[])

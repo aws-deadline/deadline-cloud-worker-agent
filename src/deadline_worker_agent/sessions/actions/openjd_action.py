@@ -18,9 +18,9 @@ class OpenjdAction(SessionActionDefinition):
             return
 
         try:
-            session._session.cancel_action(time_limit=time_limit)
+            session.runtime.cancel_action(time_limit=time_limit)
         except RuntimeError:
-            if action_status := session._session.action_status:
+            if action_status := session.runtime.action_status:
                 action_state = action_status.state
                 raise CancelationError(
                     f"Could not cancel {self.id}. It completed as {action_state.name}"

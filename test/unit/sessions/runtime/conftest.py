@@ -71,6 +71,9 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
         ) -> None:
             return None
 
+        def extend_path_mapping_rules(self, rules: list[Any]) -> None:
+            return None
+
         def cancel_action(
             self,
             *,
