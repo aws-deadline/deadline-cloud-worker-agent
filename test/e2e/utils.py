@@ -1,5 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 import dataclasses
+import boto3
 import os
 import logging
 import filecmp
@@ -551,8 +552,6 @@ def job_failure_message(
     deadline_resources: DeadlineResources,
 ) -> str:
     """Build a detailed failure message with job identifiers, console links, and logs."""
-    import boto3
-
     region = deadline_client._real_client.meta.region_name
     console_url = (
         f"https://{region}.console.aws.amazon.com/deadline/home?region={region}"

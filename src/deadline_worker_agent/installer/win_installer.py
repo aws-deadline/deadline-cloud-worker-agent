@@ -276,12 +276,23 @@ def is_user_in_group(group_name: str, user_name: str) -> bool:
         logging.error(f"Failed to get group members of '{group_name}': {e}")
         raise
 
-    return any(
-        group_member["name"].lower() == user_name.lower()
-        or group_member["name"].lower() == user_name.split("\\")[-1].lower()
-        or group_member["name"].lower() == user_name.split("@")[0].lower()
-        for group_member in group_members_info[0]
-    )
+    # Compare by SID to avoid false positives when a local user and domain user
+    # share the same short name (e.g. MACHINE\bob vs DOMAIN\bob).
+    try:
+        target_sid, _, _ = win32security.LookupAccountName(None, user_name)
+    except Exception as e:
+        logging.warning(f"Failed to look up SID for '{user_name}': {e}")
+        return False
+
+    for group_member in group_members_info[0]:
+        try:
+            member_sid, _, _ = win32security.LookupAccountName(None, group_member["name"])
+            if member_sid == target_sid:
+                return True
+        except Exception as e:
+            logging.warning(f"Could not resolve SID for group member '{group_member['name']}': {e}")
+            continue
+    return False
 
 
 def add_user_to_group(group_name: str, user_name: str) -> None:

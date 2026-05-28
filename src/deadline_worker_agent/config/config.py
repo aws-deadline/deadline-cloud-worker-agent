@@ -158,7 +158,7 @@ class Configuration:
             settings_kwargs["posix_job_user"] = parsed_cli_args.posix_job_user
         if parsed_cli_args.windows_job_user is not None:
             settings_kwargs["windows_job_user"] = parsed_cli_args.windows_job_user
-        if getattr(parsed_cli_args, "windows_job_user_password_arn", None) is not None:
+        if parsed_cli_args.windows_job_user_password_arn is not None:
             settings_kwargs["windows_job_user_password_arn"] = (
                 parsed_cli_args.windows_job_user_password_arn
             )

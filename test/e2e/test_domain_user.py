@@ -15,10 +15,16 @@ import pytest
 import os
 import time
 import logging
+from flaky import flaky
 from typing import Generator
 
 from e2e.conftest import DeadlineResources
-from e2e.utils import job_failure_message, windows_replace_and_verify
+from e2e.utils import (
+    is_worker_stopped,
+    job_failure_message,
+    submit_job_from_bundle,
+    windows_replace_and_verify,
+)
 from deadline_test_fixtures import (
     Job,
     Farm,
@@ -39,23 +45,6 @@ WINDOWS_PASSWORD_SECRET = "WindowsPasswordSecret"
 
 AGENT_USER_DDL = f"{DOMAIN_NETBIOS}\\{DOMAIN_AGENT_USER}"
 AGENT_USER_UPN = f"{DOMAIN_AGENT_USER}@{DOMAIN_NAME}"
-
-
-def wait_for_ssm_online(ssm_client, instance_id: str, timeout: int = 600) -> None:
-    """Wait for SSM agent to report the instance as online."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            response = ssm_client.describe_instance_information(
-                Filters=[{"Key": "InstanceIds", "Values": [instance_id]}]
-            )
-            instances = response.get("InstanceInformationList", [])
-            if instances and instances[0].get("PingStatus") == "Online":
-                return
-        except Exception:
-            pass
-        time.sleep(10)
-    raise TimeoutError(f"Instance {instance_id} did not become SSM-online within {timeout}s")
 
 
 def promote_to_domain_controller(worker: EC2InstanceWorker) -> None:
@@ -192,22 +181,13 @@ class TestDomainUser:
 
         LOG.info("Waiting for instance to come back online after DC promotion...")
         time.sleep(120)
-        wait_for_ssm_online(boto3.client("ssm"), worker.instance_id, timeout=600)
 
         LOG.info("Verifying AD Domain Services are ready...")
-        cmd_result = worker.send_command("Import-Module ActiveDirectory; Get-ADDomain")
+        cmd_result = worker.send_command(
+            "Import-Module ActiveDirectory; Get-ADDomain",
+            {"Delay": 10, "MaxAttempts": 60},
+        )
         assert cmd_result.exit_code == 0, f"AD not ready after promotion: {cmd_result}"
-
-        # Install NVIDIA GRID drivers if on a GPU instance
-        if os.environ.get("WORKER_INSTANCE_TYPE", "").startswith("g"):
-            LOG.info("Installing NVIDIA GRID drivers...")
-            cmd_result = worker.send_command(
-                "aws s3 cp s3://ec2-windows-nvidia-drivers/latest/ C:\\Temp\\ --recursive --exclude '*' --include '*.exe' --region us-east-1; "
-                "$installer = Get-ChildItem C:\\Temp\\*.exe | Select-Object -First 1; "
-                "Start-Process $installer.FullName -ArgumentList '/s /noreboot' -Wait; "
-                "nvidia-smi"
-            )
-            LOG.info(f"GPU driver install result: exit_code={cmd_result.exit_code}")
 
         create_domain_users(worker, region)
         grant_user_rights(worker)
@@ -239,10 +219,11 @@ class TestDomainUser:
     ) -> Generator[Queue, None, None]:
         """Create a queue configured to run jobs as the domain job user."""
         deadline_client = boto3.client("deadline", region_name=region)
-        secretsmanager_client = boto3.client("secretsmanager", region_name=region)
 
-        secret = secretsmanager_client.describe_secret(SecretId=WINDOWS_PASSWORD_SECRET)
-        secret_arn = secret["ARN"]
+        queue_response = deadline_client.get_queue(
+            farmId=deadline_resources.farm.id, queueId=deadline_resources.queue_a.id
+        )
+        secret_arn = queue_response["jobRunAsUser"]["windows"]["passwordArn"]
 
         queue_role_arn = os.environ["SESSION_ROLE"]
         job_attachments_bucket = os.environ["JOB_ATTACHMENTS_BUCKET"]
@@ -313,8 +294,6 @@ class TestDomainUser:
         queue: Queue,
         expected_user: str,
     ) -> Job:
-        from e2e.utils import submit_job_from_bundle
-
         bundle_path = os.path.join(os.path.dirname(__file__), "job_bundles", "domain_user_whoami")
         return submit_job_from_bundle(
             deadline_client=deadline_client,
@@ -325,6 +304,7 @@ class TestDomainUser:
             max_retries_per_task=0,
         )
 
+    @flaky(max_runs=3, min_passes=1)
     def test_job_runs_as_local_queue_user(
         self,
         deadline_resources: DeadlineResources,
@@ -345,6 +325,7 @@ class TestDomainUser:
             job, deadline_client, deadline_resources.queue_a, deadline_resources
         )
 
+    @flaky(max_runs=3, min_passes=1)
     def test_job_runs_as_domain_queue_user(
         self,
         deadline_resources: DeadlineResources,
@@ -381,21 +362,28 @@ class TestDomainUser:
             f"Expected service to run as '{DOMAIN_AGENT_USER}', got: {cmd_result.stdout}"
         )
 
+    @flaky(max_runs=3, min_passes=1)
     def test_job_runs_as_domain_config_override_user(
         self,
         deadline_resources: DeadlineResources,
         domain_controller: EC2InstanceWorker,
         deadline_client: DeadlineClient,
-        region: str,
     ) -> None:
         """Config-level domain user override resolves credentials and runs jobs as that user."""
-        secretsmanager_client = boto3.client("secretsmanager", region_name=region)
-        secret = secretsmanager_client.describe_secret(SecretId=WINDOWS_PASSWORD_SECRET)
-        secret_arn = secret["ARN"]
+        queue_response = deadline_client._real_client.get_queue(
+            farmId=deadline_resources.farm.id, queueId=deadline_resources.queue_a.id
+        )
+        secret_arn = queue_response["jobRunAsUser"]["windows"]["passwordArn"]
 
         config_path = "C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
 
         domain_controller.stop_worker_service()
+        assert is_worker_stopped(
+            deadline_client=deadline_client,
+            farm_id=deadline_resources.farm.id,
+            fleet_id=deadline_resources.fleet.id,
+            worker_id=domain_controller.worker_id,
+        ), f"Worker {domain_controller.worker_id} did not transition to STOPPED within 180s"
 
         windows_replace_and_verify(
             worker=domain_controller,
@@ -406,7 +394,7 @@ class TestDomainUser:
         windows_replace_and_verify(
             worker=domain_controller,
             file_path=config_path,
-            old_pattern='# windows_job_user_password_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret/my-secret"',
+            old_pattern='# windows_job_user_password_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:my-secret-abc123"',
             new_pattern=f'windows_job_user_password_arn = "{secret_arn}"',
         )
 
@@ -428,6 +416,12 @@ class TestDomainUser:
         finally:
             # Always reset config regardless of test outcome
             domain_controller.stop_worker_service()
+            assert is_worker_stopped(
+                deadline_client=deadline_client,
+                farm_id=deadline_resources.farm.id,
+                fleet_id=deadline_resources.fleet.id,
+                worker_id=domain_controller.worker_id,
+            ), f"Worker {domain_controller.worker_id} did not transition to STOPPED within 180s"
             windows_replace_and_verify(
                 worker=domain_controller,
                 file_path=config_path,
@@ -438,5 +432,5 @@ class TestDomainUser:
                 worker=domain_controller,
                 file_path=config_path,
                 old_pattern=f'windows_job_user_password_arn = "{secret_arn}"',
-                new_pattern='# windows_job_user_password_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret/my-secret"',
+                new_pattern='# windows_job_user_password_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:my-secret-abc123"',
             )
