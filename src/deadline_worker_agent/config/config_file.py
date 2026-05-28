@@ -20,6 +20,7 @@ except ModuleNotFoundError:
     from tomli import load as load_toml, TOMLDecodeError  # type: ignore[no-redef]
 
 from ..capabilities import Capabilities
+from .._session_runtime_kind import SessionRuntimeKind
 from .errors import ConfigurationError
 from . import toml_comment
 
@@ -197,6 +198,7 @@ class WorkerConfigSection(BaseModel):
     cleanup_session_user_processes: bool = True
     worker_persistence_dir: Optional[Path] = None
     session_root_dir: Optional[Path] = None
+    session_runtime: Optional[SessionRuntimeKind] = None
 
 
 class AwsConfigSection(BaseModel):
@@ -457,6 +459,8 @@ class ConfigFile(BaseModel):
             output_settings["worker_persistence_dir"] = self.worker.worker_persistence_dir
         if self.worker.session_root_dir is not None:
             output_settings["session_root_dir"] = self.worker.session_root_dir
+        if self.worker.session_runtime is not None:
+            output_settings["session_runtime"] = self.worker.session_runtime
         if self.aws.profile is not None:
             output_settings["profile"] = self.aws.profile
         if self.aws.allow_ec2_instance_profile is not None:

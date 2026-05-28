@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from deadline_worker_agent.sessions.runtime import RuntimeKind
+from deadline_worker_agent.sessions.runtime import SessionRuntimeKind
 
 
-class TestRuntimeKind:
+class TestSessionRuntimeKind:
     def test_runtime_kind_values(self) -> None:
-        assert RuntimeKind.PYTHON.value == "python"
-        assert RuntimeKind.RUST.value == "rust"
-        assert isinstance(RuntimeKind.PYTHON, str)
-        assert isinstance(RuntimeKind.RUST, str)
+        assert SessionRuntimeKind.PYTHON.value == "python"
+        assert SessionRuntimeKind.RUST.value == "rust"
+        assert isinstance(SessionRuntimeKind.PYTHON, str)
+        assert isinstance(SessionRuntimeKind.RUST, str)

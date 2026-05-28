@@ -16,6 +16,7 @@ from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
 
 from deadline_worker_agent.config import config as config_mod
 from deadline_worker_agent.config.cli_args import ParsedCommandLineArguments
+from deadline_worker_agent.sessions import SessionRuntimeKind
 
 
 @pytest.fixture(autouse=True)
@@ -55,6 +56,7 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "host_metrics_logging_interval_seconds": 10,
         "retain_session_dir": False,
         "session_root_dir": Path("/sessions"),
+        "session_runtime": SessionRuntimeKind.PYTHON,
     }
 
     class FakeWorkerSettings:
@@ -444,6 +446,30 @@ class TestLoad:
 
         # THEN
         assert config.session_root_dir == session_root_dir
+
+    @pytest.mark.parametrize(
+        argnames="session_runtime",
+        argvalues=(
+            SessionRuntimeKind.PYTHON,
+            SessionRuntimeKind.RUST,
+            SessionRuntimeKind.SERVICE_SELECTED,
+        ),
+    )
+    def test_uses_session_runtime(
+        self,
+        parsed_args: config_mod.ParsedCommandLineArguments,
+        session_runtime: SessionRuntimeKind,
+    ) -> None:
+        # GIVEN
+        parsed_args.session_runtime = session_runtime
+        parsed_args.farm_id = "farm_id"
+        parsed_args.fleet_id = "fleet_id"
+
+        # WHEN
+        config = config_mod.Configuration.load()
+
+        # THEN
+        assert config.session_runtime == session_runtime
 
 
 class TestInit:
@@ -1094,6 +1120,36 @@ class TestInit:
             assert call.kwargs.get("session_root_dir") == session_root_dir.absolute()
         else:
             assert "session_root_dir" not in call.kwargs
+
+    @pytest.mark.parametrize(
+        argnames="session_runtime",
+        argvalues=(
+            SessionRuntimeKind.PYTHON,
+            SessionRuntimeKind.RUST,
+            SessionRuntimeKind.SERVICE_SELECTED,
+            None,
+        ),
+    )
+    def test_session_runtime_passed_to_settings_initializer(
+        self,
+        session_runtime: SessionRuntimeKind | None,
+        parsed_args: ParsedCommandLineArguments,
+        mock_worker_settings_cls: MagicMock,
+    ) -> None:
+        # GIVEN
+        parsed_args.session_runtime = session_runtime
+
+        # WHEN
+        config_mod.Configuration(parsed_cli_args=parsed_args)
+
+        # THEN
+        mock_worker_settings_cls.assert_called_once()
+        call = mock_worker_settings_cls.call_args_list[0]
+
+        if session_runtime is not None:
+            assert call.kwargs.get("session_runtime") == session_runtime
+        else:
+            assert "session_runtime" not in call.kwargs
 
     @pytest.mark.parametrize(
         argnames=("posix_job_user_setting", "windows_job_user_setting"),

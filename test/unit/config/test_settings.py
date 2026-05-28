@@ -14,6 +14,7 @@ from pydantic.v1 import ConstrainedStr
 import deadline_worker_agent.config.settings as settings_mod
 from deadline_worker_agent.capabilities import Capabilities
 from deadline_worker_agent.config.settings import WorkerSettings
+from deadline_worker_agent.sessions import SessionRuntimeKind
 
 
 @pytest.fixture(autouse=True)
@@ -177,6 +178,13 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         expected_type=bool,
         expected_required=False,
         expected_default=False,
+        expected_default_factory_return_value=None,
+    ),
+    FieldTestCaseParams(
+        field_name="session_runtime",
+        expected_type=SessionRuntimeKind,
+        expected_required=False,
+        expected_default=SessionRuntimeKind.PYTHON,
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(

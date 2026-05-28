@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from enum import Enum
 
+__all__ = ["SessionRuntimeKind"]
 
-class RuntimeKind(str, Enum):
+
+class SessionRuntimeKind(str, Enum):
     """Identifies a SessionRuntime implementation.
 
     The string values are user-facing (CLI flags, config files) and must

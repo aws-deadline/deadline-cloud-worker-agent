@@ -10,6 +10,7 @@ import pytest
 import os
 
 from deadline_worker_agent.config import cli_args as cli_args_mod
+from deadline_worker_agent.sessions import SessionRuntimeKind
 
 
 class TestArgumentParser:
@@ -45,6 +46,7 @@ class TestArgumentParser:
         assert result.posix_job_user is None
         assert result.windows_job_user is None
         assert result.session_root_dir is None
+        assert result.session_runtime is None
 
     @pytest.mark.parametrize(
         ["farm_id"],
@@ -212,3 +214,42 @@ class TestArgumentParser:
 
         # THEN
         assert result.session_root_dir == Path(session_root_dir)
+
+    @pytest.mark.parametrize(
+        ("args", "expected"),
+        (
+            pytest.param(
+                ["--session-runtime", "python"],
+                SessionRuntimeKind.PYTHON,
+                id="python",
+            ),
+            pytest.param(
+                ["--session-runtime", "rust"],
+                SessionRuntimeKind.RUST,
+                id="rust",
+            ),
+            pytest.param(
+                ["--session-runtime", "service-selected"],
+                SessionRuntimeKind.SERVICE_SELECTED,
+                id="service-selected",
+            ),
+        ),
+    )
+    def test_session_runtime(
+        self, arg_parser: ArgumentParser, args: list[str], expected: SessionRuntimeKind
+    ) -> None:
+        """Asserts that the --session-runtime command-line argument is parsed"""
+        # WHEN
+        result = arg_parser.parse_args(args, namespace=cli_args_mod.ParsedCommandLineArguments())
+
+        # THEN
+        assert result.session_runtime == expected
+
+    def test_session_runtime_invalid(self, arg_parser: ArgumentParser) -> None:
+        """Asserts that an invalid --session-runtime value raises SystemExit"""
+        # GIVEN
+        args = ["--session-runtime", "invalid-value"]
+
+        # THEN
+        with pytest.raises(SystemExit):
+            arg_parser.parse_args(args, namespace=cli_args_mod.ParsedCommandLineArguments())

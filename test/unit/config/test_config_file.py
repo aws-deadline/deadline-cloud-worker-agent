@@ -24,6 +24,7 @@ from deadline_worker_agent.config.config_file import (
     ConfigFile,
 )
 from deadline_worker_agent.config import config_file as config_file_mod
+from deadline_worker_agent.sessions import SessionRuntimeKind
 
 
 @pytest.fixture
@@ -255,6 +256,46 @@ class TestWorkerConfigSection:
 
         # THEN
         assert parsed.session_root_dir == Path(session_root_dir)
+
+    @pytest.mark.parametrize(
+        argnames="session_runtime",
+        argvalues=(
+            pytest.param("python", id="python"),
+            pytest.param("rust", id="rust"),
+            pytest.param("service-selected", id="service-selected"),
+        ),
+    )
+    def test_session_runtime_valid(
+        self,
+        worker_config_section_data: dict[str, Any],
+        session_runtime: str,
+    ) -> None:
+        """Asserts that valid session_runtime values are parsed"""
+        # GIVEN
+        worker_config_section_data["session_runtime"] = session_runtime
+
+        # WHEN
+        parsed = WorkerConfigSection.parse_obj(worker_config_section_data)
+
+        # THEN
+        assert parsed.session_runtime == SessionRuntimeKind(session_runtime)
+
+    @pytest.mark.parametrize(
+        argnames="session_runtime",
+        argvalues=(pytest.param("invalid", id="invalid-value"),),
+    )
+    def test_session_runtime_invalid(
+        self,
+        worker_config_section_data: dict[str, Any],
+        session_runtime: str,
+    ) -> None:
+        """Asserts that invalid session_runtime values raise ValidationError"""
+        # GIVEN
+        worker_config_section_data["session_runtime"] = session_runtime
+
+        # THEN
+        with pytest.raises(ValidationError):
+            WorkerConfigSection.parse_obj(worker_config_section_data)
 
 
 class TestAwsConfigSection:
@@ -648,6 +689,7 @@ FULL_CONFIG_FILE_DATA = {
         "fleet_id": "fleet-c4a9481caa88404fa878a7fb98f8a4dd",
         "cleanup_session_user_processes": False,
         "worker_persistence_dir": "/my/worker/persistence",
+        "session_runtime": "rust",
     },
     "aws": {
         "profile": "my_aws_profile_name",
@@ -776,6 +818,7 @@ FULL_CONFIG_FILE = """
 farm_id = "farm-1f0ece77172c441ebe295491a51cf6d5"
 fleet_id = "fleet-c4a9481caa88404fa878a7fb98f8a4dd"
 worker_persistence_dir = "/my/worker/persistence"
+session_runtime = "rust"
 
 [aws]
 profile = "my_aws_profile_name"
@@ -853,6 +896,7 @@ class TestConfigFileLoad:
         assert config.worker.farm_id == "farm-1f0ece77172c441ebe295491a51cf6d5"
         assert config.worker.fleet_id == "fleet-c4a9481caa88404fa878a7fb98f8a4dd"
         assert config.worker.worker_persistence_dir == Path("/my/worker/persistence")
+        assert config.worker.session_runtime == SessionRuntimeKind.RUST
 
         assert config.aws.profile == "my_aws_profile_name"
         assert config.aws.allow_ec2_instance_profile is True
@@ -928,6 +972,7 @@ class TestConfigFileLoad:
             "farm_id": "farm-1f0ece77172c441ebe295491a51cf6d5",
             "fleet_id": "fleet-c4a9481caa88404fa878a7fb98f8a4dd",
             "worker_persistence_dir": Path("/my/worker/persistence"),
+            "session_runtime": SessionRuntimeKind.RUST,
             # aws
             "profile": "my_aws_profile_name",
             "allow_instance_profile": True,

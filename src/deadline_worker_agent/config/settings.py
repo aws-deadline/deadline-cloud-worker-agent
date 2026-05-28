@@ -9,6 +9,7 @@ from pydantic.v1 import BaseSettings, Field
 from pydantic.v1.env_settings import SettingsSourceCallable
 
 from ..capabilities import Capabilities
+from .._session_runtime_kind import SessionRuntimeKind
 from .config_file import ConfigFile
 
 import os
@@ -88,6 +89,9 @@ class WorkerSettings(BaseSettings):
         If true, then the OpenJD's session directory will not be removed after the job is finished.
     structured_logs: bool
         If true, then the Worker Agent's logs are structured.
+    session_runtime : SessionRuntimeKind
+        The session runtime implementation to use. One of 'python', 'rust', or
+        'service-selected'. Defaults to 'python'.
     """
 
     farm_id: str = Field(regex=r"^farm-[a-z0-9]{32}$")
@@ -121,6 +125,8 @@ class WorkerSettings(BaseSettings):
     host_metrics_logging_interval_seconds: float = 60
     retain_session_dir: bool = False
     structured_logs: bool = False
+    # No env var mapping — runtime selection is via config file or CLI only.
+    session_runtime: SessionRuntimeKind = SessionRuntimeKind.PYTHON
     telemetry_opt_out: bool = False
     session_root_dir: Path = (
         DEFAULT_WINDOWS_SESSION_ROOT_DIR if os.name == "nt" else DEFAULT_POSIX_SESSION_ROOT_DIR

@@ -3,11 +3,11 @@
 from ._abc import SessionRuntime
 from ._config import ActionCallback, SessionRuntimeConfig
 from ._factory import create_session_runtime
-from ._kind import RuntimeKind
+from ..._session_runtime_kind import SessionRuntimeKind
 
 __all__ = [
     "ActionCallback",
-    "RuntimeKind",
+    "SessionRuntimeKind",
     "SessionRuntime",
     "SessionRuntimeConfig",
     "create_session_runtime",

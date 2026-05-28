@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Sequence, Tuple, cast, TYPE_CHECKING
 
+from .._session_runtime_kind import SessionRuntimeKind
+
 from pydantic.v1 import ValidationError
 
 from openjd.sessions import PosixSessionUser, SessionUser
@@ -105,6 +107,8 @@ class Configuration:
     """Whether or not the Worker Agent logs are structured logs."""
     session_root_dir: Path
     """Path to the root directory where worker session directories are created under"""
+    session_runtime: SessionRuntimeKind
+    """The session runtime implementation to use"""
     region: Optional[str]
     """The AWS region to use. If None, boto3's default region resolution is used."""
 
@@ -130,6 +134,7 @@ class Configuration:
         "retain_session_dir",
         "structured_logs",
         "session_root_dir",
+        "session_runtime",
         "region",
     )
 
@@ -184,6 +189,8 @@ class Configuration:
             settings_kwargs["structured_logs"] = parsed_cli_args.structured_logs
         if parsed_cli_args.session_root_dir is not None:
             settings_kwargs["session_root_dir"] = parsed_cli_args.session_root_dir.absolute()
+        if parsed_cli_args.session_runtime is not None:
+            settings_kwargs["session_runtime"] = parsed_cli_args.session_runtime
 
         settings = WorkerSettings(**settings_kwargs)
 
@@ -263,6 +270,7 @@ class Configuration:
         self.retain_session_dir = settings.retain_session_dir
         self.structured_logs = settings.structured_logs
         self.session_root_dir = settings.session_root_dir
+        self.session_runtime = settings.session_runtime
 
         # Region is loaded directly from the config file as a fallback.
         # It is only used if boto3 cannot resolve a region on its own
