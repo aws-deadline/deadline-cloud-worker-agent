@@ -378,6 +378,7 @@ class TestDomainUser:
         config_path = "C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
 
         domain_controller.stop_worker_service()
+        assert domain_controller.worker_id is not None
         assert is_worker_stopped(
             deadline_client=deadline_client,
             farm_id=deadline_resources.farm.id,
@@ -416,6 +417,7 @@ class TestDomainUser:
         finally:
             # Always reset config regardless of test outcome
             domain_controller.stop_worker_service()
+            assert domain_controller.worker_id is not None
             assert is_worker_stopped(
                 deadline_client=deadline_client,
                 farm_id=deadline_resources.farm.id,
