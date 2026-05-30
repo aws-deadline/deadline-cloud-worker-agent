@@ -44,7 +44,6 @@ def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
         "run_jobs_as_agent_user": None,
         "posix_job_user": None,
         "windows_job_user": None,
-        "windows_job_user_password_arn": None,
         "allow_instance_profile": None,
         "capabilities": None,
         "worker_logs_dir": Path("/var/log/amazon/deadline"),
@@ -797,98 +796,6 @@ class TestInit:
             "run_jobs_as_agent_user = true in the agent configuration file."
         )
 
-    @pytest.mark.skipif(os.name != "nt", reason="windows-only test.")
-    @patch.object(config_mod, "is_domain_user", return_value=True)
-    @patch.object(config_mod, "users_equal", return_value=False)
-    def test_domain_user_with_password_arn_produces_domain_settings(
-        self,
-        users_equal: MagicMock,
-        is_domain_user: MagicMock,
-        parsed_args: ParsedCommandLineArguments,
-        mock_worker_settings_cls: MagicMock,
-    ) -> None:
-        # GIVEN
-        parsed_args.run_jobs_as_agent_user = False
-        parsed_args.windows_job_user = "DOMAIN\\user"
-        # password_arn is loaded from config file/env, not CLI - patch it on the settings instance
-        original_side_effect = mock_worker_settings_cls.side_effect
-
-        def patched_settings(**kwargs):
-            kwargs["windows_job_user_password_arn"] = (
-                "arn:aws:secretsmanager:us-west-2:123456789012:secret:test-secret-abc123"
-            )
-            return original_side_effect(**kwargs)
-
-        mock_worker_settings_cls.side_effect = patched_settings
-
-        # WHEN
-        config = config_mod.Configuration(parsed_cli_args=parsed_args)
-
-        # THEN
-        domain_settings = getattr(config.job_run_as_user_overrides, "windows_user_settings", None)
-        assert domain_settings is not None
-        assert domain_settings.user == "DOMAIN\\user"
-        assert (
-            domain_settings.password_arn
-            == "arn:aws:secretsmanager:us-west-2:123456789012:secret:test-secret-abc123"
-        )
-
-    @pytest.mark.skipif(os.name != "nt", reason="windows-only test.")
-    @patch.object(config_mod, "is_domain_user", return_value=True)
-    @patch.object(config_mod, "users_equal", return_value=False)
-    def test_domain_user_without_password_arn_raises(
-        self,
-        users_equal: MagicMock,
-        is_domain_user: MagicMock,
-        parsed_args: ParsedCommandLineArguments,
-        mock_worker_settings_cls: MagicMock,
-    ) -> None:
-        # GIVEN
-        parsed_args.run_jobs_as_agent_user = False
-        parsed_args.windows_job_user = "DOMAIN\\user"
-
-        # WHEN / THEN
-        with pytest.raises(
-            config_mod.ConfigurationError, match="requires 'windows_job_user_password_arn'"
-        ):
-            config_mod.Configuration(parsed_cli_args=parsed_args)
-
-    @pytest.mark.skipif(os.name != "nt", reason="windows-only test.")
-    @patch.object(config_mod, "is_domain_user", return_value=False)
-    @patch.object(config_mod, "users_equal", return_value=False)
-    def test_local_user_with_password_arn_skips_password_reset(
-        self,
-        users_equal: MagicMock,
-        is_domain_user: MagicMock,
-        parsed_args: ParsedCommandLineArguments,
-        mock_worker_settings_cls: MagicMock,
-        reset_user_password: MagicMock,
-    ) -> None:
-        # GIVEN
-        parsed_args.run_jobs_as_agent_user = False
-        parsed_args.windows_job_user = "local-user"
-        original_side_effect = mock_worker_settings_cls.side_effect
-
-        def patched_settings(**kwargs):
-            kwargs["windows_job_user_password_arn"] = (
-                "arn:aws:secretsmanager:us-west-2:123456789012:secret:test-secret-abc123"
-            )
-            return original_side_effect(**kwargs)
-
-        mock_worker_settings_cls.side_effect = patched_settings
-
-        # WHEN
-        config = config_mod.Configuration(parsed_cli_args=parsed_args)
-
-        # THEN
-        reset_user_password.assert_not_called()
-        domain_settings = getattr(config.job_run_as_user_overrides, "windows_user_settings", None)
-        assert domain_settings is not None
-        assert domain_settings.user == "local-user"
-        assert domain_settings.password_arn == (
-            "arn:aws:secretsmanager:us-west-2:123456789012:secret:test-secret-abc123"
-        )
-
     @pytest.mark.parametrize(
         argnames="disallow_instance_profile",
         argvalues=(
@@ -1139,7 +1046,6 @@ class TestInit:
         mock_worker_settings: MagicMock = mock_worker_settings_cls.return_value
         mock_worker_settings.posix_job_user = posix_job_user_setting
         mock_worker_settings.windows_job_user = windows_job_user_setting
-        mock_worker_settings.windows_job_user_password_arn = None
         mock_worker_settings.run_jobs_as_agent_user = None
 
         # Needed because MagicMock does not support gt/lt comparison

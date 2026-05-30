@@ -21,25 +21,12 @@ from .config_file import ConfigFile
 from .settings import WorkerSettings
 
 if sys.platform == "win32":
-    from ..windows.win_logon import (
-        reset_user_password,
-        PasswordResetException,
-        users_equal,
-    )
-    from ..windows.win_user import is_domain_user
+    from ..windows.win_logon import reset_user_password, PasswordResetException, users_equal
 
 if TYPE_CHECKING:
     from _win32typing import PyHKEY, PyHANDLE
 
 _logger = _logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class WindowsUserSettings:
-    """Config-level settings for deferred credential resolution via Secrets Manager."""
-
-    user: str
-    password_arn: str
 
 
 @dataclass(frozen=True)
@@ -54,8 +41,6 @@ class JobsRunAsUserOverride:
         # we need to keep this handle referenced to avoid it being garbage collected.
         logon_token: Optional[PyHANDLE] = None
         user_profile: Optional[PyHKEY] = None
-        # Domain user settings for deferred credential resolution at runtime.
-        windows_user_settings: Optional[WindowsUserSettings] = None
 
 
 # Default paths for the Worker persistence directory subdirectories.
@@ -158,10 +143,6 @@ class Configuration:
             settings_kwargs["posix_job_user"] = parsed_cli_args.posix_job_user
         if parsed_cli_args.windows_job_user is not None:
             settings_kwargs["windows_job_user"] = parsed_cli_args.windows_job_user
-        if parsed_cli_args.windows_job_user_password_arn is not None:
-            settings_kwargs["windows_job_user_password_arn"] = (
-                parsed_cli_args.windows_job_user_password_arn
-            )
         if parsed_cli_args.disallow_instance_profile is not None:
             settings_kwargs[
                 "allow_instance_profile"
@@ -199,45 +180,18 @@ class Configuration:
                     f"Windows job user override must not be the user running the worker agent: {getpass.getuser()}."
                     " If you wish to run jobs as the agent user, set run_jobs_as_agent_user = true in the agent configuration file."
                 )
-            if is_domain_user(settings.windows_job_user):
-                # Domain users cannot have their password reset locally.
-                # They must provide a password ARN to fetch credentials from Secrets Manager.
-                if not settings.windows_job_user_password_arn:
-                    raise ConfigurationError(
-                        f"Domain user '{settings.windows_job_user}' requires 'windows_job_user_password_arn' "
-                        "to be set. Domain user passwords must be managed externally via Secrets Manager."
-                    )
-                # For domain users, we defer credential resolution to runtime via the credentials resolver.
-                self.job_run_as_user_overrides = JobsRunAsUserOverride(
-                    run_as_agent=settings.run_jobs_as_agent_user,
-                    windows_user_settings=WindowsUserSettings(
-                        user=settings.windows_job_user,
-                        password_arn=settings.windows_job_user_password_arn,
-                    ),
-                )
-            else:
-                if settings.windows_job_user_password_arn:
-                    # Local user with externally managed password — defer resolution like domain users.
-                    self.job_run_as_user_overrides = JobsRunAsUserOverride(
-                        run_as_agent=settings.run_jobs_as_agent_user,
-                        windows_user_settings=WindowsUserSettings(
-                            user=settings.windows_job_user,
-                            password_arn=settings.windows_job_user_password_arn,
-                        ),
-                    )
-                else:
-                    try:
-                        cache_entry = reset_user_password(settings.windows_job_user)
-                    except PasswordResetException as e:
-                        raise ConfigurationError(
-                            f"Failed to reset password for user {settings.windows_job_user}: {e}"
-                        ) from e
-                    self.job_run_as_user_overrides = JobsRunAsUserOverride(
-                        run_as_agent=settings.run_jobs_as_agent_user,
-                        job_user=cache_entry.windows_session_user,
-                        logon_token=cache_entry.logon_token,
-                        user_profile=cache_entry.user_profile,
-                    )
+            try:
+                cache_entry = reset_user_password(settings.windows_job_user)
+            except PasswordResetException as e:
+                raise ConfigurationError(
+                    f"Failed to reset password for user {settings.windows_job_user}: {e}"
+                ) from e
+            self.job_run_as_user_overrides = JobsRunAsUserOverride(
+                run_as_agent=settings.run_jobs_as_agent_user,
+                job_user=cache_entry.windows_session_user,
+                logon_token=cache_entry.logon_token,
+                user_profile=cache_entry.user_profile,
+            )
         else:
             self.job_run_as_user_overrides = JobsRunAsUserOverride(
                 run_as_agent=settings.run_jobs_as_agent_user
@@ -302,14 +256,6 @@ class Configuration:
         ):
             raise ConfigurationError(
                 f"Cannot specify a {'windows' if os.name == 'nt' else 'posix'} job user when the option to run jobs as the agent user is enabled."
-            )
-
-        if (
-            self.job_run_as_user_overrides.run_as_agent
-            and getattr(self.job_run_as_user_overrides, "windows_user_settings", None) is not None
-        ):
-            raise ConfigurationError(
-                "Cannot specify a windows job user when the option to run jobs as the agent user is enabled."
             )
 
         if self.host_metrics_logging_interval_seconds <= 0:

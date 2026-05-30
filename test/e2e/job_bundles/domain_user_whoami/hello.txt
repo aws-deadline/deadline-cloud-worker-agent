@@ -1,3 +1,0 @@
-Hello from the domain user test!
-This file proves job attachments work with domain users.
-If you can read this, input sync succeeded.

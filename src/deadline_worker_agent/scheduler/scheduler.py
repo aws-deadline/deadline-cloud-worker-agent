@@ -978,68 +978,28 @@ class WorkerScheduler:
             queue.replace(actions=session_spec["sessionActions"])
 
             os_user: Optional[SessionUser] = None
-
-            # Resolve domain user credentials from Secrets Manager if configured as a config override.
-            # This takes precedence over the queue-configured user.
-            _domain_settings = getattr(
-                self._job_run_as_user_override, "windows_user_settings", None
-            )
-            if (
-                os.name == "nt"
-                and not self._job_run_as_user_override.run_as_agent
-                and self._windows_credentials_resolver is not None
-                and _domain_settings is not None
-            ):
-                try:
-                    os_user = self._windows_credentials_resolver.get_windows_session_user(
-                        _domain_settings.user, _domain_settings.password_arn
-                    )
-                    logger.info(
-                        SessionLogEvent(
-                            subtype=SessionLogEventSubtype.USER,
-                            queue_id=queue_id,
-                            job_id=job_id,
-                            session_id=new_session_id,
-                            user=_domain_settings.user,
-                            message="Running as host-configured domain user override.",
-                        )
-                    )
-                except Exception as e:
-                    message = f"Failed to resolve credentials for domain user '{_domain_settings.user}': {e}"
-                    self._fail_all_actions(session_spec, message)
-                    logger.error(
-                        SessionLogEvent(
-                            subtype=SessionLogEventSubtype.USER,
-                            queue_id=queue_id,
-                            job_id=job_id,
-                            session_id=new_session_id,
-                            message=message,
-                        )
-                    )
-                    continue
-            else:
-                try:
-                    os_user = self._determine_user_for_session(
-                        host_is_posix=os.name == "posix",
-                        job_run_as_user=job_details.job_run_as_user,
-                        job_run_as_user_override=self._job_run_as_user_override,
+            try:
+                os_user = self._determine_user_for_session(
+                    host_is_posix=os.name == "posix",
+                    job_run_as_user=job_details.job_run_as_user,
+                    job_run_as_user_override=self._job_run_as_user_override,
+                    queue_id=queue_id,
+                    job_id=job_id,
+                    session_id=new_session_id,
+                )
+            except ValueError as e:
+                message = str(e)
+                self._fail_all_actions(session_spec, message)
+                logger.error(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.USER,
                         queue_id=queue_id,
                         job_id=job_id,
                         session_id=new_session_id,
+                        message=message,
                     )
-                except ValueError as e:
-                    message = str(e)
-                    self._fail_all_actions(session_spec, message)
-                    logger.error(
-                        SessionLogEvent(
-                            subtype=SessionLogEventSubtype.USER,
-                            queue_id=queue_id,
-                            job_id=job_id,
-                            session_id=new_session_id,
-                            message=message,
-                        )
-                    )
-                    continue
+                )
+                continue
 
             queue_credentials: QueueAwsCredentials | None = None
             asset_sync: AssetSync | None = None

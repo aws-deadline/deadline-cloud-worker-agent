@@ -26,10 +26,8 @@ class TestFileSystemOperations:
     @patch("win32security.ACL")
     @patch("win32security.LookupAccountName", return_value=tuple([mock.Mock, "mock_str", 1]))
     @patch("getpass.getuser", return_value="testuser")
-    @patch("openjd.sessions.WindowsSessionUser.is_process_user", return_value=False)
     def test_set_permissions_valid_session_user_with_permissions(
         self,
-        mock_is_process_user,
         mock_getuser,
         mock_usersid,
         mock_dacl,
@@ -59,10 +57,8 @@ class TestFileSystemOperations:
     @patch("win32security.ACL")
     @patch("win32security.LookupAccountName", return_value=tuple([mock.Mock, "mock_str", 1]))
     @patch("getpass.getuser", return_value="testuser")
-    @patch("openjd.sessions.WindowsSessionUser.is_process_user", return_value=False)
     def test_set_permissions_valid_session_user_multiple_permissions(
         self,
-        mock_is_process_user,
         mock_getuser,
         mock_usersid,
         mock_dacl,
@@ -91,12 +87,10 @@ class TestFileSystemOperations:
     @patch("win32security.ACL")
     @patch("win32security.LookupAccountName", return_value=tuple([mock.Mock, "mock_str", 1]))
     @patch("getpass.getuser", return_value="testuser")
-    @patch("openjd.sessions.WindowsSessionUser.is_process_user", return_value=False)
     @patch.object(Path, "exists")
     def test_touch_file_not_exists(
         self,
         mock_pathlib,
-        mock_is_process_user,
         mock_getuser,
         mock_usersid,
         mock_dacl,
@@ -124,12 +118,10 @@ class TestFileSystemOperations:
     @patch("win32security.ACL")
     @patch("win32security.LookupAccountName", return_value=tuple([mock.Mock, "mock_str", 1]))
     @patch("getpass.getuser", return_value="testuser")
-    @patch("openjd.sessions.WindowsSessionUser.is_process_user", return_value=False)
     @patch.object(Path, "mkdir")
     def test_make_directory(
         self,
         mock_pathlib,
-        mock_is_process_user,
         mock_getuser,
         mock_usersid,
         mock_dacl,

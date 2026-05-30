@@ -1219,55 +1219,6 @@ class TestCreateNewSessions:
         else:
             mock_session.call_args.kwargs["os_user"] is job_user
 
-    @pytest.mark.skipif(os.name != "nt", reason="Windows-only test.")
-    def test_domain_user_override_resolves_credentials(
-        self,
-        scheduler: WorkerScheduler,
-        mock_session: MagicMock,
-        assigned_sessions: dict[str, AssignedSession],
-        mock_job_entities: MagicMock,
-    ) -> None:
-        """Tests that when windows_user_settings is configured,
-        the scheduler resolves credentials via WindowsCredentialsResolver
-        and uses the resulting session user."""
-        from deadline_worker_agent.config import WindowsUserSettings
-
-        # GIVEN
-        mock_session_user = MagicMock()
-        mock_resolver = MagicMock()
-        mock_resolver.get_windows_session_user.return_value = mock_session_user
-
-        scheduler._windows_credentials_resolver = mock_resolver
-        override = JobsRunAsUserOverride(run_as_agent=False)
-        object.__setattr__(
-            override,
-            "windows_user_settings",
-            WindowsUserSettings(
-                user="DOMAIN\\job-user",
-                password_arn="arn:aws:secretsmanager:us-west-2:123456789012:secret:test-abc123",
-            ),
-        )
-        scheduler._job_run_as_user_override = override
-
-        job_entity_mock = MagicMock()
-        job_entity_mock.job_details.return_value = JobDetails(
-            log_group_name="/aws/deadline/queue-0000",
-            schema_version=SpecificationRevision.v2023_09,
-            job_run_as_user=JobRunAsUser(is_worker_agent_user=False),
-        )
-        mock_job_entities.return_value = job_entity_mock
-
-        # WHEN
-        scheduler._create_new_sessions(assigned_sessions=assigned_sessions)
-
-        # THEN
-        mock_resolver.get_windows_session_user.assert_called_once_with(
-            "DOMAIN\\job-user",
-            "arn:aws:secretsmanager:us-west-2:123456789012:secret:test-abc123",
-        )
-        mock_session.assert_called_once()
-        assert mock_session.call_args.kwargs["os_user"] is mock_session_user
-
     @pytest.mark.parametrize(
         argnames="session_root_dir",
         argvalues=(
