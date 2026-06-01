@@ -130,6 +130,7 @@ class TestWindowsJobUserOverride:
         # After tests 1/2, the worker needs time to finish session cleanup and
         # return to an idle state. Polling the API is deterministic and avoids
         # the race condition of stopping mid-transition.
+        assert class_worker.worker_id is not None
         assert is_worker_started(
             deadline_client=deadline_client,
             farm_id=deadline_resources.farm.id,

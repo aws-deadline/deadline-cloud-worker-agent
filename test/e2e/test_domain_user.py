@@ -225,7 +225,7 @@ class TestDomainUser:
         )
         secret_arn = queue_response["jobRunAsUser"]["windows"]["passwordArn"]
 
-        queue_role_arn = os.environ["SESSION_ROLE"]
+        queue_role_arn = os.environ["SESSION_ROLE_ARN"]
         job_attachments_bucket = os.environ["JOB_ATTACHMENTS_BUCKET"]
         response = deadline_client.create_queue(
             farmId=deadline_resources.farm.id,
@@ -378,6 +378,7 @@ class TestDomainUser:
         config_path = "C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
 
         domain_controller.stop_worker_service()
+        assert domain_controller.worker_id is not None
         assert is_worker_stopped(
             deadline_client=deadline_client,
             farm_id=deadline_resources.farm.id,
@@ -416,6 +417,7 @@ class TestDomainUser:
         finally:
             # Always reset config regardless of test outcome
             domain_controller.stop_worker_service()
+            assert domain_controller.worker_id is not None
             assert is_worker_stopped(
                 deadline_client=deadline_client,
                 farm_id=deadline_resources.farm.id,
