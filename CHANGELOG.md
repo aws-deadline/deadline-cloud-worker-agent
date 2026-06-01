@@ -1,3 +1,13 @@
+## 0.30.0 (2026-05-29)
+
+### BREAKING CHANGES
+* The `--disallow-instance-profile` option now requires IMDS to be reachable. If you were using this option on non-EC2 machines, you must remove it. Previously the worker would continue running when IMDS was unreachable; now it will exit with an error. (#935)
+
+### Features
+* The worker agent now supports Windows domain users in both Down-Level Logon Name (DDL) and User Principal Name (UPN) formats. Session cleanup, installer group membership checks, and user rights lookups all correctly handle domain user formats. (#940)
+
+### Bug Fixes
+* Fixed `UnicodeEncodeError` on Windows when processing job attachments with non-ASCII characters (e.g., Cyrillic or Unicode quotes) in file paths. The attachment upload/download subprocesses now use UTF-8 encoding. (#934)
 ## 0.29.2 (2026-05-12)
 ## 0.29.1 (2026-05-07)
 
