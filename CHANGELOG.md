@@ -1,4 +1,4 @@
-## 0.30.0 (2026-05-29)
+## 0.30.0 (2026-06-02)
 
 ### BREAKING CHANGES
 * The `--disallow-instance-profile` option now requires IMDS to be reachable. If you were using this option on non-EC2 machines, you must remove it. Previously the worker would continue running when IMDS was unreachable; now it will exit with an error. (#935)
