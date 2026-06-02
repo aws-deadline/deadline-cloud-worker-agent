@@ -4,10 +4,7 @@ This test module contains tests that verify the Worker agent's behavior by submi
 Deadline Cloud service and checking that the result/output of the jobs is as we expect it.
 """
 
-import re
 import backoff
-import boto3
-import botocore
 import pytest
 import os
 from flaky import flaky
@@ -15,7 +12,12 @@ from flaky import flaky
 import logging
 
 from e2e.conftest import DeadlineResources
-from e2e.utils import is_worker_started, is_worker_stopped, windows_replace_and_verify
+from e2e.utils import (
+    is_worker_started,
+    is_worker_stopped,
+    job_failure_message,
+    windows_replace_and_verify,
+)
 from deadline_test_fixtures import (
     Job,
     Farm,
@@ -40,6 +42,7 @@ class TestWindowsJobUserOverride:
         deadline_client: DeadlineClient,
         farm: Farm,
         queue: Queue,
+        expected_user: str,
         task_retries: int = 5,
     ) -> Job:
         job = Job.submit(
@@ -51,6 +54,7 @@ class TestWindowsJobUserOverride:
             template={
                 "specificationVersion": "jobtemplate-2023-09",
                 "name": f"whoami {test_name}",
+                "description": f"Verifies job runs as '{expected_user}'. Expected status: SUCCEEDED",
                 "steps": [
                     {
                         "hostRequirements": {
@@ -63,12 +67,38 @@ class TestWindowsJobUserOverride:
                         },
                         "name": "Step0",
                         "script": {
+                            "embeddedFiles": [
+                                {
+                                    "name": "runScript",
+                                    "type": "TEXT",
+                                    "filename": "runScript.ps1",
+                                    "data": "\n".join(
+                                        [
+                                            f'Write-Output "=== Whoami Test: {test_name} ==="',
+                                            f'Write-Output "Expected user: {expected_user}"',
+                                            'Write-Output ""',
+                                            'Write-Output "--- Step 1: Running whoami ---"',
+                                            "$actual = (whoami).split('\\')[-1]",
+                                            'Write-Output "Actual user: $actual"',
+                                            'Write-Output ""',
+                                            'Write-Output "--- Step 2: Validating user identity ---"',
+                                            f"if ($actual -ne '{expected_user}') {{",
+                                            f"  Write-Output \"FAIL: expected '{expected_user}' but got '$actual'\"",
+                                            "  exit 1",
+                                            "}",
+                                            f"Write-Output \"PASS: Running as expected user '{expected_user}'\"",
+                                            'Write-Output ""',
+                                            'Write-Output "=== All checks passed ==="',
+                                        ]
+                                    ),
+                                },
+                            ],
                             "actions": {
                                 "onRun": {
                                     "command": "powershell",
-                                    "args": ["echo", '"I am: $((whoami).split("\\")[1])"'],
+                                    "args": ["-File", "{{Task.File.runScript}}"],
                                 }
-                            }
+                            },
                         },
                     },
                 ],
@@ -83,21 +113,17 @@ class TestWindowsJobUserOverride:
         deadline_client: DeadlineClient,
     ) -> None:
         job = self.submit_whoami_job(
-            "no user override", deadline_client, deadline_resources.farm, deadline_resources.queue_a
+            "no user override",
+            deadline_client,
+            deadline_resources.farm,
+            deadline_resources.queue_a,
+            expected_user="job-user",
         )
 
         job.wait_until_complete(client=deadline_client, max_retries=20)
-
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-            expected_pattern=r"I am: job-user",
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
         )
-
-        assert job.task_run_status == TaskStatus.SUCCEEDED
 
     def test_no_jobs_run_as_windows_worker_agent(
         self,
@@ -110,13 +136,20 @@ class TestWindowsJobUserOverride:
             deadline_client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.jobs_run_as_agent_user_queue,
+            expected_user="should-not-matter",
             task_retries=0,
         )
 
         job.wait_until_complete(client=deadline_client)
 
         assert job.task_run_status == TaskStatus.FAILED, (
-            "Job should not run as the Windows Worker Agent user."
+            "Job should not run as the Windows Worker Agent user.\n"
+            + job_failure_message(
+                job,
+                deadline_client,
+                deadline_resources.jobs_run_as_agent_user_queue,
+                deadline_resources,
+            )
         )
 
     @flaky(max_runs=3, min_passes=1)
@@ -160,20 +193,13 @@ class TestWindowsJobUserOverride:
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
+            expected_user="config-override",
         )
 
         job.wait_until_complete(client=deadline_client, max_retries=20)
-
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-            expected_pattern=r"I am: config-override",
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
         )
-
-        assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # reset config file
         windows_replace_and_verify(
@@ -212,18 +238,13 @@ class TestWindowsJobUserOverride:
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
+            expected_user=WINDOWS_JOB_USER,
         )
 
         job.wait_until_complete(client=deadline_client, max_retries=20)
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-            expected_pattern=rf"I am: {WINDOWS_JOB_USER}",
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
         )
-        assert job.task_run_status == TaskStatus.SUCCEEDED
 
         # This user should also take priority over jobs run as worker agent
         override_worker_agent_job = self.submit_whoami_job(
@@ -231,18 +252,18 @@ class TestWindowsJobUserOverride:
             deadline_client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.jobs_run_as_agent_user_queue,
+            expected_user=WINDOWS_JOB_USER,
         )
 
         override_worker_agent_job.wait_until_complete(client=deadline_client, max_retries=20)
-        override_worker_agent_job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-            expected_pattern=rf"I am: {WINDOWS_JOB_USER}",
+        assert override_worker_agent_job.task_run_status == TaskStatus.SUCCEEDED, (
+            job_failure_message(
+                override_worker_agent_job,
+                deadline_client,
+                deadline_resources.jobs_run_as_agent_user_queue,
+                deadline_resources,
+            )
         )
-        assert override_worker_agent_job.task_run_status == TaskStatus.SUCCEEDED
 
         # reset config file
         windows_replace_and_verify(
@@ -275,20 +296,13 @@ class TestWindowsJobUserOverride:
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
+            expected_user="env-override",
         )
 
         job.wait_until_complete(client=deadline_client, max_retries=20)
-
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-            expected_pattern=r"I am: env-override",
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
         )
-
-        assert job.task_run_status == TaskStatus.SUCCEEDED
 
         cmd_result = class_worker.send_command(
             "[System.Environment]::SetEnvironmentVariable('DEADLINE_WORKER_WINDOWS_JOB_USER', '', [System.EnvironmentVariableTarget]::Machine)",
@@ -306,7 +320,11 @@ class TestWindowsJobUserOverride:
 class TestLinuxJobUserOverride:
     @staticmethod
     def submit_whoami_job(
-        test_name: str, deadline_client: DeadlineClient, farm: Farm, queue: Queue
+        test_name: str,
+        deadline_client: DeadlineClient,
+        farm: Farm,
+        queue: Queue,
+        expected_user: str,
     ) -> Job:
         job = Job.submit(
             client=deadline_client,
@@ -316,6 +334,7 @@ class TestLinuxJobUserOverride:
             template={
                 "specificationVersion": "jobtemplate-2023-09",
                 "name": f"whoami {test_name}",
+                "description": f"Verifies job runs as '{expected_user}'. Expected status: SUCCEEDED",
                 "steps": [
                     {
                         "name": "Step0",
@@ -325,20 +344,36 @@ class TestLinuxJobUserOverride:
                         "script": {
                             "embeddedFiles": [
                                 {
-                                    "name": "whoami",
+                                    "name": "runScript",
                                     "type": "TEXT",
                                     "runnable": True,
+                                    "filename": "runScript.sh",
                                     "data": "\n".join(
                                         [
                                             "#!/bin/bash",
-                                            'echo "I am: $(whoami)"',
+                                            "set -e",
+                                            f'echo "=== Whoami Test: {test_name} ==="',
+                                            f'echo "Expected user: {expected_user}"',
+                                            'echo ""',
+                                            'echo "--- Step 1: Running whoami ---"',
+                                            "actual=$(whoami)",
+                                            'echo "Actual user: $actual"',
+                                            'echo ""',
+                                            'echo "--- Step 2: Validating user identity ---"',
+                                            f'if [ "$actual" != "{expected_user}" ]; then',
+                                            f"  echo \"FAIL: expected '{expected_user}' but got '$actual'\"",
+                                            "  exit 1",
+                                            "fi",
+                                            f"echo \"PASS: Running as expected user '{expected_user}'\"",
+                                            'echo ""',
+                                            'echo "=== All checks passed ==="',
                                         ]
                                     ),
                                 },
                             ],
                             "actions": {
                                 "onRun": {
-                                    "command": "{{ Task.File.whoami }}",
+                                    "command": "{{Task.File.runScript}}",
                                 },
                             },
                         },
@@ -355,30 +390,19 @@ class TestLinuxJobUserOverride:
         class_worker: EC2InstanceWorker,
         posix_job_user: PosixSessionUser,
     ) -> None:
-        # WHEN
         job = self.submit_whoami_job(
             "No user override",
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
+            expected_user=posix_job_user.user,
         )
 
-        # THEN
         job.wait_until_complete(client=deadline_client, max_retries=20)
-
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-            expected_pattern=rf"I am: {re.escape(posix_job_user.user)}",
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
         )
 
-        assert job.task_run_status == TaskStatus.SUCCEEDED
-
-    # DeadlineWorkerConfiguration overwrites the default worker agent user
-    # This test verifies that the job can run as the modified worker agent
     def test_job_is_run_as_custom_worker_agent_user(
         self,
         deadline_resources: DeadlineResources,
@@ -392,16 +416,14 @@ class TestLinuxJobUserOverride:
             deadline_client=deadline_client,
             farm=deadline_resources.farm,
             queue=deadline_resources.jobs_run_as_agent_user_queue,
+            expected_user=CUSTOM_AGENT_NAME,
         )
         job.wait_until_complete(client=deadline_client)
-
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-            expected_pattern=rf"I am: {CUSTOM_AGENT_NAME}",
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job,
+            deadline_client,
+            deadline_resources.jobs_run_as_agent_user_queue,
+            deadline_resources,
         )
 
     def test_config_file_user_override(
@@ -444,20 +466,13 @@ class TestLinuxJobUserOverride:
                 deadline_client,
                 deadline_resources.farm,
                 deadline_resources.queue_a,
+                expected_user=posix_config_override_job_user.user,
             )
 
             job.wait_until_complete(client=deadline_client, max_retries=20)
-
-            job.assert_single_task_log_contains(
-                deadline_client=deadline_client,
-                logs_client=boto3.client(
-                    "logs",
-                    config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-                ),
-                expected_pattern=f"I am: {posix_config_override_job_user.user}",
+            assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+                job, deadline_client, deadline_resources.queue_a, deadline_resources
             )
-
-            assert job.task_run_status == TaskStatus.SUCCEEDED
         finally:
             cmd_result = class_worker.send_command(
                 command=f'sed -i \'s/posix_job_user = "{posix_config_override_job_user.user}:{posix_config_override_job_user.group}"/# posix_job_user = "user:group"/g\' /etc/amazon/deadline/worker.toml'
@@ -509,20 +524,13 @@ class TestLinuxJobUserOverride:
                 deadline_client,
                 deadline_resources.farm,
                 deadline_resources.queue_a,
+                expected_user=posix_env_override_job_user.user,
             )
 
             job.wait_until_complete(client=deadline_client, max_retries=20)
-
-            job.assert_single_task_log_contains(
-                deadline_client=deadline_client,
-                logs_client=boto3.client(
-                    "logs",
-                    config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-                ),
-                expected_pattern=f"I am: {posix_env_override_job_user.user}",
+            assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+                job, deadline_client, deadline_resources.queue_a, deadline_resources
             )
-
-            assert job.task_run_status == TaskStatus.SUCCEEDED
         finally:
             cmd_result = class_worker.send_command(
                 f"sed -i '/Environment=DEADLINE_WORKER_POSIX_JOB_USER={posix_env_override_job_user.user}/d' /etc/systemd/system/deadline-worker.service.d/config.conf"

@@ -266,55 +266,58 @@ def submit_custom_job(
     queue: Queue,
     run_script: str,
     max_retries_per_task: int = 5,
+    description: str = "",
 ) -> Job:
+    template: dict = {
+        "specificationVersion": "jobtemplate-2023-09",
+        "name": f"{job_name}",
+        "description": description,
+        "steps": [
+            {
+                "hostRequirements": {
+                    "attributes": [
+                        {
+                            "name": "attr.worker.os.family",
+                            "allOf": [os.environ["OPERATING_SYSTEM"]],
+                        }
+                    ]
+                },
+                "name": "Step0",
+                "script": {
+                    "actions": {
+                        "onRun": (
+                            {"command": "{{ Task.File.runScript }}"}
+                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            else {
+                                "command": "powershell",
+                                "args": ["{{ Task.File.runScript }}"],  # type: ignore[dict-item]
+                            }
+                        ),
+                    },
+                    "embeddedFiles": [
+                        {
+                            "name": "runScript",
+                            "type": "TEXT",
+                            "runnable": True,
+                            "data": run_script,
+                            **(
+                                {"filename": "runScript.ps1"}
+                                if os.environ["OPERATING_SYSTEM"] == "windows"
+                                else {}
+                            ),
+                        }
+                    ],
+                },
+            },
+        ],
+    }
     job = Job.submit(
         client=deadline_client,
         farm=farm,
         queue=queue,
         max_retries_per_task=max_retries_per_task,
         priority=98,
-        template={
-            "specificationVersion": "jobtemplate-2023-09",
-            "name": f"{job_name}",
-            "steps": [
-                {
-                    "hostRequirements": {
-                        "attributes": [
-                            {
-                                "name": "attr.worker.os.family",
-                                "allOf": [os.environ["OPERATING_SYSTEM"]],
-                            }
-                        ]
-                    },
-                    "name": "Step0",
-                    "script": {
-                        "actions": {
-                            "onRun": (
-                                {"command": "{{ Task.File.runScript }}"}
-                                if os.environ["OPERATING_SYSTEM"] == "linux"
-                                else {
-                                    "command": "powershell",
-                                    "args": ["{{ Task.File.runScript }}"],  # type: ignore[dict-item]
-                                }
-                            ),
-                        },
-                        "embeddedFiles": [
-                            {
-                                "name": "runScript",
-                                "type": "TEXT",
-                                "runnable": True,
-                                "data": run_script,
-                                **(
-                                    {"filename": "runScript.ps1"}
-                                    if os.environ["OPERATING_SYSTEM"] == "windows"
-                                    else {}
-                                ),
-                            }
-                        ],
-                    },
-                },
-            ],
-        },
+        template=template,
     )
 
     return job
