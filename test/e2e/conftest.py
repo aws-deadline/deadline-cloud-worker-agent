@@ -371,6 +371,23 @@ def function_worker_factory(
         stop_worker(request, worker)
 
 
+def _grab_bootstrap_log(worker: DeadlineWorker) -> None:
+    """Best-effort grab of the worker bootstrap log after a start failure."""
+    if not isinstance(worker, EC2InstanceWorker):
+        return
+    try:
+        if hasattr(worker, "WIN2022_AMI_NAME"):
+            log_path = r"C:\ProgramData\Amazon\Deadline\Logs\worker-agent-bootstrap.log"
+            cmd = f'Get-Content "{log_path}" -Tail 100'
+        else:
+            log_path = "/var/log/amazon/deadline/worker-agent-bootstrap.log"
+            cmd = f"tail -n 100 {log_path}"
+        result = worker.send_command(cmd, {"Delay": 5, "MaxAttempts": 6})
+        LOG.error(f"--- Bootstrap log ({log_path}) ---\n{result.stdout}")
+    except Exception as log_err:
+        LOG.warning(f"Could not retrieve bootstrap log: {log_err}")
+
+
 def create_worker(
     worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
@@ -453,6 +470,7 @@ def create_worker(
             worker.start()
         except Exception as e:
             LOG.error(f"Failed to start worker: {e}")
+            _grab_bootstrap_log(worker)
             LOG.info("Stopping worker because it failed to start")
             stop_worker(request, worker)
             raise
