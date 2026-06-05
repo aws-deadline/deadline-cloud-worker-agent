@@ -12,9 +12,11 @@ from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
 from typing import Callable, Type
 
+import backoff
 import boto3
 import pytest
 from botocore.client import BaseClient
+from botocore.exceptions import ClientError
 from deadline.client.api import (
     get_boto3_client,
     get_queue_user_boto3_session,
@@ -485,8 +487,18 @@ def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
             LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
             return
 
-    try:
+    @backoff.on_exception(
+        backoff.constant,
+        ClientError,
+        max_tries=5,
+        interval=30,
+        giveup=lambda e: e.response["Error"]["Code"] != "ConflictException",
+    )
+    def _stop_with_retry() -> None:
         worker.stop()
+
+    try:
+        _stop_with_retry()
     except Exception as e:
         LOG.exception(f"Error while stopping worker: {e}")
         LOG.error(
