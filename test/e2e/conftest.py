@@ -487,12 +487,15 @@ def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
             LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
             return
 
+    def _giveup_unless_conflict(e: ClientError) -> bool:
+        return e.response["Error"]["Code"] != "ConflictException"
+
     @backoff.on_exception(
         backoff.constant,
         ClientError,
         max_tries=5,
         interval=30,
-        giveup=lambda e: e.response["Error"]["Code"] != "ConflictException",
+        giveup=_giveup_unless_conflict,
     )
     def _stop_with_retry() -> None:
         worker.stop()

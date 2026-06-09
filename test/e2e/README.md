@@ -31,3 +31,13 @@ def test_windows_behaviour() -> None:
 **Class** - Tests defined as methods of a class that require modification(s) to the host or worker configuration. These modifications would impact tests using the session scoped worker fixture so instead we use a separate worker. Use the `class_worker` fixture (defined in `conftest.py`) to specify this scope.
 
 **Function** - Tests that modify the host or worker configuration in a way that cannot be grouped with other tests. The worker and its associated EC2 instance are not shared with other tests. Use the `function_worker` fixture (defined in `conftest.py`) to specify this scope.
+
+# Asserting Test Outcomes
+
+**Do not use CloudWatch log assertions** (`assert_single_task_log_contains`) unless the test is specifically verifying CW log delivery. CloudWatch Logs is eventually consistent, making these assertions slow and flaky.
+
+Instead:
+- Have job scripts validate their own output and exit non-zero on failure.
+- Assert on `job.task_run_status` (e.g., `TaskStatus.SUCCEEDED` or `TaskStatus.FAILED`).
+- Use `job_failure_message(...)` on all job status assertions to provide console links and session logs on failure.
+- Use job attachments or output files when you need to verify specific content.

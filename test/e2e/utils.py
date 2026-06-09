@@ -266,7 +266,7 @@ def submit_custom_job(
     queue: Queue,
     run_script: str,
     max_retries_per_task: int = 5,
-    description: str = "",
+    description: str = "to-be-filled-in",
 ) -> Job:
     template: dict = {
         "specificationVersion": "jobtemplate-2023-09",

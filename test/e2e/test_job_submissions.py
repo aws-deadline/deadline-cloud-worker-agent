@@ -345,19 +345,24 @@ class TestJobSubmission:
                     },
                 },
                 {
-                    "onEnter": {
-                        "command": "echo",
-                        "args": ["PASS: Environment entered"],
-                    },
+                    "onEnter": (
+                        {"command": "echo", "args": ["PASS: Environment entered"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {
+                            "command": "powershell",
+                            "args": ["Write-Output 'PASS: Environment entered'"],
+                        }
+                    ),
                 },
                 "taskRun",
             ),
             (
                 {
-                    "onRun": {
-                        "command": "echo",
-                        "args": ["PASS: Task ran"],
-                    },
+                    "onRun": (
+                        {"command": "echo", "args": ["PASS: Task ran"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {"command": "powershell", "args": ["Write-Output 'PASS: Task ran'"]}
+                    ),
                 },
                 {
                     "onEnter": {
@@ -368,16 +373,21 @@ class TestJobSubmission:
             ),
             (
                 {
-                    "onRun": {
-                        "command": "echo",
-                        "args": ["PASS: Task ran"],
-                    },
+                    "onRun": (
+                        {"command": "echo", "args": ["PASS: Task ran"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {"command": "powershell", "args": ["Write-Output 'PASS: Task ran'"]}
+                    ),
                 },
                 {
-                    "onEnter": {
-                        "command": "echo",
-                        "args": ["PASS: Environment entered"],
-                    },
+                    "onEnter": (
+                        {"command": "echo", "args": ["PASS: Environment entered"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {
+                            "command": "powershell",
+                            "args": ["Write-Output 'PASS: Environment entered'"],
+                        }
+                    ),
                     "onExit": {
                         "command": "noneexistentcommand",  # This will fail
                     },
@@ -576,19 +586,24 @@ class TestJobSubmission:
                     },
                 },
                 {
-                    "onEnter": {
-                        "command": "echo",
-                        "args": ["PASS: Environment entered"],
-                    },
+                    "onEnter": (
+                        {"command": "echo", "args": ["PASS: Environment entered"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {
+                            "command": "powershell",
+                            "args": ["Write-Output 'PASS: Environment entered'"],
+                        }
+                    ),
                 },
                 "taskRun",
             ),
             (
                 {
-                    "onRun": {
-                        "command": "echo",
-                        "args": ["PASS: Task ran"],
-                    },
+                    "onRun": (
+                        {"command": "echo", "args": ["PASS: Task ran"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {"command": "powershell", "args": ["Write-Output 'PASS: Task ran'"]}
+                    ),
                 },
                 {
                     "onEnter": {
@@ -835,12 +850,28 @@ class TestJobSubmission:
                                         }
                                     )
                                     if expected_canceled_action == "envEnter"
-                                    else {"command": "echo", "args": ["PASS: Environment entered"]}
+                                    else (
+                                        {"command": "echo", "args": ["PASS: Environment entered"]}
+                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        else {
+                                            "command": "powershell",
+                                            "args": ["Write-Output 'PASS: Environment entered'"],
+                                        }
+                                    )
                                 ),
-                                "onExit": {
-                                    "command": "echo",
-                                    "args": ["Environment exit ran successfully"],
-                                },
+                                "onExit": (
+                                    {
+                                        "command": "echo",
+                                        "args": ["Environment exit ran successfully"],
+                                    }
+                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    else {
+                                        "command": "powershell",
+                                        "args": [
+                                            "Write-Output 'Environment exit ran successfully'"
+                                        ],
+                                    }
+                                ),
                             },
                             "embeddedFiles": [
                                 {
@@ -959,21 +990,40 @@ class TestJobSubmission:
             sessions_after: list[dict[str, Any]] = deadline_client.list_sessions(
                 farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
             ).get("sessions")
-            found_env_exit_succeeded = False
-            for session in sessions_after:
-                session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
-                    farmId=job.farm.id,
-                    queueId=job.queue.id,
-                    jobId=job.id,
-                    sessionId=session["sessionId"],
-                ).get("sessionActions")
-                for session_action in session_actions:
-                    if "envExit" in session_action["definition"]:
-                        assert session_action["status"] == "SUCCEEDED", (
-                            f"envExit should have SUCCEEDED but was {session_action['status']}"
-                        )
-                        found_env_exit_succeeded = True
-            assert found_env_exit_succeeded, "Expected envExit session action not found"
+
+            env_exit_status: Optional[str] = None
+            env_exit_action_id: Optional[str] = None
+            env_exit_session_id: Optional[str] = None
+
+            @backoff.on_predicate(
+                wait_gen=backoff.constant,
+                max_time=60,
+                interval=10,
+            )
+            def is_env_exit_succeeded() -> bool:
+                nonlocal env_exit_status, env_exit_action_id, env_exit_session_id
+                for session in sessions_after:
+                    session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
+                        farmId=job.farm.id,
+                        queueId=job.queue.id,
+                        jobId=job.id,
+                        sessionId=session["sessionId"],
+                    ).get("sessionActions")
+                    for session_action in session_actions:
+                        if "envExit" in session_action["definition"]:
+                            env_exit_status = session_action["status"]
+                            env_exit_action_id = session_action["sessionActionId"]
+                            env_exit_session_id = session["sessionId"]
+                            return env_exit_status == "SUCCEEDED"
+                return False
+
+            assert is_env_exit_succeeded(), (
+                f"Expected envExit session action to have SUCCEEDED, got: {env_exit_status}"
+                f" (session: {env_exit_session_id}, action: {env_exit_action_id})\n"
+                + job_failure_message(
+                    job, deadline_client, deadline_resources.queue_a, deadline_resources
+                )
+            )
 
         # Test that worker continues polling for work
         job = submit_sleep_job(
