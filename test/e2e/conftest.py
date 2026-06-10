@@ -380,12 +380,24 @@ def _grab_bootstrap_log(worker: DeadlineWorker) -> None:
     try:
         if hasattr(worker, "WIN2022_AMI_NAME"):
             log_path = r"C:\ProgramData\Amazon\Deadline\Logs\worker-agent-bootstrap.log"
-            cmd = f'Get-Content "{log_path}" -Tail 100'
+            toml_path = r"C:\ProgramData\Amazon\Deadline\Config\worker.toml"
+            cmd = (
+                f'Get-Content "{log_path}" -Tail 100 -ErrorAction SilentlyContinue; '
+                f'echo "--- worker.toml ---"; '
+                f'Get-Content "{toml_path}" -ErrorAction SilentlyContinue; '
+                f'echo "--- toml validation ---"; '
+                f"python -c \"import tomllib,sys; tomllib.load(open(sys.argv[1],'rb')); print('valid')\" \"{toml_path}\" 2>&1; "
+                f'echo "--- worker agent process ---"; '
+                f"Get-Process pythonservice -ErrorAction SilentlyContinue; "
+                f"Get-Service DeadlineWorker -ErrorAction SilentlyContinue"
+            )
         else:
             log_path = "/var/log/amazon/deadline/worker-agent-bootstrap.log"
             cmd = f"tail -n 100 {log_path}"
         result = worker.send_command(cmd, {"Delay": 5, "MaxAttempts": 6})
         LOG.error(f"--- Bootstrap log ({log_path}) ---\n{result.stdout}")
+        if result.stderr:
+            LOG.error(f"--- Debug command stderr ---\n{result.stderr}")
     except Exception as log_err:
         LOG.warning(f"Could not retrieve bootstrap log: {log_err}")
 
