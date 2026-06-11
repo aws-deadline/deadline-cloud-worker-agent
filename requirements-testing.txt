@@ -2,7 +2,7 @@ backoff == 2.2.*
 coverage[toml] ~= 7.13; python_version >= "3.10"
 coverage[toml] ~= 7.10; python_version < "3.10"
 coverage-conditional-plugin == 0.9.*
-deadline-cloud-test-fixtures >= 0.18.11, < 0.19
+deadline-cloud-test-fixtures >= 0.18.12, < 0.19
 flaky == 3.8.*
 pytest == 9.0.*; python_version >= "3.10"
 pytest ~= 8.4; python_version < "3.10"
@@ -14,8 +14,7 @@ types-python-dateutil ~= 2.9
 mypy >= 1.19.1, < 1.20
 types-requests ~= 2.32; python_version >= "3.10"
 types-requests ~= 2.31; python_version < "3.10"
-
-ruff ~= 0.15.14
+ruff ~= 0.15.15
 twine ~= 6.2
 types-psutil ~= 7.2
 types-PyYAML == 6.0.*

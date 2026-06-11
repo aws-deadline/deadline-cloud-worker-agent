@@ -51,8 +51,8 @@ def wait_for_job_output(
         step_id=None,
         task_id=None,
     )
-    output_paths_by_root = job_output_downloader.get_output_paths_by_root()
-    LOG.info(f"Output paths by root: {job_output_downloader.outputs_by_root}")
+    output_paths_by_root = job_output_downloader.get_paths_by_root()
+    LOG.info(f"Output paths by root: {job_output_downloader.paths_by_root}")
 
     # Download file and place it into the output_paths_by_root
     if output_root_path is not None:
@@ -69,9 +69,9 @@ def wait_for_job_output(
                 os.makedirs(root_output_path, exist_ok=True)
                 job_output_downloader.set_root_path(root_path, os.path.abspath(root_output_path))
 
-    download_stats = job_output_downloader.download_job_output()
+    download_stats = job_output_downloader.download()
     LOG.info(f"Download summary statistics: {dataclasses.asdict(download_stats)}")
-    return job_output_downloader.get_output_paths_by_root()
+    return job_output_downloader.get_paths_by_root()
 
 
 def submit_sleep_job(
