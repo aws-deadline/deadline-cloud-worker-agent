@@ -22,7 +22,7 @@ from deadline.client.api import (
     get_queue_user_boto3_session,
 )
 from deadline.client.config import set_setting as set_deadline_setting
-from deadline.job_attachments._aws.aws_clients import get_s3_client, get_s3_transfer_manager
+from deadline.job_attachments.download import get_s3_client, get_s3_transfer_manager
 from deadline_test_fixtures import (
     BootstrapResources,
     DeadlineWorker,
