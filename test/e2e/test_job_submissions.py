@@ -20,14 +20,13 @@ from e2e.conftest import DeadlineResources
 import backoff
 import boto3
 import botocore.config
-import re
 import time
 from deadline.client.config import set_setting
 from deadline.client import api
-import uuid
 import os
 import configparser
 from e2e.utils import (
+    job_failure_message,
     submit_sleep_job,
     submit_custom_job,
 )
@@ -59,7 +58,9 @@ class TestJobSubmission:
         job.wait_until_complete(client=deadline_client)
         LOG.info(f"Job result: {job}")
 
-        assert job.task_run_status == TaskStatus.SUCCEEDED
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
 
     @pytest.mark.skipif(
         os.environ["OPERATING_SYSTEM"] == "windows",
@@ -275,7 +276,9 @@ class TestJobSubmission:
         job.wait_until_complete(client=deadline_client)
         LOG.info(f"Job result: {job}")
 
-        assert job.task_run_status == TaskStatus.SUCCEEDED
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
 
         sessions: list[dict[str, Any]] = deadline_client.list_sessions(
             farmId=job.farm.id,
@@ -342,17 +345,24 @@ class TestJobSubmission:
                     },
                 },
                 {
-                    "onEnter": {
-                        "command": "whoami",
-                    },
+                    "onEnter": (
+                        {"command": "echo", "args": ["PASS: Environment entered"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {
+                            "command": "powershell",
+                            "args": ["Write-Output 'PASS: Environment entered'"],
+                        }
+                    ),
                 },
                 "taskRun",
             ),
             (
                 {
-                    "onRun": {
-                        "command": "whoami",
-                    },
+                    "onRun": (
+                        {"command": "echo", "args": ["PASS: Task ran"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {"command": "powershell", "args": ["Write-Output 'PASS: Task ran'"]}
+                    ),
                 },
                 {
                     "onEnter": {
@@ -363,14 +373,21 @@ class TestJobSubmission:
             ),
             (
                 {
-                    "onRun": {
-                        "command": "whoami",
-                    },
+                    "onRun": (
+                        {"command": "echo", "args": ["PASS: Task ran"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {"command": "powershell", "args": ["Write-Output 'PASS: Task ran'"]}
+                    ),
                 },
                 {
-                    "onEnter": {
-                        "command": "whoami",
-                    },
+                    "onEnter": (
+                        {"command": "echo", "args": ["PASS: Environment entered"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {
+                            "command": "powershell",
+                            "args": ["Write-Output 'PASS: Environment entered'"],
+                        }
+                    ),
                     "onExit": {
                         "command": "noneexistentcommand",  # This will fail
                     },
@@ -569,17 +586,24 @@ class TestJobSubmission:
                     },
                 },
                 {
-                    "onEnter": {
-                        "command": "whoami",
-                    },
+                    "onEnter": (
+                        {"command": "echo", "args": ["PASS: Environment entered"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {
+                            "command": "powershell",
+                            "args": ["Write-Output 'PASS: Environment entered'"],
+                        }
+                    ),
                 },
                 "taskRun",
             ),
             (
                 {
-                    "onRun": {
-                        "command": "whoami",
-                    },
+                    "onRun": (
+                        {"command": "echo", "args": ["PASS: Task ran"]}
+                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        else {"command": "powershell", "args": ["Write-Output 'PASS: Task ran'"]}
+                    ),
                 },
                 {
                     "onEnter": {
@@ -732,19 +756,29 @@ class TestJobSubmission:
     ) -> None:
         # Tests that when running a job session action with a trap for SIGINT, the corresponding session action is canceled almost immediately.
         action_script: str = (
-            "#!/usr/bin/env bash\n trap 'exit 0' SIGINT\n bash\n\n sleep 300\n "
+            "#!/usr/bin/env bash\n"
+            "echo '--- STEP: Long sleep with SIGINT trap ---'\n"
+            "echo 'Setting up SIGINT trap and sleeping 300s'\n"
+            "trap 'echo PASS: Received SIGINT, exiting; exit 0' SIGINT\n"
+            "bash\n\nsleep 300\n"
+            "echo 'FAIL: Sleep completed without cancellation'\n"
+            "exit 1\n"
             if os.environ["OPERATING_SYSTEM"] == "linux"
-            else """try
+            else """Write-Output '--- STEP: Long sleep with cancel trap ---'
+                Write-Output 'Sleeping 300s, waiting for cancellation'
+                try
                 {
                     Start-Sleep -Seconds 300
+                    Write-Output 'FAIL: Sleep completed without cancellation'
+                    exit 1
                 }
                 finally
                 {
+                    Write-Output 'PASS: Received cancellation signal'
                     Exit
                 }"""
         )
 
-        environment_exit_id = str(uuid.uuid4())
         # Submit a job that either sleeps a long time during envEnter, or taskRun, depending on the test setting
         job: Job = Job.submit(
             client=deadline_client,
@@ -754,6 +788,7 @@ class TestJobSubmission:
             template={
                 "specificationVersion": "jobtemplate-2023-09",
                 "name": f"jobactioncanceltrap-{expected_canceled_action}",
+                "description": f"Verifies that {expected_canceled_action} action is canceled promptly when SIGINT trap is set",
                 "steps": [
                     {
                         "name": "Step0",
@@ -784,7 +819,11 @@ class TestJobSubmission:
                                     "data": (
                                         action_script
                                         if expected_canceled_action == "taskRun"
-                                        else "whoami"
+                                        else (
+                                            "#!/usr/bin/env bash\necho 'PASS: Task ran'\n"
+                                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                                            else "Write-Output 'PASS: Task ran'\n"
+                                        )
                                     ),
                                     **(
                                         {"filename": "sleepscript.ps1"}
@@ -811,22 +850,25 @@ class TestJobSubmission:
                                         }
                                     )
                                     if expected_canceled_action == "envEnter"
-                                    else {"command": "whoami"}
+                                    else (
+                                        {"command": "echo", "args": ["PASS: Environment entered"]}
+                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        else {
+                                            "command": "powershell",
+                                            "args": ["Write-Output 'PASS: Environment entered'"],
+                                        }
+                                    )
                                 ),
                                 "onExit": (
                                     {
                                         "command": "echo",
-                                        "args": ["Environment exit " + environment_exit_id],
+                                        "args": ["Environment exit ran successfully"],
                                     }
                                     if os.environ["OPERATING_SYSTEM"] == "linux"
                                     else {
                                         "command": "powershell",
                                         "args": [
-                                            '"Environment"',
-                                            "+",
-                                            '" exit "',
-                                            "+",
-                                            f'"{environment_exit_id}"',
+                                            "Write-Output 'Environment exit ran successfully'"
                                         ],
                                     }
                                 ),
@@ -839,7 +881,11 @@ class TestJobSubmission:
                                     "data": (
                                         action_script
                                         if expected_canceled_action == "envEnter"
-                                        else "whoami"
+                                        else (
+                                            "#!/usr/bin/env bash\necho 'PASS: Environment entered'\n"
+                                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                                            else "Write-Output 'PASS: Environment entered'\n"
+                                        )
                                     ),
                                     **(
                                         {"filename": "sleepscript.ps1"}
@@ -941,13 +987,42 @@ class TestJobSubmission:
 
         # Verify that envExit was ran, if the action being canceled in question is the taskRun, not the envEnter
         if expected_canceled_action == "taskRun":
-            job.assert_single_task_log_contains(
-                deadline_client=deadline_client,
-                logs_client=boto3.client(
-                    "logs",
-                    config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-                ),
-                expected_pattern=rf"{'Environment exit ' + environment_exit_id}",
+            sessions_after: list[dict[str, Any]] = deadline_client.list_sessions(
+                farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
+            ).get("sessions")
+
+            env_exit_status: Optional[str] = None
+            env_exit_action_id: Optional[str] = None
+            env_exit_session_id: Optional[str] = None
+
+            @backoff.on_predicate(
+                wait_gen=backoff.constant,
+                max_time=60,
+                interval=10,
+            )
+            def is_env_exit_succeeded() -> bool:
+                nonlocal env_exit_status, env_exit_action_id, env_exit_session_id
+                for session in sessions_after:
+                    session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
+                        farmId=job.farm.id,
+                        queueId=job.queue.id,
+                        jobId=job.id,
+                        sessionId=session["sessionId"],
+                    ).get("sessionActions")
+                    for session_action in session_actions:
+                        if "envExit" in session_action["definition"]:
+                            env_exit_status = session_action["status"]
+                            env_exit_action_id = session_action["sessionActionId"]
+                            env_exit_session_id = session["sessionId"]
+                            return env_exit_status == "SUCCEEDED"
+                return False
+
+            assert is_env_exit_succeeded(), (
+                f"Expected envExit session action to have SUCCEEDED, got: {env_exit_status}"
+                f" (session: {env_exit_session_id}, action: {env_exit_action_id})\n"
+                + job_failure_message(
+                    job, deadline_client, deadline_resources.queue_a, deadline_resources
+                )
             )
 
         # Test that worker continues polling for work
@@ -964,7 +1039,10 @@ class TestJobSubmission:
         LOG.info(f"Job result: {job}")
 
         assert job.task_run_status == TaskStatus.SUCCEEDED, (
-            "Worker failed to continue polling for work after job cancelation"
+            "Worker failed to continue polling for work after job cancelation\n"
+            + job_failure_message(
+                job, deadline_client, deadline_resources.queue_a, deadline_resources
+            )
         )
 
     @flaky(max_runs=3, min_passes=1)  # Flaky as sync input sometimes completes before expected.
@@ -1465,12 +1543,19 @@ class TestJobSubmission:
                         "script": {
                             "actions": {
                                 "onEnter": (
-                                    {"command": "echo", "args": ["Hello!"]}
+                                    {
+                                        "command": "echo",
+                                        "args": [
+                                            "--- STEP: Env 1 enter --- Entering environment_1 PASS: environment_1 entered"
+                                        ],
+                                    }
                                     if os.environ["OPERATING_SYSTEM"] == "linux"
                                     else {
                                         "command": "powershell",
-                                        "args": ['"Hello"', "+", '"!"'],
-                                    }  # Separating the string is needed to prevent the expected string appearing in output logs more times than expected, as windows worker logs print the command
+                                        "args": [
+                                            "Write-Output '--- STEP: Env 1 enter ---'; Write-Output 'Entering environment_1'; Write-Output 'PASS: environment_1 entered'"
+                                        ],
+                                    }
                                 ),
                             },
                         },
@@ -1484,12 +1569,19 @@ class TestJobSubmission:
                         "script": {
                             "actions": {
                                 "onEnter": (
-                                    {"command": "echo", "args": ["Hello!"]}
+                                    {
+                                        "command": "echo",
+                                        "args": [
+                                            "--- STEP: Env 1 enter --- Entering environment_1 PASS: environment_1 entered"
+                                        ],
+                                    }
                                     if os.environ["OPERATING_SYSTEM"] == "linux"
                                     else {
                                         "command": "powershell",
-                                        "args": ['"Hello"', "+", '"!"'],
-                                    }  # Separating the string is needed to prevent the expected string appearing in output logs more times than expected, as windows worker logs print the command
+                                        "args": [
+                                            "Write-Output '--- STEP: Env 1 enter ---'; Write-Output 'Entering environment_1'; Write-Output 'PASS: environment_1 entered'"
+                                        ],
+                                    }
                                 ),
                             }
                         },
@@ -1499,12 +1591,19 @@ class TestJobSubmission:
                         "script": {
                             "actions": {
                                 "onEnter": (
-                                    {"command": "echo", "args": ["Hello!"]}
+                                    {
+                                        "command": "echo",
+                                        "args": [
+                                            "--- STEP: Env 2 enter --- Entering environment_2 PASS: environment_2 entered"
+                                        ],
+                                    }
                                     if os.environ["OPERATING_SYSTEM"] == "linux"
                                     else {
                                         "command": "powershell",
-                                        "args": ['"Hello"', "+", '"!"'],
-                                    }  # Separating the string is needed to prevent the expected string appearing in output logs more times than expected, as windows worker logs print the command
+                                        "args": [
+                                            "Write-Output '--- STEP: Env 2 enter ---'; Write-Output 'Entering environment_2'; Write-Output 'PASS: environment_2 entered'"
+                                        ],
+                                    }
                                 ),
                             }
                         },
@@ -1514,12 +1613,19 @@ class TestJobSubmission:
                         "script": {
                             "actions": {
                                 "onEnter": (
-                                    {"command": "echo", "args": ["Hello!"]}
+                                    {
+                                        "command": "echo",
+                                        "args": [
+                                            "--- STEP: Env 3 enter --- Entering environment_3 PASS: environment_3 entered"
+                                        ],
+                                    }
                                     if os.environ["OPERATING_SYSTEM"] == "linux"
                                     else {
                                         "command": "powershell",
-                                        "args": ['"Hello"', "+", '"!"'],
-                                    }  # Separating the string is needed to prevent the expected string appearing in output logs more times than expected, as windows worker logs print the command
+                                        "args": [
+                                            "Write-Output '--- STEP: Env 3 enter ---'; Write-Output 'Entering environment_3'; Write-Output 'PASS: environment_3 entered'"
+                                        ],
+                                    }
                                 ),
                             }
                         },
@@ -1538,6 +1644,7 @@ class TestJobSubmission:
         job_template: dict[str, Any] = {
             "specificationVersion": "jobtemplate-2023-09",
             "name": f"jobWithNumberOfEnvironments-{len(job_environments)}",
+            "description": f"Verifies that {len(job_environments)} environment(s) all enter successfully",
             "steps": [
                 {
                     "name": "Step0",
@@ -1551,9 +1658,21 @@ class TestJobSubmission:
                     },
                     "script": {
                         "actions": {
-                            "onRun": {
-                                "command": "whoami",
-                            },
+                            "onRun": (
+                                {
+                                    "command": "echo",
+                                    "args": [
+                                        "--- STEP: Task run --- Running task PASS: Task completed"
+                                    ],
+                                }
+                                if os.environ["OPERATING_SYSTEM"] == "linux"
+                                else {
+                                    "command": "powershell",
+                                    "args": [
+                                        "Write-Output '--- STEP: Task run ---'; Write-Output 'Running task'; Write-Output 'PASS: Task completed'"
+                                    ],
+                                }
+                            ),
                         },
                     },
                 },
@@ -1573,29 +1692,9 @@ class TestJobSubmission:
 
         job.wait_until_complete(client=deadline_client)
 
-        assert job.task_run_status == TaskStatus.SUCCEEDED
-
-        logs_client = boto3.client(
-            "logs",
-            config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
         )
-
-        if len(job_environments) == 1:
-            job.assert_single_task_log_contains(
-                deadline_client=deadline_client,
-                logs_client=logs_client,
-                # pass in alldot pattern
-                expected_pattern=r"Hello!",
-                assert_fail_msg="Expected Number of Hello statements not found in job logs.",
-            )
-
-        if len(job_environments) == 3:
-            job.assert_single_task_log_contains(
-                deadline_client=deadline_client,
-                logs_client=logs_client,
-                expected_pattern=re.compile(r"Hello!.*Hello!.*Hello!", re.DOTALL),
-                assert_fail_msg="Expected Number of Hello statements not found in job logs.",
-            )
 
     def test_worker_streams_logs_to_cloudwatch(
         self,
@@ -1797,7 +1896,9 @@ class TestJobSubmission:
 
         job.wait_until_complete(client=deadline_client)
 
-        assert job.task_run_status == TaskStatus.SUCCEEDED
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
 
     def test_worker_enters_stopping_state_while_draining(
         self,

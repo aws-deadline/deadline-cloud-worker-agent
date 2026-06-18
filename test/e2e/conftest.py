@@ -12,15 +12,17 @@ from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
 from typing import Callable, Type
 
+import backoff
 import boto3
 import pytest
 from botocore.client import BaseClient
+from botocore.exceptions import ClientError
 from deadline.client.api import (
     get_boto3_client,
     get_queue_user_boto3_session,
 )
 from deadline.client.config import set_setting as set_deadline_setting
-from deadline.job_attachments._aws.aws_clients import get_s3_client, get_s3_transfer_manager
+from deadline.job_attachments.download import get_s3_client, get_s3_transfer_manager
 from deadline_test_fixtures import (
     BootstrapResources,
     DeadlineWorker,
@@ -371,6 +373,35 @@ def function_worker_factory(
         stop_worker(request, worker)
 
 
+def _grab_bootstrap_log(worker: DeadlineWorker) -> None:
+    """Best-effort grab of the worker bootstrap log after a start failure."""
+    if not isinstance(worker, EC2InstanceWorker):
+        return
+    try:
+        if hasattr(worker, "WIN2022_AMI_NAME"):
+            log_path = r"C:\ProgramData\Amazon\Deadline\Logs\worker-agent-bootstrap.log"
+            toml_path = r"C:\ProgramData\Amazon\Deadline\Config\worker.toml"
+            cmd = (
+                f'Get-Content "{log_path}" -Tail 100 -ErrorAction SilentlyContinue; '
+                f'echo "--- worker.toml ---"; '
+                f'Get-Content "{toml_path}" -ErrorAction SilentlyContinue; '
+                f'echo "--- toml validation ---"; '
+                f"python -c \"import tomllib,sys; tomllib.load(open(sys.argv[1],'rb')); print('valid')\" \"{toml_path}\" 2>&1; "
+                f'echo "--- worker agent process ---"; '
+                f"Get-Process pythonservice -ErrorAction SilentlyContinue; "
+                f"Get-Service DeadlineWorker -ErrorAction SilentlyContinue"
+            )
+        else:
+            log_path = "/var/log/amazon/deadline/worker-agent-bootstrap.log"
+            cmd = f"tail -n 100 {log_path}"
+        result = worker.send_command(cmd, {"Delay": 5, "MaxAttempts": 6})
+        LOG.error(f"--- Bootstrap log ({log_path}) ---\n{result.stdout}")
+        if result.stderr:
+            LOG.error(f"--- Debug command stderr ---\n{result.stderr}")
+    except Exception as log_err:
+        LOG.warning(f"Could not retrieve bootstrap log: {log_err}")
+
+
 def create_worker(
     worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
@@ -453,6 +484,7 @@ def create_worker(
             worker.start()
         except Exception as e:
             LOG.error(f"Failed to start worker: {e}")
+            _grab_bootstrap_log(worker)
             LOG.info("Stopping worker because it failed to start")
             stop_worker(request, worker)
             raise
@@ -467,8 +499,21 @@ def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
             LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
             return
 
-    try:
+    def _giveup_unless_conflict(e: ClientError) -> bool:
+        return e.response["Error"]["Code"] != "ConflictException"
+
+    @backoff.on_exception(
+        backoff.constant,
+        ClientError,
+        max_tries=5,
+        interval=30,
+        giveup=_giveup_unless_conflict,
+    )
+    def _stop_with_retry() -> None:
         worker.stop()
+
+    try:
+        _stop_with_retry()
     except Exception as e:
         LOG.exception(f"Error while stopping worker: {e}")
         LOG.error(

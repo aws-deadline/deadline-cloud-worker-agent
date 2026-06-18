@@ -11,8 +11,9 @@ from glob import glob
 from typing import Any, Dict, Optional, List
 from pathlib import Path
 from configparser import ConfigParser
-from deadline.job_attachments._aws.deadline import get_queue
 from deadline.job_attachments import download
+from deadline.job_attachments.download import get_s3_client
+from deadline.job_attachments.models import JobAttachmentS3Settings
 from deadline_test_fixtures import (
     DeadlineClient,
     EC2InstanceWorker,
@@ -23,9 +24,22 @@ from deadline_test_fixtures import (
 from deadline.client.api import create_job_from_job_bundle  # type: ignore
 import backoff
 from e2e.conftest import DeadlineResources
-from deadline.job_attachments._aws.aws_clients import get_s3_client
 
 LOG = logging.getLogger(__name__)
+
+
+def _get_queue_attachment_settings(
+    deadline_client: DeadlineClient, farm_id: str, queue_id: str
+) -> Optional[JobAttachmentS3Settings]:
+    """Get job attachment settings from a queue using the Deadline API directly."""
+    response = deadline_client.get_queue(farmId=farm_id, queueId=queue_id)
+    settings = response.get("jobAttachmentSettings")
+    if settings and settings.get("s3BucketName"):
+        return JobAttachmentS3Settings(
+            s3BucketName=settings["s3BucketName"],
+            rootPrefix=settings["rootPrefix"],
+        )
+    return None
 
 
 def wait_for_job_output(
@@ -36,10 +50,11 @@ def wait_for_job_output(
 ) -> dict[str, list[str]]:
     job.wait_until_complete(client=deadline_client, max_retries=20)
 
-    job_attachment_settings = get_queue(
+    job_attachment_settings = _get_queue_attachment_settings(
+        deadline_client=deadline_client,
         farm_id=deadline_resources.farm.id,
         queue_id=deadline_resources.queue_a.id,
-    ).jobAttachmentSettings
+    )
 
     assert job_attachment_settings is not None
 
@@ -51,8 +66,8 @@ def wait_for_job_output(
         step_id=None,
         task_id=None,
     )
-    output_paths_by_root = job_output_downloader.get_output_paths_by_root()
-    LOG.info(f"Output paths by root: {job_output_downloader.outputs_by_root}")
+    output_paths_by_root = job_output_downloader.get_paths_by_root()
+    LOG.info(f"Output paths by root: {job_output_downloader.paths_by_root}")
 
     # Download file and place it into the output_paths_by_root
     if output_root_path is not None:
@@ -69,9 +84,9 @@ def wait_for_job_output(
                 os.makedirs(root_output_path, exist_ok=True)
                 job_output_downloader.set_root_path(root_path, os.path.abspath(root_output_path))
 
-    download_stats = job_output_downloader.download_job_output()
+    download_stats = job_output_downloader.download()
     LOG.info(f"Download summary statistics: {dataclasses.asdict(download_stats)}")
-    return job_output_downloader.get_output_paths_by_root()
+    return job_output_downloader.get_paths_by_root()
 
 
 def submit_sleep_job(
@@ -266,55 +281,58 @@ def submit_custom_job(
     queue: Queue,
     run_script: str,
     max_retries_per_task: int = 5,
+    description: str = "to-be-filled-in",
 ) -> Job:
+    template: dict = {
+        "specificationVersion": "jobtemplate-2023-09",
+        "name": f"{job_name}",
+        "description": description,
+        "steps": [
+            {
+                "hostRequirements": {
+                    "attributes": [
+                        {
+                            "name": "attr.worker.os.family",
+                            "allOf": [os.environ["OPERATING_SYSTEM"]],
+                        }
+                    ]
+                },
+                "name": "Step0",
+                "script": {
+                    "actions": {
+                        "onRun": (
+                            {"command": "{{ Task.File.runScript }}"}
+                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            else {
+                                "command": "powershell",
+                                "args": ["{{ Task.File.runScript }}"],  # type: ignore[dict-item]
+                            }
+                        ),
+                    },
+                    "embeddedFiles": [
+                        {
+                            "name": "runScript",
+                            "type": "TEXT",
+                            "runnable": True,
+                            "data": run_script,
+                            **(
+                                {"filename": "runScript.ps1"}
+                                if os.environ["OPERATING_SYSTEM"] == "windows"
+                                else {}
+                            ),
+                        }
+                    ],
+                },
+            },
+        ],
+    }
     job = Job.submit(
         client=deadline_client,
         farm=farm,
         queue=queue,
         max_retries_per_task=max_retries_per_task,
         priority=98,
-        template={
-            "specificationVersion": "jobtemplate-2023-09",
-            "name": f"{job_name}",
-            "steps": [
-                {
-                    "hostRequirements": {
-                        "attributes": [
-                            {
-                                "name": "attr.worker.os.family",
-                                "allOf": [os.environ["OPERATING_SYSTEM"]],
-                            }
-                        ]
-                    },
-                    "name": "Step0",
-                    "script": {
-                        "actions": {
-                            "onRun": (
-                                {"command": "{{ Task.File.runScript }}"}
-                                if os.environ["OPERATING_SYSTEM"] == "linux"
-                                else {
-                                    "command": "powershell",
-                                    "args": ["{{ Task.File.runScript }}"],  # type: ignore[dict-item]
-                                }
-                            ),
-                        },
-                        "embeddedFiles": [
-                            {
-                                "name": "runScript",
-                                "type": "TEXT",
-                                "runnable": True,
-                                "data": run_script,
-                                **(
-                                    {"filename": "runScript.ps1"}
-                                    if os.environ["OPERATING_SYSTEM"] == "windows"
-                                    else {}
-                                ),
-                            }
-                        ],
-                    },
-                },
-            ],
-        },
+        template=template,
     )
 
     return job
@@ -414,13 +432,17 @@ def submit_job_from_create_job_API(
     debug_snapshot_dir = os.path.normpath(debug_snapshot_dir)
     LOG.info(f"Submitting bundle {debug_snapshot_dir} to farm {farm.id} and queue {queue.id}")
 
-    queue_details = get_queue(farm_id=farm.id, queue_id=queue.id)
+    job_attachment_settings = _get_queue_attachment_settings(
+        deadline_client=deadline_client,
+        farm_id=farm.id,
+        queue_id=queue.id,
+    )
 
-    if not queue_details.jobAttachmentSettings:
+    if not job_attachment_settings:
         raise ValueError("Queue does not have job attachment settings configured")
 
-    s3_bucket = queue_details.jobAttachmentSettings.s3BucketName
-    rootPrefix = queue_details.jobAttachmentSettings.rootPrefix
+    s3_bucket = job_attachment_settings.s3BucketName
+    rootPrefix = job_attachment_settings.rootPrefix
 
     s3_client = get_s3_client()
 

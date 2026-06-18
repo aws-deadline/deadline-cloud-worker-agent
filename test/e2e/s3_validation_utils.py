@@ -8,17 +8,26 @@ import json
 import logging
 from typing import Dict, List, Optional, Tuple
 
+import re
+from collections import defaultdict
+
 import boto3
 from botocore.exceptions import ClientError
 
-from deadline.job_attachments._aws.deadline import get_job, get_queue
 from deadline.job_attachments.asset_manifests.hash_algorithms import hash_data
 from deadline.job_attachments.asset_manifests.v2023_03_03.asset_manifest import DEFAULT_HASH_ALG
-from deadline.job_attachments.download import _get_tasks_manifests_keys_from_s3
-from deadline.job_attachments._aws.aws_clients import get_s3_client
+from deadline.job_attachments.download import get_s3_client
+from deadline.job_attachments.models import (
+    Attachments,
+    JobAttachmentsFileSystem,
+    ManifestProperties,
+    PathFormat,
+)
 
 from deadline_test_fixtures import DeadlineClient, Job
 from datetime import datetime
+
+from e2e.utils import _get_queue_attachment_settings
 
 LOG = logging.getLogger(__name__)
 
@@ -27,6 +36,85 @@ class S3ValidationError(Exception):
     """Exception raised when S3 validation fails."""
 
     pass
+
+
+def _get_job_details(
+    deadline_client: DeadlineClient, farm_id: str, queue_id: str, job_id: str
+) -> "_JobDetails":
+    """Get job attachment details from the Deadline API."""
+    response = deadline_client.get_job(farmId=farm_id, queueId=queue_id, jobId=job_id)
+    attachments = None
+    if response.get("attachments"):
+        attachments = Attachments(
+            manifests=[
+                ManifestProperties(
+                    fileSystemLocationName=m.get("fileSystemLocationName"),
+                    rootPath=m["rootPath"],
+                    rootPathFormat=PathFormat(m["rootPathFormat"]),
+                    outputRelativeDirectories=m.get("outputRelativeDirectories"),
+                    inputManifestPath=m.get("inputManifestPath"),
+                )
+                for m in response["attachments"]["manifests"]
+            ],
+            fileSystem=JobAttachmentsFileSystem(
+                response["attachments"].get("fileSystem", JobAttachmentsFileSystem.COPIED.value)
+            ),
+        )
+    return _JobDetails(attachments=attachments)
+
+
+class _JobDetails:
+    def __init__(self, attachments: Optional[Attachments]):
+        self.attachments = attachments
+
+
+def _get_task_manifest_keys_from_s3(
+    manifest_prefix: str,
+    s3_bucket: str,
+    session: Optional[boto3.Session] = None,
+) -> List[str]:
+    """List S3 manifest keys under a prefix, selecting the latest per task."""
+    s3_client = get_s3_client(session=session) if session else get_s3_client()
+    all_contents: List[Dict] = []
+    continuation_token = None
+
+    while True:
+        kwargs: Dict = {"Bucket": s3_bucket, "Prefix": manifest_prefix}
+        if continuation_token:
+            kwargs["ContinuationToken"] = continuation_token
+        response = s3_client.list_objects_v2(**kwargs)
+        all_contents.extend(response.get("Contents", []))
+        if not response.get("IsTruncated"):
+            break
+        continuation_token = response.get("NextContinuationToken")
+
+    manifests_keys: List[str] = []
+    task_prefixes: Dict[str, List[str]] = defaultdict(list)
+    step_pattern = re.compile(r"step-.*/.*/.*output.*")
+
+    for content in all_contents:
+        key = content["Key"]
+        if step_pattern.search(key):
+            if "task-" in key:
+                parts = key.split("/")
+                for i, part in enumerate(parts):
+                    if "task-" in part:
+                        task_folder = "/".join(parts[: i + 1])
+                        task_prefixes[task_folder].append(key)
+                        break
+            else:
+                # Chunked step manifests (no task ID) — include all unconditionally
+                manifests_keys.append(key)
+
+    # Select latest per task (by alphabetical sort of subfolder name)
+    for task_folder, files in task_prefixes.items():
+        last_subfolder = sorted(
+            set(f.split("/")[len(task_folder.split("/"))] for f in files),
+            reverse=True,
+        )[0]
+        manifests_keys += [f for f in files if f.startswith(f"{task_folder}/{last_subfolder}/")]
+
+    return manifests_keys
 
 
 def validate_s3_job_output_manifest(
@@ -55,20 +143,24 @@ def validate_s3_job_output_manifest(
     farm_id = job.farm.id
     queue_id = job.queue.id
     # Get job and queue details
-    job_details = get_job(farm_id=farm_id, queue_id=queue_id, job_id=job.id, session=session)
-    queue_details = get_queue(farm_id=farm_id, queue_id=queue_id, session=session)
+    job_details = _get_job_details(
+        deadline_client=deadline_client, farm_id=farm_id, queue_id=queue_id, job_id=job.id
+    )
+    queue_settings = _get_queue_attachment_settings(
+        deadline_client=deadline_client, farm_id=farm_id, queue_id=queue_id
+    )
 
     assert job_details.attachments, f"Job {job.id} has no attachments"
     assert job_details.attachments.manifests, f"Job {job.id} has no manifests"
 
     LOG.debug(f"Job {job.id} has {len(job_details.attachments.manifests)} manifest(s)")
 
-    assert queue_details.jobAttachmentSettings, f"Queue {queue_id} has no job attachment settings"
+    assert queue_settings, f"Queue {queue_id} has no job attachment settings"
     LOG.debug(f"Queue {queue_id} has job attachment settings configured")
 
     # Extract S3 configuration
-    s3_bucket = queue_details.jobAttachmentSettings.s3BucketName
-    root_prefix = queue_details.jobAttachmentSettings.rootPrefix
+    s3_bucket = queue_settings.s3BucketName
+    root_prefix = queue_settings.rootPrefix
 
     for manifest_properties in job_details.attachments.manifests:
         root_path = manifest_properties.rootPath
@@ -82,7 +174,7 @@ def validate_s3_job_output_manifest(
             manifest_prefix = f"{root_prefix}/Manifests/{farm_id}/{queue_id}/{job.id}/{step_id}"
 
             try:
-                manifest_keys = _get_tasks_manifests_keys_from_s3(
+                manifest_keys = _get_task_manifest_keys_from_s3(
                     manifest_prefix=manifest_prefix, s3_bucket=s3_bucket, session=session
                 )
 

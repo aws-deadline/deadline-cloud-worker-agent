@@ -8,21 +8,21 @@ from time import sleep
 from typing import Any, Callable, Optional
 import backoff
 import boto3
-import botocore
 import dataclasses
 import logging
 import os
-import re
 
 from deadline_test_fixtures import (
     DeadlineClient,
     DeadlineWorkerConfiguration,
     EC2InstanceWorker,
     OperatingSystem,
+    TaskStatus,
 )
 
 from e2e.utils import (
     get_shutdown_on_stop_status_from_toml,
+    job_failure_message,
     submit_custom_job,
     submit_sleep_job,
 )
@@ -102,11 +102,11 @@ class TestWorkerConfiguration:
         # Submit a job and confirm that local session logs do not appear.
 
         job = submit_custom_job(
-            "Test Job with worker local session logs off",
+            "Test Local Session Logs Disabled - Verify No Log Files Created",
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
-            run_script="whoami",
+            run_script="echo 'PASS: Job ran successfully'",
         )
 
         job.wait_until_complete(client=deadline_client)
@@ -213,29 +213,46 @@ class TestWorkerConfiguration:
         are created under this root directory."""
 
         # GIVEN
-        logs_client = boto3.client(
-            "logs",
-            config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-        )
         session_root_dir: str
         run_script: str
 
         if operating_system.is_amazon_linux():
-            run_script = """
-#!/usr/bin/bash
-
-set -euo pipefail
-
-pwd
-""".lstrip()
             session_root_dir = "/mysessionroot"
-        elif operating_system.is_windows():
-            run_script = """
-$ErrorActionPreference = 'Stop'
-
-(Get-Item .).FullName
+            run_script = f"""#!/usr/bin/bash
+set -euo pipefail
+echo "=== Session Root Dir Test ==="
+echo "Expected prefix: {session_root_dir}/session-"
+echo ""
+echo "--- Step 1: Getting current working directory ---"
+cwd=$(pwd)
+echo "Current directory: $cwd"
+echo ""
+echo "--- Step 2: Validating session root ---"
+if [[ "$cwd" != {session_root_dir}/session-* ]]; then
+    echo "FAIL: pwd '$cwd' does not start with {session_root_dir}/session-"
+    exit 1
+fi
+echo "PASS: Working directory is under configured session root"
+echo "=== All checks passed ==="
 """
+        elif operating_system.is_windows():
             session_root_dir = "C:\\Sessions"
+            run_script = f"""$ErrorActionPreference = 'Stop'
+Write-Output "=== Session Root Dir Test ==="
+Write-Output "Expected prefix: {session_root_dir}\\session-"
+Write-Output ""
+Write-Output "--- Step 1: Getting current working directory ---"
+$cwd = (Get-Item .).FullName
+Write-Output "Current directory: $cwd"
+Write-Output ""
+Write-Output "--- Step 2: Validating session root ---"
+if (-not ($cwd -like '{session_root_dir}\\session-*')) {{
+    Write-Output "FAIL: pwd '$cwd' does not start with {session_root_dir}\\session-"
+    exit 1
+}}
+Write-Output "PASS: Working directory is under configured session root"
+Write-Output "=== All checks passed ==="
+"""
         else:
             raise NotImplementedError(f"Test not implemented for {operating_system}")
 
@@ -245,7 +262,7 @@ $ErrorActionPreference = 'Stop'
 
         # WHEN
         job = submit_custom_job(
-            "Test Job with worker local session logs off",
+            "Test Session Root Dir - Verify Sessions Created Under Configured Root",
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
@@ -254,12 +271,6 @@ $ErrorActionPreference = 'Stop'
 
         # THEN
         job.wait_until_complete(client=deadline_client)
-        assert job.task_run_status == "SUCCEEDED"
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=logs_client,
-            expected_pattern=re.compile(
-                f"^{re.escape(session_root_dir)}[\\\\/]session-[a-f0-9]{{32}}.*$", re.MULTILINE
-            ),
-            assert_fail_msg=f"Session root directory ({session_root_dir}) not applied",
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
         )

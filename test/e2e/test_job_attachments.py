@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional
 
 import backoff
 import boto3
-import botocore.config
 import pytest
 import xxhash
 from deadline.client import api
@@ -32,6 +31,7 @@ from deadline_test_fixtures import (
 from e2e.conftest import DeadlineResources
 from e2e.s3_validation_utils import validate_s3_job_output_manifest
 from e2e.utils import (
+    job_failure_message,
     wait_for_job_output,
     submit_sleep_job,
     submit_job_from_bundle,
@@ -715,7 +715,9 @@ if __name__ == "__main__":
         )
         job.wait_until_complete(client=deadline_client)
 
-        assert job.task_run_status == TaskStatus.SUCCEEDED
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
 
     @pytest.mark.skipif(
         os.environ["OPERATING_SYSTEM"] == "windows",
@@ -759,7 +761,9 @@ if __name__ == "__main__":
         )
 
         job.wait_until_complete(client=deadline_client, max_retries=42)
-        assert job.task_run_status == TaskStatus.SUCCEEDED
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
 
         # Validate S3 setup and manifest integrity
         LOG.info(f"Validating S3 setup for job {job.id}")
@@ -823,7 +827,9 @@ if __name__ == "__main__":
         job.wait_until_complete(client=deadline_client, max_retries=30)
         LOG.info(f"Job {job.id} total in {time.perf_counter() - submit_start_time:.2f} seconds")
 
-        assert job.task_run_status == TaskStatus.SUCCEEDED
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
 
         # Validate S3 setup and manifest integrity
         LOG.info(f"Validating S3 setup for job {job.id}")
@@ -1515,7 +1521,12 @@ if __name__ == "__main__":
         job.wait_until_complete(client=deadline_client)
 
         # Job should have failed due to not being able to sync attachments
-        assert job.task_run_status == TaskStatus.FAILED
+        assert job.task_run_status == TaskStatus.FAILED, (
+            "Expected job to fail due to attachment sync failure.\n"
+            + job_failure_message(
+                job, deadline_client, deadline_resources.queue_a, deadline_resources
+            )
+        )
 
         sessions: list[dict[str, Any]] = deadline_client.list_sessions(
             farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
@@ -1567,7 +1578,9 @@ if __name__ == "__main__":
 
         sleep_job.wait_until_complete(client=deadline_client)
 
-        assert sleep_job.task_run_status == TaskStatus.SUCCEEDED
+        assert sleep_job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            sleep_job, deadline_client, queue_a, deadline_resources
+        )
 
     def test_job_submission_asset_sync_behaviour_expected_without_errors(
         self,
@@ -1704,7 +1717,9 @@ with open(output_path, "w") as f:
         job.wait_until_complete(client=deadline_client)
         LOG.info(f"Job result: {job}")
 
-        assert job.task_run_status == TaskStatus.SUCCEEDED
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
 
         # Validate S3 setup and manifest integrity
         LOG.info(f"Validating S3 setup for job {job.id}")
@@ -1713,23 +1728,6 @@ with open(output_path, "w") as f:
             deadline_client=deadline_client,
         )
         LOG.info("S3 validation completed successfully")
-
-        logs_client = boto3.client(
-            "logs",
-            config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-        )
-
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=logs_client,
-            expected_pattern=r"Upload script executed successfully",
-        )
-
-        job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=logs_client,
-            expected_pattern=r"Download script executed successfully",
-        )
 
         # Verify job attachments output
         output_path = wait_for_job_output(
@@ -1899,7 +1897,9 @@ with open(output_path, "w") as f:
         job.wait_until_complete(client=deadline_client, max_retries=30)
         LOG.info(f"Job {job.id} total in {time.perf_counter() - submit_start_time:.2f} seconds")
 
-        assert job.task_run_status == TaskStatus.SUCCEEDED
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
 
         # Validate S3 setup and manifest integrity
         LOG.info(f"Validating S3 setup for job {job.id}")

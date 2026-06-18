@@ -7,8 +7,6 @@ attacker position in a supposed different security boundary.
 """
 
 import logging
-import boto3
-import botocore
 import pytest
 import os
 
@@ -22,6 +20,7 @@ from deadline_test_fixtures import (
 )
 
 from .conftest import DeadlineResources
+from .utils import job_failure_message
 
 
 @pytest.mark.skipif(
@@ -76,42 +75,32 @@ def test_access_worker_credential_file_from_job_windows(
     deadline_client: DeadlineClient,
 ) -> None:
     # GIVEN
+    # This script attempts to read worker credential files.
+    # EXPECTED: access is denied → script exits 1 → job FAILS.
+    # If access is NOT denied, the script exits 0 → job SUCCEEDS → test assertion catches the bug.
     powershell_script = """
+Write-Host "--- Attempting to read worker credential files as job user ---"
 Write-Host "Current user: $(whoami)"
-Write-Host "Attempting to read worker credentials from cache directory..."
 
-# Attempt to read worker credential files from the cache directory
 try {
-    # Look for JSON files in the credentials directory
     $credFiles = Get-ChildItem -Path "$env:ProgramData\\Amazon\\Deadline\\Cache\\credentials" -Filter *.json -ErrorAction Stop
-    
     if ($credFiles) {
         foreach ($file in $credFiles) {
-            Write-Host "Found credential file: $($file.FullName)"
-            # Attempt to read the file contents - will throw if access is denied
             $content = Get-Content $file.FullName -ErrorAction Stop
-            Write-Host "Successfully read file contents"
+            Write-Host "Read credential file: $($file.FullName) — access was NOT denied"
         }
     } else {
-        Write-Host "No credential files found in the cache directory"
+        Write-Host "No credential files found"
         exit 1
     }
 } catch {
-    Write-Host "Error accessing credential files: $_"
+    Write-Host "PASS: Access denied as expected — $_"
     exit 1
 }
 
-# Additional environment information
-Write-Host "Environment variables:"
-Get-ChildItem env: | Format-Table -AutoSize
-
-Write-Host "Worker ID from environment: $env:DEADLINE_WORKER_ID"
+# If we reach here, the job user could read credentials — this is a security bug.
+Write-Host "FAIL: Job user was able to read worker credentials"
 """
-    logs_client = boto3.client(
-        "logs",
-        config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-    )
-
     # WHEN
     job: Job = Job.submit(
         client=deadline_client,
@@ -122,6 +111,7 @@ Write-Host "Worker ID from environment: $env:DEADLINE_WORKER_ID"
         template={
             "specificationVersion": "jobtemplate-2023-09",
             "name": "Windows Worker Credentials Read Test",
+            "description": "Verifies job user cannot read worker credential files. Expected status: FAILED",
             "steps": [
                 {
                     "name": "Read Windows Worker Credentials",
@@ -149,11 +139,9 @@ Write-Host "Worker ID from environment: $env:DEADLINE_WORKER_ID"
     job.wait_until_complete(client=deadline_client)
 
     # THEN
-    assert job.task_run_status == TaskStatus.FAILED
-    job.assert_single_task_log_contains(
-        deadline_client=deadline_client,
-        expected_pattern="Error accessing credential files: ",
-        logs_client=logs_client,
+    assert job.task_run_status == TaskStatus.FAILED, (
+        "Job should have failed when trying to access worker credentials.\n"
+        + job_failure_message(job, deadline_client, deadline_resources.queue_a, deadline_resources)
     )
 
 

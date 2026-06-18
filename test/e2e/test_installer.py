@@ -7,13 +7,13 @@ Deadline Cloud worker and checking that the result/output of the worker agent is
 import pytest
 import backoff
 import boto3
-import botocore
 import dataclasses
 import logging
 import os
 
 from e2e.utils import (
     get_shutdown_on_stop_status_from_toml,
+    job_failure_message,
     submit_custom_job,
 )
 from e2e.conftest import DeadlineResources
@@ -58,7 +58,17 @@ class TestWindowsInstaller:
     DEFAULT_JOB_USER = "job-user"
     ADMIN_SID = "S-1-5-32-544"
 
-    WHOAMI_COMMAND = "Write-Output \"Jobs Run As: $((whoami).split('\\')[1])\""
+    WHOAMI_COMMAND = (
+        f"Write-Host '=== Step: Verify job runs as expected user ==='\n"
+        f"$actual = (whoami).split('\\')[1]\n"
+        f'Write-Host "Expected: {DEFAULT_JOB_USER}"\n'
+        f'Write-Host "Actual:   $actual"\n'
+        f"if ($actual -ne '{DEFAULT_JOB_USER}') {{\n"
+        f"  Write-Host 'FAIL: Job is not running as expected user'\n"
+        f"  exit 1\n"
+        f"}}\n"
+        f"Write-Host 'PASS: Job is running as expected user'"
+    )
 
     @pytest.fixture(scope="class")
     def worker_config(
@@ -89,6 +99,7 @@ class TestWindowsInstaller:
             farm=deadline_resources.farm,
             queue=deadline_resources.scaling_queue,
             run_script=self.WHOAMI_COMMAND,
+            description="Verifies the worker agent runs jobs as the expected job-user. Expected status: SUCCEEDED if whoami returns job-user.",
         )
 
     @pytest.fixture(scope="class")
@@ -96,6 +107,7 @@ class TestWindowsInstaller:
         self,
         class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
+        deadline_resources: DeadlineResources,
         test_job: Job,
     ) -> Job:
         """Fixture that ensures the test job is completed before running tests."""
@@ -105,7 +117,9 @@ class TestWindowsInstaller:
             class_worker.start_worker_service()
             test_job.wait_until_complete(client=deadline_client)
 
-        assert test_job.task_run_status == TaskStatus.SUCCEEDED, "Job did not complete successfully"
+        assert test_job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            test_job, deadline_client, deadline_resources.scaling_queue, deadline_resources
+        )
         return test_job
 
     # Shared Class Methods
@@ -231,23 +245,16 @@ if ($isValid) {{
         self,
         class_worker: EC2InstanceWorker,
         deadline_client: DeadlineClient,
+        deadline_resources: DeadlineResources,
         test_job: Job,
     ) -> None:
         LOG.info("Start worker service and complete test job")
         class_worker.start_worker_service()
         test_job.wait_until_complete(client=deadline_client)
 
-        LOG.info("Assert the queue job user is correct")
-        test_job.assert_single_task_log_contains(
-            deadline_client=deadline_client,
-            logs_client=boto3.client(
-                "logs",
-                config=botocore.config.Config(retries={"max_attempts": 10, "mode": "adaptive"}),
-            ),
-            expected_pattern=rf"Jobs Run As: {self.DEFAULT_JOB_USER}",
+        assert test_job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            test_job, deadline_client, deadline_resources.scaling_queue, deadline_resources
         )
-
-        assert test_job.task_run_status == TaskStatus.SUCCEEDED
 
     def test_deny_shutdown_on_stop(
         self,
