@@ -1151,11 +1151,24 @@ if __name__ == "__main__":
 
         # Query the session to check for progress percentage
         complete_percentage: float = 0
+        _last_progress: list[float] = [0]
 
         @backoff.on_predicate(
             wait_gen=backoff.constant,
             max_time=240,
             interval=2,
+            on_success=lambda details: (
+                logging.warning(
+                    f"syncInputJobAttachments took {details['elapsed']:.0f}s "
+                    f"(>120s slow-path threshold)"
+                )
+                if details["elapsed"] > 120
+                else None
+            ),
+            on_giveup=lambda details: logging.error(
+                f"syncInputJobAttachments timed out after {details['elapsed']:.0f}s "
+                f"(last progressPercent={_last_progress[0]})"
+            ),
         )
         def check_percentage(complete_percentage) -> bool:
             sessions = deadline_client.list_sessions(
@@ -1174,6 +1187,7 @@ if __name__ == "__main__":
                     if "syncInputJobAttachments" in session_action["definition"]:
                         assert complete_percentage <= session_action["progressPercent"]
                         complete_percentage = session_action["progressPercent"]
+                        _last_progress[0] = complete_percentage
                         return complete_percentage == 100
 
             return False
