@@ -13,7 +13,7 @@ license = "Apache-2.0"
 dependencies = [
     "requests ~= 2.31",
     "boto3 >= 1.34.75",
-    "deadline-job-attachments == 0.1.0",
+    "deadline-job-attachments == 0.1.1",
     # Pinned to patch version due to Host Config Script runner usage of private OpenJD Sessions API.
     "openjd-sessions == 0.10.9",
     "openjd-model >= 0.8.1, < 0.10",
