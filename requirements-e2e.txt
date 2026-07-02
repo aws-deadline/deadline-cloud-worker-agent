@@ -2,7 +2,7 @@ backoff == 2.2.*
 boto3 >= 1.34.75
 deadline >= 0.59.1, < 0.60
 deadline-job-attachments == 0.1.1
-deadline-cloud-test-fixtures >= 0.18.12, < 0.19
+deadline-cloud-test-fixtures >= 0.18.14, < 0.19
 flaky == 3.8.*
 mypy >= 2.1.0, < 2.2; python_version >= "3.10"
 mypy >= 1.19.1, < 1.20; python_version < "3.10"
