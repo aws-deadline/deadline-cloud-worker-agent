@@ -1,3 +1,9 @@
+## 0.30.1 (2026-07-03)
+
+### Features
+* Added a new `--session-runtime` CLI flag and `session_runtime` config field to select the session runtime backend. Supported modes are `python` (default), `rust`, and `service-selected`. The override priority follows existing precedence: CLI flag > config file > default. (#982)
+* Introduced the `SessionRuntime` abstraction layer and `PythonSessionRuntime` adapter, providing a pluggable interface between the worker agent and the OpenJD session backend. (#972)
+* Added slow-path warning and timeout diagnostics for job attachment sync operations, improving visibility when attachment downloads are unexpectedly slow. (`dd0a43e`)
 ## 0.30.0 (2026-06-02)
 
 ### BREAKING CHANGES
