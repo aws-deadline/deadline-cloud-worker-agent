@@ -4,7 +4,7 @@ coverage[toml] ~= 7.10; python_version < "3.10"
 coverage-conditional-plugin == 0.9.*
 deadline-cloud-test-fixtures >= 0.18.14, < 0.19
 flaky == 3.8.*
-pytest == 9.0.*; python_version >= "3.10"
+pytest == 9.1.*; python_version >= "3.10"
 pytest ~= 8.4; python_version < "3.10"
 pytest-cov == 7.1.*
 pytest-timeout == 2.4.*
