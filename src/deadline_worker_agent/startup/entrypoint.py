@@ -12,7 +12,7 @@ from time import sleep
 from botocore.exceptions import NoRegionError
 from logging.handlers import TimedRotatingFileHandler
 from threading import Event
-from typing import Optional
+from typing import Any, Optional
 from pathlib import Path
 
 from ..aws_credentials.worker_boto3_session import WorkerBoto3Session
@@ -130,7 +130,10 @@ def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = 
             config=DEADLINE_BOTOCORE_CONFIG,
         )
         s3_client = session.client("s3", config=OTHER_BOTOCORE_CONFIG)
-        logs_client = session.client("logs", config=OTHER_BOTOCORE_CONFIG)
+        logs_client_kwargs: dict[str, Any] = {"config": OTHER_BOTOCORE_CONFIG}
+        if worker_bootstrap.log_config.cloudwatch_region:
+            logs_client_kwargs["region_name"] = worker_bootstrap.log_config.cloudwatch_region
+        logs_client = session.client("logs", **logs_client_kwargs)
 
         # Shutdown behavior flags set by Worker below
         shutdown_requested_by_service = False

@@ -13,18 +13,28 @@ from deadline_worker_agent.api_models import (
 )
 
 
-from deadline_worker_agent.log_sync.cloudwatch import (
+from deadline_worker_agent.log_sync.log_constants import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,
+    LOG_CONFIG_OPTION_REGION_KEY,
     LOG_CONFIG_OPTION_STREAM_NAME_KEY,
 )
 
 CLOUDWATCH_LOG_GROUP = "log-group"
 CLOUDWATCH_LOG_STREAM = "log-stream"
+CLOUDWATCH_REGION = "us-west-2"
 AWSLOGS_LOG_CONFIGURATION = LogConfiguration(
     logDriver="awslogs",
     options={
         LOG_CONFIG_OPTION_GROUP_NAME_KEY: CLOUDWATCH_LOG_GROUP,
         LOG_CONFIG_OPTION_STREAM_NAME_KEY: CLOUDWATCH_LOG_STREAM,
+    },
+)
+AWSLOGS_LOG_CONFIGURATION_WITH_REGION = LogConfiguration(
+    logDriver="awslogs",
+    options={
+        LOG_CONFIG_OPTION_GROUP_NAME_KEY: CLOUDWATCH_LOG_GROUP,
+        LOG_CONFIG_OPTION_STREAM_NAME_KEY: CLOUDWATCH_LOG_STREAM,
+        LOG_CONFIG_OPTION_REGION_KEY: CLOUDWATCH_REGION,
     },
 )
 AWSLOGS_LOG_CONFIGURATION_MISSING_OPTIONS = LogConfiguration(
@@ -64,7 +74,9 @@ def test_success() -> None:
 
     # GIVEN
     expected_result = WorkerLogConfig(
-        cloudwatch_log_group=CLOUDWATCH_LOG_GROUP, cloudwatch_log_stream=CLOUDWATCH_LOG_STREAM
+        cloudwatch_log_group=CLOUDWATCH_LOG_GROUP,
+        cloudwatch_log_stream=CLOUDWATCH_LOG_STREAM,
+        cloudwatch_region=None,
     )
 
     # WHEN
@@ -72,6 +84,25 @@ def test_success() -> None:
 
     # THEN
     assert result == expected_result
+    assert result.cloudwatch_region is None
+
+
+def test_success_with_region() -> None:
+    # Tests that the region option is correctly extracted from the log configuration
+
+    # GIVEN
+    expected_result = WorkerLogConfig(
+        cloudwatch_log_group=CLOUDWATCH_LOG_GROUP,
+        cloudwatch_log_stream=CLOUDWATCH_LOG_STREAM,
+        cloudwatch_region=CLOUDWATCH_REGION,
+    )
+
+    # WHEN
+    result = construct_worker_log_config(AWSLOGS_LOG_CONFIGURATION_WITH_REGION)
+
+    # THEN
+    assert result == expected_result
+    assert result.cloudwatch_region == CLOUDWATCH_REGION
 
 
 @pytest.mark.parametrize(

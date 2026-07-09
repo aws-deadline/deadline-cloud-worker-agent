@@ -89,7 +89,7 @@ def mock_boto_session(
 ) -> MagicMock:
     mock_session = MagicMock()
 
-    def client_mock(service: str, config: Any) -> MagicMock:
+    def client_mock(service: str, **kwargs: Any) -> MagicMock:
         if service == "deadline":
             return client
         elif service == "s3":
@@ -770,6 +770,49 @@ class TestCloudWatchLogStreaming:
         )
         context_mgr_enter.assert_called_once_with()
         context_mgr_exit.assert_called_once()
+
+    def test_logs_client_created_without_region_when_cloudwatch_region_is_none(
+        self,
+        mock_stream_cloudwatch_logs: MagicMock,
+        mock_boto_session: MagicMock,
+        worker_log_config: WorkerLogConfig,
+        configuration: Configuration,
+    ) -> None:
+        """When cloudwatch_region is None, session.client('logs', ...) is called without region_name"""
+        # GIVEN
+        assert worker_log_config.cloudwatch_region is None
+
+        # WHEN
+        entrypoint_mod.entrypoint()
+
+        # THEN
+        logs_call = [c for c in mock_boto_session.client.call_args_list if c[0][0] == "logs"]
+        assert len(logs_call) == 1
+        assert "region_name" not in logs_call[0][1]
+
+    def test_logs_client_created_with_region_when_cloudwatch_region_is_set(
+        self,
+        mock_stream_cloudwatch_logs: MagicMock,
+        mock_boto_session: MagicMock,
+        configuration: Configuration,
+        bootstrap_worker_mock: MagicMock,
+    ) -> None:
+        """When cloudwatch_region is set, session.client('logs', ..., region_name='us-east-1') is called"""
+        # GIVEN
+        log_config_with_region = WorkerLogConfig(
+            cloudwatch_log_group="test-group",
+            cloudwatch_log_stream="test-stream",
+            cloudwatch_region="us-east-1",
+        )
+        bootstrap_worker_mock.return_value.log_config = log_config_with_region
+
+        # WHEN
+        entrypoint_mod.entrypoint()
+
+        # THEN
+        logs_call = [c for c in mock_boto_session.client.call_args_list if c[0][0] == "logs"]
+        assert len(logs_call) == 1
+        assert logs_call[0][1].get("region_name") == "us-east-1"
 
 
 @patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")

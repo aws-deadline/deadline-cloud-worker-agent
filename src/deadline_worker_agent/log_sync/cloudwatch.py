@@ -25,8 +25,11 @@ __all__ = [
     "stream_cloudwatch_logs",
 ]
 
-LOG_CONFIG_OPTION_GROUP_NAME_KEY = "logGroupName"
-LOG_CONFIG_OPTION_STREAM_NAME_KEY = "logStreamName"
+from .log_constants import (
+    LOG_CONFIG_OPTION_GROUP_NAME_KEY,  # noqa: F401 - re-exported for backwards compatibility
+    LOG_CONFIG_OPTION_REGION_KEY,  # noqa: F401
+    LOG_CONFIG_OPTION_STREAM_NAME_KEY,  # noqa: F401
+)
 
 
 class PutLogEventsConstraints(NamedTuple):
