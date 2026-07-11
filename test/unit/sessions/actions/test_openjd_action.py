@@ -65,7 +65,7 @@ class TestCancel:
         action.cancel(session=session, time_limit=time_limit)
 
         # THEN
-        session._session.cancel_action.assert_called_once_with(time_limit=time_limit)
+        session.runtime.cancel_action.assert_called_once_with(time_limit=time_limit)
 
     @pytest.mark.parametrize(
         argnames="action_status",
@@ -92,15 +92,15 @@ class TestCancel:
         # GIVEN
         action = DerivedOpenjdAction(id="my-id")
         error_msg = "error msg"
-        session._session.cancel_action.side_effect = RuntimeError(error_msg)
-        session._session.action_status = action_status
+        session.runtime.cancel_action.side_effect = RuntimeError(error_msg)
+        session.runtime.action_status = action_status
 
         with pytest.raises(CancelationError) as raise_ctx:
             # WHEN
             action.cancel(session=session, time_limit=time_limit)
 
         # THEN
-        session._session.cancel_action.assert_called_once()
+        session.runtime.cancel_action.assert_called_once()
         if action_status:
             raise_ctx.match(
                 re.escape(

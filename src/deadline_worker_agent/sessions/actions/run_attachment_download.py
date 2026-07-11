@@ -292,23 +292,8 @@ class AttachmentDownloadAction(OpenjdAction):
         dynamic_mapping_rules.update(generated_path_mapping)
         job_attachment_path_mappings = list([asdict(r) for r in dynamic_mapping_rules.values()])
 
-        # Open Job Description session implementation details -- path mappings are sorted.
-        # bisect.insort only supports the 'key' arg in 3.10 or later, so
-        # we first extend the list and sort it afterwards.
-        if session.openjd_session._path_mapping_rules:
-            session.openjd_session._path_mapping_rules.extend(
-                OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings
-            )
-        else:
-            session.openjd_session._path_mapping_rules = [
-                OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings
-            ]
-
-        # Open Job Description Sessions sort the path mapping rules based on length of the parts make
-        # rules that are subsets of each other behave in a predictable manner. We must
-        # sort here since we're modifying that internal list appending to the list.
-        session.openjd_session._path_mapping_rules.sort(
-            key=lambda rule: -len(rule.source_path.parts)
+        session.runtime.extend_path_mapping_rules(
+            [OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings]
         )
 
         manifest_paths_by_root = session._asset_sync._check_and_write_local_manifests(

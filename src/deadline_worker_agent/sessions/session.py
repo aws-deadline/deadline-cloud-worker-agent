@@ -39,8 +39,6 @@ if TYPE_CHECKING:
 
 from openjd.model import (
     TaskParameterSet,
-    RevisionExtensions,
-    SpecificationRevision,
 )
 from openjd.model.v2023_09 import ExtensionName
 from openjd.sessions import (
@@ -50,7 +48,6 @@ from openjd.sessions import (
     EnvironmentModel,
     LOG as OPENJD_LOG,
     StepScriptModel,
-    Session as OPENJDSession,
     SessionUser,
 )
 
@@ -62,6 +59,12 @@ from deadline.job_attachments.progress_tracker import ProgressReportMetadata
 
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
+from .runtime import (
+    SessionRuntimeKind,
+    SessionRuntime,
+    SessionRuntimeConfig,
+    create_session_runtime,
+)
 from ..log_messages import (
     SessionLogEvent,
     SessionLogEventSubtype,
@@ -194,21 +197,22 @@ class Session:
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
 
-        self._session = OPENJDSession(
-            session_id=self._id,
-            job_parameter_values=self._job_details.parameters,
-            path_mapping_rules=self._job_details.path_mapping_rules,
-            retain_working_dir=self._retain_session_dir,
-            user=self._os_user,
-            callback=openjd_session_action_callback,
-            os_env_vars=self._env,
-            session_root_directory=session_root_dir,
-            # Currently for simplicity request that our session allow all extensions
-            # This does not obey the spec.  It should be changed at a later date to the list of requested
-            # extensions once those are returned by BatchGetJobEntity
-            revision_extensions=RevisionExtensions(
-                spec_rev=SpecificationRevision.v2023_09,
-                supported_extensions=[v.value for v in ExtensionName],
+        self._runtime: SessionRuntime = create_session_runtime(
+            SessionRuntimeKind.PYTHON,
+            SessionRuntimeConfig(
+                session_id=self._id,
+                job_parameter_values=self._job_details.parameters,
+                path_mapping_rules=self._job_details.path_mapping_rules,
+                retain_working_dir=self._retain_session_dir,
+                user=self._os_user,
+                action_callback=openjd_session_action_callback,
+                os_env_vars=self._env,
+                session_root_directory=session_root_dir,
+                spec_revision="2023-09",
+                # Currently for simplicity request that our session allow all extensions
+                # This does not obey the spec.  It should be changed at a later date to the list of requested
+                # extensions once those are returned by BatchGetJobEntity
+                supported_extensions=tuple(v.value for v in ExtensionName),
             ),
         )
 
@@ -225,14 +229,14 @@ class Session:
         self._action_output_log_filter = None
 
     @property
-    def openjd_session(self) -> OPENJDSession:
-        """The openjd session for this session"""
-        return self._session
+    def runtime(self) -> SessionRuntime:
+        """The session runtime adapter for this session"""
+        return self._runtime
 
     @property
     def working_directory(self) -> Path:
         """The working directory for this session"""
-        return self._session.working_directory
+        return self._runtime.working_directory
 
     @property
     def id(self) -> str:
@@ -453,7 +457,7 @@ class Session:
         # After canceling the running action, we exit any active environments
         actions.extend(
             (
-                partial(self._session.exit_environment, identifier=env.session_env_id),
+                partial(self._runtime.exit_environment, identifier=env.session_env_id),
                 f"exit environment {env.job_env_id}",
             )
             for env in reversed(self._active_envs)
@@ -486,7 +490,7 @@ class Session:
                 except TimeoutError:
                     # Log, cancel the cleanup action and break the loop if we've run out of grace time
                     logger.warning("%s timed out", desc)
-                    self._session.cancel_action()
+                    self._runtime.cancel_action()
                     break
                 else:
                     logger.info("%s successful", desc)
@@ -495,12 +499,12 @@ class Session:
             if self._asset_sync is not None and self._job_attachment_details is not None:
                 # Perform any cleanup the job attachments system needs to do
                 self._asset_sync.cleanup_session(
-                    session_dir=self._session.working_directory,
+                    session_dir=self._runtime.working_directory,
                     file_system=self._job_attachment_details.job_attachments_file_system,
                     os_user=self._os_user.user if self._os_user else None,
                 )
             # Clean-up the Open Job Description session
-            self._session.cleanup()
+            self._runtime.cleanup()
 
     def replace_assigned_actions(
         self,
@@ -809,7 +813,7 @@ class Session:
                 f"yield_frequency must be a positive timedelta or None, but got {frequency}"
             )
 
-        if self._session.action_status is None:
+        if self._runtime.action_status is None:
             raise RuntimeError("No action is running")
 
         start_time = monotonic()
@@ -817,24 +821,24 @@ class Session:
         remaining_time: timedelta | None = timeout
         if timeout:
             while (
-                self._session.action_status.state
+                self._runtime.action_status.state
                 not in OPENJD_ACTION_STATE_TO_DEADLINE_COMPLETED_STATUS
             ):
                 elapsed_time = timedelta(seconds=cur_time - start_time)
                 remaining_time = timeout - elapsed_time
 
                 if elapsed_time > TIME_DELTA_ZERO:
-                    yield self._session.action_status
+                    yield self._runtime.action_status
 
                 if remaining_time <= TIME_DELTA_ZERO:
                     raise TimeoutError()
                 sleep(min(frequency, remaining_time).total_seconds())
                 cur_time = monotonic()
         else:
-            if self._session.action_status.state == ActionState.RUNNING:
+            if self._runtime.action_status.state == ActionState.RUNNING:
                 sleep(frequency.total_seconds())
-            while self._session.action_status.state == ActionState.RUNNING:
-                yield self._session.action_status
+            while self._runtime.action_status.state == ActionState.RUNNING:
+                yield self._runtime.action_status
                 sleep(frequency.total_seconds())
 
     def enter_environment(
@@ -844,7 +848,7 @@ class Session:
         environment: EnvironmentModel,
         os_env_vars: Optional[dict[str, str]] = None,
     ) -> None:
-        session_env_id = self._session.enter_environment(
+        session_env_id = self._runtime.enter_environment(
             environment=environment, identifier=job_env_id, os_env_vars=os_env_vars
         )
         self._active_envs.append(
@@ -867,7 +871,7 @@ class Session:
                 f"Active environments from outer-most to inner-most are: {env_stack_str}"
             )
         active_env = self._active_envs[-1]
-        self._session.exit_environment(
+        self._runtime.exit_environment(
             identifier=active_env.session_env_id, os_env_vars=os_env_vars
         )
         self._active_envs.pop()
@@ -1176,7 +1180,7 @@ class Session:
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
     ) -> None:
-        self._session.run_task(
+        self._runtime.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,
             os_env_vars=os_env_vars,
@@ -1191,7 +1195,7 @@ class Session:
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
     ) -> None:
-        self._session._run_task_without_session_env(
+        self._runtime._run_task_without_session_env(
             step_script=step_script,
             task_parameter_values=task_parameter_values,
             os_env_vars=os_env_vars,
