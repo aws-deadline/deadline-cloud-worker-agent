@@ -406,6 +406,16 @@ class SessionActionQueue:
             action_type = action_queue_entry.definition["actionType"]
             action_definition = action_queue_entry.definition
             action_id = action_definition["sessionActionId"]
+            # Remove the action from the queue up-front. We are committed to
+            # consuming the front action regardless of the outcome below: on
+            # success it is returned to be run; if resolving its job-entity
+            # details raises a terminal SessionActionError, the Session reports
+            # it as FAILED. Leaving it queued would let cancel_all() re-report
+            # it as NEVER_ATTEMPTED and clobber that FAILED status -- and the
+            # service rejects NEVER_ATTEMPTED for the first session action,
+            # which crashes the worker's scheduler.
+            del self._actions[0]
+            del self._actions_by_id[action_id]
             if action_type.startswith("ENV_"):
                 action_queue_entry = cast(EnvironmentQueueEntry, action_queue_entry)
                 action_definition = action_queue_entry.definition
@@ -546,6 +556,4 @@ class SessionActionQueue:
                 raise ValueError(
                     f'Unknown action type "{action_type}". Complete action = {action_definition}'
                 )
-            del self._actions[0]
-            del self._actions_by_id[action_id]
         return next_action

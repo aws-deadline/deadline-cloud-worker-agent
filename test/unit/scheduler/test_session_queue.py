@@ -365,6 +365,13 @@ class TestSessionActionQueueDequeue:
         # and reschedule loop.
         assert excinfo.value.step_id == expected_step_id
         assert excinfo.value.task_id == expected_task_id
+        # The failed action must be removed from the queue. If it were left
+        # queued, cancel_all() would re-report it as NEVER_ATTEMPTED and clobber
+        # the FAILED status the Session reports -- which the service rejects for
+        # the first session action, crashing the worker scheduler.
+        action_id = queue_entry.definition["sessionActionId"]
+        assert session_queue._actions == []
+        assert action_id not in session_queue._actions_by_id
 
     @pytest.mark.parametrize(
         argnames=("queue_entry"),
