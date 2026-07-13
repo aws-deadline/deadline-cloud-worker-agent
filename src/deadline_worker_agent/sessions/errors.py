@@ -36,6 +36,8 @@ class SessionActionError(Exception):
         self.action_id = action_id
         self.action_log_kind = action_log_kind
         self.message = message
+        self.step_id = step_id
+        self.task_id = task_id
 
     def __str__(self) -> str:
         return self.message
