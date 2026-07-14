@@ -1,3 +1,10 @@
+## 0.30.2 (2026-07-14)
+
+### Features
+* Cross-region CloudWatch Logs routing now uses the region specified in log configuration options, enabling proper log delivery for multi-region fleet configurations. (#997)
+
+### Bug Fixes
+* Fixed an issue where session action structure errors were not properly captured, which could lead to incomplete error reporting for failed session actions. (#1005)
 ## 0.30.1 (2026-07-03)
 
 ### Features
