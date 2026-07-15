@@ -406,11 +406,25 @@ class TestEC2MetadataQueries:
         requests_put.assert_called_once_with(
             "http://169.254.169.254/latest/api/token",
             headers={"X-aws-ec2-metadata-token-ttl-seconds": "10"},
+            timeout=Worker._IMDS_REQUEST_TIMEOUT_SECONDS,
         )
 
     def test_get_imdsv2_token_cannot_connect(self, worker: Worker, requests_put: MagicMock) -> None:
         # GIVEN
         requests_put.side_effect = worker_mod.requests.ConnectionError("Error")
+
+        # WHEN
+        result = worker._get_ec2_metadata_imdsv2_token()
+
+        # THEN
+        assert result is None
+
+    def test_get_imdsv2_token_request_times_out(
+        self, worker: Worker, requests_put: MagicMock
+    ) -> None:
+        """A blackholed IMDS address must be treated as IMDS-unavailable, not hang."""
+        # GIVEN
+        requests_put.side_effect = worker_mod.requests.Timeout("Error")
 
         # WHEN
         result = worker._get_ec2_metadata_imdsv2_token()
@@ -463,6 +477,7 @@ class TestEC2MetadataQueries:
         requests_get.assert_called_once_with(
             "http://169.254.169.254/latest/meta-data/spot/instance-action",
             headers={"X-aws-ec2-metadata-token": fake_token},
+            timeout=Worker._IMDS_REQUEST_TIMEOUT_SECONDS,
         )
         if not is_interrupt:
             assert result is None
@@ -532,6 +547,16 @@ class TestEC2MetadataQueries:
         # THEN
         assert result is None
 
+    def test_spot_shutdown_request_times_out(self, worker: Worker, requests_get: MagicMock) -> None:
+        # GIVEN
+        requests_get.side_effect = worker_mod.requests.Timeout("Error")
+
+        # WHEN
+        result = worker._get_spot_instance_shutdown_action_timeout(imdsv2_token="token")
+
+        # THEN
+        assert result is None
+
     def test_spot_shutdown_imds_inactive(self, worker: Worker, requests_get: MagicMock) -> None:
         # GIVEN
         response_mock = MagicMock()
@@ -575,11 +600,22 @@ class TestEC2MetadataQueries:
         requests_get.assert_called_once_with(
             "http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state",
             headers={"X-aws-ec2-metadata-token": fake_token},
+            timeout=Worker._IMDS_REQUEST_TIMEOUT_SECONDS,
         )
 
     def test_asg_terminate_cannot_connect(self, worker: Worker, requests_get: MagicMock) -> None:
         # GIVEN
         requests_get.side_effect = worker_mod.requests.ConnectionError("Error")
+
+        # WHEN
+        result = worker._is_asg_terminated(imdsv2_token="token")
+
+        # THEN
+        assert not result
+
+    def test_asg_terminate_request_times_out(self, worker: Worker, requests_get: MagicMock) -> None:
+        # GIVEN
+        requests_get.side_effect = worker_mod.requests.Timeout("Error")
 
         # WHEN
         result = worker._is_asg_terminated(imdsv2_token="token")

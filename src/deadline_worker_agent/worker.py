@@ -61,6 +61,11 @@ class Worker:
     """The amount of time to allow the Worker to gracefully shutdown after detecting an auto-scaling
     life-cycle event."""
 
+    _IMDS_REQUEST_TIMEOUT_SECONDS = 0.5
+    """Timeout for EC2 instance metadata service requests. Non-EC2 hosts may blackhole the
+    IMDS address rather than refuse the connection; without a timeout those requests block
+    forever. Matches the timeout used by startup.bootstrap._get_metadata."""
+
     _farm_id: str
     _fleet_id: str
     _worker_id: str
@@ -391,8 +396,12 @@ class Worker:
             response = requests.put(
                 "http://169.254.169.254/latest/api/token",
                 headers={"X-aws-ec2-metadata-token-ttl-seconds": "10"},
+                # Non-EC2 hosts may blackhole the IMDS address instead of refusing the
+                # connection. Without a timeout this request can block forever, which
+                # prevents the agent's graceful shutdown from ever running.
+                timeout=Worker._IMDS_REQUEST_TIMEOUT_SECONDS,
             )
-        except requests.ConnectionError:
+        except (requests.ConnectionError, requests.Timeout):
             # Could not connect to the metadata service. Either it's not enabled or we're not
             # on an EC2 instance.
             return None
@@ -422,8 +431,9 @@ class Worker:
             response = requests.get(
                 "http://169.254.169.254/latest/meta-data/spot/instance-action",
                 headers={"X-aws-ec2-metadata-token": imdsv2_token},
+                timeout=Worker._IMDS_REQUEST_TIMEOUT_SECONDS,
             )
-        except requests.ConnectionError:
+        except (requests.ConnectionError, requests.Timeout):
             # Could not connect to the metadata service. Either it's inactive or we're not
             # on an EC2 instance.
             return None
@@ -473,8 +483,9 @@ class Worker:
             response = requests.get(
                 "http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state",
                 headers={"X-aws-ec2-metadata-token": imdsv2_token},
+                timeout=Worker._IMDS_REQUEST_TIMEOUT_SECONDS,
             )
-        except requests.ConnectionError:
+        except (requests.ConnectionError, requests.Timeout):
             return False
 
         if response.status_code == 200:
