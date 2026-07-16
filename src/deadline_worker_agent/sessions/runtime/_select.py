@@ -5,13 +5,20 @@ from typing import Optional
 
 from ..._session_runtime_kind import SessionRuntimeKind
 
-# Valid values that the service may send as a runtimeHint. The hint is a raw
-# string from the UpdateWorkerSchedule response, so we map it explicitly rather
-# than trusting SessionRuntimeKind(...) — "service-selected" is a valid enum
-# value but NOT a valid hint.
+# Valid values that the service may send as a runtimeHint in the
+# UpdateWorkerSchedule response's session metadata. These are the service's
+# RuntimeMode wire values and intentionally differ from SessionRuntimeKind's
+# config strings: "pythonexpr" denotes the Python session runtime (with the
+# Rust expression engine), "rust" denotes the full Rust session runtime.
+# Unknown values raise ValueError — the map is an explicit allowlist.
+#
+# This map is the single translation point from the service's wire
+# vocabulary to SessionRuntimeKind. Callers pass the raw metadata string
+# through unmodified — no pre-translation — so that the wire contract is
+# defined (and validated) in exactly one place.
 _RUNTIME_HINT_MAP: dict[str, SessionRuntimeKind] = {
-    SessionRuntimeKind.PYTHON.value: SessionRuntimeKind.PYTHON,
-    SessionRuntimeKind.RUST.value: SessionRuntimeKind.RUST,
+    "pythonexpr": SessionRuntimeKind.PYTHON,
+    "rust": SessionRuntimeKind.RUST,
 }
 
 
@@ -24,8 +31,8 @@ def select_runtime(
 
     The worker configuration determines the mode. PYTHON and RUST modes pin the
     runtime unconditionally and ignore any service-provided hint. SERVICE_SELECTED
-    mode defers to the service's runtimeHint when present, and defaults to PYTHON
-    when absent.
+    mode defers to the service's runtimeHint ("pythonexpr" or "rust") when present,
+    and defaults to PYTHON when absent.
 
     There is intentionally no capability check, escalation, or fallback here. If
     the selected runtime cannot support the job's required extensions, runtime

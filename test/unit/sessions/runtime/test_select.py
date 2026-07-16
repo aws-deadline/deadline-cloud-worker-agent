@@ -22,7 +22,10 @@ from deadline_worker_agent.sessions.runtime import select_runtime
             SessionRuntimeKind.PYTHON, None, SessionRuntimeKind.PYTHON, id="python-mode-no-hint"
         ),
         pytest.param(
-            SessionRuntimeKind.RUST, "python", SessionRuntimeKind.RUST, id="rust-mode-ignores-hint"
+            SessionRuntimeKind.RUST,
+            "pythonexpr",
+            SessionRuntimeKind.RUST,
+            id="rust-mode-ignores-hint",
         ),
         pytest.param(
             SessionRuntimeKind.RUST, None, SessionRuntimeKind.RUST, id="rust-mode-no-hint"
@@ -35,9 +38,9 @@ from deadline_worker_agent.sessions.runtime import select_runtime
         ),
         pytest.param(
             SessionRuntimeKind.SERVICE_SELECTED,
-            "python",
+            "pythonexpr",
             SessionRuntimeKind.PYTHON,
-            id="service-selected-follows-python-hint",
+            id="service-selected-follows-pythonexpr-hint",
         ),
         pytest.param(
             SessionRuntimeKind.SERVICE_SELECTED,
@@ -56,6 +59,7 @@ def test_select_runtime(
 @pytest.mark.parametrize(
     "bad_hint",
     [
+        pytest.param("python", id="config-string-not-a-wire-value"),
         pytest.param("service-selected", id="service-selected-is-not-a-valid-hint"),
         pytest.param("RUST", id="wrong-case"),
         pytest.param("", id="empty-string"),
