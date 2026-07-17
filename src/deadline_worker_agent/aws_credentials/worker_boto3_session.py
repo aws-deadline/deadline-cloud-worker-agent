@@ -89,17 +89,37 @@ class WorkerBoto3Session(BaseBoto3Session):
             )
         )
 
-        deadline_client = session.client("deadline", config=DEADLINE_BOTOCORE_CONFIG)
-        try:
-            response = assume_fleet_role_for_worker(
+        def _assume(boto_session: Session) -> Any:
+            deadline_client = boto_session.client("deadline", config=DEADLINE_BOTOCORE_CONFIG)
+            return assume_fleet_role_for_worker(
                 deadline_client=deadline_client,
                 farm_id=self._farm_id,
                 fleet_id=self._fleet_id,
                 worker_id=self._worker_id,
             )
+
+        try:
+            response = _assume(session)
         except DeadlineRequestUnrecoverableError as e:
-            # Re-raise to let the caller know, and handle the exception.
-            raise e from None
+            # If credentials expired during the call (e.g. machine hibernated/slept between
+            # the are_expired() check and the API call), retry with bootstrap credentials.
+            #
+            # NOTE: are_expired() is a heuristic, not proof of the failure's cause. We can't tell
+            # from the error alone whether it was caused by expiry, so we infer it from the clock.
+            # A genuine AccessDeniedException (e.g. policy change, role deletion) that happens to
+            # coincide with expiry will also be retried here rather than surfacing immediately.
+            if credentials_object.are_expired() and session is not self._bootstrap_session:
+                _logger.warning(
+                    AwsCredentialsLogEvent(
+                        op=AwsCredentialsLogEventOp.QUERY,
+                        resource=self._worker_id,
+                        message="Credentials expired during refresh (possible hibernate/sleep). Retrying with bootstrap credentials.",
+                    )
+                )
+                response = _assume(self._bootstrap_session)
+            else:
+                # Re-raise to let the caller know, and handle the exception.
+                raise e from None
 
         try:
             temporary_creds = TemporaryCredentials.from_deadline_assume_role_response(
