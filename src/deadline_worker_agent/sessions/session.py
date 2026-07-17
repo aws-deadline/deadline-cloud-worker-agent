@@ -171,6 +171,7 @@ class Session:
         asset_sync: Optional[AssetSync],
         os_user: SessionUser | None,
         retain_session_dir: bool = False,
+        runtime_kind: SessionRuntimeKind = SessionRuntimeKind.PYTHON,
         job_details: JobDetails,
         action_update_callback: Callable[[SessionActionStatus], None],
         action_update_lock: RLock,
@@ -198,7 +199,7 @@ class Session:
             self.update_action(action_status)
 
         self._runtime: SessionRuntime = create_session_runtime(
-            SessionRuntimeKind.PYTHON,
+            runtime_kind,
             SessionRuntimeConfig(
                 session_id=self._id,
                 job_parameter_values=self._job_details.parameters,

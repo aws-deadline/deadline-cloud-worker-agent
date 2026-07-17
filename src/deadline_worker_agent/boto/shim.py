@@ -214,6 +214,8 @@ class DeadlineClient:
             )
             if log_configuration := session.get("logConfiguration", None):
                 mapped_session["logConfiguration"] = log_configuration
+            if metadata := session.get("metadata", None):
+                mapped_session["metadata"] = metadata
 
             mapped_sessions[session_id] = mapped_session
 

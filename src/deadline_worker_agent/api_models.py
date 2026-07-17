@@ -123,6 +123,7 @@ class AssignedSession(TypedDict):
     jobId: str
     sessionActions: list[EnvironmentAction | TaskRunAction | AttachmentDownloadAction]
     logConfiguration: NotRequired[LogConfiguration]
+    metadata: NotRequired[dict[str, str]]
 
 
 class UpdateWorkerScheduleResponse(TypedDict):
