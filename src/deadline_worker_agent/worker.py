@@ -94,7 +94,7 @@ class Worker:
         host_metrics_logging: bool,
         host_metrics_logging_interval_seconds: float | None = None,
         retain_session_dir: bool = False,
-        session_runtime: SessionRuntimeKind = SessionRuntimeKind.PYTHON,
+        session_runtime_kind: SessionRuntimeKind = SessionRuntimeKind.PYTHON,
         stop: Event | None = None,
     ) -> None:
         self._deadline_client = deadline_client
@@ -118,7 +118,7 @@ class Worker:
             worker_persistence_dir=worker_persistence_dir,
             worker_logs_dir=worker_logs_dir,
             retain_session_dir=retain_session_dir,
-            session_runtime=session_runtime,
+            session_runtime_kind=session_runtime_kind,
             stop=stop,
             session_root_dir=session_root_dir,
         )

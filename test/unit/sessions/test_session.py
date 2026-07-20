@@ -46,6 +46,7 @@ from deadline_worker_agent.api_models import (
 )
 from deadline_worker_agent.sessions import Session
 from deadline_worker_agent.sessions.runtime import SessionRuntime
+from deadline_worker_agent._session_runtime_kind import SessionRuntimeKind
 import deadline_worker_agent.sessions.session as session_mod
 from deadline_worker_agent.sessions.session import (
     CurrentAction,
@@ -495,7 +496,7 @@ class TestSessionInit:
 
 
 class TestSessionRuntimeKind:
-    """Tests that Session passes the correct runtime_kind to create_session_runtime."""
+    """Tests that Session passes the correct session_runtime_kind to create_session_runtime."""
 
     def test_explicit_runtime_kind_passed(
         self,
@@ -509,9 +510,7 @@ class TestSessionRuntimeKind:
         action_update_lock: MagicMock,
         session_root_dir: Path,
     ) -> None:
-        """When runtime_kind=RUST is passed, RUST is forwarded to create_session_runtime."""
-        from deadline_worker_agent._session_runtime_kind import SessionRuntimeKind
-
+        """When session_runtime_kind=RUST is passed, RUST is forwarded to create_session_runtime."""
         Session(
             id="session-test-rust",
             asset_sync=asset_sync,
@@ -524,7 +523,7 @@ class TestSessionRuntimeKind:
             action_update_callback=action_update_callback,
             action_update_lock=action_update_lock,
             session_root_dir=session_root_dir,
-            runtime_kind=SessionRuntimeKind.RUST,
+            session_runtime_kind=SessionRuntimeKind.RUST,
         )
 
         mock_create_runtime.assert_called_once()
@@ -542,9 +541,7 @@ class TestSessionRuntimeKind:
         action_update_lock: MagicMock,
         session_root_dir: Path,
     ) -> None:
-        """When runtime_kind is omitted, PYTHON is forwarded to create_session_runtime."""
-        from deadline_worker_agent._session_runtime_kind import SessionRuntimeKind
-
+        """When session_runtime_kind is omitted, PYTHON is forwarded to create_session_runtime."""
         Session(
             id="session-test-default",
             asset_sync=asset_sync,

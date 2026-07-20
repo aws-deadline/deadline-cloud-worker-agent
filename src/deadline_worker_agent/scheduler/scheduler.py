@@ -194,7 +194,7 @@ class WorkerScheduler:
     _worker_persistence_dir: Path
     _worker_logs_dir: Path | None
     _retain_session_dir: bool
-    _session_runtime: SessionRuntimeKind
+    _session_runtime_kind: SessionRuntimeKind
     _session_root_dir: Path
 
     # Map from queueId -> QueueAwsCredentials.
@@ -217,7 +217,7 @@ class WorkerScheduler:
         worker_logs_dir: Path | None,
         session_root_dir: Path,
         retain_session_dir: bool = False,
-        session_runtime: SessionRuntimeKind = SessionRuntimeKind.PYTHON,
+        session_runtime_kind: SessionRuntimeKind = SessionRuntimeKind.PYTHON,
         stop: Event | None = None,
     ) -> None:
         """Queue of Worker Sessions and their actions
@@ -256,7 +256,7 @@ class WorkerScheduler:
         self._worker_persistence_dir = worker_persistence_dir
         self._worker_logs_dir = worker_logs_dir
         self._retain_session_dir = retain_session_dir
-        self._session_runtime = session_runtime
+        self._session_runtime_kind = session_runtime_kind
         self._windows_credentials_resolver: Optional[WindowsCredentialsResolver]
         self._session_root_dir = session_root_dir
 
@@ -1165,7 +1165,7 @@ class WorkerScheduler:
 
             runtime_hint = (session_spec.get("metadata") or {}).get("runtimeHint")
             try:
-                runtime_kind = select_runtime(self._session_runtime, runtime_hint=runtime_hint)
+                runtime_kind = select_runtime(self._session_runtime_kind, runtime_hint=runtime_hint)
             except ValueError as e:
                 # An unknown runtimeHint indicates version skew or a
                 # service-side bug. Fail this session's actions visibly and
@@ -1183,6 +1183,18 @@ class WorkerScheduler:
                 )
                 continue
 
+            logger.info(
+                SessionLogEvent(
+                    subtype=SessionLogEventSubtype.STARTING,
+                    queue_id=queue_id,
+                    job_id=job_id,
+                    session_id=new_session_id,
+                    message=(
+                        f"Selected session runtime: {runtime_kind.value} (hint={runtime_hint!r})"
+                    ),
+                )
+            )
+
             session = Session(
                 id=new_session_id,
                 queue=queue,
@@ -1193,7 +1205,7 @@ class WorkerScheduler:
                 job_details=job_details,
                 os_user=os_user,
                 retain_session_dir=self._retain_session_dir,
-                runtime_kind=runtime_kind,
+                session_runtime_kind=runtime_kind,
                 action_update_callback=self._handle_session_action_update,
                 action_update_lock=self._action_update_lock,
                 session_root_dir=self._session_root_dir,

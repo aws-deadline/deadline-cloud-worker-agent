@@ -41,6 +41,7 @@ from deadline_worker_agent.sessions.job_entities.job_details import (
     JobRunAsWindowsUser,
 )
 from deadline_worker_agent.config import JobsRunAsUserOverride
+from deadline_worker_agent._session_runtime_kind import SessionRuntimeKind
 from deadline_worker_agent.errors import ServiceShutdown
 from deadline_worker_agent.log_messages import LogRecordStringTranslationFilter
 import deadline_worker_agent.scheduler.scheduler as scheduler_mod
@@ -1519,8 +1520,6 @@ class TestCreateNewSessionsRuntimeHint:
         session_root_dir: Path,
         log_translation_filter: None,
     ) -> WorkerScheduler:
-        from deadline_worker_agent._session_runtime_kind import SessionRuntimeKind
-
         return WorkerScheduler(
             farm_id=farm_id,
             fleet_id=fleet_id,
@@ -1532,7 +1531,7 @@ class TestCreateNewSessionsRuntimeHint:
             worker_persistence_dir=Path("/var/lib/deadline"),
             worker_logs_dir=worker_logs_dir,
             session_root_dir=session_root_dir,
-            session_runtime=SessionRuntimeKind.SERVICE_SELECTED,
+            session_runtime_kind=SessionRuntimeKind.SERVICE_SELECTED,
         )
 
     @pytest.mark.parametrize(
@@ -1588,8 +1587,6 @@ class TestCreateNewSessionsRuntimeHint:
         expected_runtime_kind: str,
     ) -> None:
         """Tests that select_runtime is called correctly and the result is passed to Session."""
-        from deadline_worker_agent._session_runtime_kind import SessionRuntimeKind
-
         configured_kind = SessionRuntimeKind[session_runtime_kind]
         expected_kind = SessionRuntimeKind[expected_runtime_kind]
 
@@ -1604,7 +1601,7 @@ class TestCreateNewSessionsRuntimeHint:
             worker_persistence_dir=Path("/var/lib/deadline"),
             worker_logs_dir=worker_logs_dir,
             session_root_dir=session_root_dir,
-            session_runtime=configured_kind,
+            session_runtime_kind=configured_kind,
         )
 
         session_id = "session-abcdef0123456789abcdef0123456789"
@@ -1632,15 +1629,23 @@ class TestCreateNewSessionsRuntimeHint:
             sched._create_new_sessions(assigned_sessions=assigned_sessions)
 
         mock_session.assert_called_once()
-        assert mock_session.call_args.kwargs["runtime_kind"] == expected_kind
+        assert mock_session.call_args.kwargs["session_runtime_kind"] == expected_kind
 
-    def test_invalid_runtime_hint_fails_session(
+    @pytest.mark.parametrize(
+        "bad_hint",
+        [
+            pytest.param("bogus", id="unknown_value"),
+            pytest.param("", id="empty_string"),
+        ],
+    )
+    def test_bad_runtime_hint_fails_session(
         self,
         scheduler_service_selected: WorkerScheduler,
         mock_job_entities: MagicMock,
+        bad_hint: str,
     ) -> None:
-        """Tests that an unknown runtimeHint causes the session actions to be failed
-        without raising an exception."""
+        """Tests that an invalid runtimeHint (unknown or empty) causes the session actions
+        to be failed without raising an exception."""
         session_id = "session-abcdef0123456789abcdef0123456789"
         assigned_sessions: dict[str, AssignedSession] = {
             session_id: AssignedSession(
@@ -1665,58 +1670,7 @@ class TestCreateNewSessionsRuntimeHint:
                         taskId="task-1",
                     ),
                 ],
-                metadata={"runtimeHint": "bogus"},
-            ),
-        }
-
-        with patch.object(scheduler_mod, "Session") as mock_session:
-            # No exception should escape
-            scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
-
-        # Session must NOT have been constructed for this session
-        mock_session.assert_not_called()
-
-        # Actions should be failed via _action_updates_map
-        action_update = scheduler_service_selected._action_updates_map.get("action-1")
-        assert action_update is not None
-        assert action_update.completed_status == "FAILED"
-        assert action_update.status is not None
-        assert action_update.status.state == ActionState.FAILED
-        assert action_update.status.fail_message is not None
-        assert "Failed to select session runtime" in action_update.status.fail_message
-
-    def test_empty_string_runtime_hint_fails_session(
-        self,
-        scheduler_service_selected: WorkerScheduler,
-        mock_job_entities: MagicMock,
-    ) -> None:
-        """Tests that an empty-string runtimeHint is not a valid wire value and fails
-        the session without raising an exception."""
-        session_id = "session-abcdef0123456789abcdef0123456789"
-        assigned_sessions: dict[str, AssignedSession] = {
-            session_id: AssignedSession(
-                queueId="queue-abcdef0123456789abcdef0123456789",
-                jobId="job-abcdef0123456789abcdef0123456789",
-                logConfiguration=LogConfiguration(
-                    logDriver="awslogs",
-                    options={},
-                    parameters={"interval": "15"},
-                ),
-                sessionActions=[
-                    EnvironmentAction(
-                        actionType="ENV_ENTER",
-                        environmentId="env-1",
-                        sessionActionId="action-1",
-                    ),
-                    TaskRunAction(
-                        actionType="TASK_RUN",
-                        parameters={},
-                        sessionActionId="action-2",
-                        stepId="step-1",
-                        taskId="task-1",
-                    ),
-                ],
-                metadata={"runtimeHint": ""},
+                metadata={"runtimeHint": bad_hint},
             ),
         }
 
