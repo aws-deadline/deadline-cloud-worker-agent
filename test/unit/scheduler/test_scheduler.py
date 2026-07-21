@@ -1837,6 +1837,171 @@ class TestCreateNewSessionsRuntimeHint:
         assert call_kwargs["exception_type"] == "ValueError"
 
 
+class TestCreateNewSessionsConstructionFailure:
+    """Tests that Session(...) construction failures are caught per-session
+    and do not crash the scheduler loop."""
+
+    @pytest.fixture
+    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+        with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
+            job_entity_instance = MagicMock()
+            job_entity_instance.job_details.return_value = JobDetails(
+                log_group_name="/aws/deadline/queue-0000",
+                schema_version=SpecificationRevision.v2023_09,
+                job_run_as_user=JobRunAsUser(
+                    posix=(
+                        PosixSessionUser(user="username", group="group")
+                        if os.name == "posix"
+                        else None
+                    ),
+                    windows=(
+                        WindowsSessionUser(user="username", password="password")
+                        if os.name == "nt"
+                        else None
+                    ),
+                    windows_settings=None,
+                ),
+            )
+            job_entities_mock.return_value = job_entity_instance
+            yield job_entities_mock
+
+    @pytest.fixture
+    def scheduler_service_selected(
+        self,
+        farm_id: str,
+        fleet_id: str,
+        worker_id: str,
+        client: MagicMock,
+        job_run_as_user_overrides: JobsRunAsUserOverride,
+        boto_session: Mock,
+        worker_logs_dir: Path,
+        session_root_dir: Path,
+        log_translation_filter: None,
+    ) -> WorkerScheduler:
+        return WorkerScheduler(
+            farm_id=farm_id,
+            fleet_id=fleet_id,
+            worker_id=worker_id,
+            deadline=client,
+            job_run_as_user_override=job_run_as_user_overrides,
+            boto_session=boto_session,
+            cleanup_session_user_processes=True,
+            worker_persistence_dir=Path("/var/lib/deadline"),
+            worker_logs_dir=worker_logs_dir,
+            session_root_dir=session_root_dir,
+            session_runtime_kind=SessionRuntimeKind.SERVICE_SELECTED,
+        )
+
+    @pytest.mark.parametrize(
+        argnames=("exc_type", "exc_msg"),
+        argvalues=(
+            pytest.param(
+                NotImplementedError,
+                "RustSessionRuntime adapter is not available on this host",
+                id="not_implemented",
+            ),
+            pytest.param(
+                ValueError,
+                "Invalid session configuration parameter",
+                id="value_error",
+            ),
+            pytest.param(
+                OSError,
+                "Permission denied: /var/lib/deadline/sessions/session-abc",
+                id="os_error",
+            ),
+        ),
+    )
+    def test_session_construction_failure_is_handled(
+        self,
+        scheduler_service_selected: WorkerScheduler,
+        mock_job_entities: MagicMock,
+        exc_type: type[Exception],
+        exc_msg: str,
+    ) -> None:
+        """Tests that Session(...) raising a known exception type causes the session
+        actions to be failed with telemetry, without raising."""
+        session_id = "session-abcdef0123456789abcdef0123456789"
+        assigned_sessions: dict[str, AssignedSession] = {
+            session_id: AssignedSession(
+                queueId="queue-abcdef0123456789abcdef0123456789",
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs",
+                    options={},
+                    parameters={"interval": "15"},
+                ),
+                sessionActions=[
+                    EnvironmentAction(
+                        actionType="ENV_ENTER",
+                        environmentId="env-1",
+                        sessionActionId="action-1",
+                    ),
+                ],
+                metadata={"runtimeHint": "rust"},
+            ),
+        }
+
+        with (
+            patch.object(scheduler_mod, "Session", side_effect=exc_type(exc_msg)),
+            patch.object(
+                scheduler_mod, "record_runtime_failure_telemetry_event"
+            ) as mock_failure_telemetry,
+        ):
+            # Must not raise
+            scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
+
+        # Telemetry emitted with correct details
+        mock_failure_telemetry.assert_called_once()
+        call_kwargs = mock_failure_telemetry.call_args.kwargs
+        assert call_kwargs["runtime_kind"] == "rust"
+        assert call_kwargs["failure_reason"] == exc_msg
+        assert call_kwargs["exception_type"] == exc_type.__name__
+
+        # Actions should be failed
+        action_update = scheduler_service_selected._action_updates_map.get("action-1")
+        assert action_update is not None
+        assert action_update.completed_status == "FAILED"
+        assert action_update.status is not None
+        assert action_update.status.state == ActionState.FAILED
+        assert action_update.status.fail_message is not None
+        assert "Failed to create session" in action_update.status.fail_message
+
+    def test_unexpected_session_construction_exception_propagates(
+        self,
+        scheduler_service_selected: WorkerScheduler,
+        mock_job_entities: MagicMock,
+    ) -> None:
+        """Tests that an unexpected exception type from Session(...) is NOT caught
+        and propagates up, preserving narrow-catch design."""
+        session_id = "session-abcdef0123456789abcdef0123456789"
+        assigned_sessions: dict[str, AssignedSession] = {
+            session_id: AssignedSession(
+                queueId="queue-abcdef0123456789abcdef0123456789",
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs",
+                    options={},
+                    parameters={"interval": "15"},
+                ),
+                sessionActions=[
+                    EnvironmentAction(
+                        actionType="ENV_ENTER",
+                        environmentId="env-1",
+                        sessionActionId="action-1",
+                    ),
+                ],
+                metadata={"runtimeHint": "rust"},
+            ),
+        }
+
+        with (
+            patch.object(scheduler_mod, "Session", side_effect=TypeError("unexpected failure")),
+            pytest.raises(TypeError, match="unexpected failure"),
+        ):
+            scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
+
+
 class TestQueueAwsCredentialsManagement:
     """Tests that validate that we are constructing and destroying credentials objects
     as appropriate."""

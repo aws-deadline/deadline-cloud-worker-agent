@@ -1214,21 +1214,44 @@ class WorkerScheduler:
                 session_runtime_config=self._session_runtime_kind.value,
             )
 
-            session = Session(
-                id=new_session_id,
-                queue=queue,
-                queue_id=queue_id,
-                job_id=job_id,
-                env=env,
-                asset_sync=asset_sync,
-                job_details=job_details,
-                os_user=os_user,
-                retain_session_dir=self._retain_session_dir,
-                session_runtime_kind=runtime_kind,
-                action_update_callback=self._handle_session_action_update,
-                action_update_lock=self._action_update_lock,
-                session_root_dir=self._session_root_dir,
-            )
+            try:
+                session = Session(
+                    id=new_session_id,
+                    queue=queue,
+                    queue_id=queue_id,
+                    job_id=job_id,
+                    env=env,
+                    asset_sync=asset_sync,
+                    job_details=job_details,
+                    os_user=os_user,
+                    retain_session_dir=self._retain_session_dir,
+                    session_runtime_kind=runtime_kind,
+                    action_update_callback=self._handle_session_action_update,
+                    action_update_lock=self._action_update_lock,
+                    session_root_dir=self._session_root_dir,
+                )
+            except (ValueError, NotImplementedError, OSError) as e:
+                # Runtime construction can fail per-session (e.g. the selected runtime's
+                # adapter is unavailable on this host). Fail this session's actions visibly
+                # and continue; do not take down the scheduler. Unexpected exception types
+                # still propagate.
+                message = f"Failed to create session: {e}"
+                self._fail_all_actions(session_spec, message)
+                logger.error(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.FAILED,
+                        queue_id=queue_id,
+                        job_id=job_id,
+                        session_id=new_session_id,
+                        message=message,
+                    )
+                )
+                record_runtime_failure_telemetry_event(
+                    runtime_kind=runtime_kind.value,
+                    failure_reason=str(e),
+                    exception_type=type(e).__name__,
+                )
+                continue
 
             def run_session(
                 session: Session, queue_credentials: QueueAwsCredentials | None

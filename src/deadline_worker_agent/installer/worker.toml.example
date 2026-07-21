@@ -54,6 +54,8 @@
 #   "python"           - Use the Python OpenJD session implementation (default)
 #   "rust"             - Use the Rust OpenJD session implementation
 #   "service-selected" - Let the service determine the runtime per-session
+#                       (follows the service's per-session runtimeHint; defaults to python when
+#                       no hint is provided)
 #
 # This value is overridden when the --session-runtime command-line argument is specified.
 #

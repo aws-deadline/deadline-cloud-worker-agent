@@ -12,6 +12,8 @@ from deadline_worker_agent.aws.deadline import (
     record_sync_inputs_telemetry_event,
     record_sync_outputs_telemetry_event,
     record_uncaught_exception_telemetry_event,
+    record_runtime_selection_telemetry_event,
+    record_runtime_failure_telemetry_event,
     _get_deadline_telemetry_client,
 )
 from deadline_worker_agent.capabilities import Capabilities
@@ -293,7 +295,6 @@ def test_record_runtime_selection_telemetry_event():
     Tests that when record_runtime_selection_telemetry_event() is called, the correct
     event type and details are passed to the telemetry client's record_event() method.
     """
-    from deadline_worker_agent.aws.deadline import record_runtime_selection_telemetry_event
 
     mock_telemetry_client = MagicMock()
 
@@ -323,7 +324,6 @@ def test_record_runtime_failure_telemetry_event():
     Tests that when record_runtime_failure_telemetry_event() is called, the correct
     event type and details are passed to the telemetry client's record_event() method.
     """
-    from deadline_worker_agent.aws.deadline import record_runtime_failure_telemetry_event
 
     mock_telemetry_client = MagicMock()
 

@@ -850,7 +850,7 @@ def record_uncaught_exception_telemetry_event(exception_type: str) -> None:
 def record_runtime_selection_telemetry_event(
     *, runtime_kind: str, selection_reason: str, session_runtime_config: str
 ) -> None:
-    """Records a telemetry event capturing which session runtime was selected and why."""
+    """Records a com.amazon.rum.deadline.worker_agent.runtime_selection telemetry event capturing which session runtime was selected and why."""
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.runtime_selection",
         event_details={
@@ -864,7 +864,7 @@ def record_runtime_selection_telemetry_event(
 def record_runtime_failure_telemetry_event(
     *, runtime_kind: str, failure_reason: str, exception_type: str
 ) -> None:
-    """Records a telemetry event for a session failure caused by a runtime issue."""
+    """Records a com.amazon.rum.deadline.worker_agent.runtime_failure telemetry event for a session failure caused by a runtime issue."""
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.runtime_failure",
         event_details={
