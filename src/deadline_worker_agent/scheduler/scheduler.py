@@ -1189,6 +1189,9 @@ class WorkerScheduler:
                     runtime_kind="unknown",
                     failure_reason=str(e),
                     exception_type=type(e).__name__,
+                    runtime_hint=runtime_hint,
+                    session_id=new_session_id,
+                    queue_id=queue_id,
                 )
                 continue
 
@@ -1212,6 +1215,9 @@ class WorkerScheduler:
                     else "config-default"
                 ),
                 session_runtime_config=self._session_runtime_kind.value,
+                runtime_hint=runtime_hint,
+                session_id=new_session_id,
+                queue_id=queue_id,
             )
 
             try:
@@ -1248,8 +1254,16 @@ class WorkerScheduler:
                 )
                 record_runtime_failure_telemetry_event(
                     runtime_kind=runtime_kind.value,
-                    failure_reason=str(e),
+                    # OSError messages embed filesystem paths (potential PII on Windows);
+                    # strerror carries the error class without the path. Full detail
+                    # remains in the worker log.
+                    failure_reason=(
+                        e.strerror if isinstance(e, OSError) and e.strerror else str(e)
+                    ),
                     exception_type=type(e).__name__,
+                    runtime_hint=runtime_hint,
+                    session_id=new_session_id,
+                    queue_id=queue_id,
                 )
                 continue
 

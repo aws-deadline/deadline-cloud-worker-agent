@@ -809,6 +809,11 @@ def update_worker_schedule(
 
 _telemetry_client: Optional[TelemetryClient] = None
 
+# Exception messages can be arbitrarily long (e.g. validation errors); RUM
+# rejects oversized events, which would silently drop the failure report.
+# The head of an exception message carries the diagnostic essence.
+_FAILURE_REASON_MAX_LEN = 200
+
 
 def _get_deadline_telemetry_client() -> TelemetryClient:
     """Wrapper around the telemetry client, in order to set package-specific information.
@@ -848,7 +853,13 @@ def record_uncaught_exception_telemetry_event(exception_type: str) -> None:
 
 
 def record_runtime_selection_telemetry_event(
-    *, runtime_kind: str, selection_reason: str, session_runtime_config: str
+    *,
+    runtime_kind: str,
+    selection_reason: str,
+    session_runtime_config: str,
+    runtime_hint: Optional[str],
+    session_id: str,
+    queue_id: str,
 ) -> None:
     """Records a com.amazon.rum.deadline.worker_agent.runtime_selection telemetry event capturing which session runtime was selected and why."""
     _get_deadline_telemetry_client().record_event(
@@ -857,20 +868,32 @@ def record_runtime_selection_telemetry_event(
             "runtime_kind": runtime_kind,
             "selection_reason": selection_reason,
             "session_runtime_config": session_runtime_config,
+            "runtime_hint": runtime_hint,
+            "session_id": session_id,
+            "queue_id": queue_id,
         },
     )
 
 
 def record_runtime_failure_telemetry_event(
-    *, runtime_kind: str, failure_reason: str, exception_type: str
+    *,
+    runtime_kind: str,
+    failure_reason: str,
+    exception_type: str,
+    runtime_hint: Optional[str],
+    session_id: str,
+    queue_id: str,
 ) -> None:
     """Records a com.amazon.rum.deadline.worker_agent.runtime_failure telemetry event for a session failure caused by a runtime issue."""
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.runtime_failure",
         event_details={
             "runtime_kind": runtime_kind,
-            "failure_reason": failure_reason,
+            "failure_reason": failure_reason[:_FAILURE_REASON_MAX_LEN],
             "exception_type": exception_type,
+            "runtime_hint": runtime_hint,
+            "session_id": session_id,
+            "queue_id": queue_id,
         },
     )
 

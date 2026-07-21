@@ -1786,6 +1786,9 @@ class TestCreateNewSessionsRuntimeHint:
         assert call_kwargs["runtime_kind"] == expected_runtime_kind
         assert call_kwargs["selection_reason"] == expected_reason
         assert call_kwargs["session_runtime_config"] == configured_kind.value
+        assert call_kwargs["runtime_hint"] == metadata.get("runtimeHint")
+        assert call_kwargs["session_id"] == session_id
+        assert call_kwargs["queue_id"] == "queue-abcdef0123456789abcdef0123456789"
 
     @pytest.mark.parametrize(
         "bad_hint",
@@ -1835,6 +1838,9 @@ class TestCreateNewSessionsRuntimeHint:
         call_kwargs = mock_failure_telemetry.call_args.kwargs
         assert call_kwargs["runtime_kind"] == "unknown"
         assert call_kwargs["exception_type"] == "ValueError"
+        assert call_kwargs["runtime_hint"] == bad_hint
+        assert call_kwargs["session_id"] == session_id
+        assert call_kwargs["queue_id"] == "queue-abcdef0123456789abcdef0123456789"
 
 
 class TestCreateNewSessionsConstructionFailure:
@@ -1893,22 +1899,22 @@ class TestCreateNewSessionsConstructionFailure:
         )
 
     @pytest.mark.parametrize(
-        argnames=("exc_type", "exc_msg"),
+        argnames=("exc", "expected_failure_reason"),
         argvalues=(
             pytest.param(
-                NotImplementedError,
+                NotImplementedError("RustSessionRuntime adapter is not available on this host"),
                 "RustSessionRuntime adapter is not available on this host",
                 id="not_implemented",
             ),
             pytest.param(
-                ValueError,
+                ValueError("Invalid session configuration parameter"),
                 "Invalid session configuration parameter",
                 id="value_error",
             ),
             pytest.param(
-                OSError,
-                "Permission denied: /var/lib/deadline/sessions/session-abc",
-                id="os_error",
+                OSError(13, "Permission denied", "/some/user/path"),
+                "Permission denied",
+                id="os_error_with_path",
             ),
         ),
     )
@@ -1916,8 +1922,8 @@ class TestCreateNewSessionsConstructionFailure:
         self,
         scheduler_service_selected: WorkerScheduler,
         mock_job_entities: MagicMock,
-        exc_type: type[Exception],
-        exc_msg: str,
+        exc: Exception,
+        expected_failure_reason: str,
     ) -> None:
         """Tests that Session(...) raising a known exception type causes the session
         actions to be failed with telemetry, without raising."""
@@ -1943,7 +1949,7 @@ class TestCreateNewSessionsConstructionFailure:
         }
 
         with (
-            patch.object(scheduler_mod, "Session", side_effect=exc_type(exc_msg)),
+            patch.object(scheduler_mod, "Session", side_effect=exc),
             patch.object(
                 scheduler_mod, "record_runtime_failure_telemetry_event"
             ) as mock_failure_telemetry,
@@ -1955,8 +1961,11 @@ class TestCreateNewSessionsConstructionFailure:
         mock_failure_telemetry.assert_called_once()
         call_kwargs = mock_failure_telemetry.call_args.kwargs
         assert call_kwargs["runtime_kind"] == "rust"
-        assert call_kwargs["failure_reason"] == exc_msg
-        assert call_kwargs["exception_type"] == exc_type.__name__
+        assert call_kwargs["failure_reason"] == expected_failure_reason
+        assert call_kwargs["exception_type"] == type(exc).__name__
+        assert call_kwargs["runtime_hint"] == "rust"
+        assert call_kwargs["session_id"] == session_id
+        assert call_kwargs["queue_id"] == "queue-abcdef0123456789abcdef0123456789"
 
         # Actions should be failed
         action_update = scheduler_service_selected._action_updates_map.get("action-1")
