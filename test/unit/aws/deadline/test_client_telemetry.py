@@ -286,3 +286,63 @@ def test_get_deadline_telemetry_client_sets_service_name():
             package_name="deadline-cloud-worker-agent",
             package_ver=".".join(deadline_mod.version.split(".")[:3]),
         )
+
+
+def test_record_runtime_selection_telemetry_event():
+    """
+    Tests that when record_runtime_selection_telemetry_event() is called, the correct
+    event type and details are passed to the telemetry client's record_event() method.
+    """
+    from deadline_worker_agent.aws.deadline import record_runtime_selection_telemetry_event
+
+    mock_telemetry_client = MagicMock()
+
+    with patch.object(deadline_mod, "_get_deadline_telemetry_client") as mock_get_telemetry_client:
+        mock_get_telemetry_client.return_value = mock_telemetry_client
+
+        # WHEN
+        record_runtime_selection_telemetry_event(
+            runtime_kind="RUST",
+            selection_reason="hint",
+            session_runtime_config="SERVICE_SELECTED",
+        )
+
+    # THEN
+    mock_telemetry_client.record_event.assert_called_with(
+        event_type="com.amazon.rum.deadline.worker_agent.runtime_selection",
+        event_details={
+            "runtime_kind": "RUST",
+            "selection_reason": "hint",
+            "session_runtime_config": "SERVICE_SELECTED",
+        },
+    )
+
+
+def test_record_runtime_failure_telemetry_event():
+    """
+    Tests that when record_runtime_failure_telemetry_event() is called, the correct
+    event type and details are passed to the telemetry client's record_event() method.
+    """
+    from deadline_worker_agent.aws.deadline import record_runtime_failure_telemetry_event
+
+    mock_telemetry_client = MagicMock()
+
+    with patch.object(deadline_mod, "_get_deadline_telemetry_client") as mock_get_telemetry_client:
+        mock_get_telemetry_client.return_value = mock_telemetry_client
+
+        # WHEN
+        record_runtime_failure_telemetry_event(
+            runtime_kind="unknown",
+            failure_reason="No runtime named 'bogus'",
+            exception_type="ValueError",
+        )
+
+    # THEN
+    mock_telemetry_client.record_event.assert_called_with(
+        event_type="com.amazon.rum.deadline.worker_agent.runtime_failure",
+        event_details={
+            "runtime_kind": "unknown",
+            "failure_reason": "No runtime named 'bogus'",
+            "exception_type": "ValueError",
+        },
+    )

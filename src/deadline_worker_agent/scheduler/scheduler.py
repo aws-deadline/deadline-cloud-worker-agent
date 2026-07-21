@@ -26,7 +26,11 @@ from openjd.sessions import ActionState, ActionStatus, SessionUser
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
 from deadline.job_attachments.asset_sync import AssetSync
 
-from ..aws.deadline import update_worker
+from ..aws.deadline import (
+    update_worker,
+    record_runtime_selection_telemetry_event,
+    record_runtime_failure_telemetry_event,
+)
 from ..aws_credentials import QueueBoto3Session, AwsCredentialsRefresher
 from .._session_runtime_kind import SessionRuntimeKind
 from ..sessions.runtime import select_runtime
@@ -1181,6 +1185,11 @@ class WorkerScheduler:
                         message=message,
                     )
                 )
+                record_runtime_failure_telemetry_event(
+                    runtime_kind="unknown",
+                    failure_reason=str(e),
+                    exception_type=type(e).__name__,
+                )
                 continue
 
             logger.info(
@@ -1193,6 +1202,16 @@ class WorkerScheduler:
                         f"Selected session runtime: {runtime_kind.value} (hint={runtime_hint!r})"
                     ),
                 )
+            )
+            record_runtime_selection_telemetry_event(
+                runtime_kind=runtime_kind.value,
+                selection_reason=(
+                    "hint"
+                    if self._session_runtime_kind is SessionRuntimeKind.SERVICE_SELECTED
+                    and runtime_hint is not None
+                    else "config-default"
+                ),
+                session_runtime_config=self._session_runtime_kind.value,
             )
 
             session = Session(

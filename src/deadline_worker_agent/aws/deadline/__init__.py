@@ -847,6 +847,34 @@ def record_uncaught_exception_telemetry_event(exception_type: str) -> None:
     )
 
 
+def record_runtime_selection_telemetry_event(
+    *, runtime_kind: str, selection_reason: str, session_runtime_config: str
+) -> None:
+    """Records a telemetry event capturing which session runtime was selected and why."""
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.runtime_selection",
+        event_details={
+            "runtime_kind": runtime_kind,
+            "selection_reason": selection_reason,
+            "session_runtime_config": session_runtime_config,
+        },
+    )
+
+
+def record_runtime_failure_telemetry_event(
+    *, runtime_kind: str, failure_reason: str, exception_type: str
+) -> None:
+    """Records a telemetry event for a session failure caused by a runtime issue."""
+    _get_deadline_telemetry_client().record_event(
+        event_type="com.amazon.rum.deadline.worker_agent.runtime_failure",
+        event_details={
+            "runtime_kind": runtime_kind,
+            "failure_reason": failure_reason,
+            "exception_type": exception_type,
+        },
+    )
+
+
 def _record_attachment_download_filesystem_event(queue_id: str, file_system: str) -> None:
     """Calls the telemetry client to record what filesystem was used"""
     details: Dict[str, Any] = {"queue_id": queue_id, "filesystem": file_system}
