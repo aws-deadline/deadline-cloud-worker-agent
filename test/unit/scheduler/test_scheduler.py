@@ -1903,18 +1903,25 @@ class TestCreateNewSessionsConstructionFailure:
         argvalues=(
             pytest.param(
                 NotImplementedError("RustSessionRuntime adapter is not available on this host"),
-                "RustSessionRuntime adapter is not available on this host",
+                "session construction failed",
                 id="not_implemented",
             ),
             pytest.param(
                 ValueError("Invalid session configuration parameter"),
-                "Invalid session configuration parameter",
+                "session construction failed",
                 id="value_error",
             ),
             pytest.param(
                 OSError(13, "Permission denied", "/some/user/path"),
                 "Permission denied",
-                id="os_error_with_path",
+                id="os_error_with_strerror",
+            ),
+            pytest.param(
+                # Hand-raised OSError has strerror=None; its free-text message can
+                # embed filesystem paths which must never reach telemetry.
+                OSError("failed to write /Users/jdoe/some/private/path"),
+                "session construction failed",
+                id="os_error_no_strerror",
             ),
         ),
     )

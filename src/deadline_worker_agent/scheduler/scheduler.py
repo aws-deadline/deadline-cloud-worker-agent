@@ -1254,11 +1254,16 @@ class WorkerScheduler:
                 )
                 record_runtime_failure_telemetry_event(
                     runtime_kind=runtime_kind.value,
-                    # OSError messages embed filesystem paths (potential PII on Windows);
-                    # strerror carries the error class without the path. Full detail
-                    # remains in the worker log.
+                    # Exception messages are free text and can embed filesystem paths
+                    # (potential PII) — e.g. hand-raised OSError(f"...{path}") has
+                    # strerror=None. Never forward str(e): send OS-level strerror when
+                    # present (error class, no path), otherwise a coarse constant.
+                    # exception_type carries the class; full detail remains in the
+                    # worker log, reachable via session_id.
                     failure_reason=(
-                        e.strerror if isinstance(e, OSError) and e.strerror else str(e)
+                        e.strerror
+                        if isinstance(e, OSError) and e.strerror
+                        else "session construction failed"
                     ),
                     exception_type=type(e).__name__,
                     runtime_hint=runtime_hint,
