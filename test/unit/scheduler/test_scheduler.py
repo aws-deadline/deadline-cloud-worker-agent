@@ -1789,6 +1789,8 @@ class TestCreateNewSessionsRuntimeHint:
         assert call_kwargs["runtime_hint"] == metadata.get("runtimeHint")
         assert call_kwargs["session_id"] == session_id
         assert call_kwargs["queue_id"] == "queue-abcdef0123456789abcdef0123456789"
+        assert call_kwargs["farm_id"] == sched._farm_id
+        assert call_kwargs["region"] == sched._boto_session.region_name
 
     @pytest.mark.parametrize(
         "bad_hint",
@@ -1841,6 +1843,8 @@ class TestCreateNewSessionsRuntimeHint:
         assert call_kwargs["runtime_hint"] == bad_hint
         assert call_kwargs["session_id"] == session_id
         assert call_kwargs["queue_id"] == "queue-abcdef0123456789abcdef0123456789"
+        assert call_kwargs["farm_id"] == scheduler_service_selected._farm_id
+        assert call_kwargs["region"] == scheduler_service_selected._boto_session.region_name
 
 
 class TestCreateNewSessionsConstructionFailure:
@@ -1973,6 +1977,8 @@ class TestCreateNewSessionsConstructionFailure:
         assert call_kwargs["runtime_hint"] == "rust"
         assert call_kwargs["session_id"] == session_id
         assert call_kwargs["queue_id"] == "queue-abcdef0123456789abcdef0123456789"
+        assert call_kwargs["farm_id"] == scheduler_service_selected._farm_id
+        assert call_kwargs["region"] == scheduler_service_selected._boto_session.region_name
 
         # Actions should be failed
         action_update = scheduler_service_selected._action_updates_map.get("action-1")

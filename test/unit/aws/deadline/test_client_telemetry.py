@@ -309,6 +309,8 @@ def test_record_runtime_selection_telemetry_event():
             runtime_hint="rust",
             session_id="session-abc123",
             queue_id="queue-xyz789",
+            farm_id="farm-abc123",
+            region="us-west-2",
         )
 
     # THEN
@@ -321,6 +323,8 @@ def test_record_runtime_selection_telemetry_event():
             "runtime_hint": "rust",
             "session_id": "session-abc123",
             "queue_id": "queue-xyz789",
+            "farm_id": "farm-abc123",
+            "region": "us-west-2",
         },
     )
 
@@ -344,6 +348,8 @@ def test_record_runtime_failure_telemetry_event():
             runtime_hint="bogus",
             session_id="session-abc123",
             queue_id="queue-xyz789",
+            farm_id="farm-abc123",
+            region="us-west-2",
         )
 
     # THEN
@@ -356,6 +362,8 @@ def test_record_runtime_failure_telemetry_event():
             "runtime_hint": "bogus",
             "session_id": "session-abc123",
             "queue_id": "queue-xyz789",
+            "farm_id": "farm-abc123",
+            "region": "us-west-2",
         },
     )
 
@@ -376,6 +384,8 @@ def test_record_runtime_failure_telemetry_event_truncates_long_failure_reason():
             runtime_hint=None,
             session_id="session-123",
             queue_id="queue-456",
+            farm_id="farm-abc123",
+            region="us-west-2",
         )
 
     call_details = mock_telemetry_client.record_event.call_args[1]["event_details"]

@@ -860,6 +860,8 @@ def record_runtime_selection_telemetry_event(
     runtime_hint: Optional[str],
     session_id: str,
     queue_id: str,
+    farm_id: str,
+    region: Optional[str],
 ) -> None:
     """Records a com.amazon.rum.deadline.worker_agent.runtime_selection telemetry event capturing which session runtime was selected and why."""
     _get_deadline_telemetry_client().record_event(
@@ -871,6 +873,8 @@ def record_runtime_selection_telemetry_event(
             "runtime_hint": runtime_hint,
             "session_id": session_id,
             "queue_id": queue_id,
+            "farm_id": farm_id,
+            "region": region,
         },
     )
 
@@ -883,6 +887,8 @@ def record_runtime_failure_telemetry_event(
     runtime_hint: Optional[str],
     session_id: str,
     queue_id: str,
+    farm_id: str,
+    region: Optional[str],
 ) -> None:
     """Records a com.amazon.rum.deadline.worker_agent.runtime_failure telemetry event for a session failure caused by a runtime issue."""
     _get_deadline_telemetry_client().record_event(
@@ -894,6 +900,8 @@ def record_runtime_failure_telemetry_event(
             "runtime_hint": runtime_hint,
             "session_id": session_id,
             "queue_id": queue_id,
+            "farm_id": farm_id,
+            "region": region,
         },
     )
 

@@ -1192,6 +1192,8 @@ class WorkerScheduler:
                     runtime_hint=runtime_hint,
                     session_id=new_session_id,
                     queue_id=queue_id,
+                    farm_id=self._farm_id,
+                    region=self._boto_session.region_name,
                 )
                 continue
 
@@ -1218,6 +1220,8 @@ class WorkerScheduler:
                 runtime_hint=runtime_hint,
                 session_id=new_session_id,
                 queue_id=queue_id,
+                farm_id=self._farm_id,
+                region=self._boto_session.region_name,
             )
 
             try:
@@ -1269,6 +1273,8 @@ class WorkerScheduler:
                     runtime_hint=runtime_hint,
                     session_id=new_session_id,
                     queue_id=queue_id,
+                    farm_id=self._farm_id,
+                    region=self._boto_session.region_name,
                 )
                 continue
 
