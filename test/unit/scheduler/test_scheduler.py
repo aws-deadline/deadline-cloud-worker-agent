@@ -1839,6 +1839,9 @@ class TestCreateNewSessionsRuntimeHint:
         mock_failure_telemetry.assert_called_once()
         call_kwargs = mock_failure_telemetry.call_args.kwargs
         assert call_kwargs["runtime_kind"] == "unknown"
+        # Constant reason: the offending value is already carried verbatim in
+        # runtime_hint, and free exception text must not reach telemetry.
+        assert call_kwargs["failure_reason"] == "invalid runtimeHint"
         assert call_kwargs["exception_type"] == "ValueError"
         assert call_kwargs["runtime_hint"] == bad_hint
         assert call_kwargs["session_id"] == session_id

@@ -1187,7 +1187,10 @@ class WorkerScheduler:
                 )
                 record_runtime_failure_telemetry_event(
                     runtime_kind="unknown",
-                    failure_reason=str(e),
+                    # Constant reason: the offending value is already carried
+                    # verbatim in the runtime_hint field, and free exception
+                    # text must not reach telemetry.
+                    failure_reason="invalid runtimeHint",
                     exception_type=type(e).__name__,
                     runtime_hint=runtime_hint,
                     session_id=new_session_id,
