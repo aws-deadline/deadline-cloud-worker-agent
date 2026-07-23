@@ -1850,6 +1850,210 @@ class TestCreateNewSessionsRuntimeHint:
         assert call_kwargs["region"] == scheduler_service_selected._boto_session.region_name
 
 
+class TestTelemetryFailureResilience:
+    """Tests that telemetry emission failures never crash the scheduler.
+
+    Each telemetry call site in _create_new_sessions is guarded so that a
+    RuntimeError (or any Exception subclass) from the telemetry helper is
+    swallowed with a warning, and the surrounding logic completes normally.
+    """
+
+    @pytest.fixture
+    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+        with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
+            job_entity_instance = MagicMock()
+            job_entity_instance.job_details.return_value = JobDetails(
+                log_group_name="/aws/deadline/queue-0000",
+                schema_version=SpecificationRevision.v2023_09,
+                job_run_as_user=JobRunAsUser(
+                    posix=(
+                        PosixSessionUser(user="username", group="group")
+                        if os.name == "posix"
+                        else None
+                    ),
+                    windows=(
+                        WindowsSessionUser(user="username", password="password")
+                        if os.name == "nt"
+                        else None
+                    ),
+                    windows_settings=None,
+                ),
+            )
+            job_entities_mock.return_value = job_entity_instance
+            yield job_entities_mock
+
+    @pytest.fixture
+    def scheduler_service_selected(
+        self,
+        farm_id: str,
+        fleet_id: str,
+        worker_id: str,
+        client: MagicMock,
+        job_run_as_user_overrides: JobsRunAsUserOverride,
+        boto_session: Mock,
+        worker_logs_dir: Path,
+        session_root_dir: Path,
+        log_translation_filter: None,
+    ) -> WorkerScheduler:
+        return WorkerScheduler(
+            farm_id=farm_id,
+            fleet_id=fleet_id,
+            worker_id=worker_id,
+            deadline=client,
+            job_run_as_user_override=job_run_as_user_overrides,
+            boto_session=boto_session,
+            cleanup_session_user_processes=True,
+            worker_persistence_dir=Path("/var/lib/deadline"),
+            worker_logs_dir=worker_logs_dir,
+            session_root_dir=session_root_dir,
+            session_runtime_kind=SessionRuntimeKind.SERVICE_SELECTED,
+        )
+
+    def test_selection_telemetry_failure_does_not_block_session_creation(
+        self,
+        scheduler_service_selected: WorkerScheduler,
+        mock_job_entities: MagicMock,
+    ) -> None:
+        """If record_runtime_selection_telemetry_event raises, Session() is still
+        constructed and the scheduler continues."""
+        session_id = "session-abcdef0123456789abcdef0123456789"
+        assigned_sessions: dict[str, AssignedSession] = {
+            session_id: AssignedSession(
+                queueId="queue-abcdef0123456789abcdef0123456789",
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs",
+                    options={},
+                    parameters={"interval": "15"},
+                ),
+                sessionActions=[
+                    EnvironmentAction(
+                        actionType="ENV_ENTER",
+                        environmentId="env-1",
+                        sessionActionId="action-1",
+                    ),
+                ],
+                metadata={"runtimeHint": "rust"},
+            ),
+        }
+
+        with (
+            patch.object(
+                scheduler_mod,
+                "record_runtime_selection_telemetry_event",
+                side_effect=RuntimeError("telemetry send failed"),
+            ),
+            patch.object(scheduler_mod, "Session") as mock_session_cls,
+            patch.object(scheduler_service_selected, "_executor"),
+        ):
+            # Must not raise
+            scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
+
+        # Session was still constructed despite telemetry failure
+        mock_session_cls.assert_called_once()
+
+    def test_bad_hint_failure_telemetry_crash_does_not_break_loop(
+        self,
+        scheduler_service_selected: WorkerScheduler,
+        mock_job_entities: MagicMock,
+    ) -> None:
+        """If record_runtime_failure_telemetry_event raises in the bad-hint path,
+        the session's actions are still failed and the loop continues."""
+        session_id = "session-abcdef0123456789abcdef0123456789"
+        assigned_sessions: dict[str, AssignedSession] = {
+            session_id: AssignedSession(
+                queueId="queue-abcdef0123456789abcdef0123456789",
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs",
+                    options={},
+                    parameters={"interval": "15"},
+                ),
+                sessionActions=[
+                    EnvironmentAction(
+                        actionType="ENV_ENTER",
+                        environmentId="env-1",
+                        sessionActionId="action-1",
+                    ),
+                ],
+                metadata={"runtimeHint": "bogus"},
+            ),
+        }
+
+        with (
+            patch.object(scheduler_mod, "Session") as mock_session_cls,
+            patch.object(
+                scheduler_mod,
+                "record_runtime_failure_telemetry_event",
+                side_effect=RuntimeError("telemetry send failed"),
+            ),
+        ):
+            # Must not raise
+            scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
+
+        # Session must NOT have been constructed (bad hint aborts before Session())
+        mock_session_cls.assert_not_called()
+
+        # Actions should still be failed
+        action_update = scheduler_service_selected._action_updates_map.get("action-1")
+        assert action_update is not None
+        assert action_update.completed_status == "FAILED"
+        assert action_update.status is not None
+        assert action_update.status.state == ActionState.FAILED
+
+    def test_construction_failure_telemetry_crash_does_not_break_loop(
+        self,
+        scheduler_service_selected: WorkerScheduler,
+        mock_job_entities: MagicMock,
+    ) -> None:
+        """If record_runtime_failure_telemetry_event raises in the Session()
+        construction-failure path, actions are still failed and loop continues."""
+        session_id = "session-abcdef0123456789abcdef0123456789"
+        assigned_sessions: dict[str, AssignedSession] = {
+            session_id: AssignedSession(
+                queueId="queue-abcdef0123456789abcdef0123456789",
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs",
+                    options={},
+                    parameters={"interval": "15"},
+                ),
+                sessionActions=[
+                    EnvironmentAction(
+                        actionType="ENV_ENTER",
+                        environmentId="env-1",
+                        sessionActionId="action-1",
+                    ),
+                ],
+                metadata={"runtimeHint": "rust"},
+            ),
+        }
+
+        with (
+            patch.object(
+                scheduler_mod,
+                "Session",
+                side_effect=NotImplementedError("adapter unavailable"),
+            ),
+            patch.object(
+                scheduler_mod,
+                "record_runtime_failure_telemetry_event",
+                side_effect=RuntimeError("telemetry send failed"),
+            ),
+        ):
+            # Must not raise
+            scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
+
+        # Actions should still be failed despite telemetry crash
+        action_update = scheduler_service_selected._action_updates_map.get("action-1")
+        assert action_update is not None
+        assert action_update.completed_status == "FAILED"
+        assert action_update.status is not None
+        assert action_update.status.state == ActionState.FAILED
+        assert action_update.status.fail_message is not None
+        assert "Failed to create session" in action_update.status.fail_message
+
+
 class TestCreateNewSessionsConstructionFailure:
     """Tests that Session(...) construction failures are caught per-session
     and do not crash the scheduler loop."""
@@ -1963,7 +2167,7 @@ class TestCreateNewSessionsConstructionFailure:
         }
 
         with (
-            patch.object(scheduler_mod, "Session", side_effect=exc),
+            patch.object(scheduler_mod, "Session", side_effect=exc) as mock_session_cls,
             patch.object(
                 scheduler_mod, "record_runtime_failure_telemetry_event"
             ) as mock_failure_telemetry,
@@ -1972,6 +2176,11 @@ class TestCreateNewSessionsConstructionFailure:
             scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
 
         # Telemetry emitted with correct details
+        # Scheduler passes worker-scoped correlation fields into Session
+        session_kwargs = mock_session_cls.call_args.kwargs
+        assert session_kwargs["farm_id"] == scheduler_service_selected._farm_id
+        assert session_kwargs["region"] == scheduler_service_selected._boto_session.region_name
+
         mock_failure_telemetry.assert_called_once()
         call_kwargs = mock_failure_telemetry.call_args.kwargs
         assert call_kwargs["runtime_kind"] == "rust"

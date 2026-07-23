@@ -1185,19 +1185,22 @@ class WorkerScheduler:
                         message=message,
                     )
                 )
-                record_runtime_failure_telemetry_event(
-                    runtime_kind="unknown",
-                    # Constant reason: the offending value is already carried
-                    # verbatim in the runtime_hint field, and free exception
-                    # text must not reach telemetry.
-                    failure_reason="invalid runtimeHint",
-                    exception_type=type(e).__name__,
-                    runtime_hint=runtime_hint,
-                    session_id=new_session_id,
-                    queue_id=queue_id,
-                    farm_id=self._farm_id,
-                    region=self._boto_session.region_name,
-                )
+                try:
+                    record_runtime_failure_telemetry_event(
+                        runtime_kind="unknown",
+                        # Constant reason: the offending value is already carried
+                        # verbatim in the runtime_hint field, and free exception
+                        # text must not reach telemetry.
+                        failure_reason="invalid runtimeHint",
+                        exception_type=type(e).__name__,
+                        runtime_hint=runtime_hint,
+                        session_id=new_session_id,
+                        queue_id=queue_id,
+                        farm_id=self._farm_id,
+                        region=self._boto_session.region_name,
+                    )
+                except Exception:
+                    logger.warning("Failed to record runtime telemetry event")
                 continue
 
             logger.info(
@@ -1211,21 +1214,24 @@ class WorkerScheduler:
                     ),
                 )
             )
-            record_runtime_selection_telemetry_event(
-                runtime_kind=runtime_kind.value,
-                selection_reason=(
-                    "hint"
-                    if self._session_runtime_kind is SessionRuntimeKind.SERVICE_SELECTED
-                    and runtime_hint is not None
-                    else "config-default"
-                ),
-                session_runtime_config=self._session_runtime_kind.value,
-                runtime_hint=runtime_hint,
-                session_id=new_session_id,
-                queue_id=queue_id,
-                farm_id=self._farm_id,
-                region=self._boto_session.region_name,
-            )
+            try:
+                record_runtime_selection_telemetry_event(
+                    runtime_kind=runtime_kind.value,
+                    selection_reason=(
+                        "hint"
+                        if self._session_runtime_kind is SessionRuntimeKind.SERVICE_SELECTED
+                        and runtime_hint is not None
+                        else "config-default"
+                    ),
+                    session_runtime_config=self._session_runtime_kind.value,
+                    runtime_hint=runtime_hint,
+                    session_id=new_session_id,
+                    queue_id=queue_id,
+                    farm_id=self._farm_id,
+                    region=self._boto_session.region_name,
+                )
+            except Exception:
+                logger.warning("Failed to record runtime telemetry event")
 
             try:
                 session = Session(
@@ -1242,6 +1248,8 @@ class WorkerScheduler:
                     action_update_callback=self._handle_session_action_update,
                     action_update_lock=self._action_update_lock,
                     session_root_dir=self._session_root_dir,
+                    farm_id=self._farm_id,
+                    region=self._boto_session.region_name,
                 )
             except (ValueError, NotImplementedError, OSError) as e:
                 # Runtime construction can fail per-session (e.g. the selected runtime's
@@ -1259,26 +1267,29 @@ class WorkerScheduler:
                         message=message,
                     )
                 )
-                record_runtime_failure_telemetry_event(
-                    runtime_kind=runtime_kind.value,
-                    # Exception messages are free text and can embed filesystem paths
-                    # (potential PII) — e.g. hand-raised OSError(f"...{path}") has
-                    # strerror=None. Never forward str(e): send OS-level strerror when
-                    # present (error class, no path), otherwise a coarse constant.
-                    # exception_type carries the class; full detail remains in the
-                    # worker log, reachable via session_id.
-                    failure_reason=(
-                        e.strerror
-                        if isinstance(e, OSError) and e.strerror
-                        else "session construction failed"
-                    ),
-                    exception_type=type(e).__name__,
-                    runtime_hint=runtime_hint,
-                    session_id=new_session_id,
-                    queue_id=queue_id,
-                    farm_id=self._farm_id,
-                    region=self._boto_session.region_name,
-                )
+                try:
+                    record_runtime_failure_telemetry_event(
+                        runtime_kind=runtime_kind.value,
+                        # Exception messages are free text and can embed filesystem paths
+                        # (potential PII) — e.g. hand-raised OSError(f"...{path}") has
+                        # strerror=None. Never forward str(e): send OS-level strerror when
+                        # present (error class, no path), otherwise a coarse constant.
+                        # exception_type carries the class; full detail remains in the
+                        # worker log, reachable via session_id.
+                        failure_reason=(
+                            e.strerror
+                            if isinstance(e, OSError) and e.strerror
+                            else "session construction failed"
+                        ),
+                        exception_type=type(e).__name__,
+                        runtime_hint=runtime_hint,
+                        session_id=new_session_id,
+                        queue_id=queue_id,
+                        farm_id=self._farm_id,
+                        region=self._boto_session.region_name,
+                    )
+                except Exception:
+                    logger.warning("Failed to record runtime telemetry event")
                 continue
 
             def run_session(

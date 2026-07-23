@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import timedelta
+from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 if TYPE_CHECKING:
     from openjd.sessions import (
@@ -15,6 +16,32 @@ if TYPE_CHECKING:
         PathMappingRule,
         StepScriptModel,
     )
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+class SessionRuntimeCrashError(Exception):
+    """A non-Exception error from a session runtime (e.g. a Rust panic crossing
+    the PyO3 boundary as a BaseException) converted to a regular exception so
+    the session's existing failure handling engages (report FAILED + cleanup)
+    instead of the session thread dying silently."""
+
+
+def convert_runtime_crashes(method: _F) -> _F:
+    """Converts BaseException escapes from a runtime adapter method into
+    SessionRuntimeCrashError. Regular Exceptions and interpreter control-flow
+    exceptions (KeyboardInterrupt, SystemExit) propagate unchanged."""
+
+    @wraps(method)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return method(*args, **kwargs)
+        except (Exception, KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException as e:
+            raise SessionRuntimeCrashError(f"session runtime crashed: {type(e).__name__}") from e
+
+    return wrapper  # type: ignore[return-value]
 
 
 class SessionRuntime(ABC):
