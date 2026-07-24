@@ -17,9 +17,6 @@ import pytest
 from openjd.model import ParameterValue
 from openjd.model.v2023_09 import (
     Action,
-    Environment,
-    EnvironmentActions,
-    EnvironmentScript,
     StepActions,
     StepScript,
     StepTemplate,
@@ -29,14 +26,14 @@ from openjd.model.v2023_09 import (
     ExtensionName,
 )
 from openjd.sessions import (
-    ActionState,
-    ActionStatus,
     PathFormat,
     PathMappingRule,
     PosixSessionUser,
     SessionUser,
     WindowsSessionUser,
 )
+from openjd.sessions._v1 import ActionState, ActionStatus
+from openjd.expr import PathFormat as V1PathFormat, PathMappingRule as V1PathMappingRule
 
 from deadline_worker_agent.api_models import (
     EnvironmentAction,
@@ -219,16 +216,10 @@ def enter_env_action(
     """A fixture that provides a EnterEnvironmentAction"""
     return EnterEnvironmentAction(
         details=EnvironmentDetails(
-            environment=Environment(
-                name="EnvName",
-                script=EnvironmentScript(
-                    actions=EnvironmentActions(
-                        onEnter=Action(
-                            command=CommandString("test"),
-                        ),
-                    ),
-                ),
-            ),
+            environment={
+                "name": "EnvName",
+                "script": {"actions": {"onEnter": {"command": "test"}}},
+            },
         ),
         id=action_id,
         job_env_id=job_env_id,
@@ -432,7 +423,21 @@ class TestSessionInit:
         mock_create_runtime.assert_called_once()
         config = mock_create_runtime.call_args[0][1]
         if path_mapping_rules:
-            assert path_mapping_rules == config.path_mapping_rules
+            # The session converts v0 PathMappingRules to v1 (openjd.expr) before
+            # passing them to create_session_runtime.
+            expected_v1_rules = [
+                V1PathMappingRule(
+                    source_path_format=(
+                        V1PathFormat.POSIX
+                        if rule.source_path_format == PathFormat.POSIX
+                        else V1PathFormat.WINDOWS
+                    ),
+                    source_path=str(rule.source_path),
+                    destination_path=str(rule.destination_path),
+                )
+                for rule in path_mapping_rules
+            ]
+            assert expected_v1_rules == config.path_mapping_rules
         else:
             assert not config.path_mapping_rules
 
@@ -1056,16 +1061,10 @@ class TestSessionActionUpdatedImpl:
         current_action = CurrentAction(
             definition=EnterEnvironmentAction(
                 details=EnvironmentDetails(
-                    environment=Environment(
-                        name="EnvName",
-                        script=EnvironmentScript(
-                            actions=EnvironmentActions(
-                                onEnter=Action(
-                                    command=CommandString("test"),
-                                ),
-                            ),
-                        ),
-                    ),
+                    environment={
+                        "name": "EnvName",
+                        "script": {"actions": {"onEnter": {"command": "test"}}},
+                    },
                 ),
                 id=action_id,
                 job_env_id=job_env_id,

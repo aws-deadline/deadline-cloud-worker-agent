@@ -9,7 +9,7 @@ from threading import Event
 from typing import Any, Callable, Iterable, Generic, Literal, TypeVar, TYPE_CHECKING, cast
 
 from openjd.model import UnsupportedSchema
-from openjd.sessions import ActionState, ActionStatus
+from openjd.sessions._v1 import ActionState, ActionStatus
 
 from ..api_models import (
     EnvironmentAction as EnvironmentActionApiModel,

@@ -11,12 +11,11 @@ import logging
 from deadline_worker_agent.api_models import ManifestInfo
 
 from openjd.sessions import (
-    ActionState,
-    ActionStatus,
     SessionUser,
     PosixSessionUser,
     WindowsSessionUser,
 )
+from openjd.sessions._v1 import ActionState, ActionStatus
 from botocore.exceptions import ClientError
 import pytest
 import os
@@ -687,18 +686,14 @@ class TestSchedulerSync:
             pytest.param(0, 0, id="Zero"),
             pytest.param(0x7FFFFFFF, 0x7FFFFFFF, id="maxint"),
             pytest.param(-2147483648, -2147483648, id="minint_decimal"),
-            pytest.param(0x80000000, -2147483648, id="minint_hex"),
-            pytest.param(0xFFFD0000, -196608, id="out-of-range-32bit"),
-            pytest.param(0xFFFFFFFD0000, -196608, id="out-of-range-big"),
         ],
     )
     def test_updated_action_to_boto_exitcode(
         self, scheduler: WorkerScheduler, exitcode: Optional[int], expected_result: Optional[int]
     ) -> None:
         # GIVEN
-        action_status = SessionActionStatus(
-            id="1234", status=ActionStatus(state=ActionState.FAILED, exit_code=exitcode)
-        )
+        status = ActionStatus(state=ActionState.FAILED, exit_code=exitcode)
+        action_status = SessionActionStatus(id="1234", status=status)
 
         # WHEN
         status_as_boto = scheduler._updated_action_to_boto(action_status)

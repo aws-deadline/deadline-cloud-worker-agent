@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from openjd.sessions import ActionStatus
+from openjd.sessions._v1 import ActionStatus
 
 if TYPE_CHECKING:
     from ..api_models import CompletedActionStatus, ManifestInfo

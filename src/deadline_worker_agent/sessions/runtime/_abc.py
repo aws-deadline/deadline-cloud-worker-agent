@@ -8,30 +8,34 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
-    from openjd.sessions import (
-        ActionStatus,
-        EnvironmentIdentifier,
-        EnvironmentModel,
-        PathMappingRule,
-        StepScriptModel,
-    )
+    from openjd.expr import PathMappingRule
+    from openjd.sessions import EnvironmentIdentifier
+    from openjd.sessions._v1 import ActionStatus
 
 
 class SessionRuntime(ABC):
     """Abstract surface every session backend implements.
 
-    Mirrors ``openjd.sessions.Session``'s public surface 1:1.
+    Environments and step scripts cross this interface as OpenJD wire-format
+    JSON dicts (the service's own vocabulary) rather than as decoded models:
+    each backend decodes with its native library, so no decoded object ever
+    needs translating between the v0 and _v1 type systems. Scalar values
+    (parameters, path-mapping rules, action statuses) are the _v1 native types.
     """
 
     @abstractmethod
     def enter_environment(
         self,
         *,
-        environment: EnvironmentModel,
+        environment: dict[str, Any],
         identifier: Optional[EnvironmentIdentifier] = None,
         os_env_vars: Optional[dict[str, str]] = None,
     ) -> EnvironmentIdentifier:
-        """Enter an environment; returns its identifier."""
+        """Enter an environment; returns its identifier.
+
+        ``environment`` is the wire-format JSON dict of the OpenJD environment
+        (the value of a template's ``environment`` key).
+        """
         ...
 
     @abstractmethod
@@ -49,20 +53,24 @@ class SessionRuntime(ABC):
     def run_task(
         self,
         *,
-        step_script: StepScriptModel,
-        task_parameter_values: dict[str, Any],
+        step_script: dict[str, Any],
+        task_parameter_values: dict[str, dict[str, Any]],
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
     ) -> None:
-        """Run a task within the session's active environment(s)."""
+        """Run a task within the session's active environment(s).
+
+        ``step_script`` is the wire-format JSON dict of the OpenJD step script
+        (the value of a step template's ``script`` key).
+        """
         ...
 
     @abstractmethod
     def _run_task_without_session_env(
         self,
         *,
-        step_script: StepScriptModel,
-        task_parameter_values: dict[str, Any],
+        step_script: dict[str, Any],
+        task_parameter_values: dict[str, dict[str, Any]],
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
     ) -> None:
@@ -104,3 +112,18 @@ class SessionRuntime(ABC):
     def action_status(self) -> Optional[ActionStatus]:
         """Status of the most recent action; ``None`` if no action has run yet."""
         ...
+
+
+class SessionRuntimeDecodeError(Exception):
+    """A wire-format JSON document failed to decode at a runtime boundary.
+
+    Raised by adapters when the environment or step-script JSON handed across
+    the SessionRuntime interface is rejected by the backend's decoder. Names
+    the boundary so the failure is diagnosable from a session log without a
+    traceback (decode failures otherwise surface in customer-visible progress
+    messages with nothing pointing at the conversion hop).
+    """
+
+    def __init__(self, *, boundary: str, cause: Exception) -> None:
+        self.boundary = boundary
+        super().__init__(f"Failed to decode OpenJD document at {boundary}: {cause}")

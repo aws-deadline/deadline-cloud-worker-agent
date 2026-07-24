@@ -13,7 +13,6 @@ from openjd.model import (
     UnsupportedSchema,
 )
 from openjd.model.v2023_09 import (
-    Environment,
     EnvironmentScript,
     EnvironmentActions,
     Action,
@@ -116,7 +115,10 @@ class TestSessionActionQueueDequeue:
                     id="id",
                     job_env_id="envid",
                     details=EnvironmentDetails(
-                        environment=Environment(name="TestEnv", script=_TEST_ENVIRONMENT_SCRIPT)
+                        environment={
+                            "name": "TestEnv",
+                            "script": {"actions": {"onEnter": {"command": "test"}}},
+                        }
                     ),
                 ),
                 id="env enter",

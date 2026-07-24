@@ -6,7 +6,6 @@ from typing import Any, cast
 
 from openjd.model import parse_model, TemplateSpecificationVersion, UnsupportedSchema
 from openjd.model.v2023_09 import Environment as Environment_2023_09
-from openjd.sessions import EnvironmentModel
 
 from ...api_models import EnvironmentDetailsData
 from .job_entity_type import JobEntityType
@@ -20,7 +19,7 @@ class EnvironmentDetails:
     ENTITY_TYPE = JobEntityType.ENVIRONMENT_DETAILS.value
     """The JobEntityType handled by this class"""
 
-    environment: EnvironmentModel
+    environment: dict[str, Any]
     """The environment"""
 
     @classmethod
@@ -50,13 +49,14 @@ class EnvironmentDetails:
             TemplateSpecificationVersion.JOBTEMPLATE_v2023_09,
             TemplateSpecificationVersion.ENVIRONMENT_v2023_09,
         ):
-            environment = parse_model(
-                model=Environment_2023_09, obj=environment_details_data["template"]
-            )
+            # Validate the document, but store the wire-format dict: the
+            # SessionRuntime interface carries wire JSON and each runtime
+            # decodes it with its own library.
+            parse_model(model=Environment_2023_09, obj=environment_details_data["template"])
         else:
             raise UnsupportedSchema(schema_version.value)
 
-        return EnvironmentDetails(environment=environment)
+        return EnvironmentDetails(environment=dict(environment_details_data["template"]))
 
     @classmethod
     def validate_entity_data(cls, entity_data: dict[str, Any]) -> EnvironmentDetailsData:

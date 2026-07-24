@@ -36,6 +36,11 @@ class StepDetails:
     dependencies: list[str] = field(default_factory=list)
     """The dependencies (a list of IDs) that the step depends on"""
 
+    step_script: dict[str, Any] = field(default_factory=dict)
+    """The wire-format JSON of the step's script. The SessionRuntime interface
+    carries wire JSON and each runtime decodes it with its own library.
+    """
+
     @classmethod
     def from_boto(cls, step_details_data: StepDetailsData) -> StepDetails:
         """Converts an stepDetails entity received from BatchGetJobEntity API response into a
@@ -66,17 +71,20 @@ class StepDetails:
             if "name" in details_data:
                 # New API shape -- 'template' contains a StepTemplate
                 step_template = parse_model(model=StepTemplate_2023_09, obj=details_data)
+                step_script = dict(details_data["script"])
             else:
                 # Old API shape -- 'template' contains a StepScript.
                 # If we're GA and you're reading this, then delete this code path.
                 step_template = parse_model(
                     model=StepTemplate_2023_09, obj={"name": "Placeholder", "script": details_data}
                 )
+                step_script = dict(details_data)
         else:
             raise UnsupportedSchema(schema_version.value)
 
         return StepDetails(
             step_template=step_template,
+            step_script=step_script,
             step_id=step_details_data["stepId"],
             dependencies=step_details_data["dependencies"],
         )

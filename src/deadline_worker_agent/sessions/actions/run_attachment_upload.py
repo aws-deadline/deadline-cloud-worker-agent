@@ -13,17 +13,6 @@ from deadline.job_attachments.models import (
     JobAttachmentS3Settings,
 )
 from openjd.sessions import LOG as OPENJD_LOG, LogContent
-from openjd.model.v2023_09 import (
-    EmbeddedFileTypes as EmbeddedFileTypes_2023_09,
-    EmbeddedFileText as EmbeddedFileText_2023_09,
-    Action as Action_2023_09,
-    StepScript as StepScript_2023_09,
-    StepActions as StepActions_2023_09,
-    ArgString,
-    CommandString,
-    DataString,
-)
-from openjd.model import ParameterValue
 
 from ...log_messages import SessionActionLogKind
 from ..attachment_models import WorkerManifestProperties
@@ -48,7 +37,7 @@ class AttachmentUploadAction(OpenjdAction):
         The task identifier that the action belongs to
     """
 
-    _step_script: Optional[StepScript_2023_09]
+    _step_script: Optional[dict[str, Any]]
     _step_id: str
     _task_id: Optional[str]
     _start_time: float
@@ -97,32 +86,34 @@ class AttachmentUploadAction(OpenjdAction):
         # Build the command arguments
         upload_script_path = Path(__file__).parent / "scripts" / "attachment_upload.py"
         args = [
-            ArgString(str(upload_script_path)),
-            ArgString("-s3"),
-            ArgString(s3_settings.to_s3_root_uri()),
-            ArgString("-wp"),
-            ArgString("{{ Task.File.WorkerManifestProperties }}"),
+            str(upload_script_path),
+            "-s3",
+            s3_settings.to_s3_root_uri(),
+            "-wp",
+            "{{ Task.File.WorkerManifestProperties }}",
         ]
 
         executable_path = Path(sys.executable)
         python_path = executable_path.parent / executable_path.name.lower().replace(
             "pythonservice.exe", "python.exe"
         )
-        self._step_script = StepScript_2023_09(
-            actions=StepActions_2023_09(
-                onRun=Action_2023_09(
-                    command=CommandString(str(python_path)),
-                    args=args,
-                )
-            ),
-            embeddedFiles=[
-                EmbeddedFileText_2023_09(
-                    name="WorkerManifestProperties",
-                    type=EmbeddedFileTypes_2023_09.TEXT,
-                    data=DataString(worker_props_json),
-                ),
+        # Wire-format OpenJD step script: the SessionRuntime interface carries
+        # wire JSON and each runtime decodes (and validates) it natively.
+        self._step_script = {
+            "actions": {
+                "onRun": {
+                    "command": str(python_path),
+                    "args": args,
+                }
+            },
+            "embeddedFiles": [
+                {
+                    "name": "WorkerManifestProperties",
+                    "type": "TEXT",
+                    "data": worker_props_json,
+                },
             ],
-        )
+        }
 
     def __eq__(self, other: Any) -> bool:
         return (
@@ -199,7 +190,7 @@ class AttachmentUploadAction(OpenjdAction):
 
         session._run_attachment_sync_task(
             step_script=self._step_script,
-            task_parameter_values=dict[str, ParameterValue](),
+            task_parameter_values={},
             os_env_vars=env_vars,
             log_task_banner=False,
         )

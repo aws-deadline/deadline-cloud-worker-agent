@@ -14,17 +14,6 @@ import pytest
 import deadline_worker_agent.sessions.actions as actions_module
 from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
 from openjd.sessions import SessionUser, PosixSessionUser
-from openjd.model import ParameterValue
-from openjd.model.v2023_09 import (
-    EmbeddedFileTypes as EmbeddedFileTypes_2023_09,
-    EmbeddedFileText as EmbeddedFileText_2023_09,
-    Action as Action_2023_09,
-    StepScript as StepScript_2023_09,
-    StepActions as StepActions_2023_09,
-    ArgString,
-    CommandString,
-    DataString,
-)
 
 import deadline_worker_agent.sessions.session as session_mod
 from deadline.job_attachments.models import (
@@ -209,39 +198,24 @@ class TestStart:
         download_script_path = (
             Path(os.path.dirname(actions_module.__file__)) / "scripts" / "attachment_download.py"
         )
-        expected_script = StepScript_2023_09(
-            actions=StepActions_2023_09(
-                onRun=Action_2023_09(
-                    command=CommandString(python_path),
-                    args=[
-                        ArgString(str(download_script_path)),
-                        ArgString("-s3"),
-                        ArgString(s3_settings.to_s3_root_uri()),
-                        ArgString("-wp"),
-                        ArgString("{{ Task.File.WorkerManifestProperties }}"),
-                    ],
-                )
-            ),
-            embeddedFiles=[
-                EmbeddedFileText_2023_09(
-                    name="WorkerManifestProperties",
-                    type=EmbeddedFileTypes_2023_09.TEXT,
-                    data=DataString(ANY),  # JSON data will vary
-                ),
-            ],
-        )
 
-        # Check the basic structure
+        # Check the basic structure — step_script is now a wire-format dict
         assert action._step_script is not None
-        assert action._step_script.actions.onRun.command == expected_script.actions.onRun.command
-        assert action._step_script.actions.onRun.args == expected_script.actions.onRun.args
-        assert action._step_script.embeddedFiles is not None
-        assert len(action._step_script.embeddedFiles) == 1
-        assert action._step_script.embeddedFiles[0].name == "WorkerManifestProperties"
+        assert action._step_script["actions"]["onRun"]["command"] == python_path
+        assert action._step_script["actions"]["onRun"]["args"] == [
+            str(download_script_path),
+            "-s3",
+            s3_settings.to_s3_root_uri(),
+            "-wp",
+            "{{ Task.File.WorkerManifestProperties }}",
+        ]
+        assert "embeddedFiles" in action._step_script
+        assert len(action._step_script["embeddedFiles"]) == 1
+        assert action._step_script["embeddedFiles"][0]["name"] == "WorkerManifestProperties"
 
         session._run_attachment_sync_task.assert_called_once_with(
             step_script=action._step_script,
-            task_parameter_values=dict[str, ParameterValue](),
+            task_parameter_values={},
             os_env_vars={
                 "DEADLINE_QUEUE_ID": TestStart.QUEUE_ID,
                 "PYTHONIOENCODING": "utf-8",
@@ -380,31 +354,31 @@ class TestSetStepScript:
         assert action._step_script is not None
 
         # Check command and args
-        assert action._step_script.actions.onRun.command == CommandString(python_path)
+        assert action._step_script["actions"]["onRun"]["command"] == python_path
         # The actual path is calculated from the actions module location
         download_script_path = (
             Path(actions_module.__file__).parent / "scripts" / "attachment_download.py"
         )
         expected_args = [
-            ArgString(str(download_script_path)),
-            ArgString("-s3"),
-            ArgString(s3_settings.to_s3_root_uri()),
-            ArgString("-wp"),
-            ArgString("{{ Task.File.WorkerManifestProperties }}"),
+            str(download_script_path),
+            "-s3",
+            s3_settings.to_s3_root_uri(),
+            "-wp",
+            "{{ Task.File.WorkerManifestProperties }}",
         ]
-        assert action._step_script.actions.onRun.args == expected_args
+        assert action._step_script["actions"]["onRun"]["args"] == expected_args
 
         # Check embedded files
-        assert action._step_script.embeddedFiles is not None
-        assert len(action._step_script.embeddedFiles) == 1
+        assert "embeddedFiles" in action._step_script
+        assert len(action._step_script["embeddedFiles"]) == 1
 
         # Check WorkerManifestProperties file
-        worker_props_file = action._step_script.embeddedFiles[0]
-        assert worker_props_file.name == "WorkerManifestProperties"
-        assert worker_props_file.type == EmbeddedFileTypes_2023_09.TEXT
+        worker_props_file = action._step_script["embeddedFiles"][0]
+        assert worker_props_file["name"] == "WorkerManifestProperties"
+        assert worker_props_file["type"] == "TEXT"
 
         # Verify the worker properties JSON contains expected data
-        worker_props_data = json.loads(worker_props_file.data)
+        worker_props_data = json.loads(worker_props_file["data"])
         assert len(worker_props_data) == 1
         assert worker_props_data[0]["localRootPath"] == "/local/root"
         assert worker_props_data[0]["localManifestPaths"] == ["/local/manifest.json"]
@@ -433,13 +407,13 @@ class TestSetStepScript:
         assert action._step_script is not None
 
         # Check that embedded files still exist but WorkerManifestProperties is empty
-        assert action._step_script.embeddedFiles is not None
-        assert len(action._step_script.embeddedFiles) == 1
+        assert "embeddedFiles" in action._step_script
+        assert len(action._step_script["embeddedFiles"]) == 1
 
-        worker_props_file = action._step_script.embeddedFiles[0]
-        assert worker_props_file.name == "WorkerManifestProperties"
+        worker_props_file = action._step_script["embeddedFiles"][0]
+        assert worker_props_file["name"] == "WorkerManifestProperties"
 
-        worker_props_data = json.loads(worker_props_file.data)
+        worker_props_data = json.loads(worker_props_file["data"])
         assert worker_props_data == []
 
 

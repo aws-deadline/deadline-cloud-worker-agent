@@ -41,19 +41,9 @@ from openjd.sessions import (
     PosixSessionUser,
     WindowsSessionUser,
 )
-from openjd.model.v2023_09 import (
-    EmbeddedFileTypes as EmbeddedFileTypes_2023_09,
-    EmbeddedFileText as EmbeddedFileText_2023_09,
-    Action as Action_2023_09,
-    StepScript as StepScript_2023_09,
-    StepActions as StepActions_2023_09,
-    CommandString,
-    ArgString,
-    DataString,
-)
-from openjd.model import ParameterValue
 
 from ...log_messages import SessionActionLogKind
+from ..runtime._v0_compat import to_interface_path_mapping_rule
 from .openjd_action import OpenjdAction
 from ..attachment_models import WorkerManifestProperties
 
@@ -73,7 +63,7 @@ class AttachmentDownloadAction(OpenjdAction):
 
     _job_attachment_details: Optional[JobAttachmentDetails]
     _step_details: Optional[StepDetails]
-    _step_script: Optional[StepScript_2023_09]
+    _step_script: Optional[dict[str, Any]]
 
     def __init__(
         self,
@@ -120,21 +110,21 @@ class AttachmentDownloadAction(OpenjdAction):
 
         worker_props_json = json.dumps(worker_props_data, indent=2)
         embedded_files.append(
-            EmbeddedFileText_2023_09(
-                name="WorkerManifestProperties",
-                type=EmbeddedFileTypes_2023_09.TEXT,
-                data=DataString(worker_props_json),
-            )
+            {
+                "name": "WorkerManifestProperties",
+                "type": "TEXT",
+                "data": worker_props_json,
+            }
         )
 
         # Build the command arguments
         download_script_path = Path(__file__).parent / "scripts" / "attachment_download.py"
         args = [
-            ArgString(str(download_script_path)),
-            ArgString("-s3"),
-            ArgString(s3_settings.to_s3_root_uri()),
-            ArgString("-wp"),
-            ArgString("{{ Task.File.WorkerManifestProperties }}"),
+            str(download_script_path),
+            "-s3",
+            s3_settings.to_s3_root_uri(),
+            "-wp",
+            "{{ Task.File.WorkerManifestProperties }}",
         ]
 
         executable_path = Path(sys.executable)
@@ -142,15 +132,17 @@ class AttachmentDownloadAction(OpenjdAction):
             "pythonservice.exe", "python.exe"
         )
 
-        self._step_script = StepScript_2023_09(
-            actions=StepActions_2023_09(
-                onRun=Action_2023_09(
-                    command=CommandString(str(python_path)),
-                    args=args,
-                )
-            ),
-            embeddedFiles=embedded_files,
-        )
+        # Wire-format OpenJD step script: the SessionRuntime interface carries
+        # wire JSON and each runtime decodes (and validates) it natively.
+        self._step_script = {
+            "actions": {
+                "onRun": {
+                    "command": str(python_path),
+                    "args": args,
+                }
+            },
+            "embeddedFiles": embedded_files,
+        }
 
     def __eq__(self, other: Any) -> bool:
         return (
@@ -293,7 +285,10 @@ class AttachmentDownloadAction(OpenjdAction):
         job_attachment_path_mappings = list([asdict(r) for r in dynamic_mapping_rules.values()])
 
         session.runtime.extend_path_mapping_rules(
-            [OpenjdPathMapping.from_dict(r) for r in job_attachment_path_mappings]
+            [
+                to_interface_path_mapping_rule(OpenjdPathMapping.from_dict(r))
+                for r in job_attachment_path_mappings
+            ]
         )
 
         manifest_paths_by_root = session._asset_sync._check_and_write_local_manifests(
@@ -342,15 +337,15 @@ class AttachmentDownloadAction(OpenjdAction):
             # for the session to proceed to the next action
             # LINUX and VIRTUAL only
             session._run_attachment_sync_task(
-                step_script=StepScript_2023_09(
-                    actions=StepActions_2023_09(
-                        onRun=Action_2023_09(
-                            command=CommandString("echo"),
-                            args=[ArgString("Job Attachments mode VIRTUAL, VFS launched")],
-                        )
-                    ),
-                ),
-                task_parameter_values=dict[str, ParameterValue](),
+                step_script={
+                    "actions": {
+                        "onRun": {
+                            "command": "echo",
+                            "args": ["Job Attachments mode VIRTUAL, VFS launched"],
+                        }
+                    },
+                },
+                task_parameter_values={},
                 log_task_banner=False,
             )
         else:
@@ -361,7 +356,7 @@ class AttachmentDownloadAction(OpenjdAction):
             assert self._step_script is not None
             session._run_attachment_sync_task(
                 step_script=self._step_script,
-                task_parameter_values=dict[str, ParameterValue](),
+                task_parameter_values={},
                 os_env_vars={
                     "DEADLINE_QUEUE_ID": session._queue_id,
                     # Ensure UTF-8 encoding for stdout/stderr to prevent UnicodeEncodeError

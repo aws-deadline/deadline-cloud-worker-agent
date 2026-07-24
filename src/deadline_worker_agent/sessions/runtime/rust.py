@@ -12,42 +12,30 @@ from pathlib import Path
 from shutil import chown
 from typing import TYPE_CHECKING, Any, Optional
 
-from openjd._openjd_rs import create_environment, deserialize_step
-from openjd.expr import PathFormat, PathMappingRule as RustPathMappingRule
+from openjd._openjd_rs import StepScript as V1StepScript, create_environment, deserialize_step
 from openjd.model._v1 import decode_environment_template
+from openjd.model._v1.errors import DecodeValidationError
 from openjd.model._v1.types import (
-    JobParameterType,
-    JobParameterValue,
     ModelExtension,
     ModelProfile,
     SpecificationRevision,
-    TaskParameterType,
-    TaskParameterValue,
 )
 from openjd.sessions import (
-    ActionState,
-    ActionStatus,
-    PathMappingRule,
     PosixSessionUser,
     WindowsSessionUser,
 )
 from openjd.sessions._v1 import (
-    ActionState as RustActionState,
-    ActionStatus as RustActionStatus,
-    PosixSessionUser as RustPosixSessionUser,
+    PosixSessionUser as V1PosixSessionUser,
     Session as OpenJDRustSession,
-    WindowsSessionUser as RustWindowsSessionUser,
+    WindowsSessionUser as V1WindowsSessionUser,
 )
 
-from . import SessionRuntime, SessionRuntimeConfig
+from . import SessionRuntime, SessionRuntimeConfig, SessionRuntimeDecodeError
 
 if TYPE_CHECKING:
-    from openjd.sessions import (
-        EnvironmentIdentifier,
-        EnvironmentModel,
-        SessionUser,
-        StepScriptModel,
-    )
+    from openjd.expr import PathMappingRule
+    from openjd.sessions import EnvironmentIdentifier, SessionUser
+    from openjd.sessions._v1 import ActionStatus
 
 __all__ = ["RustSessionRuntime"]
 
@@ -63,141 +51,32 @@ _SPEC_REVISIONS: dict[str, SpecificationRevision] = {
 }
 
 
-# openjd.expr.PathFormat is a non-constructable Rust enum, so map the v0
-# rule's format string to the member by its value.
-_PATH_FORMATS: dict[str, PathFormat] = {
-    "POSIX": PathFormat.POSIX,
-    "WINDOWS": PathFormat.WINDOWS,
-}
-
-
-# The _v1 ActionState is a non-iterable pyo3 enum, so map each member to the
-# v0 enum explicitly (same pattern as _SPEC_REVISIONS/_PATH_FORMATS). A state
-# added on the Rust side must be mapped here deliberately — failing loud beats
-# silently mis-reporting an action's state to the service.
-_ACTION_STATES: dict[str, ActionState] = {
-    str(RustActionState.RUNNING): ActionState.RUNNING,
-    str(RustActionState.CANCELED): ActionState.CANCELED,
-    str(RustActionState.TIMEOUT): ActionState.TIMEOUT,
-    str(RustActionState.FAILED): ActionState.FAILED,
-    str(RustActionState.SUCCESS): ActionState.SUCCESS,
-}
-
-
-def _to_v0_action_state(state: RustActionState) -> ActionState:
-    """Convert a _v1 ActionState into the v0 enum member, failing loud on
-    states this adapter does not recognize."""
-    try:
-        return _ACTION_STATES[str(state)]
-    except KeyError:
-        raise ValueError(f"Unrecognized _v1 ActionState: {state!r}") from None
-
-
-def _to_rust_session_user(
+def _to_v1_session_user(
     user: Optional[SessionUser],
-) -> Optional[RustPosixSessionUser | RustWindowsSessionUser]:
+) -> Optional[V1PosixSessionUser | V1WindowsSessionUser]:
     """Convert a worker (v0) SessionUser into the equivalent _v1 type.
 
-    The worker builds v0 ``openjd.sessions`` user objects, but the Rust session
-    only accepts its own ``openjd.sessions._v1`` user classes — structurally
-    identical but distinct at the type level. None passes through unchanged
-    (the session runs as the agent's own user in that case).
+    The session user is the interface's one deliberate v0 hold-over (see
+    SessionRuntimeConfig): the worker's OS-user machinery is v0-native, so this
+    adapter converts at its boundary. None passes through unchanged (the
+    session runs as the agent's own user in that case).
     """
     if user is None:
         return None
     if isinstance(user, PosixSessionUser):
-        return RustPosixSessionUser(user.user, group=user.group)
+        return V1PosixSessionUser(user.user, group=user.group)
     if isinstance(user, WindowsSessionUser):
-        return RustWindowsSessionUser(
-            user.user, password=user.password, logon_token=user.logon_token
-        )
+        return V1WindowsSessionUser(user.user, password=user.password, logon_token=user.logon_token)
     raise TypeError(f"Unsupported SessionUser type: {type(user).__name__}")
 
 
-def _to_rust_parameter_values(
-    values: dict[str, Any],
-    *,
-    value_cls: type,
-    type_cls: type,
-) -> dict[str, Any]:
-    """Convert worker (v0) parameter values into native _v1 parameter values.
-
-    The worker supplies ``openjd.model`` ParameterValue objects; the Rust
-    session accepts the native pyo3 value types exported from
-    ``openjd.model._v1.types``, which are constructable from Python. Values
-    already in the ``{"type", "value"}`` dict form pass through unchanged.
-    Parameter types the binding does not define fail loud rather than being
-    silently re-encoded.
-    """
-    converted: dict[str, Any] = {}
-    for name, value in values.items():
-        if isinstance(value, dict):
-            converted[name] = value
-            continue
-        native_type = getattr(type_cls, value.type.value, None)
-        if native_type is None:
-            raise ValueError(
-                f"Parameter {name!r} has type {value.type.value!r}, which the "
-                f"_v1 binding's {type_cls.__name__} does not define."
-            )
-        converted[name] = value_cls(type=native_type, value=value.value)
-    return converted
-
-
-def _to_rust_job_parameter_values(values: dict[str, Any]) -> dict[str, Any]:
-    """Convert worker (v0) job parameter values into native _v1 JobParameterValues."""
-    return _to_rust_parameter_values(values, value_cls=JobParameterValue, type_cls=JobParameterType)
-
-
-def _to_rust_task_parameter_values(values: dict[str, Any]) -> dict[str, Any]:
-    """Convert worker (v0) task parameter values into native _v1 TaskParameterValues."""
-    return _to_rust_parameter_values(
-        values, value_cls=TaskParameterValue, type_cls=TaskParameterType
-    )
-
-
-def _to_rust_path_mapping_rule(rule: PathMappingRule) -> RustPathMappingRule:
-    """Convert one worker (v0) PathMappingRule into the _v1 (openjd.expr) type.
-
-    The worker builds ``openjd.sessions`` path-mapping rules, but the Rust
-    session only accepts ``openjd.expr.PathMappingRule`` — a distinct class with
-    the same shape. Paths are coerced to strings, which the _v1 rule stores.
-    """
-    return RustPathMappingRule(
-        source_path_format=_PATH_FORMATS[rule.source_path_format.value],
-        source_path=str(rule.source_path),
-        destination_path=str(rule.destination_path),
-    )
-
-
-def _to_rust_path_mapping_rules(
-    rules: Optional[list[PathMappingRule]],
-) -> Optional[list[RustPathMappingRule]]:
-    """Convert worker (v0) PathMappingRule lists into the _v1 type, passing None through."""
-    if rules is None:
-        return None
-    return [_to_rust_path_mapping_rule(rule) for rule in rules]
-
-
-def _to_v0_action_status(status: RustActionStatus) -> ActionStatus:
-    """Convert a _v1 ActionStatus back into the v0 type the worker consumes.
-
-    The Rust session reports status with its own ``openjd.sessions._v1``
-    ActionStatus/ActionState, but the worker's scheduler compares against the v0
-    ActionState enum. The state is remapped through the explicit _ACTION_STATES
-    table and the remaining fields are copied across.
-    """
-    return ActionStatus(
-        state=_to_v0_action_state(status.state),
-        progress=status.progress,
-        status_message=status.status_message,
-        fail_message=status.fail_message,
-        exit_code=status.exit_code,
-    )
-
-
 class RustSessionRuntime(SessionRuntime):
-    """SessionRuntime backed by openjd.sessions._v1 (Rust implementation)."""
+    """SessionRuntime backed by openjd.sessions._v1 (Rust implementation).
+
+    The interface speaks the _v1 native types and wire-format JSON, so this
+    adapter passes scalar values straight through and decodes the JSON
+    documents with the _v1 decoders directly.
+    """
 
     _session: OpenJDRustSession
     _user: Optional[SessionUser]
@@ -235,20 +114,13 @@ class RustSessionRuntime(SessionRuntime):
         # (which runs as that user) can read them.
         self._user = config.user
 
-        # The _v1 session reports status with _v1 ActionStatus/ActionState, but
-        # the worker's callback expects the v0 types, so translate on the way out.
-        v0_callback = config.action_callback
-
-        def _rust_action_callback(session_id: str, status: RustActionStatus) -> None:
-            v0_callback(session_id, _to_v0_action_status(status))
-
         self._session = OpenJDRustSession(
             session_id=config.session_id,
-            job_parameter_values=_to_rust_job_parameter_values(config.job_parameter_values),
-            path_mapping_rules=_to_rust_path_mapping_rules(config.path_mapping_rules),
+            job_parameter_values=config.job_parameter_values,
+            path_mapping_rules=config.path_mapping_rules,
             retain_working_dir=config.retain_working_dir,
-            user=_to_rust_session_user(config.user),
-            callback=_rust_action_callback,
+            user=_to_v1_session_user(config.user),
+            callback=config.action_callback,
             os_env_vars=config.os_env_vars,
             session_root_directory=config.session_root_directory,
             profile=ModelProfile(revision=revision, extensions=extensions),
@@ -257,25 +129,26 @@ class RustSessionRuntime(SessionRuntime):
     def enter_environment(
         self,
         *,
-        environment: EnvironmentModel,
+        environment: dict[str, Any],
         identifier: Optional[EnvironmentIdentifier] = None,
         os_env_vars: Optional[dict[str, str]] = None,
     ) -> EnvironmentIdentifier:
-        # The shared action layer hands a pydantic v2023_09 environment, but the
-        # Rust session needs a native _v1 environment. Serialize to the OpenJD
-        # wire shape and rebuild it natively. exclude_none=True is required, not
-        # cosmetic: the Rust decoder rejects explicit nulls (OpenJD treats
-        # absent and null as equivalent).
-        native_environment = create_environment(
-            decode_environment_template(
-                {
-                    "specificationVersion": "environment-2023-09",
-                    "environment": environment.model_dump(
-                        mode="json", by_alias=True, exclude_none=True
-                    ),
-                }
+        # The interface hands the wire-format environment JSON; wrap it in the
+        # template envelope the _v1 decoder expects and decode natively.
+        try:
+            native_environment = create_environment(
+                decode_environment_template(
+                    {
+                        "specificationVersion": "environment-2023-09",
+                        "environment": environment,
+                    }
+                )
             )
-        )
+        except DecodeValidationError as exc:
+            raise SessionRuntimeDecodeError(
+                boundary="RustSessionRuntime.enter_environment (_v1 environment decode)",
+                cause=exc,
+            ) from exc
         return self._session.enter_environment(
             environment=native_environment,
             identifier=identifier,
@@ -295,31 +168,30 @@ class RustSessionRuntime(SessionRuntime):
             keep_session_running=keep_session_running,
         )
 
+    def _decode_step_script(self, step_script: dict[str, Any]) -> V1StepScript:
+        # deserialize_step requires a named step and the binding has no bare
+        # step-script deserializer (tracked in
+        # OpenJobDescription/openjd-sessions-for-python#334), so wrap the script
+        # as ``{"name": ..., "script": ...}`` and unwrap it after decoding.
+        try:
+            return deserialize_step({"name": "Placeholder", "script": step_script}).script
+        except (DecodeValidationError, ValueError) as exc:
+            raise SessionRuntimeDecodeError(
+                boundary="RustSessionRuntime.run_task (_v1 step script decode)",
+                cause=exc,
+            ) from exc
+
     def run_task(
         self,
         *,
-        step_script: StepScriptModel,
-        task_parameter_values: dict[str, Any],
+        step_script: dict[str, Any],
+        task_parameter_values: dict[str, dict[str, Any]],
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
     ) -> None:
-        # The shared action layer hands a pydantic v2023_09 StepScript, but the
-        # Rust session needs a native _v1 step. Serialize to the OpenJD wire
-        # shape and rebuild it natively. deserialize_step requires a named step
-        # and the binding has no bare step-script deserializer (tracked in
-        # OpenJobDescription/openjd-sessions-for-python#334), so wrap the script
-        # as ``{"name": ..., "script": ...}`` and unwrap it after decoding.
-        # exclude_none=True is required, not cosmetic: the Rust decoder rejects
-        # explicit nulls (OpenJD treats absent and null as equivalent).
-        native_step_script = deserialize_step(
-            {
-                "name": "Placeholder",
-                "script": step_script.model_dump(mode="json", by_alias=True, exclude_none=True),
-            }
-        ).script
         self._session.run_task(
-            step_script=native_step_script,
-            task_parameter_values=_to_rust_task_parameter_values(task_parameter_values),
+            step_script=self._decode_step_script(step_script),
+            task_parameter_values=task_parameter_values,
             os_env_vars=os_env_vars,
             log_task_banner=log_task_banner,
         )
@@ -327,59 +199,63 @@ class RustSessionRuntime(SessionRuntime):
     def _run_task_without_session_env(
         self,
         *,
-        step_script: StepScriptModel,
-        task_parameter_values: dict[str, Any],
+        step_script: dict[str, Any],
+        task_parameter_values: dict[str, dict[str, Any]],
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
     ) -> None:
         # Attachment-sync path: the native run_task's embedded-file handling is
         # unavailable here, so materialize the script's embedded files to the
-        # session's files directory ourselves, resolve ``Task.File.*`` argument
+        # session's files directory ourselves, resolve ``Task.File.*``
         # references to those paths, and run the command as a bare subprocess.
         #
         # STOPGAP — tracked in OpenJobDescription/openjd-sessions-for-python#332.
         # Remove this block and delegate once the _v1 wrapper exposes a
         # ``run_task(..., use_session_env_vars=False)``-style API (which would
         # also restore the library's cross-platform file permission handling).
-        file_paths: dict[str, str] = {}
-        if step_script.embeddedFiles:
-            for embedded_file in step_script.embeddedFiles:
-                if embedded_file.data is None:
-                    continue
-                fd, path = tempfile.mkstemp(
-                    dir=str(self._session.files_directory),
-                    prefix=f"{embedded_file.name}_",
-                )
-                # UTF-8 explicitly: the platform default (e.g. cp1252 on
-                # Windows) can corrupt or reject non-ASCII paths in the
-                # manifest JSON, which the reader script decodes as UTF-8.
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(str(embedded_file.data))
-                # Owner read/write. On POSIX, also grant the session user's group
-                # read access so the job user can read the materialized file.
-                mode = stat.S_IRUSR | stat.S_IWUSR
-                if self._user is not None and os.name == "posix":
-                    group = getattr(self._user, "group", None)
-                    if group is not None:
-                        chown(path, group=group)
-                        mode |= stat.S_IRGRP
-                os.chmod(path, mode)
-                file_paths[embedded_file.name] = path
+        script = self._decode_step_script(step_script)
 
-        command = str(step_script.actions.onRun.command)
-        args: list[str] = []
-        if step_script.actions.onRun.args:
-            for arg in step_script.actions.onRun.args:
-                # Resolve {{ Task.File.<name> }} references with any interior
-                # whitespace, matching the format-string parser's tolerance.
-                # References to files that were not materialized (unknown name
-                # or no data) are left untouched.
-                resolved = re.sub(
-                    r"\{\{\s*Task\.File\.(\w+)\s*\}\}",
-                    lambda m: file_paths.get(m.group(1), m.group(0)),
-                    str(arg),
-                )
-                args.append(resolved)
+        file_paths: dict[str, str] = {}
+        for embedded_file in script.embeddedFiles or []:
+            if embedded_file.data is None:
+                continue
+            fd, path = tempfile.mkstemp(
+                dir=str(self._session.files_directory),
+                prefix=f"{embedded_file.name}_",
+            )
+            # UTF-8 explicitly: the platform default (e.g. cp1252 on
+            # Windows) can corrupt or reject non-ASCII paths in the
+            # manifest JSON, which the reader script decodes as UTF-8.
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(str(embedded_file.data))
+            # Owner read/write. On POSIX, also grant the session user's group
+            # read access so the job user can read the materialized file.
+            mode = stat.S_IRUSR | stat.S_IWUSR
+            if self._user is not None and os.name == "posix":
+                group = getattr(self._user, "group", None)
+                if group is not None:
+                    chown(path, group=group)
+                    mode |= stat.S_IRGRP
+            os.chmod(path, mode)
+            file_paths[embedded_file.name] = path
+
+        def _resolve_task_file_refs(value: str) -> str:
+            # Resolve {{ Task.File.<name> }} references with any interior
+            # whitespace, matching the format-string parser's tolerance.
+            # References to files that were not materialized (unknown name
+            # or no data) are left untouched.
+            return re.sub(
+                r"\{\{\s*Task\.File\.(\w+)\s*\}\}",
+                lambda m: file_paths.get(m.group(1), m.group(0)),
+                value,
+            )
+
+        # The command gets the same Task.File resolution as the args: the v0
+        # session and the Rust engine's own runner resolve both identically,
+        # and attachment scripts may reference an embedded file as the command
+        # itself (e.g. ``command: "{{ Task.File.syncScript }}"``).
+        command = _resolve_task_file_refs(str(script.actions.onRun.command))
+        args = [_resolve_task_file_refs(str(arg)) for arg in script.actions.onRun.args or []]
 
         # use_session_env_vars=False bypasses the session environment (e.g. a
         # conda env) so attachment-sync scripts run in a clean environment.
@@ -395,9 +271,7 @@ class RustSessionRuntime(SessionRuntime):
     def extend_path_mapping_rules(self, rules: list[PathMappingRule]) -> None:
         # The Rust session exposes this as a public method and sorts the rules
         # by source-path length internally, so no pre-sorting is needed here.
-        self._session.extend_path_mapping_rules(
-            [_to_rust_path_mapping_rule(rule) for rule in rules]
-        )
+        self._session.extend_path_mapping_rules(rules)
 
     def cancel_action(
         self,
@@ -416,5 +290,4 @@ class RustSessionRuntime(SessionRuntime):
 
     @property
     def action_status(self) -> Optional[ActionStatus]:
-        status = self._session.action_status
-        return _to_v0_action_status(status) if status is not None else None
+        return self._session.action_status

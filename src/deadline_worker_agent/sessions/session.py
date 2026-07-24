@@ -42,14 +42,13 @@ from openjd.model import (
 )
 from openjd.model.v2023_09 import ExtensionName
 from openjd.sessions import (
-    ActionState,
-    ActionStatus,
     EnvironmentIdentifier,
-    EnvironmentModel,
     LOG as OPENJD_LOG,
-    StepScriptModel,
     SessionUser,
 )
+
+# The SessionRuntime interface reports action status with the _v1 native types.
+from openjd.sessions._v1 import ActionState, ActionStatus
 
 from deadline.job_attachments.asset_sync import AssetSync
 from deadline.job_attachments.models import (
@@ -64,6 +63,10 @@ from .runtime import (
     SessionRuntime,
     SessionRuntimeConfig,
     create_session_runtime,
+)
+from .runtime._v0_compat import (
+    to_interface_parameter_values,
+    to_interface_path_mapping_rules,
 )
 from ..log_messages import (
     SessionLogEvent,
@@ -202,8 +205,10 @@ class Session:
             session_runtime_kind,
             SessionRuntimeConfig(
                 session_id=self._id,
-                job_parameter_values=self._job_details.parameters,
-                path_mapping_rules=self._job_details.path_mapping_rules,
+                job_parameter_values=to_interface_parameter_values(self._job_details.parameters),
+                path_mapping_rules=to_interface_path_mapping_rules(
+                    self._job_details.path_mapping_rules
+                ),
                 retain_working_dir=self._retain_session_dir,
                 user=self._os_user,
                 action_callback=openjd_session_action_callback,
@@ -846,7 +851,7 @@ class Session:
         self,
         *,
         job_env_id: str,
-        environment: EnvironmentModel,
+        environment: dict[str, Any],
         os_env_vars: Optional[dict[str, str]] = None,
     ) -> None:
         session_env_id = self._runtime.enter_environment(
@@ -1176,14 +1181,14 @@ class Session:
     def run_task(
         self,
         *,
-        step_script: StepScriptModel,
+        step_script: dict[str, Any],
         task_parameter_values: TaskParameterSet,
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
     ) -> None:
         self._runtime.run_task(
             step_script=step_script,
-            task_parameter_values=task_parameter_values,
+            task_parameter_values=to_interface_parameter_values(task_parameter_values),
             os_env_vars=os_env_vars,
             log_task_banner=log_task_banner,
         )
@@ -1191,14 +1196,14 @@ class Session:
     def _run_attachment_sync_task(
         self,
         *,
-        step_script: StepScriptModel,
+        step_script: dict[str, Any],
         task_parameter_values: TaskParameterSet,
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
     ) -> None:
         self._runtime._run_task_without_session_env(
             step_script=step_script,
-            task_parameter_values=task_parameter_values,
+            task_parameter_values=to_interface_parameter_values(task_parameter_values),
             os_env_vars=os_env_vars,
             log_task_banner=log_task_banner,
         )

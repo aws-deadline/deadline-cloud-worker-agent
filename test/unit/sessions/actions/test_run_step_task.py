@@ -13,6 +13,7 @@ def mock_step_details():
     mock.step_id = "step-123"
     mock.step_template = Mock()
     mock.step_template.script = Mock()
+    mock.step_script = {"actions": {"onRun": {"command": "test.exe"}}}
     return mock
 
 

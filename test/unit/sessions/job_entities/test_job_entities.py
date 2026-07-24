@@ -13,9 +13,6 @@ from openjd.model import (
 )
 from openjd.model.v2023_09 import (
     Action,
-    Environment,
-    EnvironmentActions,
-    EnvironmentScript,
     StepActions,
     StepScript,
     StepTemplate,
@@ -447,12 +444,16 @@ class TestDetails:
             "errors": [],
         }
         expected_details = EnvironmentDetails(
-            environment=Environment(
-                name=env_name,
-                script=EnvironmentScript(
-                    actions=EnvironmentActions(onEnter=Action(command=CommandString("test")))
-                ),
-            )
+            environment={
+                "name": env_name,
+                "script": {
+                    "actions": {
+                        "onEnter": {
+                            "command": "test",
+                        },
+                    }
+                },
+            }
         )
         deadline_client.batch_get_job_entity.return_value = response
         job_entities = JobEntities(
@@ -543,6 +544,7 @@ class TestDetails:
             ),
             step_id=step_id,
             dependencies=[dependency],
+            step_script={"actions": {"onRun": {"command": "test.exe"}}},
         )
         deadline_client.batch_get_job_entity.return_value = response
         job_entities = JobEntities(
@@ -599,6 +601,7 @@ class TestDetails:
             ),
             step_id=step_id,
             dependencies=[dependency],
+            step_script={"actions": {"onRun": {"command": "test.exe"}}},
         )
         deadline_client.batch_get_job_entity.return_value = response
         job_entities = JobEntities(

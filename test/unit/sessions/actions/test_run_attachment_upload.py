@@ -13,11 +13,6 @@ import pytest
 import deadline_worker_agent.sessions.actions as actions_module
 from deadline_worker_agent.sessions.job_entities.job_details import JobDetails
 from openjd.sessions import SessionUser
-from openjd.model import ParameterValue
-from openjd.model.v2023_09 import (
-    EmbeddedFileTypes as EmbeddedFileTypes_2023_09,
-    CommandString,
-)
 
 import deadline_worker_agent.sessions.session as session_mod
 from deadline.job_attachments.models import JobAttachmentS3Settings
@@ -148,28 +143,28 @@ class TestStart:
 
         # THEN - Verify the step script is created with new format
         assert action._step_script is not None
-        assert action._step_script.actions.onRun.command == CommandString(python_path)
+        assert action._step_script["actions"]["onRun"]["command"] == python_path
 
         # Check that the arguments use the new format (no embedded file, direct script path)
-        args = action._step_script.actions.onRun.args
+        args = action._step_script["actions"]["onRun"]["args"]
         assert args is not None
         assert len(args) == 5  # script_path, -s3, s3_uri, -wp, worker_properties_file
-        assert str(args[1]) == "-s3"
-        assert str(args[2]) == s3_settings.to_s3_root_uri()
-        assert str(args[3]) == "-wp"
-        assert str(args[4]) == "{{ Task.File.WorkerManifestProperties }}"
+        assert args[1] == "-s3"
+        assert args[2] == s3_settings.to_s3_root_uri()
+        assert args[3] == "-wp"
+        assert args[4] == "{{ Task.File.WorkerManifestProperties }}"
 
         # Check embedded files contain WorkerManifestProperties
-        embedded_files = action._step_script.embeddedFiles
+        embedded_files = action._step_script["embeddedFiles"]
         assert embedded_files is not None
         assert len(embedded_files) == 1
         embedded_file = embedded_files[0]
-        assert embedded_file.name == "WorkerManifestProperties"
-        assert embedded_file.type == EmbeddedFileTypes_2023_09.TEXT
+        assert embedded_file["name"] == "WorkerManifestProperties"
+        assert embedded_file["type"] == "TEXT"
 
         session._run_attachment_sync_task.assert_called_once_with(
             step_script=action._step_script,
-            task_parameter_values=dict[str, ParameterValue](),
+            task_parameter_values={},
             os_env_vars={
                 "DEADLINE_SESSIONACTION_ID": action_id,
                 "DEADLINE_STEP_ID": step_id,
@@ -221,22 +216,22 @@ class TestStart:
         assert action._step_script is not None
 
         # Check embedded files contain WorkerManifestProperties with expected data
-        embedded_files = action._step_script.embeddedFiles
+        embedded_files = action._step_script["embeddedFiles"]
         assert embedded_files is not None
         assert len(embedded_files) == 1
         embedded_file = embedded_files[0]
-        assert embedded_file.name == "WorkerManifestProperties"
+        assert embedded_file["name"] == "WorkerManifestProperties"
 
         # Verify the embedded data contains the worker properties
         import json
 
-        embedded_data = json.loads(str(embedded_file.data))
+        embedded_data = json.loads(embedded_file["data"])
         assert len(embedded_data) == 1
         assert embedded_data[0]["root_path"] == "/test/path"
 
         session._run_attachment_sync_task.assert_called_once_with(
             step_script=action._step_script,
-            task_parameter_values=dict[str, ParameterValue](),
+            task_parameter_values={},
             os_env_vars={
                 "DEADLINE_SESSIONACTION_ID": action_id,
                 "DEADLINE_STEP_ID": step_id,

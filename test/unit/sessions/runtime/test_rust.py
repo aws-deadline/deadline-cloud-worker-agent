@@ -5,20 +5,21 @@ from __future__ import annotations
 import os
 from dataclasses import replace
 from datetime import timedelta
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Generator
-from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from openjd.model._types import ParameterValue, ParameterValueType
 from openjd.model._v1.types import ModelProfile, SpecificationRevision
 
-from deadline_worker_agent.sessions.runtime import SessionRuntime, SessionRuntimeConfig
+from deadline_worker_agent.sessions.runtime import (
+    SessionRuntime,
+    SessionRuntimeConfig,
+    SessionRuntimeDecodeError,
+)
 from deadline_worker_agent.sessions.runtime import rust as rust_module
 from deadline_worker_agent.sessions.runtime.rust import RustSessionRuntime
-from deadline_worker_agent.sessions.runtime.rust import _to_rust_task_parameter_values
 
 
 @pytest.fixture()
@@ -51,6 +52,7 @@ class TestRustSessionRuntimeConstruction:
         mock_rust_session.assert_called_once()
         call_kwargs = mock_rust_session.call_args.kwargs
         assert call_kwargs["session_id"] == "session-1"
+        # Wire-format dicts pass straight through without conversion.
         assert call_kwargs["job_parameter_values"] == {
             "Param1": {"type": "STRING", "value": "value1"}
         }
@@ -155,14 +157,14 @@ class TestRustSessionRuntimeConstruction:
         passing it to the Rust session — they are distinct classes with the same
         fields.  Without the conversion the Rust binding raises TypeError."""
         from openjd.sessions import PosixSessionUser
-        from openjd.sessions._v1 import PosixSessionUser as RustPosixSessionUser
+        from openjd.sessions._v1 import PosixSessionUser as V1PosixSessionUser
 
         v0_user = PosixSessionUser(user="job-user", group="job-group")
         config = replace(runtime_config, user=v0_user)
         RustSessionRuntime(config)
 
         passed_user = mock_rust_session.call_args.kwargs["user"]
-        assert isinstance(passed_user, RustPosixSessionUser)
+        assert isinstance(passed_user, V1PosixSessionUser)
         assert passed_user.user == "job-user"
         assert passed_user.group == "job-group"
 
@@ -181,7 +183,7 @@ class TestRustSessionRuntimeConstruction:
 
         v0_user = WindowsSessionUser(user="job-user", password="secret")
         config = replace(runtime_config, user=v0_user)
-        with patch.object(rust_module, "RustWindowsSessionUser") as mock_v1_user_cls:
+        with patch.object(rust_module, "V1WindowsSessionUser") as mock_v1_user_cls:
             RustSessionRuntime(config)
 
         mock_v1_user_cls.assert_called_once_with(
@@ -209,6 +211,43 @@ class TestRustSessionRuntimeConstruction:
         with pytest.raises(TypeError, match="Unsupported SessionUser type"):
             RustSessionRuntime(config)
 
+    def test_construction_when_callback_is_passed_through_directly(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
+    ) -> None:
+        """The callback passes through without wrapping — no v1→v0 conversion
+        exists in the Rust adapter after the interface moved to _v1 types."""
+        RustSessionRuntime(runtime_config)
+
+        assert mock_rust_session.call_args.kwargs["callback"] is runtime_config.action_callback
+
+    def test_construction_when_path_mapping_rules_passes_through_directly(
+        self, mock_rust_session: MagicMock
+    ) -> None:
+        """_v1 path mapping rules pass straight through without conversion."""
+        from openjd.expr import PathFormat as ExprPathFormat
+        from openjd.expr import PathMappingRule as ExprPathMappingRule
+
+        rule = ExprPathMappingRule(
+            source_path_format=ExprPathFormat.POSIX,
+            source_path="/source",
+            destination_path="/dest",
+        )
+        config = SessionRuntimeConfig(
+            session_id="session-pass",
+            job_parameter_values={},
+            path_mapping_rules=[rule],
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda sid, s: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-pass"),
+        )
+
+        RustSessionRuntime(config)
+
+        passed = mock_rust_session.call_args.kwargs["path_mapping_rules"]
+        assert passed == [rule]
+
 
 class TestRustSessionRuntimeDelegation:
     @pytest.fixture()
@@ -221,10 +260,10 @@ class TestRustSessionRuntimeDelegation:
     def mock_session_instance(self, mock_rust_session: MagicMock) -> MagicMock:
         return mock_rust_session.return_value
 
-    def test_enter_environment_when_called_converts_env_and_delegates(
+    def test_enter_environment_when_called_decodes_wire_json_and_delegates(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
-        environment = MagicMock()
+        environment = {"name": "TestEnv", "script": {"actions": {"onEnter": {"command": "echo"}}}}
         identifier = "job-env-1"
         os_env = {"KEY": "VAL"}
 
@@ -236,16 +275,12 @@ class TestRustSessionRuntimeDelegation:
                 environment=environment, identifier=identifier, os_env_vars=os_env
             )
 
-        # The pydantic environment is serialized and rebuilt natively before
-        # being handed to the session.
+        # The wire-format dict is wrapped in the template envelope and decoded.
         mock_decode.assert_called_once_with(
             {
                 "specificationVersion": "environment-2023-09",
-                "environment": environment.model_dump.return_value,
+                "environment": environment,
             }
-        )
-        environment.model_dump.assert_called_once_with(
-            mode="json", by_alias=True, exclude_none=True
         )
         mock_create.assert_called_once_with(mock_decode.return_value)
         mock_session_instance.enter_environment.assert_called_once_with(
@@ -254,6 +289,20 @@ class TestRustSessionRuntimeDelegation:
             os_env_vars=os_env,
         )
         assert result is mock_session_instance.enter_environment.return_value
+
+    def test_enter_environment_when_decode_fails_raises_session_runtime_decode_error(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """F3: DecodeValidationError from the _v1 decoder is wrapped in
+        SessionRuntimeDecodeError with the boundary named."""
+        from openjd.model._v1.errors import DecodeValidationError
+
+        with patch.object(rust_module, "decode_environment_template") as mock_decode:
+            mock_decode.side_effect = DecodeValidationError("bad template")
+            with pytest.raises(
+                SessionRuntimeDecodeError, match="RustSessionRuntime.enter_environment"
+            ):
+                adapter.enter_environment(environment={"bad": "data"})
 
     def test_exit_environment_when_called_delegates_to_wrapped_session(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
@@ -266,12 +315,12 @@ class TestRustSessionRuntimeDelegation:
             identifier="job-env-1", os_env_vars={"A": "B"}, keep_session_running=True
         )
 
-    def test_run_task_when_called_converts_step_script_and_delegates(
+    def test_run_task_when_called_decodes_step_script_and_delegates(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
-        step_script = MagicMock()
-        task_params: dict[str, Any] = {
-            "TaskParam": ParameterValue(type=ParameterValueType.STRING, value="val"),
+        step_script: dict[str, Any] = {"actions": {"onRun": {"command": "echo", "args": ["hi"]}}}
+        task_params: dict[str, dict[str, Any]] = {
+            "TaskParam": {"type": "STRING", "value": "val"},
         }
 
         with patch.object(rust_module, "deserialize_step") as mock_deserialize:
@@ -282,23 +331,42 @@ class TestRustSessionRuntimeDelegation:
                 log_task_banner=False,
             )
 
-        # The pydantic step script is serialized, wrapped as a named step, and
-        # rebuilt natively; the native ``.script`` is forwarded to the session.
-        step_script.model_dump.assert_called_once_with(
-            mode="json", by_alias=True, exclude_none=True
-        )
-        mock_deserialize.assert_called_once_with(
-            {"name": "Placeholder", "script": step_script.model_dump.return_value}
-        )
+        # The wire-format step script dict is wrapped as a named step and decoded.
+        mock_deserialize.assert_called_once_with({"name": "Placeholder", "script": step_script})
         mock_session_instance.run_task.assert_called_once()
         run_kwargs = mock_session_instance.run_task.call_args.kwargs
         assert run_kwargs["step_script"] is mock_deserialize.return_value.script
-        # The v0 ParameterValue is rebuilt as a native _v1 TaskParameterValue.
-        passed_param = run_kwargs["task_parameter_values"]["TaskParam"]
-        assert isinstance(passed_param, rust_module.TaskParameterValue)
-        assert passed_param.value == "val"
+        # Wire-format task params pass through unchanged.
+        assert run_kwargs["task_parameter_values"] == task_params
         assert run_kwargs["os_env_vars"] == {"X": "Y"}
         assert run_kwargs["log_task_banner"] is False
+
+    def test_run_task_when_decode_fails_raises_session_runtime_decode_error(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """F3: DecodeValidationError from deserialize_step is wrapped in
+        SessionRuntimeDecodeError with the boundary named."""
+        from openjd.model._v1.errors import DecodeValidationError
+
+        with patch.object(rust_module, "deserialize_step") as mock_deserialize:
+            mock_deserialize.side_effect = DecodeValidationError("bad script")
+            with pytest.raises(SessionRuntimeDecodeError, match="RustSessionRuntime.run_task"):
+                adapter.run_task(
+                    step_script={"bad": "script"},
+                    task_parameter_values={},
+                )
+
+    def test_run_task_when_value_error_raises_session_runtime_decode_error(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """F3: ValueError from deserialize_step is also wrapped."""
+        with patch.object(rust_module, "deserialize_step") as mock_deserialize:
+            mock_deserialize.side_effect = ValueError("invalid step")
+            with pytest.raises(SessionRuntimeDecodeError, match="RustSessionRuntime.run_task"):
+                adapter.run_task(
+                    step_script={"bad": "script"},
+                    task_parameter_values={},
+                )
 
     def test_run_task_without_session_env_materializes_files_and_runs_subprocess(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock, tmp_path: Path
@@ -309,10 +377,10 @@ class TestRustSessionRuntimeDelegation:
         embedded_file.name = "WorkerManifest"
         embedded_file.data = "file-contents"
 
-        step_script = MagicMock()
-        step_script.embeddedFiles = [embedded_file]
-        step_script.actions.onRun.command = "python"
-        step_script.actions.onRun.args = [
+        mock_script = MagicMock()
+        mock_script.embeddedFiles = [embedded_file]
+        mock_script.actions.onRun.command = "python"
+        mock_script.actions.onRun.args = [
             "{{ Task.File.WorkerManifest }}",
             "{{Task.File.WorkerManifest}}",
             "{{ Task.File.WorkerManifest}}",
@@ -321,12 +389,16 @@ class TestRustSessionRuntimeDelegation:
             "literal-arg",
         ]
 
-        adapter._run_task_without_session_env(
-            step_script=step_script,
-            task_parameter_values={},
-            os_env_vars={"EXTRA": "1"},
-            log_task_banner=True,
-        )
+        step_script: dict[str, Any] = {"actions": {"onRun": {"command": "python"}}}
+
+        with patch.object(rust_module, "deserialize_step") as mock_deserialize:
+            mock_deserialize.return_value.script = mock_script
+            adapter._run_task_without_session_env(
+                step_script=step_script,
+                task_parameter_values={},
+                os_env_vars={"EXTRA": "1"},
+                log_task_banner=True,
+            )
 
         mock_session_instance.run_subprocess.assert_called_once()
         run_kwargs = mock_session_instance.run_subprocess.call_args.kwargs
@@ -343,20 +415,50 @@ class TestRustSessionRuntimeDelegation:
         assert run_kwargs["os_env_vars"] == {"PYTHONUNBUFFERED": "1", "EXTRA": "1"}
         assert run_kwargs["log_banner_message"] == "Running Task"
 
+    def test_run_task_without_session_env_when_command_has_task_file_ref_resolves_it(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock, tmp_path: Path
+    ) -> None:
+        """F2: Task.File references in the command itself are resolved, not only args."""
+        mock_session_instance.files_directory = tmp_path
+
+        embedded_file = MagicMock()
+        embedded_file.name = "syncScript"
+        embedded_file.data = "#!/bin/bash\necho sync"
+
+        mock_script = MagicMock()
+        mock_script.embeddedFiles = [embedded_file]
+        mock_script.actions.onRun.command = "{{ Task.File.syncScript }}"
+        mock_script.actions.onRun.args = None
+
+        with patch.object(rust_module, "deserialize_step") as mock_deserialize:
+            mock_deserialize.return_value.script = mock_script
+            adapter._run_task_without_session_env(
+                step_script={"actions": {"onRun": {"command": "placeholder"}}},
+                task_parameter_values={},
+            )
+
+        run_kwargs = mock_session_instance.run_subprocess.call_args.kwargs
+        # The command was resolved from the Task.File reference.
+        assert "syncScript_" in run_kwargs["command"]
+        assert os.path.exists(run_kwargs["command"])
+
     def test_run_task_without_session_env_when_no_banner_passes_none(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock, tmp_path: Path
     ) -> None:
         mock_session_instance.files_directory = tmp_path
-        step_script = MagicMock()
-        step_script.embeddedFiles = None
-        step_script.actions.onRun.command = "echo"
-        step_script.actions.onRun.args = None
 
-        adapter._run_task_without_session_env(
-            step_script=step_script,
-            task_parameter_values={},
-            log_task_banner=False,
-        )
+        mock_script = MagicMock()
+        mock_script.embeddedFiles = None
+        mock_script.actions.onRun.command = "echo"
+        mock_script.actions.onRun.args = None
+
+        with patch.object(rust_module, "deserialize_step") as mock_deserialize:
+            mock_deserialize.return_value.script = mock_script
+            adapter._run_task_without_session_env(
+                step_script={"actions": {"onRun": {"command": "echo"}}},
+                task_parameter_values={},
+                log_task_banner=False,
+            )
 
         run_kwargs = mock_session_instance.run_subprocess.call_args.kwargs
         assert run_kwargs["args"] == []
@@ -376,16 +478,22 @@ class TestRustSessionRuntimeDelegation:
         embedded_file = MagicMock()
         embedded_file.name = "Manifest"
         embedded_file.data = "data"
-        step_script = MagicMock()
-        step_script.embeddedFiles = [embedded_file]
-        step_script.actions.onRun.command = "cmd"
-        step_script.actions.onRun.args = None
+
+        mock_script = MagicMock()
+        mock_script.embeddedFiles = [embedded_file]
+        mock_script.actions.onRun.command = "cmd"
+        mock_script.actions.onRun.args = None
 
         with (
+            patch.object(rust_module, "deserialize_step") as mock_deserialize,
             patch.object(rust_module, "chown") as mock_chown,
             patch.object(rust_module.os, "chmod") as mock_chmod,
         ):
-            adapter._run_task_without_session_env(step_script=step_script, task_parameter_values={})
+            mock_deserialize.return_value.script = mock_script
+            adapter._run_task_without_session_env(
+                step_script={"actions": {"onRun": {"command": "cmd"}}},
+                task_parameter_values={},
+            )
 
         mock_chown.assert_called_once()
         assert mock_chown.call_args.kwargs["group"] == "job-group"
@@ -405,18 +513,20 @@ class TestRustSessionRuntimeDelegation:
         real_file.name = "RealFile"
         real_file.data = "real-contents"
 
-        step_script = MagicMock()
-        step_script.embeddedFiles = [none_file, real_file]
-        step_script.actions.onRun.command = "python"
-        step_script.actions.onRun.args = [
+        mock_script = MagicMock()
+        mock_script.embeddedFiles = [none_file, real_file]
+        mock_script.actions.onRun.command = "python"
+        mock_script.actions.onRun.args = [
             "{{ Task.File.EmptyFile }}",
             "{{ Task.File.RealFile }}",
         ]
 
-        adapter._run_task_without_session_env(
-            step_script=step_script,
-            task_parameter_values={},
-        )
+        with patch.object(rust_module, "deserialize_step") as mock_deserialize:
+            mock_deserialize.return_value.script = mock_script
+            adapter._run_task_without_session_env(
+                step_script={"actions": {"onRun": {"command": "python"}}},
+                task_parameter_values={},
+            )
 
         # The None-data embedded file is skipped: only the real-data file is
         # materialized into the session files directory.
@@ -455,16 +565,22 @@ class TestRustSessionRuntimeDelegation:
         embedded_file = MagicMock()
         embedded_file.name = "Manifest"
         embedded_file.data = "data"
-        step_script = MagicMock()
-        step_script.embeddedFiles = [embedded_file]
-        step_script.actions.onRun.command = "cmd"
-        step_script.actions.onRun.args = None
+
+        mock_script = MagicMock()
+        mock_script.embeddedFiles = [embedded_file]
+        mock_script.actions.onRun.command = "cmd"
+        mock_script.actions.onRun.args = None
 
         with (
+            patch.object(rust_module, "deserialize_step") as mock_deserialize,
             patch.object(rust_module, "chown") as mock_chown,
             patch.object(rust_module.os, "chmod") as mock_chmod,
         ):
-            adapter._run_task_without_session_env(step_script=step_script, task_parameter_values={})
+            mock_deserialize.return_value.script = mock_script
+            adapter._run_task_without_session_env(
+                step_script={"actions": {"onRun": {"command": "cmd"}}},
+                task_parameter_values={},
+            )
 
         # No group → no chown, and the chmod mode carries no group-read bit
         # (0o600), leaving the file owner read/write only.
@@ -473,37 +589,44 @@ class TestRustSessionRuntimeDelegation:
         assert mock_chmod.call_args.args[1] == 0o600
         mock_rust_session.return_value.run_subprocess.assert_called_once()
 
-    def test_extend_path_mapping_rules_delegates_without_presorting(
+    def test_run_task_without_session_env_when_decode_fails_raises_session_runtime_decode_error(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock, tmp_path: Path
+    ) -> None:
+        """F3: Decode failure in _run_task_without_session_env is wrapped."""
+        mock_session_instance.files_directory = tmp_path
+        from openjd.model._v1.errors import DecodeValidationError
+
+        with patch.object(rust_module, "deserialize_step") as mock_deserialize:
+            mock_deserialize.side_effect = DecodeValidationError("bad")
+            with pytest.raises(SessionRuntimeDecodeError, match="RustSessionRuntime.run_task"):
+                adapter._run_task_without_session_env(
+                    step_script={"bad": "script"},
+                    task_parameter_values={},
+                )
+
+    def test_extend_path_mapping_rules_delegates_without_conversion(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
         from openjd.expr import PathFormat as ExprPathFormat
         from openjd.expr import PathMappingRule as ExprPathMappingRule
-        from openjd.sessions import PathFormat, PathMappingRule as V0PathMappingRule
 
-        rule_short = V0PathMappingRule(
-            source_path_format=PathFormat.POSIX,
-            source_path=PurePosixPath("/a"),
-            destination_path=PurePosixPath("/b"),
+        rule_short = ExprPathMappingRule(
+            source_path_format=ExprPathFormat.POSIX,
+            source_path="/a",
+            destination_path="/b",
         )
-        rule_long = V0PathMappingRule(
-            source_path_format=PathFormat.POSIX,
-            source_path=PurePosixPath("/longer/path"),
-            destination_path=PurePosixPath("/dest/path"),
+        rule_long = ExprPathMappingRule(
+            source_path_format=ExprPathFormat.POSIX,
+            source_path="/longer/path",
+            destination_path="/dest/path",
         )
-        rules: list[V0PathMappingRule] = [rule_short, rule_long]
+        rules = [rule_short, rule_long]
 
         adapter.extend_path_mapping_rules(rules)
 
         # The public method is called with the rules in their original order —
         # the session sorts internally, so the adapter must not pre-sort.
-        mock_session_instance.extend_path_mapping_rules.assert_called_once()
-        passed = mock_session_instance.extend_path_mapping_rules.call_args.args[0]
-        assert len(passed) == 2
-        assert isinstance(passed[0], ExprPathMappingRule)
-        assert passed[0].source_path_format == ExprPathFormat.POSIX
-        assert passed[0].source_path == "/a"
-        assert passed[0].destination_path == "/b"
-        assert passed[1].source_path == "/longer/path"
+        mock_session_instance.extend_path_mapping_rules.assert_called_once_with(rules)
 
     def test_cancel_action_when_called_delegates_to_wrapped_session(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
@@ -565,28 +688,15 @@ class TestRustSessionRuntimeProperties:
 
         assert adapter.working_directory == Path("/tmp/work")
 
-    def test_action_status_when_accessed_returns_converted_v0_status(
+    def test_action_status_when_accessed_returns_session_value_directly(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
-        from openjd.sessions import ActionState, ActionStatus
+        """action_status is a pass-through — no conversion needed since both
+        the interface and the Rust session speak the _v1 ActionStatus type."""
+        fake_status = MagicMock()
+        mock_session_instance.action_status = fake_status
 
-        v1_state = MagicMock(**{"__str__.return_value": "running"})
-        v1_status = SimpleNamespace(
-            state=v1_state,
-            progress=42,
-            status_message="working",
-            fail_message=None,
-            exit_code=None,
-        )
-        mock_session_instance.action_status = v1_status
-
-        result = adapter.action_status
-        assert isinstance(result, ActionStatus)
-        assert result.state == ActionState.RUNNING
-        assert result.progress == 42
-        assert result.status_message == "working"
-        assert result.fail_message is None
-        assert result.exit_code is None
+        assert adapter.action_status is fake_status
 
     def test_action_status_when_none_returns_none(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
@@ -594,294 +704,6 @@ class TestRustSessionRuntimeProperties:
         mock_session_instance.action_status = None
 
         assert adapter.action_status is None
-
-
-class TestRustSessionRuntimeTypeConversions:
-    """Tests for v0 ↔ v1 type conversion helpers."""
-
-    @pytest.fixture()
-    def mock_rust_session(self) -> Generator[MagicMock, None, None]:
-        with patch.object(rust_module, "OpenJDRustSession") as mock_cls:
-            yield mock_cls
-
-    def test_job_parameter_values_when_v0_parameter_value_converts_to_native(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        """A v0 openjd.model ParameterValue is rebuilt as a native _v1 JobParameterValue."""
-        config = SessionRuntimeConfig(
-            session_id="session-conv-1",
-            job_parameter_values={
-                "P": ParameterValue(type=ParameterValueType.STRING, value="hello"),
-            },
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-conv-1"),
-        )
-
-        RustSessionRuntime(config)
-
-        passed = mock_rust_session.call_args.kwargs["job_parameter_values"]["P"]
-        assert isinstance(passed, rust_module.JobParameterValue)
-        assert passed.value == "hello"
-
-    def test_parameter_values_when_type_unknown_to_binding_raises(self) -> None:
-        """A parameter type the _v1 binding does not define fails loud."""
-        bogus = SimpleNamespace(type=SimpleNamespace(value="HOLOGRAM"), value="x")
-        with pytest.raises(ValueError, match="HOLOGRAM.*JobParameterType does not define"):
-            rust_module._to_rust_job_parameter_values({"P": bogus})
-
-    def test_every_v1_action_state_maps_to_v0(self) -> None:
-        """Every member of the REAL _v1 ActionState enum maps to a v0 member.
-
-        The pyo3 enum is not iterable, so members are collected via dir(). The
-        member-count assertion is the drift tripwire: a state added on the Rust
-        side must be added to _ACTION_STATES deliberately.
-        """
-        from openjd.sessions import ActionState
-        from openjd.sessions._v1 import ActionState as RustActionState
-
-        members = [getattr(RustActionState, n) for n in dir(RustActionState) if n.isupper()]
-        assert len(members) == 5
-        for member in members:
-            assert isinstance(rust_module._to_v0_action_state(member), ActionState)
-
-    def test_unrecognized_v1_action_state_raises(self) -> None:
-        """A _v1 state missing from _ACTION_STATES fails loud instead of drifting."""
-
-        class _FakeState:
-            def __str__(self) -> str:
-                return "warp-speed"
-
-        with pytest.raises(ValueError, match="Unrecognized _v1 ActionState"):
-            rust_module._to_v0_action_state(_FakeState())  # type: ignore[arg-type]
-
-    def test_job_parameter_values_when_dict_passes_through_unchanged(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        """A dict value is passed through without modification."""
-        config = SessionRuntimeConfig(
-            session_id="session-conv-2",
-            job_parameter_values={
-                "D": {"type": "INT", "value": "42"},
-            },
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-conv-2"),
-        )
-
-        RustSessionRuntime(config)
-
-        passed = mock_rust_session.call_args.kwargs["job_parameter_values"]
-        assert passed == {"D": {"type": "INT", "value": "42"}}
-
-    def test_path_mapping_rules_when_v0_rules_converts_to_expr_type(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        """v0 PathMappingRule objects are converted to openjd.expr.PathMappingRule."""
-        from openjd.expr import PathFormat as ExprPathFormat
-        from openjd.expr import PathMappingRule as ExprPathMappingRule
-        from openjd.sessions import PathFormat, PathMappingRule as V0PathMappingRule
-
-        v0_rule = V0PathMappingRule(
-            source_path_format=PathFormat.POSIX,
-            source_path=PurePosixPath("/source"),
-            destination_path=PurePosixPath("/dest"),
-        )
-        config = SessionRuntimeConfig(
-            session_id="session-conv-3",
-            job_parameter_values={},
-            path_mapping_rules=[v0_rule],
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-conv-3"),
-        )
-
-        RustSessionRuntime(config)
-
-        passed = mock_rust_session.call_args.kwargs["path_mapping_rules"]
-        assert len(passed) == 1
-        assert isinstance(passed[0], ExprPathMappingRule)
-        assert passed[0].source_path_format == ExprPathFormat.POSIX
-        assert passed[0].source_path == "/source"
-        assert passed[0].destination_path == "/dest"
-
-    def test_path_mapping_rules_when_none_passes_none(self, mock_rust_session: MagicMock) -> None:
-        config = SessionRuntimeConfig(
-            session_id="session-conv-4",
-            job_parameter_values={},
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-conv-4"),
-        )
-
-        RustSessionRuntime(config)
-
-        assert mock_rust_session.call_args.kwargs["path_mapping_rules"] is None
-
-    def test_callback_when_invoked_converts_v1_status_to_v0(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        """The callback wrapper converts _v1 ActionStatus to v0 ActionStatus."""
-        from openjd.sessions import ActionState, ActionStatus
-
-        original_callback = MagicMock()
-        config = SessionRuntimeConfig(
-            session_id="session-conv-5",
-            job_parameter_values={},
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=original_callback,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-conv-5"),
-        )
-
-        RustSessionRuntime(config)
-
-        # Grab the wrapped callback that was passed to the Rust session.
-        wrapped_callback = mock_rust_session.call_args.kwargs["callback"]
-
-        # Simulate a v1 ActionStatus with a state whose str() == "success"
-        v1_state = MagicMock(**{"__str__.return_value": "success"})
-        v1_status = SimpleNamespace(
-            state=v1_state,
-            progress=100,
-            status_message="done",
-            fail_message=None,
-            exit_code=0,
-        )
-
-        wrapped_callback("session-conv-5", v1_status)
-
-        original_callback.assert_called_once()
-        call_args = original_callback.call_args
-        assert call_args[0][0] == "session-conv-5"
-        v0_status = call_args[0][1]
-        assert isinstance(v0_status, ActionStatus)
-        assert v0_status.state == ActionState.SUCCESS
-        assert v0_status.progress == 100
-        assert v0_status.status_message == "done"
-        assert v0_status.fail_message is None
-        assert v0_status.exit_code == 0
-
-    def test_action_status_property_when_v1_status_present_returns_v0(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        """The action_status property converts _v1 status to v0."""
-        from openjd.sessions import ActionState, ActionStatus
-
-        config = SessionRuntimeConfig(
-            session_id="session-conv-6",
-            job_parameter_values={},
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-conv-6"),
-        )
-        adapter = RustSessionRuntime(config)
-
-        v1_state = MagicMock(**{"__str__.return_value": "failed"})
-        mock_rust_session.return_value.action_status = SimpleNamespace(
-            state=v1_state,
-            progress=0,
-            status_message=None,
-            fail_message="something broke",
-            exit_code=1,
-        )
-
-        result = adapter.action_status
-        assert isinstance(result, ActionStatus)
-        assert result.state == ActionState.FAILED
-        assert result.fail_message == "something broke"
-        assert result.exit_code == 1
-
-    def test_action_status_property_when_none_returns_none(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        config = SessionRuntimeConfig(
-            session_id="session-conv-7",
-            job_parameter_values={},
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-conv-7"),
-        )
-        adapter = RustSessionRuntime(config)
-        mock_rust_session.return_value.action_status = None
-
-        assert adapter.action_status is None
-
-
-class TestToRustTaskParameterValues:
-    """Tests for _to_rust_task_parameter_values conversion helper."""
-
-    def test_converts_parameter_value_objects_to_native(self) -> None:
-        """ParameterValue objects convert to native _v1 TaskParameterValues of the right type."""
-        from openjd.model._v1.types import TaskParameterType
-
-        values: dict[str, Any] = {
-            "StringParam": ParameterValue(type=ParameterValueType.STRING, value="hello"),
-            "IntParam": ParameterValue(type=ParameterValueType.INT, value="42"),
-            "FloatParam": ParameterValue(type=ParameterValueType.FLOAT, value="3.14"),
-            "PathParam": ParameterValue(type=ParameterValueType.PATH, value="/tmp/out"),
-        }
-
-        result = _to_rust_task_parameter_values(values)
-
-        expected: dict[str, tuple[Any, str]] = {
-            "StringParam": (TaskParameterType.STRING, "hello"),
-            "IntParam": (TaskParameterType.INT, "42"),
-            "FloatParam": (TaskParameterType.FLOAT, "3.14"),
-            "PathParam": (TaskParameterType.PATH, "/tmp/out"),
-        }
-        assert result.keys() == expected.keys()
-        for name, (expected_type, expected_value) in expected.items():
-            converted = result[name]
-            assert isinstance(converted, rust_module.TaskParameterValue), name
-            assert str(converted.type) == str(expected_type), name
-            assert converted.value == expected_value, name
-
-    def test_dict_values_pass_through_unchanged(self) -> None:
-        """Values already in dict form are not modified."""
-        values: dict[str, Any] = {
-            "AlreadyDict": {"type": "STRING", "value": "existing"},
-        }
-
-        result = _to_rust_task_parameter_values(values)
-
-        assert result == {"AlreadyDict": {"type": "STRING", "value": "existing"}}
-
-    def test_empty_dict_returns_empty_dict(self) -> None:
-        """An empty input produces an empty output."""
-        assert _to_rust_task_parameter_values({}) == {}
-
-    def test_mixed_parameter_values_and_dicts(self) -> None:
-        """ParameterValue objects convert to native types; plain dicts pass through."""
-        values: dict[str, Any] = {
-            "Obj": ParameterValue(type=ParameterValueType.INT, value="7"),
-            "Dict": {"type": "FLOAT", "value": "2.5"},
-        }
-
-        result = _to_rust_task_parameter_values(values)
-
-        assert isinstance(result["Obj"], rust_module.TaskParameterValue)
-        assert result["Obj"].value == "7"
-        assert result["Dict"] == {"type": "FLOAT", "value": "2.5"}
 
 
 def test_rust_session_runtime_is_session_runtime_subclass() -> None:
