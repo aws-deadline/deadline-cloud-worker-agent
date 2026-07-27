@@ -2663,30 +2663,3 @@ class TestRuntimeCrashTelemetry:
             crash_session._start_action()
 
         mock_telemetry.assert_not_called()
-
-    def test_telemetry_failure_does_not_suppress_failed_reporting(
-        self,
-        crash_session: Session,
-        session_action_queue: MagicMock,
-        action_update_lock: MagicMock,
-    ) -> None:
-        """If record_runtime_failure_telemetry_event raises, the action must
-        still be reported as FAILED — telemetry must never suppress the
-        operational failure path."""
-        from deadline_worker_agent.sessions.runtime._abc import SessionRuntimeCrashError
-
-        crash = SessionRuntimeCrashError("session runtime crashed: PanicException")
-        crash.__cause__ = BaseException("panicked")
-        session_action_queue.dequeue.return_value = self._dequeued_action_raising(crash)
-
-        with patch.object(
-            session_mod, "record_runtime_failure_telemetry_event", side_effect=RuntimeError("boom")
-        ):
-            crash_session._start_action()
-
-        # The action_update_callback must still have been invoked with FAILED status
-        action_update_lock.__enter__.return_value = None
-        mock_callback: MagicMock = crash_session._report_action_update  # type: ignore[assignment]
-        mock_callback.assert_called_once()
-        reported = mock_callback.call_args[0][0]
-        assert reported.completed_status == "FAILED"

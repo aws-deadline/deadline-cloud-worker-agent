@@ -713,19 +713,16 @@ class Session:
                 # A runtime crash (e.g. a Rust panic converted at the adapter
                 # boundary) — record it with runtime attribution. Constant
                 # failure_reason: free exception text never reaches telemetry.
-                try:
-                    record_runtime_failure_telemetry_event(
-                        runtime_kind=self._session_runtime_kind.value,
-                        failure_reason="runtime crash",
-                        exception_type=type(e.__cause__).__name__ if e.__cause__ else "unknown",
-                        runtime_hint=None,
-                        session_id=self.id,
-                        queue_id=self._queue_id,
-                        farm_id=self._farm_id,
-                        region=self._region,
-                    )
-                except Exception:
-                    logger.warning("Failed to record runtime failure telemetry event")
+                record_runtime_failure_telemetry_event(
+                    runtime_kind=self._session_runtime_kind.value,
+                    failure_reason="runtime crash",
+                    exception_type=type(e.__cause__).__name__ if e.__cause__ else "unknown",
+                    runtime_hint=None,
+                    session_id=self.id,
+                    queue_id=self._queue_id,
+                    farm_id=self._farm_id,
+                    region=self._region,
+                )
             if self._output_sync_target_action:
                 action_definition = self._output_sync_target_action.definition
                 self._output_sync_target_action = None
