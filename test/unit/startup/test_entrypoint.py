@@ -88,6 +88,7 @@ def mock_boto_session(
     logs_client: MagicMock,
 ) -> MagicMock:
     mock_session = MagicMock()
+    cloudwatch_client = MagicMock()
 
     def client_mock(service: str, **kwargs: Any) -> MagicMock:
         if service == "deadline":
@@ -96,6 +97,8 @@ def mock_boto_session(
             return s3_client
         elif service == "logs":
             return logs_client
+        elif service == "cloudwatch":
+            return cloudwatch_client
         else:
             raise NotImplementedError(f'Service "{service}" not implemented')
 
@@ -955,3 +958,88 @@ def test_fleet_host_config(
             sys_exit_mock.assert_called_once_with(1)
             mock_host_shutdown.assert_not_called()
             sleep_mock.assert_not_called()
+
+
+class TestPublishHostConfigDurationToCustomer:
+    """Tests for _publish_host_config_duration_to_customer"""
+
+    @patch.dict(os.environ, {"DEADLINE_WORKER_EMIT_HOST_CONFIG_METRIC": "true"})
+    def test_publishes_duration_metric(self) -> None:
+        mock_session = MagicMock()
+        mock_session.region_name = "us-west-2"
+        mock_cw_client = MagicMock()
+        mock_session.client.return_value = mock_cw_client
+        mock_config = MagicMock()
+        mock_config.farm_id = "farm-123"
+        mock_config.fleet_id = "fleet-456"
+
+        entrypoint_mod._publish_host_config_duration_to_customer(
+            session=mock_session,
+            config=mock_config,
+            duration_seconds=42.5,
+        )
+
+        mock_session.client.assert_called_once_with("cloudwatch", config=ANY)
+        mock_cw_client.put_metric_data.assert_called_once_with(
+            Namespace="AWS/DeadlineCloud",
+            MetricData=[
+                {
+                    "MetricName": "HostConfigDuration",
+                    "Dimensions": [
+                        {"Name": "FarmId", "Value": "farm-123"},
+                        {"Name": "FleetId", "Value": "fleet-456"},
+                        {"Name": "Region", "Value": "us-west-2"},
+                    ],
+                    "Value": 42.5,
+                    "Unit": "Seconds",
+                },
+            ],
+        )
+
+    @patch.dict(os.environ, {"DEADLINE_WORKER_EMIT_HOST_CONFIG_METRIC": "true"})
+    def test_does_not_raise_on_cloudwatch_failure(self) -> None:
+        mock_session = MagicMock()
+        mock_session.region_name = "us-west-2"
+        mock_session.client.side_effect = Exception("CloudWatch unavailable")
+        mock_config = MagicMock()
+        mock_config.farm_id = "farm-123"
+        mock_config.fleet_id = "fleet-456"
+
+        entrypoint_mod._publish_host_config_duration_to_customer(
+            session=mock_session,
+            config=mock_config,
+            duration_seconds=10.0,
+        )
+
+    @patch.dict(os.environ, {"DEADLINE_WORKER_EMIT_HOST_CONFIG_METRIC": "true"})
+    @patch("time.sleep", return_value=None)
+    def test_retries_once_on_publish_failure(self, mock_sleep: MagicMock) -> None:
+        mock_session = MagicMock()
+        mock_session.region_name = "us-west-2"
+        mock_cw_client = MagicMock()
+        mock_session.client.return_value = mock_cw_client
+        mock_cw_client.put_metric_data.side_effect = [Exception("Throttling"), None]
+        mock_config = MagicMock()
+        mock_config.farm_id = "farm-123"
+        mock_config.fleet_id = "fleet-456"
+
+        entrypoint_mod._publish_host_config_duration_to_customer(mock_session, mock_config, 10.0)
+
+        assert mock_cw_client.put_metric_data.call_count == 2
+
+    @patch.dict(os.environ, {"DEADLINE_WORKER_EMIT_HOST_CONFIG_METRIC": "true"})
+    def test_uses_session_region(self) -> None:
+        mock_session = MagicMock()
+        mock_session.region_name = "eu-west-1"
+        mock_cw_client = MagicMock()
+        mock_session.client.return_value = mock_cw_client
+        mock_config = MagicMock()
+        mock_config.farm_id = "farm-123"
+        mock_config.fleet_id = "fleet-456"
+
+        entrypoint_mod._publish_host_config_duration_to_customer(mock_session, mock_config, 5.0)
+
+        call_kwargs = mock_cw_client.put_metric_data.call_args[1]
+        dimensions = call_kwargs["MetricData"][0]["Dimensions"]
+        region_dim = next(d for d in dimensions if d["Name"] == "Region")
+        assert region_dim["Value"] == "eu-west-1"

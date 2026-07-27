@@ -8,7 +8,9 @@ import logging
 import os
 import subprocess
 import sys
-from time import sleep
+from time import monotonic, sleep
+
+import backoff
 from botocore.exceptions import NoRegionError
 from logging.handlers import TimedRotatingFileHandler
 from threading import Event
@@ -443,6 +445,71 @@ def _configure_base_logging(
     return bootstrapping_handler
 
 
+def _publish_host_config_duration_to_customer(
+    session: WorkerBoto3Session, config: Configuration, duration_seconds: float
+) -> None:
+    """Publish HostConfigDuration (host config script execution time) to the customer's CloudWatch account."""
+    # Gated on an environment variable that the service sets on service-managed fleet hosts.
+    if not os.environ.get("DEADLINE_WORKER_EMIT_HOST_CONFIG_METRIC"):
+        return
+
+    region = session.region_name
+
+    try:
+        cw_client: Any = session.client("cloudwatch", config=OTHER_BOTOCORE_CONFIG)
+        _put_metric_data_with_retry(
+            cw_client,
+            namespace="AWS/DeadlineCloud",
+            metric_name="HostConfigDuration",
+            value=duration_seconds,
+            unit="Seconds",
+            dimensions=[
+                {"Name": "FarmId", "Value": config.farm_id},
+                {"Name": "FleetId", "Value": config.fleet_id},
+                {"Name": "Region", "Value": region},
+            ],
+        )
+        _logger.info(
+            "Successfully sent HostConfigDuration to customer",
+            extra={
+                "farm_id": config.farm_id,
+                "fleet_id": config.fleet_id,
+                "duration_seconds": duration_seconds,
+            },
+        )
+    except Exception as e:
+        _logger.warning(
+            "Failed to publish HostConfigDuration to customer",
+            extra={
+                "farm_id": config.farm_id,
+                "fleet_id": config.fleet_id,
+                "error": str(e),
+            },
+        )
+
+
+@backoff.on_exception(backoff.constant, Exception, max_tries=2, interval=0.5)
+def _put_metric_data_with_retry(
+    cw_client: Any,
+    namespace: str,
+    metric_name: str,
+    value: float,
+    unit: str,
+    dimensions: list[dict[str, str]],
+) -> None:
+    cw_client.put_metric_data(
+        Namespace=namespace,
+        MetricData=[
+            {
+                "MetricName": metric_name,
+                "Dimensions": dimensions,
+                "Value": value,
+                "Unit": unit,
+            },
+        ],
+    )
+
+
 def _host_configuration(
     config: Configuration,
     deadline_client: DeadlineClient,
@@ -488,7 +555,12 @@ def _host_configuration(
             host_configuration_script=worker_bootstrap.host_config.script_body,
             host_configuration_timeout_seconds=worker_bootstrap.host_config.script_timeout_seconds,
         )
+        host_config_start = monotonic()
         exit_code = host_config_runner.run()
+        host_config_duration_seconds = monotonic() - host_config_start
+
+        _publish_host_config_duration_to_customer(session, config, host_config_duration_seconds)
+
         if exit_code == 0:
             _logger.info(
                 WorkerHostConfigurationLogEvent(
