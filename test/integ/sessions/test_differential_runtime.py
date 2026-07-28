@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Generator, Optional
 
+import backoff
 import pytest
 
 from openjd.model import decode_environment_template, decode_job_template
@@ -39,28 +40,6 @@ if TYPE_CHECKING:
 _RUNTIME_KINDS = [
     pytest.param(SessionRuntimeKind.PYTHON, id="python"),
     pytest.param(SessionRuntimeKind.RUST, id="rust"),
-]
-
-# The cancel scenario diverges on the published openjd-sessions releases: the
-# _v1 binding raises "Cannot cancel: session is busy with an action" for an
-# in-flight action. The fix is merged in the Rust core
-# (OpenJobDescription/openjd-rs#260) but has not shipped in a published
-# openjd-sessions release yet (see also openjd-model-for-python#312 and
-# openjd-sessions-for-python#331). Remove this xfail when the worker agent's
-# openjd-sessions pin is bumped to a release containing the fix.
-_CANCEL_RUNTIME_KINDS = [
-    pytest.param(SessionRuntimeKind.PYTHON, id="python"),
-    pytest.param(
-        SessionRuntimeKind.RUST,
-        id="rust",
-        marks=pytest.mark.xfail(
-            reason=(
-                "Published _v1 binding cannot cancel an in-flight action; "
-                "fixed upstream (openjd-rs#260) pending release + pin bump"
-            ),
-            strict=False,
-        ),
-    ),
 ]
 
 
@@ -200,6 +179,22 @@ def _wait_for_new_action(recorder: _StatusRecorder, prev_count: int, timeout: fl
             return True
         time.sleep(0.02)
     return False
+
+
+@backoff.on_exception(backoff.constant, RuntimeError, max_time=5, interval=1, jitter=None)
+def _cancel_when_registered(runtime: SessionRuntime) -> None:
+    """Cancel the running action, retrying while the runtime reports none running.
+
+    The Rust runtime publishes the RUNNING state a few instructions before it
+    registers the action's cancel state, so a cancel issued the instant RUNNING
+    becomes observable can be rejected with "no action is running". The window
+    is sub-millisecond and unreachable through the worker agent's own cancel
+    paths (service-observed cancels and grace-time timeouts both arrive far
+    later), but a test that polls for RUNNING and cancels immediately lands in
+    it every run. Retrying until the cancel is accepted keeps this scenario
+    about cancel *delivery* rather than about that ordering.
+    """
+    runtime.cancel_action()
 
 
 def _wait_for_terminal(runtime: SessionRuntime, timeout: float = 30.0) -> Optional[str]:
@@ -369,7 +364,7 @@ class TestDifferentialSessionRuntime:
         assert contents == "resolve-me"
 
     @pytest.mark.timeout(60)
-    @pytest.mark.parametrize("runtime_kind", _CANCEL_RUNTIME_KINDS)
+    @pytest.mark.parametrize("runtime_kind", _RUNTIME_KINDS)
     def test_cancel_mid_action_ends_canceled(
         self, runtime_kind: SessionRuntimeKind, make_runtime: RuntimeFactory
     ) -> None:
@@ -383,6 +378,6 @@ class TestDifferentialSessionRuntime:
         runtime.run_task(step_script=step_script, task_parameter_values={})
         assert _wait_for_state(runtime, "RUNNING")
 
-        runtime.cancel_action()
+        _cancel_when_registered(runtime)
 
         assert _wait_for_terminal(runtime) == "CANCELED"

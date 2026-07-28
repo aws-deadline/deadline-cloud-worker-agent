@@ -112,7 +112,11 @@ class PythonSessionRuntime(SessionRuntime):
             self._session._path_mapping_rules = list(rules)
         # openjd sorts path mapping rules by descending source path length so that
         # rules that are subsets of each other match in a predictable (most-specific-first) manner.
-        self._session._path_mapping_rules.sort(key=lambda rule: -len(rule.source_path.parts))
+        # Reuse openjd's own component count: a URI rule's source_path is a plain
+        # string (not a PurePath), so counting `.parts` would not work for it.
+        self._session._path_mapping_rules.sort(
+            key=lambda rule: -rule._source_path_component_count()
+        )
 
     def cancel_action(
         self,
