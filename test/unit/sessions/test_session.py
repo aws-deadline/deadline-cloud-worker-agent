@@ -2590,3 +2590,76 @@ class TestRunAttachmentSyncTask:
             )
 
         assert exc_info.value is expected_exception
+
+
+class TestRuntimeCrashTelemetry:
+    """A SessionRuntimeCrashError surfacing from an action start (WA-7: e.g. a
+    Rust panic converted at the adapter boundary) must emit a runtime_failure
+    telemetry event; ordinary exceptions must not."""
+
+    @pytest.fixture
+    def crash_session(
+        self,
+        asset_sync: MagicMock,
+        job_details: JobDetails,
+        session_action_queue: MagicMock,
+        action_update_lock: MagicMock,
+        session_root_dir: Path,
+        mock_runtime: MagicMock,
+    ) -> Session:
+        return Session(
+            id="session-crash0123456789abcdef01234567",
+            asset_sync=asset_sync,
+            env=None,
+            job_details=job_details,
+            os_user=None,
+            queue=session_action_queue,
+            queue_id="queue-abcdef0123456789abcdef0123456789",
+            job_id="job-1234",
+            action_update_callback=MagicMock(),
+            action_update_lock=action_update_lock,
+            session_root_dir=session_root_dir,
+            session_runtime_kind=SessionRuntimeKind.RUST,
+            farm_id="farm-abcdef0123456789abcdef0123456789",
+            region="us-west-2",
+        )
+
+    def _dequeued_action_raising(self, exc: Exception) -> MagicMock:
+        action = MagicMock()
+        action.start.side_effect = exc
+        action.task_id = None
+        return action
+
+    def test_runtime_crash_emits_failure_telemetry(
+        self, crash_session: Session, session_action_queue: MagicMock
+    ) -> None:
+        from deadline_worker_agent.sessions.runtime._abc import SessionRuntimeCrashError
+
+        crash = SessionRuntimeCrashError("session runtime crashed: PanicException")
+        crash.__cause__ = BaseException("panicked")
+        session_action_queue.dequeue.return_value = self._dequeued_action_raising(crash)
+
+        with patch.object(session_mod, "record_runtime_failure_telemetry_event") as mock_telemetry:
+            crash_session._start_action()
+
+        mock_telemetry.assert_called_once()
+        kwargs = mock_telemetry.call_args.kwargs
+        assert kwargs["runtime_kind"] == "rust"
+        assert kwargs["failure_reason"] == "runtime crash"
+        assert kwargs["exception_type"] == "BaseException"
+        assert kwargs["session_id"] == "session-crash0123456789abcdef01234567"
+        assert kwargs["queue_id"] == "queue-abcdef0123456789abcdef0123456789"
+        assert kwargs["farm_id"] == "farm-abcdef0123456789abcdef0123456789"
+        assert kwargs["region"] == "us-west-2"
+
+    def test_ordinary_exception_does_not_emit_failure_telemetry(
+        self, crash_session: Session, session_action_queue: MagicMock
+    ) -> None:
+        session_action_queue.dequeue.return_value = self._dequeued_action_raising(
+            ValueError("ordinary failure")
+        )
+
+        with patch.object(session_mod, "record_runtime_failure_telemetry_event") as mock_telemetry:
+            crash_session._start_action()
+
+        mock_telemetry.assert_not_called()

@@ -40,6 +40,7 @@ from openjd.sessions._v1 import (
 )
 
 from . import SessionRuntime, SessionRuntimeConfig
+from ._abc import convert_runtime_crashes
 
 if TYPE_CHECKING:
     from openjd.sessions import (
@@ -254,6 +255,7 @@ class RustSessionRuntime(SessionRuntime):
             profile=ModelProfile(revision=revision, extensions=extensions),
         )
 
+    @convert_runtime_crashes
     def enter_environment(
         self,
         *,
@@ -282,6 +284,7 @@ class RustSessionRuntime(SessionRuntime):
             os_env_vars=os_env_vars,
         )
 
+    @convert_runtime_crashes
     def exit_environment(
         self,
         *,
@@ -295,6 +298,7 @@ class RustSessionRuntime(SessionRuntime):
             keep_session_running=keep_session_running,
         )
 
+    @convert_runtime_crashes
     def run_task(
         self,
         *,
@@ -324,6 +328,7 @@ class RustSessionRuntime(SessionRuntime):
             log_task_banner=log_task_banner,
         )
 
+    @convert_runtime_crashes
     def _run_task_without_session_env(
         self,
         *,
@@ -392,6 +397,7 @@ class RustSessionRuntime(SessionRuntime):
             log_banner_message="Running Task" if log_task_banner else None,
         )
 
+    @convert_runtime_crashes
     def extend_path_mapping_rules(self, rules: list[PathMappingRule]) -> None:
         # The Rust session exposes this as a public method and sorts the rules
         # by source-path length internally, so no pre-sorting is needed here.
@@ -399,6 +405,7 @@ class RustSessionRuntime(SessionRuntime):
             [_to_rust_path_mapping_rule(rule) for rule in rules]
         )
 
+    @convert_runtime_crashes
     def cancel_action(
         self,
         *,
@@ -407,14 +414,17 @@ class RustSessionRuntime(SessionRuntime):
     ) -> None:
         self._session.cancel_action(time_limit=time_limit, mark_action_failed=mark_action_failed)
 
+    @convert_runtime_crashes
     def cleanup(self) -> None:
         self._session.cleanup()
 
     @property
+    @convert_runtime_crashes
     def working_directory(self) -> Path:
         return self._session.working_directory
 
     @property
+    @convert_runtime_crashes
     def action_status(self) -> Optional[ActionStatus]:
         status = self._session.action_status
         return _to_v0_action_status(status) if status is not None else None

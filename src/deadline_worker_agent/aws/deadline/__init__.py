@@ -863,20 +863,27 @@ def record_runtime_selection_telemetry_event(
     farm_id: str,
     region: Optional[str],
 ) -> None:
-    """Records a com.amazon.rum.deadline.worker_agent.runtime_selection telemetry event capturing which session runtime was selected and why."""
-    _get_deadline_telemetry_client().record_event(
-        event_type="com.amazon.rum.deadline.worker_agent.runtime_selection",
-        event_details={
-            "runtime_kind": runtime_kind,
-            "selection_reason": selection_reason,
-            "session_runtime_config": session_runtime_config,
-            "runtime_hint": runtime_hint,
-            "session_id": session_id,
-            "queue_id": queue_id,
-            "farm_id": farm_id,
-            "region": region,
-        },
-    )
+    """Records a com.amazon.rum.deadline.worker_agent.runtime_selection telemetry event
+    capturing which session runtime was selected and why.
+
+    Telemetry failures are reduced to a log warning and never propagate.
+    """
+    try:
+        _get_deadline_telemetry_client().record_event(
+            event_type="com.amazon.rum.deadline.worker_agent.runtime_selection",
+            event_details={
+                "runtime_kind": runtime_kind,
+                "selection_reason": selection_reason,
+                "session_runtime_config": session_runtime_config,
+                "runtime_hint": runtime_hint,
+                "session_id": session_id,
+                "queue_id": queue_id,
+                "farm_id": farm_id,
+                "region": region,
+            },
+        )
+    except Exception as e:
+        _logger.warning("Failed to record runtime selection telemetry event: %s", e)
 
 
 def record_runtime_failure_telemetry_event(
@@ -890,20 +897,27 @@ def record_runtime_failure_telemetry_event(
     farm_id: str,
     region: Optional[str],
 ) -> None:
-    """Records a com.amazon.rum.deadline.worker_agent.runtime_failure telemetry event for a session failure caused by a runtime issue."""
-    _get_deadline_telemetry_client().record_event(
-        event_type="com.amazon.rum.deadline.worker_agent.runtime_failure",
-        event_details={
-            "runtime_kind": runtime_kind,
-            "failure_reason": failure_reason[:_FAILURE_REASON_MAX_LEN],
-            "exception_type": exception_type,
-            "runtime_hint": runtime_hint,
-            "session_id": session_id,
-            "queue_id": queue_id,
-            "farm_id": farm_id,
-            "region": region,
-        },
-    )
+    """Records a com.amazon.rum.deadline.worker_agent.runtime_failure telemetry event
+    for a session failure caused by a runtime issue.
+
+    Telemetry failures are reduced to a log warning and never propagate.
+    """
+    try:
+        _get_deadline_telemetry_client().record_event(
+            event_type="com.amazon.rum.deadline.worker_agent.runtime_failure",
+            event_details={
+                "runtime_kind": runtime_kind,
+                "failure_reason": failure_reason[:_FAILURE_REASON_MAX_LEN],
+                "exception_type": exception_type,
+                "runtime_hint": runtime_hint,
+                "session_id": session_id,
+                "queue_id": queue_id,
+                "farm_id": farm_id,
+                "region": region,
+            },
+        )
+    except Exception as e:
+        _logger.warning("Failed to record runtime failure telemetry event: %s", e)
 
 
 def _record_attachment_download_filesystem_event(queue_id: str, file_system: str) -> None:

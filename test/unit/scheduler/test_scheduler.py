@@ -1850,6 +1850,66 @@ class TestCreateNewSessionsRuntimeHint:
         assert call_kwargs["region"] == scheduler_service_selected._boto_session.region_name
 
 
+class TestTelemetryFailureResilience:
+    """Tests that telemetry emission failures never crash the scheduler.
+
+    Each telemetry call site in _create_new_sessions is guarded so that a
+    RuntimeError (or any Exception subclass) from the telemetry helper is
+    swallowed with a warning, and the surrounding logic completes normally.
+    """
+
+    @pytest.fixture
+    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+        with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
+            job_entity_instance = MagicMock()
+            job_entity_instance.job_details.return_value = JobDetails(
+                log_group_name="/aws/deadline/queue-0000",
+                schema_version=SpecificationRevision.v2023_09,
+                job_run_as_user=JobRunAsUser(
+                    posix=(
+                        PosixSessionUser(user="username", group="group")
+                        if os.name == "posix"
+                        else None
+                    ),
+                    windows=(
+                        WindowsSessionUser(user="username", password="password")
+                        if os.name == "nt"
+                        else None
+                    ),
+                    windows_settings=None,
+                ),
+            )
+            job_entities_mock.return_value = job_entity_instance
+            yield job_entities_mock
+
+    @pytest.fixture
+    def scheduler_service_selected(
+        self,
+        farm_id: str,
+        fleet_id: str,
+        worker_id: str,
+        client: MagicMock,
+        job_run_as_user_overrides: JobsRunAsUserOverride,
+        boto_session: Mock,
+        worker_logs_dir: Path,
+        session_root_dir: Path,
+        log_translation_filter: None,
+    ) -> WorkerScheduler:
+        return WorkerScheduler(
+            farm_id=farm_id,
+            fleet_id=fleet_id,
+            worker_id=worker_id,
+            deadline=client,
+            job_run_as_user_override=job_run_as_user_overrides,
+            boto_session=boto_session,
+            cleanup_session_user_processes=True,
+            worker_persistence_dir=Path("/var/lib/deadline"),
+            worker_logs_dir=worker_logs_dir,
+            session_root_dir=session_root_dir,
+            session_runtime_kind=SessionRuntimeKind.SERVICE_SELECTED,
+        )
+
+
 class TestCreateNewSessionsConstructionFailure:
     """Tests that Session(...) construction failures are caught per-session
     and do not crash the scheduler loop."""
@@ -1963,7 +2023,7 @@ class TestCreateNewSessionsConstructionFailure:
         }
 
         with (
-            patch.object(scheduler_mod, "Session", side_effect=exc),
+            patch.object(scheduler_mod, "Session", side_effect=exc) as mock_session_cls,
             patch.object(
                 scheduler_mod, "record_runtime_failure_telemetry_event"
             ) as mock_failure_telemetry,
@@ -1972,6 +2032,11 @@ class TestCreateNewSessionsConstructionFailure:
             scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
 
         # Telemetry emitted with correct details
+        # Scheduler passes worker-scoped correlation fields into Session
+        session_kwargs = mock_session_cls.call_args.kwargs
+        assert session_kwargs["farm_id"] == scheduler_service_selected._farm_id
+        assert session_kwargs["region"] == scheduler_service_selected._boto_session.region_name
+
         mock_failure_telemetry.assert_called_once()
         call_kwargs = mock_failure_telemetry.call_args.kwargs
         assert call_kwargs["runtime_kind"] == "rust"

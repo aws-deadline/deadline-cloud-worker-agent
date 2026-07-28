@@ -59,6 +59,8 @@ from deadline.job_attachments.progress_tracker import ProgressReportMetadata
 
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
+from ..aws.deadline import record_runtime_failure_telemetry_event
+from .runtime._abc import SessionRuntimeCrashError
 from .runtime import (
     SessionRuntimeKind,
     SessionRuntime,
@@ -176,8 +178,16 @@ class Session:
         action_update_callback: Callable[[SessionActionStatus], None],
         action_update_lock: RLock,
         session_root_dir: Path,
+        farm_id: str = "",
+        region: Optional[str] = None,
     ) -> None:
         self._id = id
+        self._session_runtime_kind = session_runtime_kind
+        self._farm_id = farm_id
+        # The farm's home region (the worker's boto session region), used to localize
+        # telemetry findings to the service-side session resource. Not necessarily the
+        # host's physical region on customer-managed fleets.
+        self._region = region
         self._action_update_lock = action_update_lock
         self._active_envs = []
         self._asset_sync = asset_sync
@@ -699,6 +709,20 @@ class Session:
                 executor=self._executor,
             )
         except Exception as e:
+            if isinstance(e, SessionRuntimeCrashError):
+                # A runtime crash (e.g. a Rust panic converted at the adapter
+                # boundary) — record it with runtime attribution. Constant
+                # failure_reason: free exception text never reaches telemetry.
+                record_runtime_failure_telemetry_event(
+                    runtime_kind=self._session_runtime_kind.value,
+                    failure_reason="runtime crash",
+                    exception_type=type(e.__cause__).__name__ if e.__cause__ else "unknown",
+                    runtime_hint=None,
+                    session_id=self.id,
+                    queue_id=self._queue_id,
+                    farm_id=self._farm_id,
+                    region=self._region,
+                )
             if self._output_sync_target_action:
                 action_definition = self._output_sync_target_action.definition
                 self._output_sync_target_action = None

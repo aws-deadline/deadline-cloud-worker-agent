@@ -7,6 +7,10 @@ from typing import Any
 import pytest
 
 from deadline_worker_agent.sessions.runtime import SessionRuntime, SessionRuntimeConfig
+from deadline_worker_agent.sessions.runtime._abc import (
+    SessionRuntimeCrashError,
+    convert_runtime_crashes,
+)
 
 
 class TestSessionRuntimeABC:
@@ -48,3 +52,49 @@ class TestSessionRuntimeABC:
     ) -> None:
         instance = stub_runtime_cls(runtime_config)  # type: ignore[call-arg]
         assert isinstance(instance, SessionRuntime)
+
+
+class _FakePanic(BaseException):
+    """Stand-in for pyo3_runtime.PanicException (a BaseException subclass)."""
+
+
+class TestConvertRuntimeCrashes:
+    """Tests for the convert_runtime_crashes adapter-boundary decorator."""
+
+    def test_converts_base_exception_to_crash_error(self) -> None:
+        """A BaseException (e.g. a Rust panic) is converted, with the original
+        preserved as the cause."""
+
+        @convert_runtime_crashes
+        def method() -> None:
+            raise _FakePanic("panicked at 'index out of bounds'")
+
+        with pytest.raises(SessionRuntimeCrashError, match="_FakePanic") as exc_info:
+            method()
+        assert isinstance(exc_info.value.__cause__, _FakePanic)
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            pytest.param(ValueError("regular error"), id="exception"),
+            pytest.param(KeyboardInterrupt(), id="keyboard_interrupt"),
+            pytest.param(SystemExit(1), id="system_exit"),
+        ],
+    )
+    def test_other_exceptions_propagate_unchanged(self, exc: BaseException) -> None:
+        """Regular Exceptions and interpreter control-flow exceptions are untouched."""
+
+        @convert_runtime_crashes
+        def method() -> None:
+            raise exc
+
+        with pytest.raises(type(exc)) as exc_info:
+            method()
+        assert exc_info.value is exc
+
+    def test_return_value_passes_through(self) -> None:
+        @convert_runtime_crashes
+        def method() -> str:
+            return "ok"
+
+        assert method() == "ok"

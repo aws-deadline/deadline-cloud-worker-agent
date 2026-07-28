@@ -391,3 +391,41 @@ def test_record_runtime_failure_telemetry_event_truncates_long_failure_reason():
     call_details = mock_telemetry_client.record_event.call_args[1]["event_details"]
     assert len(call_details["failure_reason"]) == 200
     assert call_details["failure_reason"] == "x" * 200
+
+
+def test_record_runtime_selection_telemetry_event_swallows_client_exception(caplog):
+    """The helper must not propagate exceptions from the telemetry client getter."""
+    with patch.object(
+        deadline_mod, "_get_deadline_telemetry_client", side_effect=RuntimeError("boom")
+    ):
+        record_runtime_selection_telemetry_event(
+            runtime_kind="RUST",
+            selection_reason="hint_signal",
+            session_runtime_config="default",
+            runtime_hint="rust",
+            session_id="session-001",
+            queue_id="queue-001",
+            farm_id="farm-001",
+            region="us-west-2",
+        )
+
+    assert "boom" in caplog.text
+
+
+def test_record_runtime_failure_telemetry_event_swallows_client_exception(caplog):
+    """The helper must not propagate exceptions from the telemetry client getter."""
+    with patch.object(
+        deadline_mod, "_get_deadline_telemetry_client", side_effect=RuntimeError("kaboom")
+    ):
+        record_runtime_failure_telemetry_event(
+            runtime_kind="RUST",
+            failure_reason="init crashed",
+            exception_type="OSError",
+            runtime_hint=None,
+            session_id="session-002",
+            queue_id="queue-002",
+            farm_id="farm-002",
+            region="us-east-1",
+        )
+
+    assert "kaboom" in caplog.text

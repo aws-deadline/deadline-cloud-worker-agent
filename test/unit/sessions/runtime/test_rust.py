@@ -16,6 +16,7 @@ from openjd.model._types import ParameterValue, ParameterValueType
 from openjd.model._v1.types import ModelProfile, SpecificationRevision
 
 from deadline_worker_agent.sessions.runtime import SessionRuntime, SessionRuntimeConfig
+from deadline_worker_agent.sessions.runtime._abc import SessionRuntimeCrashError
 from deadline_worker_agent.sessions.runtime import rust as rust_module
 from deadline_worker_agent.sessions.runtime.rust import RustSessionRuntime
 from deadline_worker_agent.sessions.runtime.rust import _to_rust_task_parameter_values
@@ -888,3 +889,64 @@ def test_rust_session_runtime_is_session_runtime_subclass() -> None:
     # Smoke test: the module imports cleanly against the installed _v1 binding
     # and the adapter satisfies the ABC contract.
     assert issubclass(RustSessionRuntime, SessionRuntime)
+
+
+class _FakePanic(BaseException):
+    """Stand-in for pyo3_runtime.PanicException (a BaseException subclass)."""
+
+
+class TestRuntimeCrashConversion:
+    """A panic escaping the _v1 session is converted at the adapter boundary
+    (WA-7): it must surface as SessionRuntimeCrashError, not BaseException."""
+
+    def test_panic_from_v1_call_is_converted(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
+    ) -> None:
+        runtime = RustSessionRuntime(runtime_config)
+        mock_rust_session.return_value.exit_environment.side_effect = _FakePanic(
+            "panicked at 'index out of bounds'"
+        )
+
+        with pytest.raises(SessionRuntimeCrashError, match="_FakePanic") as exc_info:
+            runtime.exit_environment(identifier=MagicMock())
+        assert isinstance(exc_info.value.__cause__, _FakePanic)
+
+    def test_regular_exception_from_v1_call_propagates_unchanged(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
+    ) -> None:
+        original = RuntimeError("normal failure")
+        runtime = RustSessionRuntime(runtime_config)
+        mock_rust_session.return_value.exit_environment.side_effect = original
+
+        with pytest.raises(RuntimeError) as exc_info:
+            runtime.exit_environment(identifier=MagicMock())
+        assert exc_info.value is original
+
+    def test_panic_from_run_task_without_session_env_is_converted(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
+    ) -> None:
+        runtime = RustSessionRuntime(runtime_config)
+        mock_rust_session.return_value.run_subprocess.side_effect = _FakePanic(
+            "panicked at 'null pointer'"
+        )
+
+        step_script = MagicMock()
+        step_script.embeddedFiles = None
+        step_script.actions.onRun.command = "echo"
+        step_script.actions.onRun.args = None
+
+        with pytest.raises(SessionRuntimeCrashError, match="_FakePanic") as exc_info:
+            runtime._run_task_without_session_env(step_script=step_script, task_parameter_values={})
+        assert isinstance(exc_info.value.__cause__, _FakePanic)
+
+    def test_panic_from_extend_path_mapping_rules_is_converted(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
+    ) -> None:
+        runtime = RustSessionRuntime(runtime_config)
+        mock_rust_session.return_value.extend_path_mapping_rules.side_effect = _FakePanic(
+            "panicked at 'capacity overflow'"
+        )
+
+        with pytest.raises(SessionRuntimeCrashError, match="_FakePanic") as exc_info:
+            runtime.extend_path_mapping_rules(rules=[])
+        assert isinstance(exc_info.value.__cause__, _FakePanic)

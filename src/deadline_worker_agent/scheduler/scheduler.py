@@ -1242,6 +1242,8 @@ class WorkerScheduler:
                     action_update_callback=self._handle_session_action_update,
                     action_update_lock=self._action_update_lock,
                     session_root_dir=self._session_root_dir,
+                    farm_id=self._farm_id,
+                    region=self._boto_session.region_name,
                 )
             except (ValueError, NotImplementedError, OSError) as e:
                 # Runtime construction can fail per-session (e.g. the selected runtime's
