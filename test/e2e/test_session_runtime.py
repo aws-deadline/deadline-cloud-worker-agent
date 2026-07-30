@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 """
-End-to-end tests for the session_runtime worker configuration (Bea-56390).
+End-to-end tests for the session_runtime worker configuration.
 
 These tests validate that the worker agent correctly routes session execution
 to the configured runtime (python, rust, or service-selected) and that
@@ -120,7 +120,11 @@ def _assert_log_contains(
 ) -> None:
     """Assert that the agent log on the remote worker contains *pattern*.
 
-    Uses grep on Linux, Select-String on Windows.
+    Uses grep on Linux, Select-String on Windows. Retries briefly: every
+    caller greps only after awaiting the job's terminal status, and the
+    asserted line is written at session start, so the line is normally on
+    disk minutes before the first attempt -- the retry is defence against
+    slow log flushes or a transient SSM hiccup, not an expected wait.
     """
     log_path = _agent_log_path(worker)
 
@@ -135,11 +139,15 @@ def _assert_log_contains(
     else:
         cmd = f"grep -q '{pattern}' {log_path}"
 
-    cmd_result = worker.send_command(cmd)
-    assert cmd_result.exit_code == 0, (
-        f"Expected agent log to contain '{pattern}' ({description}). "
-        f"exit_code={cmd_result.exit_code}, stdout={cmd_result.stdout!r}"
-    )
+    @backoff.on_exception(backoff.constant, AssertionError, max_time=30, interval=5)
+    def _check() -> None:
+        cmd_result = worker.send_command(cmd)
+        assert cmd_result.exit_code == 0, (
+            f"Expected agent log to contain '{pattern}' ({description}). "
+            f"exit_code={cmd_result.exit_code}, stdout={cmd_result.stdout!r}"
+        )
+
+    _check()
 
 
 # ---------------------------------------------------------------------------
