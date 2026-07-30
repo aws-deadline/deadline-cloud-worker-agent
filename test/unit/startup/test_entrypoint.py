@@ -1012,20 +1012,19 @@ class TestPublishHostConfigDurationToCustomer:
         )
 
     @patch.dict(os.environ, {"DEADLINE_WORKER_EMIT_HOST_CONFIG_METRIC": "true"})
-    @patch("time.sleep", return_value=None)
-    def test_retries_once_on_publish_failure(self, mock_sleep: MagicMock) -> None:
+    def test_does_not_raise_on_put_metric_data_failure(self) -> None:
         mock_session = MagicMock()
         mock_session.region_name = "us-west-2"
         mock_cw_client = MagicMock()
         mock_session.client.return_value = mock_cw_client
-        mock_cw_client.put_metric_data.side_effect = [Exception("Throttling"), None]
+        mock_cw_client.put_metric_data.side_effect = Exception("Throttling")
         mock_config = MagicMock()
         mock_config.farm_id = "farm-123"
         mock_config.fleet_id = "fleet-456"
 
         entrypoint_mod._publish_host_config_duration_to_customer(mock_session, mock_config, 10.0)
 
-        assert mock_cw_client.put_metric_data.call_count == 2
+        mock_cw_client.put_metric_data.assert_called_once()
 
     @patch.dict(os.environ, {"DEADLINE_WORKER_EMIT_HOST_CONFIG_METRIC": "true"})
     def test_uses_session_region(self) -> None:

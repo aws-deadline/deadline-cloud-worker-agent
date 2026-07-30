@@ -10,7 +10,6 @@ import subprocess
 import sys
 from time import monotonic, sleep
 
-import backoff
 from botocore.exceptions import NoRegionError
 from logging.handlers import TimedRotatingFileHandler
 from threading import Event
@@ -457,16 +456,19 @@ def _publish_host_config_duration_to_customer(
 
     try:
         cw_client: Any = session.client("cloudwatch", config=OTHER_BOTOCORE_CONFIG)
-        _put_metric_data_with_retry(
-            cw_client,
-            namespace="AWS/DeadlineCloud",
-            metric_name="HostConfigDuration",
-            value=duration_seconds,
-            unit="Seconds",
-            dimensions=[
-                {"Name": "FarmId", "Value": config.farm_id},
-                {"Name": "FleetId", "Value": config.fleet_id},
-                {"Name": "Region", "Value": region},
+        cw_client.put_metric_data(
+            Namespace="AWS/DeadlineCloud",
+            MetricData=[
+                {
+                    "MetricName": "HostConfigDuration",
+                    "Dimensions": [
+                        {"Name": "FarmId", "Value": config.farm_id},
+                        {"Name": "FleetId", "Value": config.fleet_id},
+                        {"Name": "Region", "Value": region},
+                    ],
+                    "Value": duration_seconds,
+                    "Unit": "Seconds",
+                },
             ],
         )
         _logger.info(
@@ -486,28 +488,6 @@ def _publish_host_config_duration_to_customer(
                 "error": str(e),
             },
         )
-
-
-@backoff.on_exception(backoff.constant, Exception, max_tries=2, interval=0.5)
-def _put_metric_data_with_retry(
-    cw_client: Any,
-    namespace: str,
-    metric_name: str,
-    value: float,
-    unit: str,
-    dimensions: list[dict[str, str]],
-) -> None:
-    cw_client.put_metric_data(
-        Namespace=namespace,
-        MetricData=[
-            {
-                "MetricName": metric_name,
-                "Dimensions": dimensions,
-                "Value": value,
-                "Unit": unit,
-            },
-        ],
-    )
 
 
 def _host_configuration(
