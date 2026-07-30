@@ -53,6 +53,8 @@ import backoff
 import dataclasses
 import logging
 import os
+import shlex
+
 import pytest
 
 from deadline_test_fixtures import (
@@ -120,7 +122,10 @@ def _assert_log_contains(
 ) -> None:
     """Assert that the agent log on the remote worker contains *pattern*.
 
-    Uses grep on Linux, Select-String on Windows. Retries briefly: every
+    Matches *pattern* as a literal string on both platforms (grep -F on
+    Linux, Select-String -SimpleMatch on Windows), so regex metacharacters
+    and embedded quotes in patterns like (hint='rust') need no escaping by
+    callers. Retries briefly: every
     caller greps only after awaiting the job's terminal status, and the
     asserted line is written at session start, so the line is normally on
     disk minutes before the first attempt -- the retry is defence against
@@ -137,7 +142,7 @@ def _assert_log_contains(
             f"{{ exit 0 }} else {{ exit 1 }}"
         )
     else:
-        cmd = f"grep -q '{pattern}' {log_path}"
+        cmd = f"grep -qF {shlex.quote(pattern)} {log_path}"
 
     @backoff.on_exception(backoff.constant, AssertionError, max_time=30, interval=5)
     def _check() -> None:
