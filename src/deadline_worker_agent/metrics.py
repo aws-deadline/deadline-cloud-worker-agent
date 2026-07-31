@@ -18,6 +18,10 @@ module_logger = getLogger(__name__)
 class HostMetricsLogger:
     """Context manager that regularly logs host metrics"""
 
+    # How long to wait for the metrics thread to exit during shutdown before
+    # abandoning it.
+    JOIN_TIMEOUT_S = 5.0
+
     logger: Logger
     interval_s: float
     _thread: Thread | None
@@ -37,22 +41,53 @@ class HostMetricsLogger:
 
     def __enter__(self) -> HostMetricsLogger:
         self._stop_event.clear()
-        self._thread = Thread(target=self._run, name="HostMetricsLogger")
+        self._thread = Thread(target=self._run, name="HostMetricsLogger", daemon=True)
         self._thread.start()
         return self
 
     def __exit__(self, type, value, traceback) -> None:
         self._stop_event.set()
         if self._thread:
-            self._thread.join()
+            # Bounded join so that a wedged metrics collection (e.g. an unresponsive
+            # nvidia-smi) cannot block Worker shutdown. The thread is a daemon, so it
+            # will not keep the process alive if it outlives this join.
+            self._thread.join(timeout=self.JOIN_TIMEOUT_S)
+            if self._thread.is_alive():
+                module_logger.warning(
+                    "Host metrics thread did not exit within "
+                    f"{self.JOIN_TIMEOUT_S} seconds. Abandoning it."
+                )
             self._thread = None
 
     def _run(self) -> None:
-        # psutil tracks non-blocking CPU samples per thread. Prime the baseline on this
-        # long-lived thread so every logged value covers one complete metrics interval.
-        psutil.cpu_percent()
+        self._prime_metrics()
         while not self._stop_event.wait(self.interval_s):
-            self.log_metrics()
+            try:
+                self.log_metrics()
+            except Exception as e:
+                # Never let an unexpected error end the metrics thread; a single bad
+                # collection should not silently stop host metrics for the lifetime of
+                # the Worker.
+                module_logger.warning(f"Failed to log host metrics. Error: {e}")
+
+    def _prime_metrics(self) -> None:
+        """
+        Establishes the baselines that the first logged sample is measured against.
+
+        psutil tracks non-blocking CPU samples per thread, so the CPU baseline must be
+        primed on this long-lived thread for every logged value to cover one complete
+        metrics interval. The network and disk counters are primed here for the same
+        reason: the gap between priming and the first collection is exactly one interval.
+        """
+        try:
+            psutil.cpu_percent()
+            self._prev_network = psutil.net_io_counters(nowrap=True)
+            self._prev_disk_counters = psutil.disk_io_counters(nowrap=True)
+        except Exception as e:
+            module_logger.warning(
+                f"Failed to prime host metrics baselines. The first host metrics log message "
+                f"may report zeroed rates. Error: {e}"
+            )
 
     def _get_gpu_metrics(self) -> Dict[str, str]:
         """
@@ -195,7 +230,10 @@ class HostMetricsLogger:
                 "swap-used-bytes": str(swap.used),
                 "total-disk-bytes": str(disk.total),
                 "total-disk-used-bytes": str(disk.used),
-                "total-disk-used-percent": str(disk.percent),
+                # Computed from the root-based total/used values reported above rather than
+                # using psutil's disk.percent, which is measured against user-available
+                # space and so would not agree with the other total-disk-* metrics.
+                "total-disk-used-percent": str(round(disk.used / disk.total * 100, ndigits=1)),
                 "user-disk-available-bytes": str(disk.free),
                 "network-sent-bytes-per-second": network_sent,
                 "network-recv-bytes-per-second": network_recv,

@@ -6,7 +6,7 @@ from collections import namedtuple
 import logging
 import subprocess
 from typing import Any, Dict, Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 import re
@@ -49,16 +49,20 @@ class TestHostMetricsLogger:
 
     def test_enter(self, host_metrics_logger: HostMetricsLogger):
         # GIVEN
+        host_metrics_logger._stop_event = MagicMock()
+
         with patch.object(metrics_mod, "Thread") as mock_thread_cls:
             # WHEN
             result = host_metrics_logger.__enter__()
 
         # THEN
         assert result is host_metrics_logger
+        host_metrics_logger._stop_event.clear.assert_called_once()
         mock_thread_cls.assert_called_once_with(
-            target=host_metrics_logger._run, name="HostMetricsLogger"
+            target=host_metrics_logger._run, name="HostMetricsLogger", daemon=True
         )
         mock_thread_cls.return_value.start.assert_called_once()
+        assert host_metrics_logger._thread is mock_thread_cls.return_value
 
     @pytest.mark.parametrize("thread_exists", [True, False])
     def test_exit(
@@ -68,6 +72,7 @@ class TestHostMetricsLogger:
     ):
         # GIVEN
         thread = MagicMock()
+        thread.is_alive.return_value = False
         host_metrics_logger._stop_event = MagicMock()
         if thread_exists:
             host_metrics_logger._thread = thread
@@ -78,33 +83,114 @@ class TestHostMetricsLogger:
         # THEN
         host_metrics_logger._stop_event.set.assert_called_once()
         if thread_exists:
-            thread.join.assert_called_once()
+            thread.join.assert_called_once_with(timeout=HostMetricsLogger.JOIN_TIMEOUT_S)
             assert host_metrics_logger._thread is None
         else:
             thread.join.assert_not_called()
 
-    def test_run_primes_cpu_before_logging(
+    def test_exit_abandons_thread_that_does_not_join(
         self,
         host_metrics_logger: HostMetricsLogger,
-        mock_psutil_module: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """A metrics thread wedged in a collection must not block shutdown"""
+        # GIVEN
+        caplog.set_level(0)
+        thread = MagicMock()
+        thread.is_alive.return_value = True
+        host_metrics_logger._thread = thread
+
+        # WHEN
+        host_metrics_logger.__exit__(None, None, None)
+
+        # THEN
+        thread.join.assert_called_once_with(timeout=HostMetricsLogger.JOIN_TIMEOUT_S)
+        assert host_metrics_logger._thread is None
+        assert any("did not exit within" in message for message in caplog.messages)
+
+    def test_run_primes_baselines_before_logging(
+        self,
+        host_metrics_logger: HostMetricsLogger,
     ):
         # GIVEN
         host_metrics_logger._stop_event = MagicMock()
         host_metrics_logger._stop_event.wait.side_effect = [False, False, True]
 
-        def assert_cpu_is_primed() -> None:
-            mock_psutil_module.cpu_percent.assert_called_once_with()
+        # Record the ordering of prime vs. collect on a shared parent mock
+        calls = MagicMock()
 
         # WHEN
-        with patch.object(
-            host_metrics_logger, "log_metrics", side_effect=assert_cpu_is_primed
-        ) as mock_log_metrics:
+        with (
+            patch.object(host_metrics_logger, "_prime_metrics", calls.prime),
+            patch.object(host_metrics_logger, "log_metrics", calls.log_metrics),
+        ):
             host_metrics_logger._run()
 
         # THEN
+        assert calls.mock_calls == [call.prime(), call.log_metrics(), call.log_metrics()]
         assert host_metrics_logger._stop_event.wait.call_count == 3
         host_metrics_logger._stop_event.wait.assert_called_with(host_metrics_logger.interval_s)
+
+    def test_prime_metrics_sets_rate_baselines(
+        self,
+        host_metrics_logger: HostMetricsLogger,
+        mock_psutil_module: MagicMock,
+    ):
+        """The rate baselines must be primed so the first logged sample reports real rates"""
+        # WHEN
+        host_metrics_logger._prime_metrics()
+
+        # THEN
+        mock_psutil_module.cpu_percent.assert_called_once_with()
+        assert host_metrics_logger._prev_network is mock_psutil_module.net_io_counters.return_value
+        assert (
+            host_metrics_logger._prev_disk_counters
+            is mock_psutil_module.disk_io_counters.return_value
+        )
+
+    def test_prime_metrics_tolerates_psutil_failure(
+        self,
+        host_metrics_logger: HostMetricsLogger,
+        mock_psutil_module: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """A failure while priming must not kill the metrics thread"""
+        # GIVEN
+        caplog.set_level(0)
+        mock_psutil_module.cpu_percent.side_effect = RuntimeError("psutil exploded")
+
+        # WHEN
+        host_metrics_logger._prime_metrics()
+
+        # THEN
+        assert any("Failed to prime host metrics baselines" in msg for msg in caplog.messages)
+
+    def test_run_continues_after_log_metrics_raises(
+        self,
+        host_metrics_logger: HostMetricsLogger,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """One failed collection must not stop host metrics for the Worker's lifetime"""
+        # GIVEN
+        caplog.set_level(0)
+        host_metrics_logger._stop_event = MagicMock()
+        host_metrics_logger._stop_event.wait.side_effect = [False, False, True]
+
+        # WHEN
+        with (
+            patch.object(host_metrics_logger, "_prime_metrics"),
+            patch.object(
+                host_metrics_logger,
+                "log_metrics",
+                side_effect=[RuntimeError("logging exploded"), None],
+            ) as mock_log_metrics,
+        ):
+            host_metrics_logger._run()
+
+        # THEN
+        # The loop survived the first failure and collected again
         assert mock_log_metrics.call_count == 2
+        assert any("Failed to log host metrics" in msg for msg in caplog.messages)
 
     @pytest.fixture
     def mock_subprocess(self) -> Generator[MagicMock, None, None]:
@@ -225,7 +311,10 @@ class TestHostMetricsLogger:
         @pytest.fixture
         def disk_usage(self) -> tuple:
             du = namedtuple("du", ["total", "used", "free", "percent"])
-            return du(100, 25, 75, 25)
+            # psutil's own "percent" is measured against user-available space, so it does
+            # not equal used/total. It is deliberately different here so that the
+            # total-disk-used-percent assertion pins down which formula is used.
+            return du(100, 25, 75, 40)
 
         @pytest.fixture
         def cpu_percent(self) -> int:
@@ -306,7 +395,9 @@ class TestHostMetricsLogger:
             assert isinstance(log_line, MetricsLogEvent)
             assert log_line.metrics.get("total-disk-bytes", "") == "100"
             assert log_line.metrics.get("total-disk-used-bytes", "") == "25"
-            assert log_line.metrics.get("total-disk-used-percent", "") == "25"
+            # 25/100 bytes used, expressed on a 0-100 scale. Note this is derived from the
+            # total/used byte values above, not from psutil's user-space disk.percent (40).
+            assert log_line.metrics.get("total-disk-used-percent", "") == "25.0"
             assert log_line.metrics.get("user-disk-available-bytes", "") == "75"
 
         def test_logs_disk_rate(
