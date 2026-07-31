@@ -42,9 +42,10 @@ Worker agent log paths:
     Linux:   /var/log/amazon/deadline/worker-agent.log
     Windows: C:\\ProgramData\\Amazon\\Deadline\\Logs\\worker-agent.log
 
-Worker venv / site-packages paths (for making the Rust adapter unloadable):
-    Linux:   /opt/deadline/worker/lib/python3.*/site-packages/openjd/
-    Windows: resolved from the system python at test time (see the\n    fault-injection step in TestRustUnavailableAndRecovery)
+Worker openjd package location (for making the Rust adapter unloadable):
+    Resolved from the worker's own python at test time on both platforms
+    (Linux: the venv at /opt/deadline/worker; Windows: the system python; see the
+    fault-injection step in TestRustUnavailableAndRecovery)
 """
 
 from typing import Generator, Type
@@ -237,6 +238,7 @@ def service_selected_worker(
         ec2_worker_type,
         request,
     ) as worker:
+        assert isinstance(worker, EC2InstanceWorker)
         yield worker
     stop_worker(request, worker)
 
@@ -277,21 +279,6 @@ class TestServiceSelectedDefaultsToPython:
         )
 
 
-@pytest.fixture(scope="class")
-def service_selected_hint_worker(
-    request: pytest.FixtureRequest,
-    worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
-) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(
-        dataclasses.replace(worker_config, session_runtime="service-selected"),
-        ec2_worker_type,
-        request,
-    ) as worker:
-        yield worker
-    stop_worker(request, worker)
-
-
 @pytest.mark.skip(
     reason="Requires the test account to be allowlisted for the service-side "
     "runtime-hint gates so the service stamps runtimeHint=rust. Remove this "
@@ -310,7 +297,7 @@ class TestServiceSelectedWithRustHint:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        service_selected_hint_worker: EC2InstanceWorker,
+        service_selected_worker: EC2InstanceWorker,
     ) -> None:
         job = submit_sleep_job(
             "session_runtime=service-selected (hint=rust) routing test",
@@ -324,25 +311,10 @@ class TestServiceSelectedWithRustHint:
         )
 
         _assert_log_contains(
-            service_selected_hint_worker,
+            service_selected_worker,
             "Selected session runtime: rust (hint='rust')",
             "service-selected with hint=rust should route to rust",
         )
-
-
-@pytest.fixture(scope="class")
-def service_selected_pythonexpr_hint_worker(
-    request: pytest.FixtureRequest,
-    worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
-) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(
-        dataclasses.replace(worker_config, session_runtime="service-selected"),
-        ec2_worker_type,
-        request,
-    ) as worker:
-        yield worker
-    stop_worker(request, worker)
 
 
 @pytest.mark.skip(
@@ -368,7 +340,7 @@ class TestServiceSelectedWithPythonexprHint:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        service_selected_pythonexpr_hint_worker: EC2InstanceWorker,
+        service_selected_worker: EC2InstanceWorker,
     ) -> None:
         job = submit_sleep_job(
             "session_runtime=service-selected (hint=pythonexpr) routing test",
@@ -382,7 +354,7 @@ class TestServiceSelectedWithPythonexprHint:
         )
 
         _assert_log_contains(
-            service_selected_pythonexpr_hint_worker,
+            service_selected_worker,
             "Selected session runtime: python (hint='pythonexpr')",
             "service-selected with hint=pythonexpr should route to python via hint path",
         )
@@ -399,6 +371,7 @@ def rust_unavailable_worker(
         ec2_worker_type,
         request,
     ) as worker:
+        assert isinstance(worker, EC2InstanceWorker)
         yield worker
     stop_worker(request, worker)
 
