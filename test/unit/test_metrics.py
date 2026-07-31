@@ -49,66 +49,68 @@ class TestHostMetricsLogger:
 
     def test_enter(self, host_metrics_logger: HostMetricsLogger):
         # GIVEN
-        with patch.object(host_metrics_logger, "log_metrics") as mock_log_metrics:
+        with patch.object(metrics_mod, "Thread") as mock_thread_cls:
             # WHEN
-            with host_metrics_logger:
-                # THEN
-                mock_log_metrics.assert_called_once()
+            result = host_metrics_logger.__enter__()
 
-    @pytest.mark.parametrize("timer_exists", [True, False])
+        # THEN
+        assert result is host_metrics_logger
+        mock_thread_cls.assert_called_once_with(
+            target=host_metrics_logger._run, name="HostMetricsLogger"
+        )
+        mock_thread_cls.return_value.start.assert_called_once()
+
+    @pytest.mark.parametrize("thread_exists", [True, False])
     def test_exit(
         self,
-        timer_exists: bool,
+        thread_exists: bool,
         host_metrics_logger: HostMetricsLogger,
     ):
         # GIVEN
-        timer = MagicMock()
+        thread = MagicMock()
+        host_metrics_logger._stop_event = MagicMock()
+        if thread_exists:
+            host_metrics_logger._thread = thread
 
         # WHEN
-        with patch.object(host_metrics_logger, "__enter__"):
-            with host_metrics_logger:
-                if timer_exists:
-                    host_metrics_logger._timer = timer
+        host_metrics_logger.__exit__(None, None, None)
 
         # THEN
-        if timer_exists:
-            timer.cancel.assert_called_once()
-            assert host_metrics_logger._timer is None
+        host_metrics_logger._stop_event.set.assert_called_once()
+        if thread_exists:
+            thread.join.assert_called_once()
+            assert host_metrics_logger._thread is None
         else:
-            timer.cancel.assert_not_called()
+            thread.join.assert_not_called()
 
-    def test_set_timer(self, host_metrics_logger: HostMetricsLogger):
+    def test_run_primes_cpu_before_logging(
+        self,
+        host_metrics_logger: HostMetricsLogger,
+        mock_psutil_module: MagicMock,
+    ):
         # GIVEN
-        with patch.object(metrics_mod, "Timer") as mock_timer_cls:
-            # WHEN
-            host_metrics_logger._set_timer()
+        host_metrics_logger._stop_event = MagicMock()
+        host_metrics_logger._stop_event.wait.side_effect = [False, False, True]
+
+        def assert_cpu_is_primed() -> None:
+            mock_psutil_module.cpu_percent.assert_called_once_with()
+
+        # WHEN
+        with patch.object(
+            host_metrics_logger, "log_metrics", side_effect=assert_cpu_is_primed
+        ) as mock_log_metrics:
+            host_metrics_logger._run()
 
         # THEN
-        mock_timer_cls.assert_called_once_with(
-            host_metrics_logger.interval_s, host_metrics_logger.log_metrics
-        )
-        mock_timer_cls.return_value.start.assert_called_once()
+        assert host_metrics_logger._stop_event.wait.call_count == 3
+        host_metrics_logger._stop_event.wait.assert_called_with(host_metrics_logger.interval_s)
+        assert mock_log_metrics.call_count == 2
 
     @pytest.fixture
     def mock_subprocess(self) -> Generator[MagicMock, None, None]:
         with patch.object(metrics_mod, "subprocess") as mock:
             mock.CalledProcessError = subprocess.CalledProcessError
             yield mock
-
-    def test_log_metrics_sets_timer(
-        self,
-        host_metrics_logger: HostMetricsLogger,
-    ):
-        # GIVEN
-        with (
-            patch.object(metrics_mod, "psutil"),
-            patch.object(host_metrics_logger, "_set_timer") as mock_set_timer,
-        ):
-            # WHEN
-            host_metrics_logger.log_metrics()
-
-        # THEN
-        mock_set_timer.assert_called_once()
 
     # GPU test scenarios
     @pytest.mark.parametrize(
@@ -210,12 +212,6 @@ class TestHostMetricsLogger:
         mock_subprocess.check_output.assert_not_called()
 
     class TestLogMetrics:
-        @pytest.fixture(autouse=True)
-        def mock_timer(self) -> Generator[MagicMock, None, None]:
-            # We don't want to actually create/start a timer
-            with patch.object(metrics_mod, "Timer") as mock:
-                yield mock
-
         @pytest.fixture
         def virtual_memory(self) -> tuple:
             vm = namedtuple("vm", ["total", "available", "percent", "used", "free"])
@@ -282,8 +278,7 @@ class TestHostMetricsLogger:
             host_metrics_logger: HostMetricsLogger,
             mock_psutil: MagicMock,
         ) -> None:
-            with patch.object(host_metrics_logger, "_set_timer"):
-                host_metrics_logger.log_metrics()
+            host_metrics_logger.log_metrics()
 
         @pytest.fixture
         def log_line(self, logger: MagicMock, log_metrics: None) -> str:
@@ -311,7 +306,7 @@ class TestHostMetricsLogger:
             assert isinstance(log_line, MetricsLogEvent)
             assert log_line.metrics.get("total-disk-bytes", "") == "100"
             assert log_line.metrics.get("total-disk-used-bytes", "") == "25"
-            assert log_line.metrics.get("total-disk-used-percent", "") == "0.2"
+            assert log_line.metrics.get("total-disk-used-percent", "") == "25"
             assert log_line.metrics.get("user-disk-available-bytes", "") == "75"
 
         def test_logs_disk_rate(
@@ -322,8 +317,7 @@ class TestHostMetricsLogger:
         ):
             # GIVEN
             # First call to set up previous disk counters
-            with patch.object(host_metrics_logger, "_set_timer"):
-                host_metrics_logger.log_metrics()
+            host_metrics_logger.log_metrics()
 
             # Reset the logger mock to clear the first call
             logger.reset_mock()
@@ -341,9 +335,7 @@ class TestHostMetricsLogger:
             # WHEN
             with patch.object(metrics_mod, "psutil") as mock_psutil:
                 mock_psutil.disk_io_counters.return_value = new_counters
-
-                with patch.object(host_metrics_logger, "_set_timer"):
-                    host_metrics_logger.log_metrics()
+                host_metrics_logger.log_metrics()
 
             # THEN
             log_line = get_first_and_only_call_arg(logger.info)
@@ -444,10 +436,7 @@ class TestHostMetricsLogger:
             # gpu_metrics is provided by the parametrize decorator
 
             # WHEN
-            with (
-                patch.object(host_metrics_logger, "_get_gpu_metrics", return_value=gpu_metrics),
-                patch.object(host_metrics_logger, "_set_timer"),
-            ):
+            with patch.object(host_metrics_logger, "_get_gpu_metrics", return_value=gpu_metrics):
                 host_metrics_logger.log_metrics()
 
             # THEN
@@ -506,11 +495,7 @@ class TestHostMetricsLogger:
             host_metrics_logger = HostMetricsLogger(logger=logger, interval_s=1)
 
             # WHEN
-            with (
-                # We don't want to actually create/start a timer
-                patch.object(metrics_mod, "Timer"),
-            ):
-                host_metrics_logger.log_metrics()
+            host_metrics_logger.log_metrics()
 
             # THEN
             assert len(caplog.messages) == 1

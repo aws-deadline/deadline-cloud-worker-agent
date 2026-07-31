@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from logging import Logger, getLogger
-from threading import Timer
+from threading import Event, Thread
 from typing import Any, Dict
 
 import os
@@ -20,27 +20,39 @@ class HostMetricsLogger:
 
     logger: Logger
     interval_s: float
-    _timer: Timer | None
+    _thread: Thread | None
+    _stop_event: Event
     _prev_network: Any | None
     _prev_disk_counters: Any | None
     _host_has_no_gpu: bool | None = None
 
     def __init__(self, logger: Logger, interval_s: float) -> None:
         assert interval_s > 0, "interval_s must be a positive number"
-        self._timer = None
+        self._thread = None
+        self._stop_event = Event()
         self._prev_network = None
         self._prev_disk_counters = None
         self.logger = logger
         self.interval_s = interval_s
 
     def __enter__(self) -> HostMetricsLogger:
-        self.log_metrics()
+        self._stop_event.clear()
+        self._thread = Thread(target=self._run, name="HostMetricsLogger")
+        self._thread.start()
         return self
 
     def __exit__(self, type, value, traceback) -> None:
-        if self._timer:
-            self._timer.cancel()
-            self._timer = None
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join()
+            self._thread = None
+
+    def _run(self) -> None:
+        # psutil tracks non-blocking CPU samples per thread. Prime the baseline on this
+        # long-lived thread so every logged value covers one complete metrics interval.
+        psutil.cpu_percent()
+        while not self._stop_event.wait(self.interval_s):
+            self.log_metrics()
 
     def _get_gpu_metrics(self) -> Dict[str, str]:
         """
@@ -116,7 +128,7 @@ class HostMetricsLogger:
 
         return gpu_metrics
 
-    def log_metrics(self):
+    def log_metrics(self) -> None:
         """
         Queries information about the host machine and logs the information as a space-delimited
         line of the form: <label> <value> ...
@@ -183,7 +195,7 @@ class HostMetricsLogger:
                 "swap-used-bytes": str(swap.used),
                 "total-disk-bytes": str(disk.total),
                 "total-disk-used-bytes": str(disk.used),
-                "total-disk-used-percent": str(round(disk.used / disk.total, ndigits=1)),
+                "total-disk-used-percent": str(disk.percent),
                 "user-disk-available-bytes": str(disk.free),
                 "network-sent-bytes-per-second": network_sent,
                 "network-recv-bytes-per-second": network_recv,
@@ -195,16 +207,3 @@ class HostMetricsLogger:
             stats.update(gpu_metrics)
 
             self.logger.info(MetricsLogEvent(subtype=MetricsLogEventSubtype.SYSTEM, metrics=stats))
-        finally:
-            self._set_timer()
-
-    def _set_timer(self) -> None:
-        """
-        Sets the timer to log the host metrics at a regular interval.
-
-        Args:
-            interval_s (float): The interval in seconds to print the host metrics at.
-        """
-        self._timer = Timer(self.interval_s, self.log_metrics)
-        self._timer.name = "HostMetricsLogger"
-        self._timer.start()
