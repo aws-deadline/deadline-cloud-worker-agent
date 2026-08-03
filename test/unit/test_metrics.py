@@ -64,6 +64,32 @@ class TestHostMetricsLogger:
         mock_thread_cls.return_value.start.assert_called_once()
         assert host_metrics_logger._thread is mock_thread_cls.return_value
 
+    def test_enter_tolerates_thread_start_failure(
+        self,
+        host_metrics_logger: HostMetricsLogger,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Host metrics are best-effort; being unable to start the thread must not fail the Worker"""
+        # GIVEN
+        caplog.set_level(0)
+
+        with patch.object(metrics_mod, "Thread") as mock_thread_cls:
+            mock_thread_cls.return_value.start.side_effect = RuntimeError("can't start new thread")
+
+            # WHEN
+            result = host_metrics_logger.__enter__()
+
+        # THEN
+        assert result is host_metrics_logger
+        # No thread was recorded, so __exit__ has nothing to join
+        assert host_metrics_logger._thread is None
+        assert any(
+            "Failed to start the host metrics thread" in message for message in caplog.messages
+        )
+
+        # AND __exit__ is a no-op that does not raise
+        host_metrics_logger.__exit__(None, None, None)
+
     @pytest.mark.parametrize("thread_exists", [True, False])
     def test_exit(
         self,
@@ -93,7 +119,7 @@ class TestHostMetricsLogger:
         host_metrics_logger: HostMetricsLogger,
         caplog: pytest.LogCaptureFixture,
     ):
-        """A metrics thread wedged in a collection must not block shutdown"""
+        """A metrics thread hung in a collection must not block shutdown"""
         # GIVEN
         caplog.set_level(0)
         thread = MagicMock()
@@ -196,6 +222,7 @@ class TestHostMetricsLogger:
     def mock_subprocess(self) -> Generator[MagicMock, None, None]:
         with patch.object(metrics_mod, "subprocess") as mock:
             mock.CalledProcessError = subprocess.CalledProcessError
+            mock.TimeoutExpired = subprocess.TimeoutExpired
             yield mock
 
     # GPU test scenarios
@@ -261,6 +288,7 @@ class TestHostMetricsLogger:
             ["nvidia-smi", f"--query-gpu={query_str}", "--format=csv,noheader,nounits"],
             stderr=mock_subprocess.PIPE,
             universal_newlines=True,
+            timeout=HostMetricsLogger.GPU_QUERY_TIMEOUT_S,
         )
 
     @pytest.mark.parametrize(
@@ -296,6 +324,32 @@ class TestHostMetricsLogger:
 
         # THEN
         mock_subprocess.check_output.assert_not_called()
+
+    def test_get_gpu_metrics_timeout_does_not_disable_gpu_metrics(
+        self,
+        host_metrics_logger: HostMetricsLogger,
+        mock_subprocess: MagicMock,
+    ):
+        """A transient nvidia-smi hang must not disable GPU metrics for the process lifetime"""
+        # GIVEN
+        metrics_output = "100, 8192, 8192, 100"
+        mock_subprocess.check_output.side_effect = [
+            subprocess.TimeoutExpired("nvidia-smi", HostMetricsLogger.GPU_QUERY_TIMEOUT_S),
+            metrics_output,
+        ]
+
+        # WHEN
+        gpu_metrics = host_metrics_logger._get_gpu_metrics()
+
+        # THEN
+        assert gpu_metrics == {}
+        assert not host_metrics_logger._host_has_no_gpu
+
+        # WHEN (again) the next collection succeeds
+        gpu_metrics = host_metrics_logger._get_gpu_metrics()
+
+        # THEN
+        assert gpu_metrics["gpu-utilization-percent"] == "100.0"
 
     class TestLogMetrics:
         @pytest.fixture

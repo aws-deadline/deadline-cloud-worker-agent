@@ -19,8 +19,14 @@ class HostMetricsLogger:
     """Context manager that regularly logs host metrics"""
 
     # How long to wait for the metrics thread to exit during shutdown before
-    # abandoning it.
-    JOIN_TIMEOUT_S = 5.0
+    # abandoning it. Kept short: the thread is a daemon and setting the stop event wakes
+    # it immediately, so this is only ever paid if a collection is hung.
+    JOIN_TIMEOUT_S = 1.0
+
+    # How long to wait for nvidia-smi to report GPU metrics. An unhealthy GPU driver can
+    # leave nvidia-smi unresponsive, which would otherwise block the metrics thread
+    # indefinitely and keep it from noticing the stop event.
+    GPU_QUERY_TIMEOUT_S = 5.0
 
     logger: Logger
     interval_s: float
@@ -41,14 +47,24 @@ class HostMetricsLogger:
 
     def __enter__(self) -> HostMetricsLogger:
         self._stop_event.clear()
-        self._thread = Thread(target=self._run, name="HostMetricsLogger", daemon=True)
-        self._thread.start()
+        thread = Thread(target=self._run, name="HostMetricsLogger", daemon=True)
+        try:
+            thread.start()
+        except RuntimeError as e:
+            # Host metrics are best-effort observability, so degrade to logging no metrics
+            # rather than failing the Worker when the host cannot spare a thread.
+            module_logger.warning(
+                f"Failed to start the host metrics thread. Host metrics will not be logged. "
+                f"Error: {e}"
+            )
+        else:
+            self._thread = thread
         return self
 
     def __exit__(self, type, value, traceback) -> None:
         self._stop_event.set()
         if self._thread:
-            # Bounded join so that a wedged metrics collection (e.g. an unresponsive
+            # Bounded join so that an unresponsive metrics collection (e.g. a hung
             # nvidia-smi) cannot block Worker shutdown. The thread is a daemon, so it
             # will not keep the process alive if it outlives this join.
             self._thread.join(timeout=self.JOIN_TIMEOUT_S)
@@ -117,6 +133,7 @@ class HostMetricsLogger:
                 ["nvidia-smi", f"--query-gpu={query_str}", "--format=csv,noheader,nounits"],
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
+                timeout=self.GPU_QUERY_TIMEOUT_S,
             )
 
             # Variables to sum metrics across GPUs
@@ -152,6 +169,14 @@ class HostMetricsLogger:
 
                 avg_mem_util = round(mem_util_sum / valid_gpu_count, 1)
                 gpu_metrics["gpu-memory-utilization-percent"] = str(avg_mem_util)
+        except subprocess.TimeoutExpired:
+            # Returned without latching _host_has_no_gpu so that a single unresponsive
+            # nvidia-smi does not disable GPU metrics for the lifetime of the process.
+            module_logger.debug(
+                f"nvidia-smi did not respond within {self.GPU_QUERY_TIMEOUT_S} seconds, "
+                "skipping GPU metrics collection"
+            )
+            return {}
         except FileNotFoundError:
             module_logger.debug("nvidia-smi not found, skipping GPU metrics collection")
         except subprocess.CalledProcessError:
