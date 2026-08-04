@@ -2,7 +2,7 @@ backoff == 2.2.*
 coverage[toml] ~= 7.15; python_version >= "3.10"
 coverage[toml] ~= 7.10; python_version < "3.10"
 coverage-conditional-plugin == 0.9.*
-deadline-cloud-test-fixtures >= 0.18.17, < 0.19
+deadline-cloud-test-fixtures >= 0.18.18, < 0.19
 # We don't use numpy directly; deadline-cloud-test-fixtures pulls it in.
 # numpy 2.5+ (Python 3.12+ only) ships type stubs using PEP 695 `type`
 # aliases, which mypy rejects while we type-check against

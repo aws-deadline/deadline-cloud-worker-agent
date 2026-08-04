@@ -9,7 +9,12 @@ from functools import wraps
 import random
 
 from botocore.retries.standard import RetryContext
-from botocore.exceptions import ClientError
+from botocore.exceptions import (
+    ClientError,
+    # Aliased to avoid shadowing the Python builtin ConnectionError.
+    ConnectionError as BotocoreConnectionError,
+    HTTPClientError,
+)
 
 from deadline.job_attachments import version as deadline_job_attachments_version
 from deadline.job_attachments.progress_tracker import SummaryStatistics
@@ -41,6 +46,21 @@ from ...log_sync.log_constants import (
 )
 
 _logger = logging.getLogger(__name__)
+
+# Transport-level errors that indicate transient connectivity issues and should be retried.
+# We catch botocore's two transport base classes rather than enumerating leaf types, which
+# mirrors how botocore itself classifies retryable connection errors and covers cases like
+# ConnectionClosedError, ReadTimeoutError, ResponseStreamingError (HTTPClientError) and
+# EndpointConnectionError, ConnectTimeoutError, ProxyConnectionError, SSLError (ConnectionError).
+# These are distinct from ClientError (service responses), so they don't overlap with the
+# error-code handling above.
+_TRANSIENT_NETWORK_EXCEPTIONS = (BotocoreConnectionError, HTTPClientError)
+
+# Maximum retries for transient network errors before treating as unrecoverable.
+# Uses the same exponential backoff as throttle retries (base 2, per-retry delay
+# randomized up to ~0.5s, 1s, 2s, 4s, 8s and capped at 30s), so 5 retries gives
+# roughly 15s of worst-case tolerance before giving up.
+_MAX_TRANSIENT_NETWORK_RETRIES = 5
 
 # Generic function return type.
 F = TypeVar("F", bound=Callable[..., Any])
@@ -165,6 +185,44 @@ def _get_resource_id_and_status_from_conflictexception_header(
     context = response.get("context", {})
     resourceId = response.get("resourceId")
     return resourceId, context.get("status")
+
+
+def _handle_transient_network_error(
+    e: Exception,
+    transient_retries: int,
+    backoff: Backoff,
+    interrupt_event: Optional[Event],
+    api_name: str,
+) -> None:
+    """Handles a transient network error raised during a Deadline Cloud API call by logging
+    and performing an interruptible backoff wait before the caller retries.
+
+    Transient network errors (connection reset, timeout, etc.) commonly occur due to VPN
+    reconnection, load balancer rotation, or brief network blips, and should be retried
+    rather than treated as fatal.
+
+    Note: The caller owns the ``transient_retries`` counter and is responsible for
+    incrementing it after this function returns.
+
+    Raises:
+        DeadlineRequestUnrecoverableError -- When ``transient_retries`` has reached
+            ``_MAX_TRANSIENT_NETWORK_RETRIES``, i.e. the error has persisted past the retry limit.
+    """
+    if transient_retries >= _MAX_TRANSIENT_NETWORK_RETRIES:
+        _logger.error(
+            f"Transient network error persisted after {_MAX_TRANSIENT_NETWORK_RETRIES} "
+            f"retries ({type(e).__name__}: {e}). Giving up."
+        )
+        raise DeadlineRequestUnrecoverableError(e)
+    delay = backoff.delay_amount(RetryContext(transient_retries))
+    _logger.warning(
+        f"Transient network error during {api_name} ({type(e).__name__}: {e}). "
+        f"Retrying in {delay} seconds..."
+    )
+    if interrupt_event:
+        interrupt_event.wait(delay)
+    else:
+        sleep(delay)
 
 
 def assume_fleet_role_for_worker(
@@ -747,6 +805,7 @@ def update_worker_schedule(
     # Retry API call when being throttled
     backoff = Backoff(max_backoff=30)
     retry = 0
+    transient_retries = 0
     while True:
         if interrupt_event is not None and interrupt_event.is_set():
             raise DeadlineRequestInterrupted("UpdateWorkerSchedule interrupted")
@@ -796,6 +855,11 @@ def update_worker_schedule(
             else:
                 sleep(delay)
             retry += 1
+        except _TRANSIENT_NETWORK_EXCEPTIONS as e:
+            _handle_transient_network_error(
+                e, transient_retries, backoff, interrupt_event, "UpdateWorkerSchedule"
+            )
+            transient_retries += 1
         except Exception as e:
             # General catch-all for the unexpected, so that the agent can try to handle it gracefully.
             _logger.critical(
