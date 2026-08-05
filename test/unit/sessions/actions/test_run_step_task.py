@@ -12,6 +12,7 @@ def mock_step_details():
     mock = Mock(spec=StepDetails)
     mock.step_id = "step-123"
     mock.step_template = Mock()
+    mock.step_template.name = "step-name"
     mock.step_template.script = Mock()
     return mock
 

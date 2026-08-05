@@ -80,12 +80,14 @@ class PythonSessionRuntime(SessionRuntime):
         task_parameter_values: dict[str, Any],
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
+        step_name: str | None = None,
     ) -> None:
         self._session.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,
             os_env_vars=os_env_vars,
             log_task_banner=log_task_banner,
+            step_name=step_name,
         )
 
     def _run_task_without_session_env(
@@ -95,7 +97,11 @@ class PythonSessionRuntime(SessionRuntime):
         task_parameter_values: dict[str, Any],
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
+        step_name: str | None = None,
     ) -> None:
+        # step_name intentionally not forwarded: openjd-sessions'
+        # _run_task_without_session_env does not accept it, and the
+        # attachment-sync path has no wrap environment to thread through.
         self._session._run_task_without_session_env(
             step_script=step_script,
             task_parameter_values=task_parameter_values,

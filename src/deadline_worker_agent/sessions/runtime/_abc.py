@@ -80,6 +80,7 @@ class SessionRuntime(ABC):
         task_parameter_values: dict[str, Any],
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
+        step_name: str | None = None,
     ) -> None:
         """Run a task within the session's active environment(s)."""
         ...
@@ -92,6 +93,7 @@ class SessionRuntime(ABC):
         task_parameter_values: dict[str, Any],
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
+        step_name: str | None = None,
     ) -> None:
         """Run a task without entering a session environment (attachment-sync path)."""
         ...
