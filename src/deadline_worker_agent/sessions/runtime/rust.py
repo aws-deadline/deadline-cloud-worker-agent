@@ -308,10 +308,8 @@ class RustSessionRuntime(SessionRuntime):
         log_task_banner: bool = True,
         step_name: str | None = None,
     ) -> None:
-        # step_name: accepted to satisfy the ABC but not forwarded -- the pinned
-        # openjd-sessions release's _v1 wrapper does not expose the kwarg yet.
-        # The underlying session supports it (surfaced as WrappedStep.Name per
-        # RFC 0008); forward it once the pin moves to a release that accepts it.
+        # step_name: forwarded to the _v1 session so RFC 0008's WrappedStep.Name
+        # resolves correctly inside onWrapTaskRun hooks.
         #
         # The shared action layer hands a pydantic v2023_09 StepScript, but the
         # Rust session needs a native _v1 step. Serialize to the OpenJD wire
@@ -323,7 +321,7 @@ class RustSessionRuntime(SessionRuntime):
         # explicit nulls (OpenJD treats absent and null as equivalent).
         native_step_script = deserialize_step(
             {
-                "name": "Placeholder",
+                "name": step_name or "Placeholder",
                 "script": step_script.model_dump(mode="json", by_alias=True, exclude_none=True),
             }
         ).script
@@ -332,6 +330,7 @@ class RustSessionRuntime(SessionRuntime):
             task_parameter_values=_to_rust_task_parameter_values(task_parameter_values),
             os_env_vars=os_env_vars,
             log_task_banner=log_task_banner,
+            step_name=step_name,
         )
 
     @convert_runtime_crashes

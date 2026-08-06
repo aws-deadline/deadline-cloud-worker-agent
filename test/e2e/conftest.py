@@ -10,7 +10,7 @@ from collections.abc import Generator
 from configparser import ConfigParser
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
-from typing import Callable, Type
+from typing import Callable, Optional, Type
 
 import backoff
 import boto3
@@ -40,6 +40,39 @@ from deadline_test_fixtures import (
 LOG = logging.getLogger(__name__)
 
 pytest_plugins = ["deadline_test_fixtures.pytest_hooks"]
+
+_VALID_SESSION_RUNTIMES = ("python", "rust", "service-selected")
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--session-runtime",
+        choices=_VALID_SESSION_RUNTIMES,
+        default=None,
+        help=(
+            "Pin the session_runtime worker config setting for every worker in the run. "
+            "Accepts: python, rust, service-selected. "
+            "Falls back to the WORKER_AGENT_SESSION_RUNTIME env var when not given."
+        ),
+    )
+
+
+@pytest.fixture(scope="session")
+def session_runtime_option(request: pytest.FixtureRequest) -> Optional[str]:
+    """Resolve the session runtime from the CLI option or environment variable.
+
+    CLI option takes precedence over the environment variable.
+    Returns None when neither is set (agent default behaviour).
+    """
+    value: Optional[str] = request.config.getoption("--session-runtime")
+    if value is None:
+        value = os.environ.get("WORKER_AGENT_SESSION_RUNTIME")
+        if value is not None and value not in _VALID_SESSION_RUNTIMES:
+            raise pytest.UsageError(
+                f"WORKER_AGENT_SESSION_RUNTIME={value!r} is invalid. "
+                f"Valid choices: {', '.join(_VALID_SESSION_RUNTIMES)}"
+            )
+    return value
 
 
 @dataclass(frozen=True)
@@ -251,6 +284,7 @@ def worker_config(
     posix_config_override_job_user: PosixSessionUser,
     worker_config: DeadlineWorkerConfiguration,
     windows_job_users: list[str],
+    session_runtime_option: Optional[str],
 ) -> DeadlineWorkerConfiguration:
     """
     Builds the configuration for a DeadlineWorker.
@@ -265,6 +299,8 @@ def worker_config(
             If WORKER_AGENT_WHL_PATH is provided, this option is ignored.
         LOCAL_MODEL_PATH: Path to a local Deadline model file to use for API calls.
             If DEADLINE_SERVICE_MODEL_S3_URI was provided, this option is ignored.
+        WORKER_AGENT_SESSION_RUNTIME: Pin the session_runtime worker config setting.
+            Accepts: python, rust, service-selected. Overridden by --session-runtime CLI option.
 
     Returns:
         DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
@@ -280,6 +316,7 @@ def worker_config(
         windows_job_users=windows_job_users,
         # TODO: Temporary workaround due to AWS CLI v2 upgrade causing canary failures when copying over AWS models for deadline
         service_model_path=None,
+        session_runtime=session_runtime_option,
     )
 
 
