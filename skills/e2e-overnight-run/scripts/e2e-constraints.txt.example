@@ -1,0 +1,13 @@
+# Optional pip constraints for the e2e env, passed via
+#   overnight_e2e.sh --constraints scripts/e2e-constraints.txt.example
+#
+# Only needed on hosts where a test-only transitive dependency (pulled in by
+# deadline-cloud-test-fixtures) has no compatible pre-built wheel and fails to
+# build from source — for example an older Linux whose glibc predates the
+# manylinux target of a recent pillow/numpy release. On such a host, pin those
+# dependencies below their first incompatible version. CI runners on current
+# base images do not need this file.
+#
+# Example (adjust versions to the packages that fail on your host):
+# pillow < 12.3
+# numpy < 2.3
