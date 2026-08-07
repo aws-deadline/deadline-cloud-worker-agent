@@ -61,6 +61,7 @@ from ..aws.deadline import (
     DeadlineRequestUnrecoverableError,
     update_worker_schedule,
 )
+from botocore.exceptions import ClientError as BotocoreClientError
 from ..config import JobsRunAsUserOverride
 from ..utils import MappingWithCallbacks
 from ..file_system_operations import FileSystemPermissionEnum, make_directory, touch_file
@@ -465,8 +466,34 @@ class WorkerScheduler:
 
         # Raises: DeadlineRequestInterrupted, DeadlineRequestWorkerNotFoundError,
         # DeadlineRequestWorkerOfflineError, and DeadlineRequestUnrecoverableError
-        #  - Let these go to the caller
-        response = update_worker_schedule(**request)
+        #  - Let these go to the caller, EXCEPT ValidationException for start-time
+        #    mismatch which is a stale-update issue that should not be fatal.
+        try:
+            response = update_worker_schedule(**request)
+        except DeadlineRequestUnrecoverableError as e:
+            inner = e.inner_exc
+            if (
+                isinstance(inner, BotocoreClientError)
+                and inner.response.get("Error", {}).get("Code") == "ValidationException"
+                and "different from the original start time"
+                # NOTE: This is message-parsing. If the service changes its error wording,
+                # this condition may need updating.
+                in inner.response.get("Error", {}).get("Message", "").lower()
+            ):
+                # The service rejected the batch because an action's startedAt doesn't match
+                # what it already recorded. This happens when fast-completing actions report
+                # their start time after the service already inferred/recorded it from a
+                # previous heartbeat. The actions already completed successfully on the worker;
+                # the service considers them inactive (done). Commit to clear the stale entries
+                # from the map and prevent a death spiral (re-sending the same rejected update).
+                logger.warning(
+                    f"UpdateWorkerSchedule rejected with start-time mismatch "
+                    f"(actions likely completed faster than heartbeat interval): {inner}. "
+                    f"Dropping stale action updates to recover."
+                )
+                commit_completed_actions()
+                return 1  # Re-sync immediately with fresh state
+            raise
 
         commit_completed_actions()
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Generator, Optional
 from unittest.mock import ANY, MagicMock, Mock, call, patch
@@ -739,6 +739,117 @@ class TestSchedulerSync:
             "outputManifestPath": "s3://bucket/path/to/manifest3",
             "outputManifestHash": "hash3",
         }
+
+    def test_validation_exception_start_time_mismatch_recovers(
+        self,
+        scheduler: WorkerScheduler,
+        mock_update_worker_schedule: MagicMock,
+    ) -> None:
+        """Tests that when the service rejects UpdateWorkerSchedule with a
+        ValidationException about a start-time mismatch (common with fast-completing
+        actions), the scheduler does NOT crash. Instead, it logs a warning, clears the
+        stale action updates from the map, and returns a short re-sync interval.
+
+        This prevents the death spiral where the same rejected startedAt gets re-sent
+        on every heartbeat until the agent terminates.
+        """
+        # GIVEN - an action update with start_time in the map
+        action_id = "sessionaction-3f833c25c12240fbbaeafea88c71b87a-2"
+        start_time = datetime(2026, 6, 26, 15, 22, 54, 733000, tzinfo=timezone.utc)
+        scheduler._action_updates_map = {
+            action_id: SessionActionStatus(
+                id=action_id,
+                start_time=start_time,
+                end_time=datetime(2026, 6, 26, 15, 22, 55, 0, tzinfo=timezone.utc),
+                completed_status="SUCCEEDED",
+                status=ActionStatus(state=ActionState.SUCCESS),
+            ),
+        }
+
+        # Service rejects with ValidationException about start-time mismatch
+        client_error = ClientError(
+            error_response={
+                "Error": {
+                    "Code": "ValidationException",
+                    "Message": (
+                        f"Cannot update inactive {action_id} because the provided start time "
+                        "2026-06-26 15:22:54.733 +0000 UTC is different from the original "
+                        "start time 2026-06-26 15:22:53.225 +0000 UTC"
+                    ),
+                }
+            },
+            operation_name="UpdateWorkerSchedule",
+        )
+        mock_update_worker_schedule.side_effect = DeadlineRequestUnrecoverableError(client_error)
+
+        # WHEN - the scheduler handles the error gracefully
+        interval = scheduler._sync()
+
+        # THEN - scheduler survives and returns a short re-sync interval
+        assert interval == 1
+        # AND - the stale entry is cleared from the map (death spiral broken)
+        assert action_id not in scheduler._action_updates_map
+
+    def test_non_start_time_validation_exception_still_fatal(
+        self,
+        scheduler: WorkerScheduler,
+        mock_update_worker_schedule: MagicMock,
+    ) -> None:
+        """Tests that a ValidationException NOT about start-time mismatch is still
+        treated as unrecoverable (the fix only catches the specific start-time case).
+        """
+        # GIVEN
+        action_id = "sessionaction-abc-1"
+        scheduler._action_updates_map = {
+            action_id: SessionActionStatus(
+                id=action_id,
+                start_time=datetime(2026, 6, 26, 15, 22, 54, 0, tzinfo=timezone.utc),
+                completed_status="SUCCEEDED",
+                status=ActionStatus(state=ActionState.SUCCESS),
+            ),
+        }
+
+        # A ValidationException about something OTHER than start time
+        client_error = ClientError(
+            error_response={
+                "Error": {
+                    "Code": "ValidationException",
+                    "Message": "Some other validation error unrelated to timestamps",
+                }
+            },
+            operation_name="UpdateWorkerSchedule",
+        )
+        mock_update_worker_schedule.side_effect = DeadlineRequestUnrecoverableError(client_error)
+
+        # WHEN / THEN - still raises (we only catch start-time mismatch)
+        with pytest.raises(DeadlineRequestUnrecoverableError):
+            scheduler._sync()
+
+    def test_non_client_error_unrecoverable_still_fatal(
+        self,
+        scheduler: WorkerScheduler,
+        mock_update_worker_schedule: MagicMock,
+    ) -> None:
+        """Tests that a DeadlineRequestUnrecoverableError wrapping a non-ClientError
+        (e.g. from the generic catch-all) is NOT accidentally swallowed by the
+        start-time mismatch handler.
+        """
+        # GIVEN
+        scheduler._action_updates_map = {
+            "sessionaction-xyz-1": SessionActionStatus(
+                id="sessionaction-xyz-1",
+                start_time=datetime(2026, 6, 26, 15, 0, 0, 0, tzinfo=timezone.utc),
+                completed_status="SUCCEEDED",
+                status=ActionStatus(state=ActionState.SUCCESS),
+            ),
+        }
+        mock_update_worker_schedule.side_effect = DeadlineRequestUnrecoverableError(
+            Exception("unexpected generic error")
+        )
+
+        # WHEN / THEN - still raises (isinstance guard rejects non-ClientError)
+        with pytest.raises(DeadlineRequestUnrecoverableError):
+            scheduler._sync()
 
 
 class TestCreateNewSessions:
