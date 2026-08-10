@@ -1,18 +1,15 @@
 ## 0.31.0 (2026-08-10)
 
 ### Features
-* Added a Rust session runtime adapter that allows sessions to run using the OpenJD v1 Rust runtime, providing an alternative to the Python runtime path. (#1002)
-* The worker agent now consumes the `runtimeHint` from UpdateWorkerSchedule responses to select between Python and Rust session runtimes. The service can signal which runtime to use per session; absent hints default to Python. (#1016)
-* Added `select_runtime()` to resolve session runtime mode based on configuration (`python`, `rust`, or `service-selected`) and service hints. (#1009)
-* Runtime selection and failure telemetry events are now emitted (respecting the `[telemetry] opt_out` setting in worker.toml), providing visibility into which runtime is chosen per session and any failures encountered. (#1021)
+* Rust session runtime adapter: sessions can run on the OpenJD v1 Rust runtime as an alternative to the Python runtime. Select it by setting `session_runtime` in worker.toml to `python`, `rust`, or `service-selected`. (#1002)
+* With `service-selected`, the session runtime (Python or Rust) is chosen from a `runtimeHint` provided by the service, defaulting to Python when no hint is given. (#1009, #1016)
+* Runtime selection and failure telemetry events added. To opt out, set `opt_out = true` under `[telemetry]` in worker.toml, pass `--telemetry-opt-out` to the installer, or set the `DEADLINE_CLOUD_TELEMETRY_OPT_OUT=true` environment variable. (#1021)
 
 ### Bug Fixes
-* Fixed `step_name` not being passed through to `run_task`, which caused jobs with wrap environments to fail because RFC 0008's `WrappedStep.Name` could not resolve. (#1039)
-* Fixed `step_name` forwarding on the Rust runtime path so that `WrappedStep.Name` resolves correctly when using the Rust session runtime. (#1040)
-* Rust runtime panics (which cross the PyO3 boundary as `BaseException`) are now caught and converted to `SessionRuntimeCrashError`, ensuring proper FAILED reporting, cleanup execution, and telemetry instead of silent session thread death. (#1026)
-* Fixed credential expiry during hibernate/sleep causing unrecoverable agent termination. The agent now detects credentials that expired mid-flight (due to a time jump) and retries with bootstrap credentials. (#1014)
-* Transient network errors (ConnectionClosedError, ConnectTimeoutError, EndpointConnectionError, ReadTimeoutError) in UpdateWorkerSchedule are now retried with exponential backoff instead of causing the agent to terminate. (#1013)
-* Fixed handling of service `runtimeHint` wire values: the agent now correctly maps `"pythonexpr"` to the Python runtime and `"rust"` to the Rust runtime, matching the service's DataPlane RuntimeMode enum. (#1009)
+* Wrap-environment jobs failed on both the Python and Rust runtimes because `step_name` wasn't forwarded, leaving RFC 0008's `WrappedStep.Name` unresolved; both runtime paths now forward it. (#1039, #1040)
+* Rust runtime panics no longer silently kill the session thread; they are now reported as a failed session with proper cleanup and telemetry. (#1026)
+* Transient network errors (connection closed, connect/read timeout, endpoint connection) are now retried with exponential backoff instead of terminating the agent. (#1013)
+* Credentials expiring mid-call during hibernate/sleep no longer cause an unrecoverable exit; the agent now detects the time jump and retries with bootstrap credentials. (#1014)
 ## 0.30.2 (2026-07-14)
 
 ### Features
