@@ -1,3 +1,18 @@
+## 0.30.3 (2026-08-10)
+
+### Features
+* Added a Rust session runtime adapter, allowing sessions to run using the OpenJD v1 Rust runtime in addition to the existing Python runtime. (#1002)
+* The worker agent now consumes the `runtimeHint` from UpdateWorkerSchedule responses to select the session runtime (Python or Rust) per session. The service can signal which runtime to use; absent hints default to Python. (#1016)
+* Added `select_runtime()` to resolve session runtime mode based on configuration (`python`, `rust`, or `service-selected`) and the service's runtime hint. (`d38c21c`)
+* Runtime selection and failure telemetry events are now emitted (opt-out respected via `[telemetry] opt_out` in worker.toml), providing visibility into which runtime is chosen and any selection/construction failures. (#1021)
+
+### Bug Fixes
+* Fixed `step_name` not being passed through to `run_task`, which caused jobs with wrap environments to fail because OpenJD could not resolve `WrappedStep.Name`. (#1039)
+* Fixed `step_name` not being forwarded on the Rust runtime path, so `WrappedStep.Name` now resolves correctly for Rust sessions as well. (#1040)
+* Fixed the agent terminating on transient network errors (connection closed, connect timeout, endpoint connection, read timeout) during UpdateWorkerSchedule calls. These are now retried with exponential backoff. (`af02f3f`)
+* Fixed an unrecoverable error exit when credentials expire mid-flight due to machine hibernate/sleep. The agent now detects the time-jump scenario and retries with bootstrap credentials. (`528cd41`)
+* Fixed the service's `runtimeHint` wire values (`pythonexpr` and `rust`) not being recognized. They are now correctly mapped to the corresponding session runtimes. (`ddca05f`)
+* Rust runtime panics (BaseException from PyO3) no longer kill the session thread silently. They are now converted to `SessionRuntimeCrashError` at the adapter boundary, allowing proper failure reporting and cleanup. (#1026)
 ## 0.30.2 (2026-07-14)
 
 ### Features
