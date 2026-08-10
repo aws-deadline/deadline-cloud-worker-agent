@@ -1,3 +1,18 @@
+## 0.31.0 (2026-08-10)
+
+### Features
+* Added a Rust session runtime adapter that allows sessions to run using the OpenJD v1 Rust runtime, providing an alternative to the Python runtime path. (#1002)
+* The worker agent now consumes the `runtimeHint` from UpdateWorkerSchedule responses to select between Python and Rust session runtimes. The service can signal which runtime to use per session; absent hints default to Python. (#1016)
+* Added `select_runtime()` to resolve session runtime mode based on configuration (`python`, `rust`, or `service-selected`) and service hints. (`d38c21c`)
+* Runtime selection and failure telemetry events are now emitted (respecting the `[telemetry] opt_out` setting in worker.toml), providing visibility into which runtime is chosen per session and any failures encountered. (#1021)
+
+### Bug Fixes
+* Fixed `step_name` not being passed through to `run_task`, which caused jobs with wrap environments to fail because RFC 0008's `WrappedStep.Name` could not resolve. (#1039)
+* Fixed `step_name` forwarding on the Rust runtime path so that `WrappedStep.Name` resolves correctly when using the Rust session runtime. (#1040)
+* Rust runtime panics (which cross the PyO3 boundary as `BaseException`) are now caught and converted to `SessionRuntimeCrashError`, ensuring proper FAILED reporting, cleanup execution, and telemetry instead of silent session thread death. (#1026)
+* Fixed credential expiry during hibernate/sleep causing unrecoverable agent termination. The agent now detects credentials that expired mid-flight (due to a time jump) and retries with bootstrap credentials. (`528cd41`)
+* Transient network errors (ConnectionClosedError, ConnectTimeoutError, EndpointConnectionError, ReadTimeoutError) in UpdateWorkerSchedule are now retried with exponential backoff instead of causing the agent to terminate. (`af02f3f`)
+* Fixed handling of service `runtimeHint` wire values: the agent now correctly maps `"pythonexpr"` to the Python runtime and `"rust"` to the Rust runtime, matching the service's DataPlane RuntimeMode enum. (`ddca05f`)
 ## 0.30.2 (2026-07-14)
 
 ### Features
