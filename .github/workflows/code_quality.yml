@@ -54,3 +54,25 @@ jobs:
 
     - name: Run Integration Tests
       run: hatch run integ-test
+
+  E2ELint:
+    name: E2E Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ inputs.tag || inputs.branch || github.ref }}
+
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: '3.11'
+
+    - name: Install Hatch
+      run: |
+        pip install --upgrade hatch
+
+    - name: Run E2E Lint
+      run: hatch run e2e:lint
