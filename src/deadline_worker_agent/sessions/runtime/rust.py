@@ -238,6 +238,7 @@ class RustSessionRuntime(SessionRuntime):
     _session: OpenJDRustSession
     _user: Optional[SessionUser]
     _environment_parameter_definitions: list[dict[str, str]]
+    _supported_extensions: tuple[str, ...]
 
     def __init__(self, config: SessionRuntimeConfig) -> None:
         try:
@@ -257,6 +258,9 @@ class RustSessionRuntime(SessionRuntime):
         # decode time with a clear error, matching how the v0 session
         # tolerates extension names it doesn't recognize.
         extensions: list[ModelExtension] = []
+        # Kept in sync with `extensions` — only names that convert successfully
+        # are retained, so both lists always describe the same set.
+        supported_extension_names: list[str] = []
         for name in config.supported_extensions:
             extension = ModelExtension.from_str(name)
             if extension is None:
@@ -266,6 +270,8 @@ class RustSessionRuntime(SessionRuntime):
                 )
                 continue
             extensions.append(extension)
+            supported_extension_names.append(name)
+        self._supported_extensions: tuple[str, ...] = tuple(supported_extension_names)
 
         # Kept for the attachment-sync path: on POSIX it grants the files it
         # writes group-read access for the session user's group, so the job
@@ -320,7 +326,14 @@ class RustSessionRuntime(SessionRuntime):
         # empty, because the schema rejects "parameterDefinitions": [].
         if self._environment_parameter_definitions:
             template["parameterDefinitions"] = self._environment_parameter_definitions
-        native_environment = create_environment(decode_environment_template(template))
+        if self._supported_extensions:
+            template["extensions"] = list(self._supported_extensions)
+        native_environment = create_environment(
+            decode_environment_template(
+                template,
+                supported_extensions=list(self._supported_extensions) or None,
+            )
+        )
         return self._session.enter_environment(
             environment=native_environment,
             identifier=identifier,

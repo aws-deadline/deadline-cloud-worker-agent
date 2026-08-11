@@ -40,7 +40,6 @@ if TYPE_CHECKING:
 from openjd.model import (
     TaskParameterSet,
 )
-from openjd.model.v2023_09 import ExtensionName
 from openjd.sessions import (
     ActionState,
     ActionStatus,
@@ -60,6 +59,7 @@ from deadline.job_attachments.progress_tracker import ProgressReportMetadata
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
 from ..aws.deadline import record_runtime_failure_telemetry_event
+from ._extensions import INTERIM_SUPPORTED_EXTENSIONS
 from .runtime._abc import SessionRuntimeCrashError
 from .runtime import (
     SessionRuntimeKind,
@@ -220,10 +220,7 @@ class Session:
                 os_env_vars=self._env,
                 session_root_directory=session_root_dir,
                 spec_revision="2023-09",
-                # Currently for simplicity request that our session allow all extensions
-                # This does not obey the spec.  It should be changed at a later date to the list of requested
-                # extensions once those are returned by BatchGetJobEntity
-                supported_extensions=tuple(v.value for v in ExtensionName),
+                supported_extensions=INTERIM_SUPPORTED_EXTENSIONS,
             ),
         )
 

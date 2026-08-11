@@ -241,13 +241,15 @@ class TestRustSessionRuntimeDelegation:
         # The pydantic environment is serialized and rebuilt natively before
         # being handed to the session. The fixture's job_parameter_values
         # contains one STRING param in dict form, which must appear as a
-        # parameterDefinitions entry.
+        # parameterDefinitions entry. The fixture declares no extensions, so the
+        # extensions key is omitted and the decode kwarg is None.
         mock_decode.assert_called_once_with(
             {
                 "specificationVersion": "environment-2023-09",
                 "environment": environment.model_dump.return_value,
                 "parameterDefinitions": [{"name": "Param1", "type": "STRING"}],
-            }
+            },
+            supported_extensions=None,
         )
         environment.model_dump.assert_called_once_with(
             mode="json", by_alias=True, exclude_none=True
@@ -437,6 +439,75 @@ class TestRustSessionRuntimeDelegation:
             {"name": "Good", "type": "PATH"},
             {"name": "AlsoGood", "type": "FLOAT"},
         ]
+
+    def test_enter_environment_when_unknown_extension_excluded_from_decode(
+        self, mock_rust_session: MagicMock
+    ) -> None:
+        """Extensions unknown to ModelExtension.from_str are filtered out of
+        both the template dict extensions key and the supported_extensions kwarg
+        passed to decode_environment_template — they stay in sync with the
+        ModelProfile extensions list."""
+        config = SessionRuntimeConfig(
+            session_id="session-enter-env-filter",
+            job_parameter_values={},
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda sid, s: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-enter-env-filter"),
+            supported_extensions=("EXPR", "TOTALLY_BOGUS_EXT"),
+        )
+        adapter = RustSessionRuntime(config)
+
+        environment = MagicMock()
+
+        with (
+            patch.object(rust_module, "decode_environment_template") as mock_decode,
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(environment=environment)
+
+        # TOTALLY_BOGUS_EXT was rejected by ModelExtension.from_str during
+        # construction, so it must NOT appear in either the extensions dict
+        # or the supported_extensions kwarg.
+        call_args = mock_decode.call_args
+        template_dict = call_args.args[0]
+        assert template_dict["extensions"] == ["EXPR"]
+        assert call_args.kwargs["supported_extensions"] == ["EXPR"]
+
+    def test_enter_environment_when_no_extensions_omits_extensions_key(
+        self, mock_rust_session: MagicMock
+    ) -> None:
+        """When supported_extensions is empty the template dict must not carry
+        an extensions key and supported_extensions must be None."""
+        config = SessionRuntimeConfig(
+            session_id="session-enter-env-empty",
+            job_parameter_values={},
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda sid, s: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-enter-env-empty"),
+            supported_extensions=(),
+        )
+        adapter = RustSessionRuntime(config)
+
+        environment = MagicMock()
+
+        with (
+            patch.object(rust_module, "decode_environment_template") as mock_decode,
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(environment=environment)
+
+        call_args = mock_decode.call_args
+        template_dict = call_args.args[0]
+        assert "extensions" not in template_dict
+        assert template_dict["specificationVersion"] == "environment-2023-09"
+        assert template_dict["environment"] == environment.model_dump.return_value
+        assert call_args.kwargs["supported_extensions"] is None
 
     def test_exit_environment_when_called_delegates_to_wrapped_session(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
