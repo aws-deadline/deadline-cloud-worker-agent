@@ -537,6 +537,7 @@ class TestRustUnavailableAndRecovery:
             interval=10,
         )
         def wait_worker_started() -> None:
+            assert worker.worker_id is not None  # narrow Optional inside the closure for mypy
             assert is_worker_started(
                 deadline_client=deadline_client,
                 farm_id=deadline_resources.farm.id,
