@@ -157,6 +157,33 @@ def _to_rust_task_parameter_values(values: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _to_environment_parameter_definitions(values: dict[str, Any]) -> list[dict[str, str]]:
+    """Synthesize parameterDefinitions entries from job parameter values.
+
+    The environment template is decoded standalone (lifted out of its job
+    context), so the job's parameter declarations must be re-supplied here for
+    ``{{Param.X}}`` references to resolve. Every ``JobParameterType`` member is a
+    valid environment-template parameter type — only task-parameter-space types
+    like ``CHUNK[INT]`` are rejected, and those cannot reach here: ParameterValue
+    objects are constrained by ``JobParameterType`` at session construction, and
+    raw dicts originate from the wire which only carries job parameter types.
+
+    No type filter is applied. All values are declared unconditionally.
+
+    Known limitation: only parameters that have *values* are declared. A job
+    parameter with no value supplied would still fail validation at decode time.
+    In practice everything reaching the worker has a default or submitted value.
+    """
+    definitions: list[dict[str, str]] = []
+    for name, value in values.items():
+        if isinstance(value, dict):
+            type_str = value["type"]
+        else:
+            type_str = value.type.value
+        definitions.append({"name": name, "type": type_str})
+    return definitions
+
+
 def _to_rust_path_mapping_rule(rule: PathMappingRule) -> RustPathMappingRule:
     """Convert one worker (v0) PathMappingRule into the _v1 (openjd.expr) type.
 
@@ -202,6 +229,7 @@ class RustSessionRuntime(SessionRuntime):
 
     _session: OpenJDRustSession
     _user: Optional[SessionUser]
+    _environment_parameter_definitions: list[dict[str, str]]
 
     def __init__(self, config: SessionRuntimeConfig) -> None:
         try:
@@ -236,6 +264,13 @@ class RustSessionRuntime(SessionRuntime):
         # (which runs as that user) can read them.
         self._user = config.user
 
+        # Job parameter values are fixed for the session's lifetime, so the
+        # declarations are synthesized once here. See
+        # _to_environment_parameter_definitions for why they are needed at all.
+        self._environment_parameter_definitions = _to_environment_parameter_definitions(
+            config.job_parameter_values
+        )
+
         # The _v1 session reports status with _v1 ActionStatus/ActionState, but
         # the worker's callback expects the v0 types, so translate on the way out.
         v0_callback = config.action_callback
@@ -268,16 +303,16 @@ class RustSessionRuntime(SessionRuntime):
         # wire shape and rebuild it natively. exclude_none=True is required, not
         # cosmetic: the Rust decoder rejects explicit nulls (OpenJD treats
         # absent and null as equivalent).
-        native_environment = create_environment(
-            decode_environment_template(
-                {
-                    "specificationVersion": "environment-2023-09",
-                    "environment": environment.model_dump(
-                        mode="json", by_alias=True, exclude_none=True
-                    ),
-                }
-            )
-        )
+        template: dict[str, Any] = {
+            "specificationVersion": "environment-2023-09",
+            "environment": environment.model_dump(mode="json", by_alias=True, exclude_none=True),
+        }
+        # The job's parameter declarations must accompany the environment or its
+        # {{Param.X}} references cannot resolve. The key is omitted entirely when
+        # empty, because the schema rejects "parameterDefinitions": [].
+        if self._environment_parameter_definitions:
+            template["parameterDefinitions"] = self._environment_parameter_definitions
+        native_environment = create_environment(decode_environment_template(template))
         return self._session.enter_environment(
             environment=native_environment,
             identifier=identifier,

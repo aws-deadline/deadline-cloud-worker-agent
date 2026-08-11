@@ -20,6 +20,7 @@ from deadline_worker_agent.sessions.runtime._abc import SessionRuntimeCrashError
 from deadline_worker_agent.sessions.runtime import rust as rust_module
 from deadline_worker_agent.sessions.runtime.rust import RustSessionRuntime
 from deadline_worker_agent.sessions.runtime.rust import _to_rust_task_parameter_values
+from deadline_worker_agent.sessions.runtime.rust import _to_environment_parameter_definitions
 
 
 @pytest.fixture()
@@ -238,11 +239,14 @@ class TestRustSessionRuntimeDelegation:
             )
 
         # The pydantic environment is serialized and rebuilt natively before
-        # being handed to the session.
+        # being handed to the session. The fixture's job_parameter_values
+        # contains one STRING param in dict form, which must appear as a
+        # parameterDefinitions entry.
         mock_decode.assert_called_once_with(
             {
                 "specificationVersion": "environment-2023-09",
                 "environment": environment.model_dump.return_value,
+                "parameterDefinitions": [{"name": "Param1", "type": "STRING"}],
             }
         )
         environment.model_dump.assert_called_once_with(
@@ -255,6 +259,146 @@ class TestRustSessionRuntimeDelegation:
             os_env_vars=os_env,
         )
         assert result is mock_session_instance.enter_environment.return_value
+
+    def test_enter_environment_includes_all_job_parameter_types(
+        self, mock_rust_session: MagicMock
+    ) -> None:
+        """All JobParameterType members are declared in parameterDefinitions."""
+        config = SessionRuntimeConfig(
+            session_id="session-env-multi",
+            job_parameter_values={
+                "A": ParameterValue(type=ParameterValueType.STRING, value="hello"),
+                "B": ParameterValue(type=ParameterValueType.INT, value="42"),
+                "C": ParameterValue(type=ParameterValueType.PATH, value="/tmp"),
+                "D": ParameterValue(type=ParameterValueType.FLOAT, value="3.14"),
+                "E": ParameterValue(type=ParameterValueType.BOOL, value="true"),
+            },
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda sid, s: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-env-multi"),
+        )
+        adapter = RustSessionRuntime(config)
+
+        environment = MagicMock()
+        with (
+            patch.object(rust_module, "decode_environment_template") as mock_decode,
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(environment=environment, identifier="env-1")
+
+        template = mock_decode.call_args.args[0]
+        assert template["parameterDefinitions"] == [
+            {"name": "A", "type": "STRING"},
+            {"name": "B", "type": "INT"},
+            {"name": "C", "type": "PATH"},
+            {"name": "D", "type": "FLOAT"},
+            {"name": "E", "type": "BOOL"},
+        ]
+
+    def test_enter_environment_when_empty_params_omits_parameter_definitions_key(
+        self, mock_rust_session: MagicMock
+    ) -> None:
+        """Empty job_parameter_values means parameterDefinitions must be absent."""
+        config = SessionRuntimeConfig(
+            session_id="session-env-empty",
+            job_parameter_values={},
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda sid, s: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-env-empty"),
+        )
+        adapter = RustSessionRuntime(config)
+
+        environment = MagicMock()
+        with (
+            patch.object(rust_module, "decode_environment_template") as mock_decode,
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(environment=environment, identifier="env-1")
+
+        template = mock_decode.call_args.args[0]
+        assert template == {
+            "specificationVersion": "environment-2023-09",
+            "environment": environment.model_dump.return_value,
+        }
+        assert "parameterDefinitions" not in template
+
+    def test_enter_environment_when_dict_param_type_invalid_is_still_declared(
+        self, mock_rust_session: MagicMock
+    ) -> None:
+        """A raw dict with an invalid type (e.g. CHUNK[INT]) is still declared.
+
+        ParameterValue objects cannot carry CHUNK_INT (JobParameterType has no
+        such member), but raw dicts bypass that constraint. No type filter is
+        applied — the decoder itself will reject invalid types at template
+        decode time with a clear error, which is the correct behavior.
+        """
+        config = SessionRuntimeConfig(
+            session_id="session-env-chunk",
+            job_parameter_values={
+                "Good": ParameterValue(type=ParameterValueType.STRING, value="ok"),
+                "Bad": {"type": "CHUNK[INT]", "value": "1-5"},
+            },
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda sid, s: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-env-chunk"),
+        )
+        adapter = RustSessionRuntime(config)
+
+        environment = MagicMock()
+        with (
+            patch.object(rust_module, "decode_environment_template") as mock_decode,
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(environment=environment, identifier="env-1")
+
+        template = mock_decode.call_args.args[0]
+        # Both params are declared — no type filter. The decoder rejects
+        # CHUNK[INT] at decode time with a clear error.
+        assert template["parameterDefinitions"] == [
+            {"name": "Good", "type": "STRING"},
+            {"name": "Bad", "type": "CHUNK[INT]"},
+        ]
+
+    def test_enter_environment_when_mixed_dict_and_object_params_both_appear(
+        self, mock_rust_session: MagicMock
+    ) -> None:
+        """Both ParameterValue objects and raw dicts are handled correctly."""
+        config = SessionRuntimeConfig(
+            session_id="session-env-mixed",
+            job_parameter_values={
+                "Obj": ParameterValue(type=ParameterValueType.INT, value="7"),
+                "Dict": {"type": "PATH", "value": "/out"},
+            },
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda sid, s: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-env-mixed"),
+        )
+        adapter = RustSessionRuntime(config)
+
+        environment = MagicMock()
+        with (
+            patch.object(rust_module, "decode_environment_template") as mock_decode,
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(environment=environment, identifier="env-1")
+
+        template = mock_decode.call_args.args[0]
+        assert template["parameterDefinitions"] == [
+            {"name": "Obj", "type": "INT"},
+            {"name": "Dict", "type": "PATH"},
+        ]
 
     def test_exit_environment_when_called_delegates_to_wrapped_session(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
@@ -950,3 +1094,41 @@ class TestRuntimeCrashConversion:
         with pytest.raises(SessionRuntimeCrashError, match="_FakePanic") as exc_info:
             runtime.extend_path_mapping_rules(rules=[])
         assert isinstance(exc_info.value.__cause__, _FakePanic)
+
+
+class TestToEnvironmentParameterDefinitions:
+    """Direct tests for _to_environment_parameter_definitions helper."""
+
+    def test_extracts_type_from_dict_form(self) -> None:
+        values: dict[str, Any] = {
+            "D": {"type": "STRING", "value": "hello"},
+        }
+        result = _to_environment_parameter_definitions(values)
+        assert result == [{"name": "D", "type": "STRING"}]
+
+    def test_includes_all_parameter_value_types(self) -> None:
+        """No type filter is applied — all ParameterValue types are declared."""
+        values: dict[str, Any] = {
+            "Good": ParameterValue(type=ParameterValueType.STRING, value="ok"),
+            "Also": ParameterValue(type=ParameterValueType.CHUNK_INT, value="1-5"),
+        }
+        result = _to_environment_parameter_definitions(values)
+        assert result == [
+            {"name": "Good", "type": "STRING"},
+            {"name": "Also", "type": "CHUNK[INT]"},
+        ]
+
+    def test_empty_input_returns_empty_list(self) -> None:
+        assert _to_environment_parameter_definitions({}) == []
+
+    def test_non_primitive_types_are_declared(self) -> None:
+        """Types beyond STRING/PATH/INT/FLOAT (e.g. BOOL) are declared unconditionally."""
+        values: dict[str, Any] = {
+            "Flag": ParameterValue(type=ParameterValueType.BOOL, value="true"),
+            "Expr": {"type": "RANGE_EXPR", "value": "1-10"},
+        }
+        result = _to_environment_parameter_definitions(values)
+        assert result == [
+            {"name": "Flag", "type": "BOOL"},
+            {"name": "Expr", "type": "RANGE_EXPR"},
+        ]
