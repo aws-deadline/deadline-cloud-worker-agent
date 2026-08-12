@@ -1,4 +1,4 @@
-## 0.31.0 (2026-08-10)
+## 0.31.0 (2026-08-11)
 
 ### Features
 * Rust session runtime adapter: sessions can run on the OpenJD v1 Rust runtime as an alternative to the Python runtime. Select it by setting `session_runtime` in worker.toml to `python`, `rust`, or `service-selected`. (#1002)
