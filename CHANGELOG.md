@@ -1,3 +1,7 @@
+## 0.31.1 (2026-08-12)
+
+### Features
+* The worker agent installer (`install-deadline-worker`) now experimentally supports macOS (darwin), allowing macOS hosts to be configured as workers in a customer-managed fleet. Note that the `--vfs-install-path` option is not supported on macOS. (#1012)
 ## 0.31.0 (2026-08-11)
 
 ### Features
