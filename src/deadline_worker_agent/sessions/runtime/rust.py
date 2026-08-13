@@ -164,9 +164,10 @@ def _to_environment_parameter_definitions(values: dict[str, Any]) -> list[dict[s
     context), so the job's parameter declarations must be re-supplied here for
     ``{{Param.X}}`` references to resolve. Every ``JobParameterType`` member is a
     valid environment-template parameter type — only task-parameter-space types
-    like ``CHUNK[INT]`` are rejected, and those cannot reach here: ParameterValue
-    objects are constrained by ``JobParameterType`` at session construction, and
-    raw dicts originate from the wire which only carries job parameter types.
+    like ``CHUNK[INT]`` are rejected, and those cannot reach here:
+    ``JobDetails._validate_job_parameters`` restricts jobDetails parameters to
+    the job-parameter-type subset (string/path/int/float), and raw dicts
+    originate from the wire which only carries job parameter types.
 
     No type filter is applied. All values are declared unconditionally.
 
@@ -177,7 +178,14 @@ def _to_environment_parameter_definitions(values: dict[str, Any]) -> list[dict[s
     definitions: list[dict[str, str]] = []
     for name, value in values.items():
         if isinstance(value, dict):
-            type_str = value["type"]
+            type_str = value.get("type")
+            if type_str is None:
+                # Skip malformed entries rather than raising — the same raw dict
+                # is passed to _to_rust_job_parameter_values moments later, so a
+                # genuinely invalid value still fails at Rust session construction
+                # with the session's own clear error. This matches the sibling
+                # helper's convention of deferring dict validation to the Rust session.
+                continue
         else:
             type_str = value.type.value
         definitions.append({"name": name, "type": type_str})

@@ -400,6 +400,44 @@ class TestRustSessionRuntimeDelegation:
             {"name": "Dict", "type": "PATH"},
         ]
 
+    def test_enter_environment_when_dict_param_missing_type_key_is_skipped(
+        self, mock_rust_session: MagicMock
+    ) -> None:
+        """A dict-shaped value with no "type" key is skipped rather than raising.
+
+        The same raw dict reaches _to_rust_job_parameter_values moments later, so
+        a genuinely malformed value still fails at Rust session construction with
+        the session's own error rather than a KeyError from __init__.
+        """
+        config = SessionRuntimeConfig(
+            session_id="session-env-missing-type",
+            job_parameter_values={
+                "Good": {"type": "PATH", "value": "/tmp"},
+                "Bad": {"value": "oops"},  # no "type" key
+                "AlsoGood": ParameterValue(type=ParameterValueType.FLOAT, value="1.5"),
+            },
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda sid, s: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-env-missing-type"),
+        )
+        adapter = RustSessionRuntime(config)
+
+        environment = MagicMock()
+        with (
+            patch.object(rust_module, "decode_environment_template") as mock_decode,
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(environment=environment, identifier="env-1")
+
+        template = mock_decode.call_args.args[0]
+        assert template["parameterDefinitions"] == [
+            {"name": "Good", "type": "PATH"},
+            {"name": "AlsoGood", "type": "FLOAT"},
+        ]
+
     def test_exit_environment_when_called_delegates_to_wrapped_session(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
