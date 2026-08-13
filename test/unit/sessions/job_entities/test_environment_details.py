@@ -111,6 +111,7 @@ class TestFromBotoWrapActions:
                     }
                 },
             },
+            "extensions": ["EXPR", "WRAP_ACTIONS"],
         }
 
         result = EnvironmentDetails.from_boto(
@@ -130,3 +131,33 @@ class TestFromBotoWrapActions:
         assert actions.onWrapEnvExit is not None
         assert actions.onWrapEnvExit.command == "/bin/echo"
         assert actions.onWrapEnvExit.args == ["exit"]
+
+
+class TestFromBotoExtensions:
+    """Tests that from_boto correctly resolves extensions from the entity data."""
+
+    def test_service_supplied_extensions_reach_parse_model(self) -> None:
+        """When 'extensions' is present, from_boto passes it to parse_model
+        (which gates which extensions the template may use)."""
+        # EXPR is a known extension — a template declaring it should parse
+        # successfully when the service says EXPR is supported.
+        environment_details_data = {
+            "jobId": "job-0000",
+            "environmentId": "env-0000",
+            "schemaVersion": "jobtemplate-2023-09",
+            "template": {
+                "name": "TestEnv",
+                "script": {
+                    "actions": {
+                        "onEnter": {"command": "/bin/true"},
+                    }
+                },
+            },
+            "extensions": ["EXPR"],
+        }
+
+        result = EnvironmentDetails.from_boto(
+            cast(EnvironmentDetailsData, environment_details_data)
+        )
+
+        assert result.environment.name == "TestEnv"

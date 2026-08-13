@@ -165,6 +165,9 @@ class StepDetailsData(StepDetailsIdentifierFields):
     dependencies: NotRequired[list[str]]
     """A list of step identifiers that this step depends on"""
 
+    extensions: NotRequired[list[str]]
+    """The extensions enabled for the job, as supplied by the service"""
+
 
 class StepDetails(TypedDict):
     stepDetails: StepDetailsData
@@ -313,6 +316,9 @@ class JobDetailsData(JobDetailsIdentifierFields):
     queueRoleArn: NotRequired[str]
     """An optional IAM role ARN corresponding used for worker sessions on the job's queue"""
 
+    extensions: NotRequired[list[str]]
+    """The extensions enabled for the job, as supplied by the service"""
+
 
 class JobDetails(TypedDict):
     jobDetails: JobDetailsData
@@ -334,6 +340,8 @@ class EnvironmentDetailsData(EnvironmentDetailsIdentifierFields):
     """The Open Job Description schema version"""
     template: dict[str, Any]
     """The template of the environment."""
+    extensions: NotRequired[list[str]]
+    """The extensions enabled for the job, as supplied by the service"""
 
 
 class EnvironmentDetails(TypedDict):

@@ -8,7 +8,7 @@ from openjd.model import parse_model, TemplateSpecificationVersion, UnsupportedS
 from openjd.model.v2023_09 import StepTemplate as StepTemplate_2023_09
 
 from ...api_models import StepDetailsData
-from .._extensions import INTERIM_SUPPORTED_EXTENSIONS
+from .._extensions import resolve_supported_extensions
 from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
 
@@ -69,7 +69,7 @@ class StepDetails:
                 step_template = parse_model(
                     model=StepTemplate_2023_09,
                     obj=details_data,
-                    supported_extensions=INTERIM_SUPPORTED_EXTENSIONS,
+                    supported_extensions=resolve_supported_extensions(step_details_data),
                 )
             else:
                 # Old API shape -- 'template' contains a StepScript.
@@ -77,7 +77,7 @@ class StepDetails:
                 step_template = parse_model(
                     model=StepTemplate_2023_09,
                     obj={"name": "Placeholder", "script": details_data},
-                    supported_extensions=INTERIM_SUPPORTED_EXTENSIONS,
+                    supported_extensions=resolve_supported_extensions(step_details_data),
                 )
         else:
             raise UnsupportedSchema(schema_version.value)

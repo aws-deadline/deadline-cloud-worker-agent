@@ -9,7 +9,7 @@ from openjd.model.v2023_09 import Environment as Environment_2023_09
 from openjd.sessions import EnvironmentModel
 
 from ...api_models import EnvironmentDetailsData
-from .._extensions import INTERIM_SUPPORTED_EXTENSIONS
+from .._extensions import resolve_supported_extensions
 from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
 
@@ -54,7 +54,7 @@ class EnvironmentDetails:
             environment = parse_model(
                 model=Environment_2023_09,
                 obj=environment_details_data["template"],
-                supported_extensions=INTERIM_SUPPORTED_EXTENSIONS,
+                supported_extensions=resolve_supported_extensions(environment_details_data),
             )
         else:
             raise UnsupportedSchema(schema_version.value)
