@@ -118,6 +118,7 @@ class StepDetails:
                 Field(key="template", expected_type=dict, required=True),
                 Field(key="stepId", expected_type=str, required=True),
                 Field(key="dependencies", expected_type=list, required=False),
+                Field(key="extensions", expected_type=list, required=False),
             ),
         )
         if dependencies := entity_data.get("dependencies"):

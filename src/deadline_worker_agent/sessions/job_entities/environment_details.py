@@ -90,6 +90,7 @@ class EnvironmentDetails:
                 Field(key="environmentId", expected_type=str, required=True),
                 Field(key="jobId", expected_type=str, required=True),
                 Field(key="schemaVersion", expected_type=str, required=True),
+                Field(key="extensions", expected_type=list, required=False),
             ),
         )
 

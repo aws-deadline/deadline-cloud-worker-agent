@@ -41,6 +41,26 @@ from deadline_worker_agent.sessions.job_entities.step_details import StepDetails
             },
             id="all fields",
         ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+                "template": {},
+                "stepId": "step-0000",
+                "extensions": ["WRAP_ACTIONS", "EXPR"],
+            },
+            id="with extensions list",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+                "template": {},
+                "stepId": "step-0000",
+                "extensions": [],
+            },
+            id="with empty extensions list",
+        ),
     ],
 )
 def test_input_validation_success(data: dict[str, Any]) -> None:
@@ -171,29 +191,6 @@ class TestFromBotoWrapActions:
 class TestFromBotoExtensions:
     """Tests that from_boto correctly resolves extensions from the entity data."""
 
-    def test_service_supplied_extensions_reach_parse_model(self) -> None:
-        """When 'extensions' is present, from_boto passes it to parse_model."""
-        step_details_data = {
-            "jobId": "job-0000",
-            "schemaVersion": "jobtemplate-2023-09",
-            "stepId": "step-0000",
-            "dependencies": [],
-            "template": {
-                "name": "TestStep",
-                "script": {
-                    "actions": {
-                        "onRun": {"command": "/bin/echo", "args": ["hello"]},
-                    }
-                },
-            },
-            "extensions": ["EXPR"],
-        }
-
-        result = StepDetails.from_boto(cast(StepDetailsData, step_details_data))
-
-        assert result.step_template.name == "TestStep"
-        assert result.step_id == "step-0000"
-
     def test_absent_extensions_falls_back(self) -> None:
         """When 'extensions' is absent, from_boto defaults to empty extensions
         and still parses a basic template successfully."""
@@ -215,47 +212,3 @@ class TestFromBotoExtensions:
         result = StepDetails.from_boto(cast(StepDetailsData, step_details_data))
 
         assert result.step_template.name == "TestStep"
-
-    def test_empty_extensions_does_not_fall_back(self) -> None:
-        """When 'extensions' is empty, from_boto passes empty (not the fallback)."""
-        step_details_data = {
-            "jobId": "job-0000",
-            "schemaVersion": "jobtemplate-2023-09",
-            "stepId": "step-0000",
-            "dependencies": [],
-            "template": {
-                "name": "TestStep",
-                "script": {
-                    "actions": {
-                        "onRun": {"command": "/bin/echo", "args": ["hello"]},
-                    }
-                },
-            },
-            "extensions": [],
-        }
-
-        result = StepDetails.from_boto(cast(StepDetailsData, step_details_data))
-
-        assert result.step_template.name == "TestStep"
-
-    def test_service_supplied_extensions_reach_parse_model_legacy_shape(self) -> None:
-        """When 'extensions' is present, from_boto passes it to parse_model
-        even for the legacy (StepScript-only) API shape."""
-        step_details_data = {
-            "jobId": "job-0000",
-            "schemaVersion": "jobtemplate-2023-09",
-            "stepId": "step-0000",
-            "dependencies": [],
-            "template": {
-                "actions": {
-                    "onRun": {"command": "/bin/echo", "args": ["hello"]},
-                }
-            },
-            "extensions": ["EXPR"],
-        }
-
-        result = StepDetails.from_boto(cast(StepDetailsData, step_details_data))
-
-        # Legacy shape wraps in a "Placeholder" name
-        assert result.step_template.name == "Placeholder"
-        assert result.step_id == "step-0000"

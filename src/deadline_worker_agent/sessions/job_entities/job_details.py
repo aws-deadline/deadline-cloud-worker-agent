@@ -358,6 +358,7 @@ class JobDetails:
                     ),
                 ),
                 Field(key="queueRoleArn", expected_type=str, required=False),
+                Field(key="extensions", expected_type=list, required=False),
             ),
         )
 
