@@ -1,3 +1,14 @@
+## 0.32.0 (2026-08-14)
+
+### BREAKING CHANGES
+* The worker agent no longer honors a region in the log configuration options for CloudWatch Logs routing. Workers already route session logs to the home region by default, so cross-region log routing via log config options has been removed. (#1050)
+
+### Features
+* The worker agent now correctly parses OpenJD templates that use the WRAP_ACTIONS extension (onWrapEnvEnter, onWrapTaskRun, onWrapEnvExit). Previously, environments and steps using wrap action hooks failed to parse. (#1049)
+
+### Bug Fixes
+* Fixed an issue where OpenJD environments referencing job parameters (e.g., `Param.Message`) failed to enter on the Rust session runtime with a `ModelValidationError`. (#1051)
+* Raised the openjd-model dependency floor to >= 0.11.3, which fixes: Env.File.* references now resolve inside wrap action hooks, `repr_sh(flatten([]))` no longer errors on empty lists, and IntRangeExpr expansion is no longer capped at 1024 elements. (#1054)
 ## 0.31.1 (2026-08-12)
 
 ### Features
