@@ -2,30 +2,31 @@
 
 """Resolution of system command names to absolute paths, without consulting PATH.
 
-Invoking a privileged helper by bare name (``sudo``, ``shutdown``, ``pkill``)
-resolves it through ``PATH``. Where any part of that search path is influenced by
-less-trusted input, the resolution itself becomes the vulnerability: CWE-426,
-Untrusted Search Path. This module removes ``PATH`` from the picture by scanning a
-fixed list of trusted absolute directories instead.
+The problem: the agent invokes privileged helpers (``sudo``, ``pkill``) by bare
+name, which resolves them through ``PATH``. That makes the binary the agent
+actually runs depend on the search path of whatever launched the agent, for
+commands it runs as a privileged user.
 
-Three properties are load-bearing, and each is pinned by a test in
-``test/unit/test_system_commands.py``:
+The solution: callers pass a bare name here and get back an absolute path found by
+scanning a fixed list of trusted directories, so ``PATH`` plays no part.
 
-* **``PATH`` is never read.** Not directly, and not indirectly via
-  :func:`shutil.which`, which resolves through ``PATH`` and so would reintroduce
-  the problem while appearing to fix it.
-* **Only paths under the trusted directories are returned**, and a name
-  containing a path separator is rejected -- otherwise joining ``/usr/bin`` with
-  ``../../tmp/evil`` would make this module the injection point it exists to
-  remove.
-* **A missing command raises.** Falling back to the bare name would restore the
-  vulnerability while looking fixed, which is the worst available failure mode
-  for this class of fix.
+Three properties make that work, and all three are easy to undo by accident:
 
-Why a resolver rather than absolute-path literals: the locations are not
-universal. NixOS keeps the setuid ``sudo`` wrapper at ``/run/wrappers/bin/sudo``,
-and on non-usr-merged Debian ``shutdown`` exists only at ``/sbin/shutdown``. A
-hardcoded literal turns a security bug into an availability bug on those hosts.
+* ``PATH`` is never read. Not directly, and not through :func:`shutil.which`,
+  which resolves via ``PATH`` and so would restore the original behaviour while
+  looking like a fix.
+* Only paths under the trusted directories are returned. A name containing a path
+  separator or a drive specifier is rejected, because ``os.path.join`` would
+  otherwise let ``../../tmp/evil`` or ``D:evil`` escape the directory being
+  searched.
+* A missing command raises. Returning the bare name as a fallback would put
+  resolution back on ``PATH`` while the code still read as though it did not.
+
+A resolver rather than absolute-path literals, because the locations are not
+universal: NixOS keeps the setuid ``sudo`` wrapper at ``/run/wrappers/bin/sudo``,
+and on non-usr-merged Debian some system commands exist only under ``/sbin``. A
+hardcoded literal would trade one failure for a host that cannot run the command
+at all.
 """
 
 from __future__ import annotations

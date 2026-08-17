@@ -351,7 +351,7 @@ def _host_shutdown(config: Configuration) -> None:
     shutdown_command: list[str]
 
     # `sudo` is resolved from trusted directories: the agent execs it directly, so
-    # that position is a real PATH lookup and a real CWE-426 exposure.
+    # that position really is a PATH lookup.
     #
     # `shutdown` is NOT resolved, and must not be. Its path is not a free choice --
     # it is a contract with the sudoers rule the installer writes:
