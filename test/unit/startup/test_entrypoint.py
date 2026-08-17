@@ -534,9 +534,21 @@ def test_agent_self_initiated_shutdown(
         # whatever platform the suite is actually running on -- and makes the
         # assertion prove the command went through the resolver, since a literal
         # in the source would no longer match.
+        # "/trusted/" marks a command that goes through the stubbed resolver.
+        # `shutdown` deliberately does NOT: its path is a contract with the sudoers
+        # rule install.sh writes, so it is the literal module constant. See
+        # test_system_commands.TestShutdownPathIsASudoersContract.
         pytest.param("win32", ["/trusted/shutdown.exe", "-s"], id="windows"),
-        pytest.param("linux", ["/trusted/sudo", "/trusted/shutdown", "now"], id="linux"),
-        pytest.param("darwin", ["/trusted/sudo", "/trusted/shutdown", "-h", "now"], id="macOS"),
+        pytest.param(
+            "linux",
+            ["/trusted/sudo", entrypoint_mod.LINUX_SHUTDOWN_PATH, "now"],
+            id="linux",
+        ),
+        pytest.param(
+            "darwin",
+            ["/trusted/sudo", entrypoint_mod.MACOS_SHUTDOWN_PATH, "-h", "now"],
+            id="macOS",
+        ),
     ),
 )
 @patch.object(entrypoint_mod._logger, "info")
@@ -585,9 +597,21 @@ def test_host_shutdown(
         # whatever platform the suite is actually running on -- and makes the
         # assertion prove the command went through the resolver, since a literal
         # in the source would no longer match.
+        # "/trusted/" marks a command that goes through the stubbed resolver.
+        # `shutdown` deliberately does NOT: its path is a contract with the sudoers
+        # rule install.sh writes, so it is the literal module constant. See
+        # test_system_commands.TestShutdownPathIsASudoersContract.
         pytest.param("win32", ["/trusted/shutdown.exe", "-s"], id="windows"),
-        pytest.param("linux", ["/trusted/sudo", "/trusted/shutdown", "now"], id="linux"),
-        pytest.param("darwin", ["/trusted/sudo", "/trusted/shutdown", "-h", "now"], id="macOS"),
+        pytest.param(
+            "linux",
+            ["/trusted/sudo", entrypoint_mod.LINUX_SHUTDOWN_PATH, "now"],
+            id="linux",
+        ),
+        pytest.param(
+            "darwin",
+            ["/trusted/sudo", entrypoint_mod.MACOS_SHUTDOWN_PATH, "-h", "now"],
+            id="macOS",
+        ),
     ),
 )
 @patch.object(entrypoint_mod, "_logger")
@@ -648,9 +672,21 @@ def test_host_shutdown_failure(
         # whatever platform the suite is actually running on -- and makes the
         # assertion prove the command went through the resolver, since a literal
         # in the source would no longer match.
+        # "/trusted/" marks a command that goes through the stubbed resolver.
+        # `shutdown` deliberately does NOT: its path is a contract with the sudoers
+        # rule install.sh writes, so it is the literal module constant. See
+        # test_system_commands.TestShutdownPathIsASudoersContract.
         pytest.param("win32", ["/trusted/shutdown.exe", "-s"], id="windows"),
-        pytest.param("linux", ["/trusted/sudo", "/trusted/shutdown", "now"], id="linux"),
-        pytest.param("darwin", ["/trusted/sudo", "/trusted/shutdown", "-h", "now"], id="macOS"),
+        pytest.param(
+            "linux",
+            ["/trusted/sudo", entrypoint_mod.LINUX_SHUTDOWN_PATH, "now"],
+            id="linux",
+        ),
+        pytest.param(
+            "darwin",
+            ["/trusted/sudo", entrypoint_mod.MACOS_SHUTDOWN_PATH, "-h", "now"],
+            id="macOS",
+        ),
     ),
 )
 @patch.object(entrypoint_mod._logger, "debug")

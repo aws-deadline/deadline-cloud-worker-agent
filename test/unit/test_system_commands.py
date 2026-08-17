@@ -11,6 +11,7 @@ property matters.
 from __future__ import annotations
 
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
+from deadline_worker_agent.startup import entrypoint as entrypoint_mod
 from deadline_worker_agent._system_commands import (
     SystemCommandNotFoundError,
     find_system_command,
@@ -115,6 +117,13 @@ class TestRejectsNonBareNames:
             pytest.param("", id="empty"),
             pytest.param(".", id="curdir"),
             pytest.param("..", id="pardir"),
+            # This resolver is the one with a Windows branch, so the drive-relative
+            # case is directly exploitable here:
+            # ntpath.join(r"C:\Windows\System32", "D:evil") == "D:evil", which
+            # escapes every trusted directory while containing no separator.
+            pytest.param("D:evil", id="drive-relative"),
+            pytest.param("C:evil", id="drive-relative-same-drive"),
+            pytest.param("a:b", id="colon"),
         ],
     )
     def test_rejects_name_with_a_path_component(self, name: str) -> None:
@@ -168,10 +177,19 @@ class TestMissingCommandRaises:
         assert "deadline-definitely-not-installed" in message
         assert "PATH is deliberately not searched" in message
 
-    def test_is_not_a_filenotfounderror(self) -> None:
-        """Callers around subprocess treat FileNotFoundError as "optional tool
-        absent, carry on". This must not be absorbed by that handling."""
-        assert not issubclass(SystemCommandNotFoundError, FileNotFoundError)
+    def test_is_a_filenotfounderror(self) -> None:
+        """The inverse of what an earlier revision asserted, and the reversal is the
+        point.
+
+        That revision made this a plain Exception so "carry on degraded" handlers
+        could not absorb it -- a theory about surrounding code that was never
+        checked against it. The semantics this condition has are
+        FileNotFoundError's: the thing we meant to launch is not there, which is
+        exactly how capabilities.py and metrics.py already treat a missing
+        nvidia-smi.
+        """
+        assert issubclass(SystemCommandNotFoundError, FileNotFoundError)
+        assert SystemCommandNotFoundError is not FileNotFoundError
 
 
 class TestTrustedDirectories:
@@ -185,6 +203,17 @@ class TestTrustedDirectories:
         directories = trusted_directories()
 
         assert directories.index("/run/wrappers/bin") < directories.index("/usr/bin")
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX directory layout")
+    def test_posix_has_the_two_nixos_entries_as_a_pair(self) -> None:
+        """/run/wrappers/bin alone supports no complete code path: it holds only the
+        setuid wrappers, so on NixOS it resolves sudo and nothing else. pkill lives
+        in the sw/bin symlink farm, so without that entry the ordering would resolve
+        sudo and then fail on pkill."""
+        directories = trusted_directories()
+
+        assert "/run/wrappers/bin" in directories
+        assert "/run/current-system/sw/bin" in directories
 
     @pytest.mark.skipif(sys.platform == "win32", reason="POSIX directory layout")
     def test_posix_searches_both_sbin_locations(self) -> None:
@@ -202,3 +231,68 @@ class TestTrustedDirectories:
 
         assert len(directories) == 1
         assert directories[0].lower().endswith("system32")
+
+
+class TestShutdownPathIsASudoersContract:
+    """`shutdown`'s path is granted by a sudoers rule, so it must not be resolved.
+
+    ``installer/install.sh`` writes ``/etc/sudoers.d/deadline-worker-shutdown``
+    containing a ``NOPASSWD:`` rule for one *exact* path. sudoers matches that path
+    literally, so if the agent invokes a different absolute path for the same binary
+    -- which a trusted-directory search can legitimately produce, since
+    ``/usr/bin`` is searched before ``/usr/sbin`` and both exist on a usr-merged
+    distribution -- the rule stops matching, sudo prompts for a password, and
+    shutdown-on-stop fails.
+
+    These tests read install.sh rather than restating its path, so the pairing
+    cannot drift apart silently. That is the whole point: a constant asserted
+    against a copy of itself would pin nothing.
+    """
+
+    @staticmethod
+    def _granted_shutdown_path() -> str:
+        install_sh = (
+            Path(__file__).parents[2] / "src" / "deadline_worker_agent" / "installer" / "install.sh"
+        )
+        content = install_sh.read_text()
+        match = re.search(r"NOPASSWD:\s*(\S+)\s+now", content)
+        assert match is not None, (
+            "Could not find the NOPASSWD shutdown rule in install.sh. If the rule "
+            "moved or changed shape, this test needs updating -- do not delete it, "
+            "the contract it guards is still real."
+        )
+        return match.group(1)
+
+    def test_shutdown_path_matches_the_installer_sudoers_rule(self) -> None:
+        # GIVEN / WHEN
+        granted = self._granted_shutdown_path()
+
+        # THEN
+        assert entrypoint_mod.LINUX_SHUTDOWN_PATH == granted, (
+            f"The agent would invoke {entrypoint_mod.LINUX_SHUTDOWN_PATH!r} but sudoers "
+            f"grants {granted!r}. sudo matches the path literally, so these must agree."
+        )
+
+    def test_the_granted_path_is_absolute(self) -> None:
+        """A relative path in a sudoers rule would not be a contract at all."""
+        assert os.path.isabs(self._granted_shutdown_path())
+
+    def test_shutdown_is_not_looked_up_in_the_trusted_directories(self) -> None:
+        """The regression this guards: if `shutdown` were resolved, the search order
+        could return a path outside the sudoers grant.
+
+        Asserted structurally -- `/usr/bin` really does precede `/usr/sbin`, so a
+        resolved `shutdown` on a usr-merged host really can differ from the granted
+        path. That makes "do not resolve it" the load-bearing decision rather than a
+        stylistic one.
+        """
+        directories = trusted_directories()
+
+        assert directories.index("/usr/bin") < directories.index("/usr/sbin")
+        assert entrypoint_mod.LINUX_SHUTDOWN_PATH.startswith("/usr/sbin/")
+
+    @pytest.mark.skipif(sys.platform != "darwin", reason="macOS layout")
+    def test_macos_shutdown_path_exists_on_this_host(self) -> None:
+        """macOS has no /usr/sbin/shutdown, so the two platforms need different
+        constants. Positive control that the macOS one is right."""
+        assert os.path.isfile(entrypoint_mod.MACOS_SHUTDOWN_PATH)

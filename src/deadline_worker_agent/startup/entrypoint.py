@@ -47,6 +47,18 @@ from .host_configuration_script import HostConfigurationScriptRunner
 __all__ = ["entrypoint"]
 _logger = logging.getLogger(__name__)
 
+LINUX_SHUTDOWN_PATH = "/usr/sbin/shutdown"
+"""The absolute path the installer's sudoers rule grants.
+
+Must stay byte-identical to the path in the ``NOPASSWD:`` rule that
+``installer/install.sh`` writes to ``/etc/sudoers.d/deadline-worker-shutdown``.
+sudoers matches one exact path, so resolving this at runtime instead risks
+producing a path the rule does not cover -- see ``_host_shutdown``.
+"""
+
+MACOS_SHUTDOWN_PATH = "/sbin/shutdown"
+"""macOS ships shutdown at /sbin/shutdown, and /usr/sbin/shutdown does not exist."""
+
 
 def _repeatedly_attempt_host_shutdown() -> bool:
     # This is here solely for the purpose of being mocked in tests so that we don't infinite loop.
@@ -338,21 +350,29 @@ def _host_shutdown(config: Configuration) -> None:
 
     shutdown_command: list[str]
 
-    # Resolved from trusted directories rather than through PATH. Note the POSIX
-    # branches deliberately do not hardcode a shutdown location: it is
-    # /usr/sbin/shutdown on usr-merged distributions but only /sbin/shutdown on
-    # some Debian releases, so a literal would fail to shut the host down there.
+    # `sudo` is resolved from trusted directories: the agent execs it directly, so
+    # that position is a real PATH lookup and a real CWE-426 exposure.
+    #
+    # `shutdown` is NOT resolved, and must not be. Its path is not a free choice --
+    # it is a contract with the sudoers rule the installer writes:
+    #
+    #     ${wa_user} ALL=(root) NOPASSWD: /usr/sbin/shutdown now
+    #                                     ^ installer/install.sh
+    #
+    # sudoers grants one exact path. Resolving instead of using LINUX_SHUTDOWN_PATH
+    # can yield /usr/bin/shutdown on a usr-merged distribution, which no longer
+    # matches the granted rule, so shutdown-on-stop starts prompting for a password
+    # and fails. Nor is this position a PATH lookup to begin with: sudo resolves its
+    # own argument, as root, and the agent hands it an absolute path either way.
+    #
+    # test_shutdown_path_matches_the_installer_sudoers_rule pins the pairing by
+    # reading install.sh, so the two cannot drift apart silently.
     if sys.platform == "win32":
         shutdown_command = [system_command_path("shutdown.exe"), "-s"]
     elif sys.platform == "darwin":
-        shutdown_command = [
-            system_command_path("sudo"),
-            system_command_path("shutdown"),
-            "-h",
-            "now",
-        ]
+        shutdown_command = [system_command_path("sudo"), MACOS_SHUTDOWN_PATH, "-h", "now"]
     else:
-        shutdown_command = [system_command_path("sudo"), system_command_path("shutdown"), "now"]
+        shutdown_command = [system_command_path("sudo"), LINUX_SHUTDOWN_PATH, "now"]
 
     # flush all the logs before initiating the shutdown command.
     for handler in _logger.handlers:

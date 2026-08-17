@@ -46,10 +46,18 @@ _POSIX_TRUSTED_DIRECTORIES: Tuple[str, ...] = (
     # Ordered, deliberately. On NixOS the setuid `sudo` wrapper lives here and
     # the /usr/bin copy is absent or not setuid, so this must be searched first.
     "/run/wrappers/bin",
+    # ...and these two NixOS entries are a pair. /run/wrappers/bin holds only the
+    # setuid/setcap wrappers, so on NixOS it resolves `sudo` and nothing else:
+    # /usr/bin holds just `env`, /bin just `sh`, and the sbin directories are
+    # absent. `pkill` lives in this symlink farm, which nixos-rebuild manages and
+    # root owns, so it is trust-equivalent to /usr/bin there. Without it the
+    # ordering above would resolve `sudo` and then fail on `pkill`.
+    "/run/current-system/sw/bin",
     "/usr/bin",
     "/bin",
-    # sbin last: `shutdown` lives here, and on non-usr-merged Debian releases it
-    # is *only* at /sbin/shutdown.
+    # sbin last. Note this list is no longer used to locate `shutdown` -- that path
+    # is a sudoers contract, see entrypoint.LINUX_SHUTDOWN_PATH -- but other
+    # commands can still live only under /sbin on non-usr-merged distributions.
     "/usr/sbin",
     "/sbin",
 )
@@ -57,13 +65,21 @@ _POSIX_TRUSTED_DIRECTORIES: Tuple[str, ...] = (
 _WINDOWS_FALLBACK_SYSTEM_ROOT = r"C:\Windows"
 
 
-class SystemCommandNotFoundError(Exception):
+class SystemCommandNotFoundError(FileNotFoundError):
     """A required system command was not present in any trusted directory.
 
-    Deliberately not a subclass of :class:`FileNotFoundError`. Callers around
-    subprocess invocations catch ``FileNotFoundError`` to mean "this optional
-    tool is not installed, carry on degraded", and this condition must not be
-    absorbed by that handling: it means a privileged helper is unavailable.
+    A :class:`FileNotFoundError`, and therefore an :class:`OSError`, on purpose.
+
+    An earlier revision made this a plain ``Exception``, reasoning that an
+    unavailable privileged helper must not be absorbed by handlers that catch
+    ``FileNotFoundError`` to mean "carry on degraded". That reasoning assumed rather
+    than checked what surrounding code does with it, and the semantics this
+    condition has are ``FileNotFoundError``'s: the thing we meant to launch is not
+    there. ``capabilities.py`` and ``metrics.py`` already treat that as "feature
+    unavailable" for ``nvidia-smi``, which is the right shape here too.
+
+    Remaining a distinct type still lets a caller tell "not in any trusted
+    directory" apart from "``exec`` failed", and the message says which.
     """
 
 
@@ -89,9 +105,19 @@ def _validate_command_name(name: str) -> None:
     # Both separators are checked on both platforms. A backslash is a legal POSIX
     # filename character, but no command resolved here contains one, and treating
     # it as suspect keeps the check identical rather than subtly weaker on POSIX.
-    if "/" in name or "\\" in name:
+    # The colon is rejected too, and on this module it is not hypothetical -- this
+    # is the one resolver here with a Windows branch:
+    #
+    #     ntpath.join(r"C:\Windows\System32", "D:evil") == "D:evil"
+    #
+    # A drive-relative name discards the trusted prefix entirely while containing no
+    # separator at all, resolving against that drive's own current directory. A
+    # separator-only guard lets it straight through, which would make this module
+    # the injection point it exists to remove.
+    if "/" in name or "\\" in name or ":" in name:
         raise ValueError(
-            f"A system command name must not contain a path separator, but got {name!r}."
+            f"A system command name must not contain a path separator or drive "
+            f"specifier, but got {name!r}."
         )
 
 
