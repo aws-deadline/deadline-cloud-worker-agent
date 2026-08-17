@@ -37,10 +37,15 @@ from typing import Optional, Tuple
 
 __all__ = [
     "SystemCommandNotFoundError",
-    "find_system_command",
     "system_command_path",
     "trusted_directories",
 ]
+
+# find_system_command is intentionally absent from __all__. Every caller in this
+# package needs the command it asks for, so none of them can do anything useful
+# with None. It stays defined because the tests use it to exercise the search
+# without asserting on an exception, but exporting it would advertise a
+# "tolerate absence" entry point that nothing here wants.
 
 
 _POSIX_TRUSTED_DIRECTORIES: Tuple[str, ...] = (

@@ -16,7 +16,7 @@ import re
 import stat
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -261,30 +261,36 @@ class TestShutdownPathIsASudoersContract:
     """
 
     @staticmethod
-    def _granted_shutdown_path(installer: str) -> str:
-        """The absolute path the given installer's NOPASSWD rule grants."""
+    def _granted_shutdown_argv(installer: str) -> list[str]:
+        """The full argv the given installer's NOPASSWD rule grants.
+
+        The whole argv, not just the path. sudo matches the entire command line, so
+        pinning only the path would let two silent drifts through: the macOS rule
+        losing its ``-h`` while the agent still sends it, or the Linux rule gaining
+        one while the agent sends a bare ``now``. Either produces a password prompt
+        at shutdown time, which is exactly the failure this test exists to catch.
+        """
         script = (
             Path(__file__).parents[2] / "src" / "deadline_worker_agent" / "installer" / installer
         )
         content = script.read_text()
-        # install.sh grants "<path> now"; install_macos.sh grants "<path> -h now".
-        match = re.search(r"NOPASSWD:\s*(\S+)(?:\s+-h)?\s+now", content)
+        match = re.search(r"NOPASSWD:\s*(\S.*?)\s*$", content, re.MULTILINE)
         assert match is not None, (
             f"Could not find the NOPASSWD shutdown rule in {installer}. If the rule "
             "moved or changed shape, this test needs updating -- do not delete it, "
             "the contract it guards is still real."
         )
-        return match.group(1)
+        return match.group(1).split()
 
     @pytest.mark.parametrize(
-        "installer,constant_name",
+        "installer,platform,expected_flags",
         [
-            pytest.param("install.sh", "LINUX_SHUTDOWN_PATH", id="linux"),
-            pytest.param("install_macos.sh", "MACOS_SHUTDOWN_PATH", id="macOS"),
+            pytest.param("install.sh", "linux", ["now"], id="linux"),
+            pytest.param("install_macos.sh", "darwin", ["-h", "now"], id="macOS"),
         ],
     )
-    def test_shutdown_path_matches_the_installer_sudoers_rule(
-        self, installer: str, constant_name: str
+    def test_shutdown_argv_matches_the_installer_sudoers_rule(
+        self, installer: str, platform: str, expected_flags: list
     ) -> None:
         """Both platforms have their own rule, and both must be pinned.
 
@@ -292,15 +298,32 @@ class TestShutdownPathIsASudoersContract:
         that "the sudoers command MUST continue to match that argv exactly". The
         macOS constant agreed with it only by coincidence until this test existed.
         """
-        # GIVEN / WHEN
-        granted = self._granted_shutdown_path(installer)
-        invoked = getattr(entrypoint_mod, constant_name)
+        # GIVEN the argv the agent builds for this platform, minus the sudo prefix
+        granted = self._granted_shutdown_argv(installer)
+        configuration = MagicMock()
+        configuration.no_shutdown = False
+        with (
+            patch.object(sys, "platform", platform),
+            patch.object(
+                entrypoint_mod, "system_command_path", side_effect=lambda n: f"/trusted/{n}"
+            ),
+            patch.object(entrypoint_mod.subprocess, "Popen") as popen,
+        ):
+            popen.return_value.communicate.return_value = (b"", b"")
+            popen.return_value.returncode = 0
+            entrypoint_mod._host_shutdown(config=configuration)
+
+        # WHEN the sudo prefix is dropped
+        invoked = list(popen.call_args.args[0])
+        assert invoked[0] == "/trusted/sudo"
+        invoked_command = invoked[1:]
 
         # THEN
-        assert invoked == granted, (
-            f"The agent would invoke {invoked!r} but {installer} grants {granted!r}. "
-            f"sudo matches the path literally, so these must agree."
+        assert invoked_command == granted, (
+            f"The agent would run {invoked_command!r} but {installer} grants "
+            f"{granted!r}. sudo matches the whole command line, so these must agree."
         )
+        assert invoked_command[1:] == expected_flags
 
     @pytest.mark.parametrize("installer", ["install.sh", "install_macos.sh"])
     def test_the_granted_path_is_absolute(self, installer: str) -> None:
@@ -312,7 +335,7 @@ class TestShutdownPathIsASudoersContract:
         statement about the host running the tests, and it failed the
         windows-latest 3.13 leg for that reason.
         """
-        assert posixpath.isabs(self._granted_shutdown_path(installer))
+        assert posixpath.isabs(self._granted_shutdown_argv(installer)[0])
 
     @pytest.mark.skipif(
         sys.platform == "win32",

@@ -37,7 +37,7 @@ from ..log_messages import (
     WorkerLogEventOp,
     WorkerHostConfigurationLogEvent,
 )
-from .._system_commands import system_command_path
+from .._system_commands import SystemCommandNotFoundError, system_command_path
 from ..log_sync.cloudwatch import stream_cloudwatch_logs
 from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger
 from ..worker import Worker
@@ -367,12 +367,20 @@ def _host_shutdown(config: Configuration) -> None:
     #
     # test_shutdown_path_matches_the_installer_sudoers_rule pins the pairing by
     # reading install.sh, so the two cannot drift apart silently.
-    if sys.platform == "win32":
-        shutdown_command = [system_command_path("shutdown.exe"), "-s"]
-    elif sys.platform == "darwin":
-        shutdown_command = [system_command_path("sudo"), MACOS_SHUTDOWN_PATH, "-h", "now"]
-    else:
-        shutdown_command = [system_command_path("sudo"), LINUX_SHUTDOWN_PATH, "now"]
+    # A resolution failure is reported and returned from, not raised. Callers treat
+    # _host_shutdown as best-effort and retry until the host goes down; letting an
+    # exception out of here instead unwinds to the top-level handler and exits the
+    # agent, which ends the retrying and leaves the host up with no further attempt.
+    try:
+        if sys.platform == "win32":
+            shutdown_command = [system_command_path("shutdown.exe"), "-s"]
+        elif sys.platform == "darwin":
+            shutdown_command = [system_command_path("sudo"), MACOS_SHUTDOWN_PATH, "-h", "now"]
+        else:
+            shutdown_command = [system_command_path("sudo"), LINUX_SHUTDOWN_PATH, "now"]
+    except SystemCommandNotFoundError as e:
+        _logger.error(f"Cannot shut down the host: {e}")
+        return
 
     # flush all the logs before initiating the shutdown command.
     for handler in _logger.handlers:
