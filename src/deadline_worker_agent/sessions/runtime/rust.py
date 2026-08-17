@@ -39,6 +39,11 @@ from openjd.sessions._v1 import (
     WindowsSessionUser as RustWindowsSessionUser,
 )
 
+from deadline_worker_agent.file_system_operations import (
+    FileSystemPermissionEnum,
+    set_permissions,
+)
+
 from . import SessionRuntime, SessionRuntimeConfig
 from ._abc import convert_runtime_crashes
 
@@ -422,15 +427,26 @@ class RustSessionRuntime(SessionRuntime):
                 # manifest JSON, which the reader script decodes as UTF-8.
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(str(embedded_file.data))
-                # Owner read/write. On POSIX, also grant the session user's group
-                # read access so the job user can read the materialized file.
+                # Owner read/write. On POSIX, grant the session user's group read
+                # access so the job user can read the materialized file. On Windows,
+                # set an explicit ACL (agent=full control, job user=read) rather than
+                # relying on NTFS inheritance which may be absent or misconfigured.
                 mode = stat.S_IRUSR | stat.S_IWUSR
                 if self._user is not None and os.name == "posix":
                     group = getattr(self._user, "group", None)
                     if group is not None:
                         chown(path, group=group)
                         mode |= stat.S_IRGRP
-                os.chmod(path, mode)
+                    os.chmod(path, mode)
+                elif self._user is not None and os.name == "nt":
+                    set_permissions(
+                        file_path=Path(path),
+                        agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                        user_permission=FileSystemPermissionEnum.READ,
+                        permitted_user=self._user,
+                    )
+                else:
+                    os.chmod(path, mode)
                 file_paths[embedded_file.name] = path
 
         command = str(step_script.actions.onRun.command)
