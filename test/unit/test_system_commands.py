@@ -11,6 +11,7 @@ property matters.
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 import stat
 import sys
@@ -217,9 +218,19 @@ class TestTrustedDirectories:
 
     @pytest.mark.skipif(sys.platform == "win32", reason="POSIX directory layout")
     def test_posix_searches_both_sbin_locations(self) -> None:
-        """shutdown is at /usr/sbin/shutdown on usr-merged distributions but only
-        at /sbin/shutdown on some Debian releases. Hardcoding either one broke a
-        host; both must be searched."""
+        """Both sbin directories are searched, for commands that live only there.
+
+        The original justification for these two entries was `shutdown`, which is
+        no longer resolved at all (its path is a sudoers contract, see
+        TestShutdownPathIsASudoersContract). So today no production caller resolves
+        an sbin command: sudo and pkill are both /usr/bin, and shutdown.exe is
+        System32.
+
+        They are kept rather than deleted because the resolver is general and the
+        split is real -- on non-usr-merged distributions a system command can exist
+        only under /sbin -- but the honest status is "no current caller", not "the
+        shutdown case requires it".
+        """
         directories = trusted_directories()
 
         assert "/usr/sbin" in directories
@@ -250,33 +261,64 @@ class TestShutdownPathIsASudoersContract:
     """
 
     @staticmethod
-    def _granted_shutdown_path() -> str:
-        install_sh = (
-            Path(__file__).parents[2] / "src" / "deadline_worker_agent" / "installer" / "install.sh"
+    def _granted_shutdown_path(installer: str) -> str:
+        """The absolute path the given installer's NOPASSWD rule grants."""
+        script = (
+            Path(__file__).parents[2] / "src" / "deadline_worker_agent" / "installer" / installer
         )
-        content = install_sh.read_text()
-        match = re.search(r"NOPASSWD:\s*(\S+)\s+now", content)
+        content = script.read_text()
+        # install.sh grants "<path> now"; install_macos.sh grants "<path> -h now".
+        match = re.search(r"NOPASSWD:\s*(\S+)(?:\s+-h)?\s+now", content)
         assert match is not None, (
-            "Could not find the NOPASSWD shutdown rule in install.sh. If the rule "
+            f"Could not find the NOPASSWD shutdown rule in {installer}. If the rule "
             "moved or changed shape, this test needs updating -- do not delete it, "
             "the contract it guards is still real."
         )
         return match.group(1)
 
-    def test_shutdown_path_matches_the_installer_sudoers_rule(self) -> None:
+    @pytest.mark.parametrize(
+        "installer,constant_name",
+        [
+            pytest.param("install.sh", "LINUX_SHUTDOWN_PATH", id="linux"),
+            pytest.param("install_macos.sh", "MACOS_SHUTDOWN_PATH", id="macOS"),
+        ],
+    )
+    def test_shutdown_path_matches_the_installer_sudoers_rule(
+        self, installer: str, constant_name: str
+    ) -> None:
+        """Both platforms have their own rule, and both must be pinned.
+
+        install_macos.sh grants `/sbin/shutdown -h now` and says in its own comment
+        that "the sudoers command MUST continue to match that argv exactly". The
+        macOS constant agreed with it only by coincidence until this test existed.
+        """
         # GIVEN / WHEN
-        granted = self._granted_shutdown_path()
+        granted = self._granted_shutdown_path(installer)
+        invoked = getattr(entrypoint_mod, constant_name)
 
         # THEN
-        assert entrypoint_mod.LINUX_SHUTDOWN_PATH == granted, (
-            f"The agent would invoke {entrypoint_mod.LINUX_SHUTDOWN_PATH!r} but sudoers "
-            f"grants {granted!r}. sudo matches the path literally, so these must agree."
+        assert invoked == granted, (
+            f"The agent would invoke {invoked!r} but {installer} grants {granted!r}. "
+            f"sudo matches the path literally, so these must agree."
         )
 
-    def test_the_granted_path_is_absolute(self) -> None:
-        """A relative path in a sudoers rule would not be a contract at all."""
-        assert os.path.isabs(self._granted_shutdown_path())
+    @pytest.mark.parametrize("installer", ["install.sh", "install_macos.sh"])
+    def test_the_granted_path_is_absolute(self, installer: str) -> None:
+        """A relative path in a sudoers rule would not be a contract at all.
 
+        posixpath rather than os.path: the granted path is a POSIX path read out of
+        a shell script, and from Python 3.13 ntpath.isabs() treats a single-slash
+        path as drive-relative rather than absolute. Using os.path made this a
+        statement about the host running the tests, and it failed the
+        windows-latest 3.13 leg for that reason.
+        """
+        assert posixpath.isabs(self._granted_shutdown_path(installer))
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="trusted_directories() returns the Windows System32 layout there, "
+        "which has no /usr/bin or /usr/sbin to order",
+    )
     def test_shutdown_is_not_looked_up_in_the_trusted_directories(self) -> None:
         """The regression this guards: if `shutdown` were resolved, the search order
         could return a path outside the sudoers grant.

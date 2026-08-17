@@ -55,9 +55,11 @@ _POSIX_TRUSTED_DIRECTORIES: Tuple[str, ...] = (
     "/run/current-system/sw/bin",
     "/usr/bin",
     "/bin",
-    # sbin last. Note this list is no longer used to locate `shutdown` -- that path
-    # is a sudoers contract, see entrypoint.LINUX_SHUTDOWN_PATH -- but other
-    # commands can still live only under /sbin on non-usr-merged distributions.
+    # sbin last, and with no current caller. `shutdown` used to justify these two,
+    # but its path is a sudoers contract now (entrypoint.LINUX_SHUTDOWN_PATH) and is
+    # not resolved here at all; sudo and pkill both live in /usr/bin. They stay
+    # because the split is real -- a system command can be sbin-only on a
+    # non-usr-merged distribution -- but "no current caller" is the honest status.
     "/usr/sbin",
     "/sbin",
 )
