@@ -37,6 +37,7 @@ from ..log_messages import (
     WorkerLogEventOp,
     WorkerHostConfigurationLogEvent,
 )
+from .._system_commands import system_command_path
 from ..log_sync.cloudwatch import stream_cloudwatch_logs
 from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger
 from ..worker import Worker
@@ -337,12 +338,21 @@ def _host_shutdown(config: Configuration) -> None:
 
     shutdown_command: list[str]
 
+    # Resolved from trusted directories rather than through PATH. Note the POSIX
+    # branches deliberately do not hardcode a shutdown location: it is
+    # /usr/sbin/shutdown on usr-merged distributions but only /sbin/shutdown on
+    # some Debian releases, so a literal would fail to shut the host down there.
     if sys.platform == "win32":
-        shutdown_command = ["shutdown", "-s"]
+        shutdown_command = [system_command_path("shutdown.exe"), "-s"]
     elif sys.platform == "darwin":
-        shutdown_command = ["sudo", "shutdown", "-h", "now"]
+        shutdown_command = [
+            system_command_path("sudo"),
+            system_command_path("shutdown"),
+            "-h",
+            "now",
+        ]
     else:
-        shutdown_command = ["sudo", "shutdown", "now"]
+        shutdown_command = [system_command_path("sudo"), system_command_path("shutdown"), "now"]
 
     # flush all the logs before initiating the shutdown command.
     for handler in _logger.handlers:

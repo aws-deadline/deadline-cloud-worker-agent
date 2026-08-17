@@ -10,6 +10,7 @@ import requests
 import sys
 import sysconfig
 
+from deadline_worker_agent._system_commands import system_command_path
 from deadline_worker_agent.config.settings import (
     DEFAULT_MACOS_SESSION_ROOT_DIR,
     DEFAULT_POSIX_SESSION_ROOT_DIR,
@@ -124,7 +125,7 @@ def install() -> None:
             sys.exit(1)
     else:
         cmd = [
-            "sudo",
+            system_command_path("sudo"),
             str(INSTALLER_PATH[sys.platform]),
             "--farm-id",
             args.farm_id,
