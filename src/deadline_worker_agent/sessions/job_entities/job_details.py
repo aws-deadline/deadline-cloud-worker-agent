@@ -22,13 +22,21 @@ from openjd.sessions import (
 from openjd.sessions import PathMappingRule as OPENJDPathMappingRule
 
 from ...api_models import (
+    BoolListParameter,
+    BoolParameter,
+    FloatListParameter,
     FloatParameter,
+    IntListListParameter,
+    IntListParameter,
     IntParameter,
     JobDetailsData,
     JobAttachmentQueueSettings as JobAttachmentSettingsBoto,
     JobRunAsUser as JobRunAsUserModel,
+    PathListParameter,
     PathMappingRule,
     PathParameter,
+    RangeExprParameter,
+    StringListParameter,
     StringParameter,
     ChunkIntParameter,
 )
@@ -40,7 +48,20 @@ from .validation import Field, validate_object
 def parameters_from_api_response(
     params: dict[
         str,
-        StringParameter | PathParameter | IntParameter | FloatParameter | ChunkIntParameter | str,
+        StringParameter
+        | PathParameter
+        | IntParameter
+        | FloatParameter
+        | ChunkIntParameter
+        | BoolParameter
+        | RangeExprParameter
+        | StringListParameter
+        | PathListParameter
+        | IntListParameter
+        | FloatListParameter
+        | BoolListParameter
+        | IntListListParameter
+        | str,
     ],
 ) -> dict[str, ParameterValue]:
     result = dict[str, ParameterValue]()
@@ -60,6 +81,38 @@ def parameters_from_api_response(
         elif "chunkInt" in value:
             value = cast(ChunkIntParameter, value)
             param_value = ParameterValue(type=ParameterValueType.CHUNK_INT, value=value["chunkInt"])
+        elif "bool" in value:
+            value = cast(BoolParameter, value)
+            param_value = ParameterValue(type=ParameterValueType.BOOL, value=value["bool"])
+        elif "rangeExpr" in value:
+            value = cast(RangeExprParameter, value)
+            param_value = ParameterValue(
+                type=ParameterValueType.RANGE_EXPR, value=value["rangeExpr"]
+            )
+        elif "stringList" in value:
+            value = cast(StringListParameter, value)
+            param_value = ParameterValue(
+                type=ParameterValueType.LIST_STRING, value=value["stringList"]
+            )
+        elif "pathList" in value:
+            value = cast(PathListParameter, value)
+            param_value = ParameterValue(type=ParameterValueType.LIST_PATH, value=value["pathList"])
+        elif "intList" in value:
+            value = cast(IntListParameter, value)
+            param_value = ParameterValue(type=ParameterValueType.LIST_INT, value=value["intList"])
+        elif "floatList" in value:
+            value = cast(FloatListParameter, value)
+            param_value = ParameterValue(
+                type=ParameterValueType.LIST_FLOAT, value=value["floatList"]
+            )
+        elif "boolList" in value:
+            value = cast(BoolListParameter, value)
+            param_value = ParameterValue(type=ParameterValueType.LIST_BOOL, value=value["boolList"])
+        elif "intListList" in value:
+            value = cast(IntListListParameter, value)
+            param_value = ParameterValue(
+                type=ParameterValueType.LIST_LIST_INT, value=value["intListList"]
+            )
         else:
             raise ValueError(f"Parameter {name} -- unknown form in API response: {str(value)}")
         result[name] = param_value

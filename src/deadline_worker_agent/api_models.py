@@ -35,6 +35,14 @@ __all__ = [
     "StepDetailsError",
     "StepDetailsIdentifier",
     "StringParameter",
+    "BoolParameter",
+    "BoolListParameter",
+    "FloatListParameter",
+    "IntListParameter",
+    "IntListListParameter",
+    "PathListParameter",
+    "RangeExprParameter",
+    "StringListParameter",
     "TaskRunAction",
     "UpdatedSessionActionInfo",
     "UpdatedSessionActionInfo",
@@ -76,6 +84,38 @@ class ChunkIntParameter(TypedDict):
     chunkInt: str
 
 
+class BoolParameter(TypedDict):
+    bool: bool
+
+
+class RangeExprParameter(TypedDict):
+    rangeExpr: str
+
+
+class StringListParameter(TypedDict):
+    stringList: list[str]
+
+
+class PathListParameter(TypedDict):
+    pathList: list[str]
+
+
+class IntListParameter(TypedDict):
+    intList: list[str]
+
+
+class FloatListParameter(TypedDict):
+    floatList: list[str]
+
+
+class BoolListParameter(TypedDict):
+    boolList: list[bool]
+
+
+class IntListListParameter(TypedDict):
+    intListList: list[list[str]]
+
+
 class TaskRunAction(TypedDict):
     sessionActionId: str
     actionType: StepActionType
@@ -83,7 +123,20 @@ class TaskRunAction(TypedDict):
     stepId: str
     parameters: NotRequired[
         dict[
-            str, StringParameter | PathParameter | IntParameter | FloatParameter | ChunkIntParameter
+            str,
+            StringParameter
+            | PathParameter
+            | IntParameter
+            | FloatParameter
+            | ChunkIntParameter
+            | BoolParameter
+            | RangeExprParameter
+            | StringListParameter
+            | PathListParameter
+            | IntListParameter
+            | FloatListParameter
+            | BoolListParameter
+            | IntListListParameter,
         ]
     ]
 
@@ -305,6 +358,14 @@ class JobDetailsData(JobDetailsIdentifierFields):
             | IntParameter
             | FloatParameter
             | ChunkIntParameter
+            | BoolParameter
+            | RangeExprParameter
+            | StringListParameter
+            | PathListParameter
+            | IntListParameter
+            | FloatListParameter
+            | BoolListParameter
+            | IntListListParameter
             | str,
         ]
     ]
