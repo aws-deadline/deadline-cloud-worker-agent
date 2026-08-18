@@ -53,7 +53,10 @@ class PythonSessionRuntime(SessionRuntime):
         environment: EnvironmentModel,
         identifier: Optional[EnvironmentIdentifier] = None,
         os_env_vars: Optional[dict[str, str]] = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> EnvironmentIdentifier:
+        # resolved_symbol_table_json: not forwarded — the v0 Python session does
+        # not support pre-resolved symbol tables.
         return self._session.enter_environment(
             environment=environment,
             identifier=identifier,
@@ -81,7 +84,10 @@ class PythonSessionRuntime(SessionRuntime):
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
+        # resolved_symbol_table_json: not forwarded — the v0 Python session does
+        # not support pre-resolved symbol tables.
         self._session.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,

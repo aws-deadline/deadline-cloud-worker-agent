@@ -869,9 +869,13 @@ class Session:
         job_env_id: str,
         environment: EnvironmentModel,
         os_env_vars: Optional[dict[str, str]] = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
         session_env_id = self._runtime.enter_environment(
-            environment=environment, identifier=job_env_id, os_env_vars=os_env_vars
+            environment=environment,
+            identifier=job_env_id,
+            os_env_vars=os_env_vars,
+            resolved_symbol_table_json=resolved_symbol_table_json,
         )
         self._active_envs.append(
             ActiveEnvironment(
@@ -1202,6 +1206,7 @@ class Session:
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
         self._runtime.run_task(
             step_script=step_script,
@@ -1209,6 +1214,7 @@ class Session:
             os_env_vars=os_env_vars,
             log_task_banner=log_task_banner,
             step_name=step_name,
+            resolved_symbol_table_json=resolved_symbol_table_json,
         )
 
     def _run_attachment_sync_task(

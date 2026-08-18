@@ -212,3 +212,30 @@ class TestFromBotoExtensions:
         result = StepDetails.from_boto(cast(StepDetailsData, step_details_data))
 
         assert result.step_template.name == "TestStep"
+
+
+class TestResolvedSymbolTable:
+    """Tests for the resolvedSymbolTable field on StepDetails."""
+
+    def test_from_boto_extracts_resolved_symbol_table_when_present(self) -> None:
+        """from_boto sets resolved_symbol_table_json when the field is present."""
+        symtab_json = '[{"name":"Job.Name","type":"string","value":"MyJob"}]'
+        step_details_data = {
+            "jobId": "job-0000",
+            "schemaVersion": "jobtemplate-2023-09",
+            "stepId": "step-0000",
+            "dependencies": [],
+            "template": {
+                "name": "TestStep",
+                "script": {
+                    "actions": {
+                        "onRun": {"command": "/bin/echo", "args": ["hello"]},
+                    }
+                },
+            },
+            "resolvedSymbolTable": symtab_json,
+        }
+
+        result = StepDetails.from_boto(cast(StepDetailsData, step_details_data))
+
+        assert result.resolved_symbol_table_json == symtab_json

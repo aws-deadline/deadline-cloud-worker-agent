@@ -275,6 +275,7 @@ class TestRustSessionRuntimeDelegation:
             environment=mock_create.return_value,
             identifier=identifier,
             os_env_vars=os_env,
+            resolved_symtab=None,
         )
         assert result is mock_session_instance.enter_environment.return_value
 
@@ -1319,3 +1320,93 @@ class TestToEnvironmentParameterDefinitions:
             {"name": "Flag", "type": "BOOL"},
             {"name": "Expr", "type": "RANGE_EXPR"},
         ]
+
+
+class TestResolvedSymbolTableForwarding:
+    """Tests for resolved_symbol_table_json parsing and forwarding to the _v1 session."""
+
+    @pytest.fixture()
+    def adapter(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
+    ) -> RustSessionRuntime:
+        return RustSessionRuntime(runtime_config)
+
+    @pytest.fixture()
+    def mock_session_instance(self, mock_rust_session: MagicMock) -> MagicMock:
+        return mock_rust_session.return_value
+
+    def test_enter_environment_forwards_resolved_symtab_when_json_present(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When resolved_symbol_table_json is provided, it's parsed and forwarded."""
+        environment = MagicMock()
+        symtab_json = '[{"name":"Job.Name","type":"string","value":"TestJob"}]'
+        fake_symtab = MagicMock()
+
+        with (
+            patch.object(rust_module, "decode_environment_template"),
+            patch.object(rust_module, "create_environment"),
+            patch.object(
+                rust_module.SerializedSymbolTable, "from_json_str", return_value=fake_symtab
+            ) as mock_from_json,
+        ):
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                resolved_symbol_table_json=symtab_json,
+            )
+
+        mock_from_json.assert_called_once_with(symtab_json)
+        call_kwargs = mock_session_instance.enter_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is fake_symtab
+
+    def test_run_task_forwards_resolved_symtab_when_json_present(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When resolved_symbol_table_json is provided, it's parsed and forwarded."""
+        step_script = MagicMock()
+        symtab_json = '[{"name":"Job.Name","type":"string","value":"TestJob"}]'
+        fake_symtab = MagicMock()
+
+        with (
+            patch.object(rust_module, "deserialize_step"),
+            patch.object(
+                rust_module.SerializedSymbolTable, "from_json_str", return_value=fake_symtab
+            ) as mock_from_json,
+        ):
+            adapter.run_task(
+                step_script=step_script,
+                task_parameter_values={},
+                resolved_symbol_table_json=symtab_json,
+            )
+
+        mock_from_json.assert_called_once_with(symtab_json)
+        call_kwargs = mock_session_instance.run_task.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is fake_symtab
+
+    def test_enter_environment_graceful_degradation_on_malformed_json(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """Malformed JSON causes a warning log and proceeds with resolved_symtab=None."""
+        environment = MagicMock()
+
+        with (
+            patch.object(rust_module, "decode_environment_template"),
+            patch.object(rust_module, "create_environment"),
+            patch.object(
+                rust_module.SerializedSymbolTable,
+                "from_json_str",
+                side_effect=ValueError("bad json"),
+            ),
+            patch.object(rust_module, "logger") as mock_logger,
+        ):
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                resolved_symbol_table_json="not valid json",
+            )
+
+        mock_logger.warning.assert_called_once()
+        assert "resolvedSymbolTable" in mock_logger.warning.call_args[0][0]
+        call_kwargs = mock_session_instance.enter_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is None

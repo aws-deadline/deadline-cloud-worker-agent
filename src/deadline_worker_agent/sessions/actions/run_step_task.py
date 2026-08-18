@@ -85,4 +85,5 @@ class RunStepTaskAction(OpenjdAction):
             task_parameter_values=self._task_parameter_values,
             os_env_vars=env_vars,
             step_name=self._details.step_template.name,
+            resolved_symbol_table_json=self._details.resolved_symbol_table_json,
         )

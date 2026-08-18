@@ -151,3 +151,31 @@ class TestFromBotoWrapActions:
         assert actions.onWrapEnvExit is not None
         assert actions.onWrapEnvExit.command == "/bin/echo"
         assert actions.onWrapEnvExit.args == ["exit"]
+
+
+class TestResolvedSymbolTable:
+    """Tests for the resolvedSymbolTable field on EnvironmentDetails."""
+
+    def test_from_boto_extracts_resolved_symbol_table_when_present(self) -> None:
+        """from_boto sets resolved_symbol_table_json when the field is present."""
+        symtab_json = '[{"name":"Job.Name","type":"string","value":"MyJob"}]'
+        environment_details_data = {
+            "jobId": "job-0000",
+            "environmentId": "env-0000",
+            "schemaVersion": "jobtemplate-2023-09",
+            "template": {
+                "name": "TestEnv",
+                "script": {
+                    "actions": {
+                        "onEnter": {"command": "/bin/echo", "args": ["enter"]},
+                    }
+                },
+            },
+            "resolvedSymbolTable": symtab_json,
+        }
+
+        result = EnvironmentDetails.from_boto(
+            cast(EnvironmentDetailsData, environment_details_data)
+        )
+
+        assert result.resolved_symbol_table_json == symtab_json
