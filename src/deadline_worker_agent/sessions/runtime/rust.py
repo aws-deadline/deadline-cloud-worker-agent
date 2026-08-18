@@ -45,6 +45,7 @@ from deadline_worker_agent.file_system_operations import (
 )
 
 from . import SessionRuntime, SessionRuntimeConfig
+from .._extensions import RUNTIME_CAPABILITY_EXTENSIONS
 from ._abc import convert_runtime_crashes
 
 if TYPE_CHECKING:
@@ -240,6 +241,34 @@ def _to_v0_action_status(status: RustActionStatus) -> ActionStatus:
     )
 
 
+def _to_rust_model_extensions(
+    names: tuple[str, ...] | list[str],
+    *,
+    warn_on_unsupported: bool = False,
+) -> tuple[list[ModelExtension], list[str]]:
+    """Convert extension name strings to Rust ModelExtension enums.
+
+    Returns a pair: (converted enums, the names that converted successfully).
+    Names that the Rust crate does not recognize are skipped. When
+    *warn_on_unsupported* is True, a warning is logged for each skipped name
+    so the operator knows their configured extension will not take effect.
+    """
+    extensions: list[ModelExtension] = []
+    converted_names: list[str] = []
+    for name in names:
+        extension = ModelExtension.from_str(name)
+        if extension is None:
+            if warn_on_unsupported:
+                logger.warning(
+                    "OpenJD model extension %r is not supported by the Rust session runtime; ignoring it.",
+                    name,
+                )
+            continue
+        extensions.append(extension)
+        converted_names.append(name)
+    return extensions, converted_names
+
+
 class RustSessionRuntime(SessionRuntime):
     """SessionRuntime backed by openjd.sessions._v1 (Rust implementation)."""
 
@@ -247,6 +276,7 @@ class RustSessionRuntime(SessionRuntime):
     _user: Optional[SessionUser]
     _environment_parameter_definitions: list[dict[str, str]]
     _supported_extensions: tuple[str, ...]
+    _decode_extensions: tuple[str, ...]
 
     def __init__(self, config: SessionRuntimeConfig) -> None:
         try:
@@ -265,21 +295,17 @@ class RustSessionRuntime(SessionRuntime):
         # template that actually requires a skipped extension is rejected at
         # decode time with a clear error, matching how the v0 session
         # tolerates extension names it doesn't recognize.
-        extensions: list[ModelExtension] = []
-        # Kept in sync with `extensions` — only names that convert successfully
-        # are retained, so both lists always describe the same set.
-        supported_extension_names: list[str] = []
-        for name in config.supported_extensions:
-            extension = ModelExtension.from_str(name)
-            if extension is None:
-                logger.warning(
-                    "OpenJD model extension %r is not supported by the Rust session runtime; ignoring it.",
-                    name,
-                )
-                continue
-            extensions.append(extension)
-            supported_extension_names.append(name)
+        extensions, supported_extension_names = _to_rust_model_extensions(
+            config.supported_extensions, warn_on_unsupported=True
+        )
         self._supported_extensions: tuple[str, ...] = tuple(supported_extension_names)
+
+        # The decode-scoped extensions are the Rust-convertible subset of the
+        # full runtime capability ceiling. These drive template re-decode only;
+        # job-level narrowing applies to ModelProfile (above), not decode
+        # acceptance.
+        _, decode_names = _to_rust_model_extensions(list(RUNTIME_CAPABILITY_EXTENSIONS))
+        self._decode_extensions: tuple[str, ...] = tuple(decode_names)
 
         # Kept for the attachment-sync path: on POSIX it grants the files it
         # writes group-read access for the session user's group, so the job
@@ -334,12 +360,16 @@ class RustSessionRuntime(SessionRuntime):
         # empty, because the schema rejects "parameterDefinitions": [].
         if self._environment_parameter_definitions:
             template["parameterDefinitions"] = self._environment_parameter_definitions
-        if self._supported_extensions:
-            template["extensions"] = list(self._supported_extensions)
+        if self._decode_extensions:
+            template["extensions"] = list(self._decode_extensions)
+        # The environment was already validated against its own entity-level
+        # extension declaration; this decode only reconstructs the native
+        # representation. Job-level narrowing applies to runtime capability
+        # (ModelProfile), not to decode acceptance.
         native_environment = create_environment(
             decode_environment_template(
                 template,
-                supported_extensions=list(self._supported_extensions) or None,
+                supported_extensions=list(self._decode_extensions) or None,
             )
         )
         return self._session.enter_environment(

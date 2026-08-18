@@ -9,7 +9,7 @@ from datetime import timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, Generator
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -23,6 +23,17 @@ from deadline_worker_agent.sessions.runtime import rust as rust_module
 from deadline_worker_agent.sessions.runtime.rust import RustSessionRuntime
 from deadline_worker_agent.sessions.runtime.rust import _to_rust_task_parameter_values
 from deadline_worker_agent.sessions.runtime.rust import _to_environment_parameter_definitions
+
+# Literal expected value: the Rust-convertible subset of RUNTIME_CAPABILITY_EXTENSIONS
+# in ExtensionName declaration order.  Determined by printing ExtensionName members and
+# verifying each converts via ModelExtension.from_str (all 5 do today).
+_EXPECTED_DECODE_EXTENSIONS: list[str] = [
+    "TASK_CHUNKING",
+    "REDACTED_ENV_VARS",
+    "FEATURE_BUNDLE_1",
+    "EXPR",
+    "WRAP_ACTIONS",
+]
 
 
 @pytest.fixture()
@@ -71,14 +82,17 @@ class TestRustSessionRuntimeConstruction:
         self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
     ) -> None:
         # Proves the extensions are NOT hardcoded: an empty config yields an
-        # empty extensions list rather than a fixed set.
+        # empty ModelProfile extensions list rather than a fixed set.  The
+        # decode path still converts RUNTIME_CAPABILITY_EXTENSIONS, so
+        # from_str IS called — but no warning is emitted because
+        # warn_on_unsupported=False for the decode conversion.
         with (
             patch.object(rust_module, "ModelProfile") as mock_profile,
-            patch.object(rust_module, "ModelExtension") as mock_extension,
+            patch.object(rust_module, "logger") as mock_logger,
         ):
             RustSessionRuntime(runtime_config)
 
-        mock_extension.from_str.assert_not_called()
+        mock_logger.warning.assert_not_called()
         profile_kwargs = mock_profile.call_args.kwargs
         assert profile_kwargs["extensions"] == []
         assert profile_kwargs["revision"] == SpecificationRevision.v2023_09
@@ -105,8 +119,7 @@ class TestRustSessionRuntimeConstruction:
             mock_extension.from_str.side_effect = lambda name: f"EXT::{name}"
             RustSessionRuntime(config)
 
-        # Each configured extension identifier is coerced via from_str, in order.
-        assert mock_extension.from_str.call_args_list == [call("EXPR"), call("TASK_CHUNKING")]
+        # ModelProfile receives exactly the job-narrowed converted list.
         profile_kwargs = mock_profile.call_args.kwargs
         assert profile_kwargs["extensions"] == ["EXT::EXPR", "EXT::TASK_CHUNKING"]
 
@@ -243,15 +256,16 @@ class TestRustSessionRuntimeDelegation:
         # The pydantic environment is serialized and rebuilt natively before
         # being handed to the session. The fixture's job_parameter_values
         # contains one STRING param in dict form, which must appear as a
-        # parameterDefinitions entry. The fixture declares no extensions, so the
-        # extensions key is omitted and the decode kwarg is None.
+        # parameterDefinitions entry. Decode uses the runtime capability ceiling
+        # (all Rust-convertible extensions), regardless of the per-job narrowing.
         mock_decode.assert_called_once_with(
             {
                 "specificationVersion": "environment-2023-09",
                 "environment": environment.model_dump.return_value,
                 "parameterDefinitions": [{"name": "Param1", "type": "STRING"}],
+                "extensions": _EXPECTED_DECODE_EXTENSIONS,
             },
-            supported_extensions=None,
+            supported_extensions=_EXPECTED_DECODE_EXTENSIONS,
         )
         environment.model_dump.assert_called_once_with(
             mode="json", by_alias=True, exclude_none=True
@@ -329,6 +343,7 @@ class TestRustSessionRuntimeDelegation:
         assert template == {
             "specificationVersion": "environment-2023-09",
             "environment": environment.model_dump.return_value,
+            "extensions": _EXPECTED_DECODE_EXTENSIONS,
         }
         assert "parameterDefinitions" not in template
 
