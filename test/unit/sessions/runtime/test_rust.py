@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path, PurePosixPath
@@ -15,6 +16,7 @@ import pytest
 from openjd.model._types import ParameterValue, ParameterValueType
 from openjd.model._v1.types import ModelProfile, SpecificationRevision
 
+from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
 from deadline_worker_agent.sessions.runtime import SessionRuntime, SessionRuntimeConfig
 from deadline_worker_agent.sessions.runtime._abc import SessionRuntimeCrashError
 from deadline_worker_agent.sessions.runtime import rust as rust_module
@@ -657,6 +659,81 @@ class TestRustSessionRuntimeDelegation:
         mock_chmod.assert_called_once()
         assert mock_chmod.call_args.args[1] == 0o600
         mock_rust_session.return_value.run_subprocess.assert_called_once()
+
+    def test_run_task_without_session_env_when_windows_user_sets_acl(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock, tmp_path: Path
+    ) -> None:
+        """On Windows with a session user, set_permissions grants the agent full
+        control and the job user read access on materialized embedded files."""
+        from openjd.sessions import WindowsSessionUser
+
+        user = MagicMock(spec=WindowsSessionUser)
+        user.user = "job-user"
+        user.password = "fake"
+        user.logon_token = None
+        config = replace(runtime_config, session_id="session-win-acl", user=user)
+
+        with patch.object(rust_module, "_to_rust_session_user", return_value=MagicMock()):
+            adapter = RustSessionRuntime(config)
+        mock_rust_session.return_value.files_directory = tmp_path
+
+        embedded_file = MagicMock()
+        embedded_file.name = "Manifest"
+        embedded_file.data = '{"files": []}'
+        step_script = MagicMock()
+        step_script.embeddedFiles = [embedded_file]
+        step_script.actions.onRun.command = "cmd"
+        step_script.actions.onRun.args = None
+
+        with (
+            patch.object(rust_module.os, "name", "nt"),
+            patch.object(rust_module, "set_permissions") as mock_set_perms,
+            patch.object(rust_module, "Path", side_effect=lambda p: PurePosixPath(p)),
+        ):
+            adapter._run_task_without_session_env(step_script=step_script, task_parameter_values={})
+
+        mock_set_perms.assert_called_once()
+        call_kwargs = mock_set_perms.call_args.kwargs
+        assert call_kwargs["agent_user_permission"] == FileSystemPermissionEnum.READ_WRITE
+        assert call_kwargs["user_permission"] == FileSystemPermissionEnum.READ
+        assert call_kwargs["permitted_user"] is user
+
+    def test_run_task_without_session_env_when_no_user_falls_back_to_chmod(
+        self, mock_rust_session: MagicMock, tmp_path: Path
+    ) -> None:
+        """Without a session user, falls back to owner-only chmod on any platform."""
+        config = SessionRuntimeConfig(
+            session_id="session-no-user",
+            job_parameter_values={},
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda session_id, status: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-no-user"),
+        )
+        adapter = RustSessionRuntime(config)
+        mock_rust_session.return_value.files_directory = tmp_path
+
+        embedded_file = MagicMock()
+        embedded_file.name = "Manifest"
+        embedded_file.data = "data"
+        step_script = MagicMock()
+        step_script.embeddedFiles = [embedded_file]
+        step_script.actions.onRun.command = "cmd"
+        step_script.actions.onRun.args = None
+
+        with (
+            patch.object(rust_module.os, "name", "nt"),
+            patch.object(rust_module, "set_permissions") as mock_set_perms,
+            patch.object(rust_module.os, "chmod") as mock_chmod,
+        ):
+            adapter._run_task_without_session_env(step_script=step_script, task_parameter_values={})
+
+        # No user → no set_permissions call, just chmod with owner-only mode
+        mock_set_perms.assert_not_called()
+        mock_chmod.assert_called_once()
+        assert mock_chmod.call_args.args[1] == (stat.S_IRUSR | stat.S_IWUSR)
 
     def test_extend_path_mapping_rules_delegates_without_presorting(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
