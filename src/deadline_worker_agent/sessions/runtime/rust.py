@@ -135,7 +135,10 @@ def _to_rust_parameter_values(
         if isinstance(value, dict):
             converted[name] = value
             continue
-        native_type = getattr(type_cls, value.type.value, None)
+        # Resolve by enum member name, not value: bracketed type values like
+        # "LIST[STRING]" and "CHUNK[INT]" are not valid attribute names, but
+        # their members are spelled LIST_STRING / CHUNK_INT in the binding.
+        native_type = getattr(type_cls, value.type.name, None)
         if native_type is None:
             raise ValueError(
                 f"Parameter {name!r} has type {value.type.value!r}, which the "

@@ -814,9 +814,47 @@ class TestRustSessionRuntimeTypeConversions:
 
     def test_parameter_values_when_type_unknown_to_binding_raises(self) -> None:
         """A parameter type the _v1 binding does not define fails loud."""
-        bogus = SimpleNamespace(type=SimpleNamespace(value="HOLOGRAM"), value="x")
+        bogus = SimpleNamespace(type=SimpleNamespace(name="HOLOGRAM", value="HOLOGRAM"), value="x")
         with pytest.raises(ValueError, match="HOLOGRAM.*JobParameterType does not define"):
             rust_module._to_rust_job_parameter_values({"P": bogus})
+
+    @pytest.mark.parametrize(
+        "param_type, value",
+        [
+            pytest.param(ParameterValueType.BOOL, True, id="bool"),
+            pytest.param(ParameterValueType.RANGE_EXPR, "1-10:2", id="rangeExpr"),
+            pytest.param(ParameterValueType.LIST_STRING, ["a", "b"], id="list-string"),
+            pytest.param(ParameterValueType.LIST_PATH, ["/tmp/a", "/tmp/b"], id="list-path"),
+            pytest.param(ParameterValueType.LIST_INT, ["1", "2"], id="list-int"),
+            pytest.param(ParameterValueType.LIST_FLOAT, ["1.5", "2.5"], id="list-float"),
+            pytest.param(ParameterValueType.LIST_BOOL, [True, False], id="list-bool"),
+            pytest.param(ParameterValueType.LIST_LIST_INT, [["1"], ["2", "3"]], id="list-list-int"),
+        ],
+    )
+    def test_expr_job_parameter_values_convert_to_native(
+        self, param_type: ParameterValueType, value: Any
+    ) -> None:
+        """EXPR-typed job parameters resolve their _v1 enum member by name.
+
+        The bracketed enum values ("LIST[STRING]") are not attribute names, so
+        a lookup by value misses members the binding does define.
+        """
+        from openjd.model._v1.types import JobParameterType
+
+        result = rust_module._to_rust_job_parameter_values(
+            {"P": ParameterValue(type=param_type, value=value)}
+        )
+
+        converted = result["P"]
+        assert isinstance(converted, rust_module.JobParameterValue)
+        assert str(converted.type) == str(getattr(JobParameterType, param_type.name))
+
+    def test_expr_type_on_task_parameters_still_fails_loud(self) -> None:
+        """EXPR types are job-parameter-only; the task binding rejects them."""
+        with pytest.raises(ValueError, match="LIST\\[STRING\\].*TaskParameterType does not define"):
+            rust_module._to_rust_task_parameter_values(
+                {"P": ParameterValue(type=ParameterValueType.LIST_STRING, value=["a"])}
+            )
 
     def test_every_v1_action_state_maps_to_v0(self) -> None:
         """Every member of the REAL _v1 ActionState enum maps to a v0 member.
@@ -1054,6 +1092,23 @@ class TestToRustTaskParameterValues:
     def test_empty_dict_returns_empty_dict(self) -> None:
         """An empty input produces an empty output."""
         assert _to_rust_task_parameter_values({}) == {}
+
+    def test_chunk_int_parameter_converts_to_native(self) -> None:
+        """CHUNK[INT] task parameters resolve their _v1 enum member by name.
+
+        The enum value "CHUNK[INT]" is not an attribute name, so a lookup by
+        value misses the CHUNK_INT member the binding defines.
+        """
+        from openjd.model._v1.types import TaskParameterType
+
+        result = _to_rust_task_parameter_values(
+            {"Frames": ParameterValue(type=ParameterValueType.CHUNK_INT, value="1-10")}
+        )
+
+        converted = result["Frames"]
+        assert isinstance(converted, rust_module.TaskParameterValue)
+        assert str(converted.type) == str(TaskParameterType.CHUNK_INT)
+        assert converted.value == "1-10"
 
     def test_mixed_parameter_values_and_dicts(self) -> None:
         """ParameterValue objects convert to native types; plain dicts pass through."""
