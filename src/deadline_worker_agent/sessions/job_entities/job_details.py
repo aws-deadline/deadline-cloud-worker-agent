@@ -3,7 +3,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import PurePath, PurePosixPath, PureWindowsPath
-from typing import Any, cast
+from typing import Any, Callable, cast
 import os
 
 from openjd.model import (
@@ -486,6 +486,27 @@ class JobDetails:
 
     @classmethod
     def _validate_job_parameters(cls, job_parameters: dict[str, Any]) -> None:
+        # Maps each accepted wire-format type key to a predicate that checks the
+        # value has the shape the service sends for that type.
+        def _is_str_list(value: Any) -> bool:
+            return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+        value_shape_checks: dict[str, Callable[[Any], bool]] = {
+            "string": lambda v: isinstance(v, str),
+            "path": lambda v: isinstance(v, str),
+            "int": lambda v: isinstance(v, str),
+            "float": lambda v: isinstance(v, str),
+            "chunkInt": lambda v: isinstance(v, str),
+            "bool": lambda v: isinstance(v, bool),
+            "rangeExpr": lambda v: isinstance(v, str),
+            "stringList": _is_str_list,
+            "pathList": _is_str_list,
+            "intList": _is_str_list,
+            "floatList": _is_str_list,
+            "boolList": lambda v: isinstance(v, list) and all(isinstance(item, bool) for item in v),
+            "intListList": lambda v: isinstance(v, list) and all(_is_str_list(item) for item in v),
+        }
+
         for key, value in job_parameters.items():
             if not isinstance(value, dict):
                 raise ValueError(f'Expected parameters["{key}"] to be a dict but got {type(value)}')
@@ -497,12 +518,13 @@ class JobDetails:
                     f'Expected parameters["{key}"] to have a single key, but got {keys_str}'
                 )
             type_key = list(value.keys())[0]
-            if type_key not in ("string", "path", "int", "float"):
+            if type_key not in value_shape_checks:
+                expected_keys = ", ".join(f'"{k}"' for k in value_shape_checks)
                 raise ValueError(
-                    f'Expected parameters["{key}"] to have a single key with one of "string", "path", "int", "float" but got "{type_key}"'
+                    f'Expected parameters["{key}"] to have a single key with one of {expected_keys} but got "{type_key}"'
                 )
             param_value = list(value.values())[0]
-            if not isinstance(param_value, str):
+            if not value_shape_checks[type_key](param_value):
                 raise ValueError(
-                    f'Expected parameters["{key}"] to have a single a single key whose value is a string but the value was {type(param_value)}'
+                    f'Value of parameters["{key}"] does not match the expected shape for its type "{type_key}"'
                 )
