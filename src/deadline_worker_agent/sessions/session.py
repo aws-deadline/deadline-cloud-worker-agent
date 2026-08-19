@@ -879,12 +879,16 @@ class Session:
         environment: EnvironmentModel,
         os_env_vars: Optional[dict[str, str]] = None,
         resolved_symbol_table_json: str | None = None,
+        step_name: str | None = None,
+        extra_let_bindings: list[str] | None = None,
     ) -> None:
         session_env_id = self._runtime.enter_environment(
             environment=environment,
             identifier=job_env_id,
             os_env_vars=os_env_vars,
             resolved_symbol_table_json=resolved_symbol_table_json,
+            step_name=step_name,
+            extra_let_bindings=extra_let_bindings,
         )
         self._active_envs.append(
             ActiveEnvironment(

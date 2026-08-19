@@ -361,6 +361,8 @@ class RustSessionRuntime(SessionRuntime):
         identifier: Optional[EnvironmentIdentifier] = None,
         os_env_vars: Optional[dict[str, str]] = None,
         resolved_symbol_table_json: str | None = None,
+        step_name: str | None = None,
+        extra_let_bindings: list[str] | None = None,
     ) -> EnvironmentIdentifier:
         # The shared action layer hands a pydantic v2023_09 environment, but the
         # Rust session needs a native _v1 environment. Serialize to the OpenJD
@@ -392,6 +394,8 @@ class RustSessionRuntime(SessionRuntime):
         # Parse the pre-resolved symbol table if the service provided one.
         resolved_symtab = _parse_resolved_symtab(resolved_symbol_table_json)
 
+        # step_name and extra_let_bindings are Python-session inputs; the Rust
+        # session receives equivalent step context via resolved_symtab.
         return self._session.enter_environment(
             environment=native_environment,
             identifier=identifier,

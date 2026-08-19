@@ -32,6 +32,8 @@ class EnterEnvironmentAction(OpenjdAction):
     _job_env_id: str
     _details: EnvironmentDetails
     _session_env_id: EnvironmentIdentifier | None = None
+    _step_name: str | None
+    _extra_let_bindings: list[str] | None
 
     def __init__(
         self,
@@ -39,12 +41,16 @@ class EnterEnvironmentAction(OpenjdAction):
         id: str,
         job_env_id: str,
         details: EnvironmentDetails,
+        step_name: str | None = None,
+        extra_let_bindings: list[str] | None = None,
     ) -> None:
         super(EnterEnvironmentAction, self).__init__(
             id=id, action_log_kind=SessionActionLogKind.ENV_ENTER
         )
         self._job_env_id = job_env_id
         self._details = details
+        self._step_name = step_name
+        self._extra_let_bindings = extra_let_bindings
 
     def __eq__(self, other: Any) -> bool:
         return (
@@ -53,6 +59,8 @@ class EnterEnvironmentAction(OpenjdAction):
             and self._job_env_id == other._job_env_id
             and self._session_env_id == other._session_env_id
             and self._details == other._details
+            and self._step_name == other._step_name
+            and self._extra_let_bindings == other._extra_let_bindings
         )
 
     @classmethod
@@ -110,4 +118,6 @@ class EnterEnvironmentAction(OpenjdAction):
             environment=self._details.environment,
             os_env_vars={"DEADLINE_SESSIONACTION_ID": self._id},
             resolved_symbol_table_json=self._details.resolved_symbol_table_json,
+            step_name=self._step_name,
+            extra_let_bindings=self._extra_let_bindings,
         )

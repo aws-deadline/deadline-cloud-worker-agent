@@ -40,6 +40,8 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             identifier: Any = None,
             os_env_vars: Optional[dict[str, str]] = None,
             resolved_symbol_table_json: str | None = None,
+            step_name: str | None = None,
+            extra_let_bindings: list[str] | None = None,
         ) -> str:
             return "env-id"
 

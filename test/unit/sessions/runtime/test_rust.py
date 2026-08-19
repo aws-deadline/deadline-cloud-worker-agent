@@ -279,6 +279,34 @@ class TestRustSessionRuntimeDelegation:
         )
         assert result is mock_session_instance.enter_environment.return_value
 
+    def test_enter_environment_omits_step_context_from_rust_session(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """step_name and extra_let_bindings are not forwarded to the _v1
+        session — it receives equivalent context via resolved_symtab."""
+        environment = MagicMock()
+        identifier = "env-456"
+        os_env = {"K": "V"}
+
+        with (
+            patch.object(rust_module, "decode_environment_template"),
+            patch.object(rust_module, "create_environment") as mock_create,
+        ):
+            adapter.enter_environment(
+                environment=environment,
+                identifier=identifier,
+                os_env_vars=os_env,
+                step_name="MyStep",
+                extra_let_bindings=["X=1"],
+            )
+
+        mock_session_instance.enter_environment.assert_called_once_with(
+            environment=mock_create.return_value,
+            identifier=identifier,
+            os_env_vars=os_env,
+            resolved_symtab=None,
+        )
+
     def test_enter_environment_includes_all_job_parameter_types(
         self, mock_rust_session: MagicMock
     ) -> None:
