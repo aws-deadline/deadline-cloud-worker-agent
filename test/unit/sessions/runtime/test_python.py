@@ -33,7 +33,7 @@ def runtime_config() -> SessionRuntimeConfig:
 
 @pytest.fixture()
 def mock_openjd_session() -> Generator[MagicMock, None, None]:
-    with patch.object(python_module, "OpenJDSession") as mock_cls:
+    with patch.object(python_module, "OpenJDSession", autospec=True) as mock_cls:
         yield mock_cls
 
 
@@ -53,6 +53,7 @@ class TestPythonSessionRuntimeConstruction:
         assert call_kwargs["callback"] is runtime_config.action_callback
         assert call_kwargs["os_env_vars"] is None
         assert call_kwargs["session_root_directory"] == Path("/tmp/sessions/session-1")
+        assert call_kwargs["job_name"] is None
         rev_ext = call_kwargs["revision_extensions"]
         assert rev_ext.spec_rev == SpecificationRevision.v2023_09
         assert rev_ext.extensions == set()
@@ -121,6 +122,21 @@ class TestPythonSessionRuntimeDelegation:
 
         mock_session_instance.exit_environment.assert_called_once_with(
             identifier=identifier, os_env_vars={"A": "B"}, keep_session_running=True
+        )
+
+    def test_exit_environment_does_not_forward_resolved_symbol_table_json(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """The v0 Python session has no resolved-table API; the kwarg is accepted but not forwarded."""
+        identifier = MagicMock()
+
+        adapter.exit_environment(
+            identifier=identifier,
+            resolved_symbol_table_json='[{"name":"Job.Name","type":"string","value":"X"}]',
+        )
+
+        mock_session_instance.exit_environment.assert_called_once_with(
+            identifier=identifier, os_env_vars=None, keep_session_running=False
         )
 
     def test_run_task_when_called_delegates_to_wrapped_session(
@@ -215,3 +231,89 @@ class TestPythonSessionRuntimeProperties:
         mock_session_instance.action_status = None
 
         assert adapter.action_status is None
+
+
+class TestPythonSessionRuntimeJobName:
+    """Tests for job_name extraction and forwarding at construction time."""
+
+    def test_construction_passes_job_name_when_resolved_table_has_job_name(
+        self, mock_openjd_session: MagicMock
+    ) -> None:
+        config = SessionRuntimeConfig(
+            session_id="session-jn-1",
+            job_parameter_values={},
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda session_id, status: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-jn-1"),
+            resolved_symbol_table_json='[{"name":"Job.Name","type":"string","value":"Example Job"}]',
+        )
+
+        PythonSessionRuntime(config)
+
+        call_kwargs = mock_openjd_session.call_args.kwargs
+        assert call_kwargs["job_name"] == "Example Job"
+
+    def test_construction_passes_none_when_resolved_table_json_is_none(
+        self, mock_openjd_session: MagicMock
+    ) -> None:
+        config = SessionRuntimeConfig(
+            session_id="session-jn-2",
+            job_parameter_values={},
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda session_id, status: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-jn-2"),
+            resolved_symbol_table_json=None,
+        )
+
+        PythonSessionRuntime(config)
+
+        call_kwargs = mock_openjd_session.call_args.kwargs
+        assert call_kwargs["job_name"] is None
+
+    def test_construction_passes_none_when_resolved_table_lacks_job_name(
+        self, mock_openjd_session: MagicMock
+    ) -> None:
+        config = SessionRuntimeConfig(
+            session_id="session-jn-3",
+            job_parameter_values={},
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda session_id, status: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-jn-3"),
+            resolved_symbol_table_json="[]",
+        )
+
+        PythonSessionRuntime(config)
+
+        call_kwargs = mock_openjd_session.call_args.kwargs
+        assert call_kwargs["job_name"] is None
+
+    def test_construction_passes_none_when_resolved_table_is_malformed_json(
+        self, mock_openjd_session: MagicMock
+    ) -> None:
+        config = SessionRuntimeConfig(
+            session_id="session-jn-4",
+            job_parameter_values={},
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda session_id, status: None,
+            os_env_vars=None,
+            session_root_directory=Path("/tmp/sessions/session-jn-4"),
+            resolved_symbol_table_json="{not json",
+        )
+
+        with patch.object(python_module, "logger") as mock_logger:
+            PythonSessionRuntime(config)
+
+        mock_logger.warning.assert_called_once()
+        call_kwargs = mock_openjd_session.call_args.kwargs
+        assert call_kwargs["job_name"] is None

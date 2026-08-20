@@ -109,4 +109,5 @@ class EnterEnvironmentAction(OpenjdAction):
             job_env_id=self._job_env_id,
             environment=self._details.environment,
             os_env_vars={"DEADLINE_SESSIONACTION_ID": self._id},
+            resolved_symbol_table_json=self._details.resolved_symbol_table_json,
         )

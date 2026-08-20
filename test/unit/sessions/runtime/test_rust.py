@@ -53,7 +53,7 @@ def runtime_config() -> SessionRuntimeConfig:
 
 @pytest.fixture()
 def mock_rust_session() -> Generator[MagicMock, None, None]:
-    with patch.object(rust_module, "OpenJDRustSession") as mock_cls:
+    with patch.object(rust_module, "OpenJDRustSession", autospec=True) as mock_cls:
         yield mock_cls
 
 
@@ -275,6 +275,7 @@ class TestRustSessionRuntimeDelegation:
             environment=mock_create.return_value,
             identifier=identifier,
             os_env_vars=os_env,
+            resolved_symtab=None,
         )
         assert result is mock_session_instance.enter_environment.return_value
 
@@ -465,7 +466,10 @@ class TestRustSessionRuntimeDelegation:
         )
 
         mock_session_instance.exit_environment.assert_called_once_with(
-            identifier="job-env-1", os_env_vars={"A": "B"}, keep_session_running=True
+            identifier="job-env-1",
+            os_env_vars={"A": "B"},
+            keep_session_running=True,
+            resolved_symtab=None,
         )
 
     def test_run_task_when_called_converts_step_script_and_delegates(
@@ -1319,3 +1323,148 @@ class TestToEnvironmentParameterDefinitions:
             {"name": "Flag", "type": "BOOL"},
             {"name": "Expr", "type": "RANGE_EXPR"},
         ]
+
+
+class TestResolvedSymbolTableForwarding:
+    """Tests for resolved_symbol_table_json parsing and forwarding to the _v1 session."""
+
+    @pytest.fixture()
+    def adapter(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
+    ) -> RustSessionRuntime:
+        return RustSessionRuntime(runtime_config)
+
+    @pytest.fixture()
+    def mock_session_instance(self, mock_rust_session: MagicMock) -> MagicMock:
+        return mock_rust_session.return_value
+
+    def test_enter_environment_forwards_resolved_symtab_when_json_present(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When resolved_symbol_table_json is provided, it's parsed and forwarded."""
+        environment = MagicMock()
+        symtab_json = '[{"name":"Job.Name","type":"string","value":"TestJob"}]'
+        fake_symtab = MagicMock()
+
+        with (
+            patch.object(rust_module, "decode_environment_template"),
+            patch.object(rust_module, "create_environment"),
+            patch.object(
+                rust_module.SerializedSymbolTable, "from_json_str", return_value=fake_symtab
+            ) as mock_from_json,
+        ):
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                resolved_symbol_table_json=symtab_json,
+            )
+
+        mock_from_json.assert_called_once_with(symtab_json)
+        call_kwargs = mock_session_instance.enter_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is fake_symtab
+
+    def test_run_task_forwards_resolved_symtab_when_json_present(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When resolved_symbol_table_json is provided, it's parsed and forwarded."""
+        step_script = MagicMock()
+        symtab_json = '[{"name":"Job.Name","type":"string","value":"TestJob"}]'
+        fake_symtab = MagicMock()
+
+        with (
+            patch.object(rust_module, "deserialize_step"),
+            patch.object(
+                rust_module.SerializedSymbolTable, "from_json_str", return_value=fake_symtab
+            ) as mock_from_json,
+        ):
+            adapter.run_task(
+                step_script=step_script,
+                task_parameter_values={},
+                resolved_symbol_table_json=symtab_json,
+            )
+
+        mock_from_json.assert_called_once_with(symtab_json)
+        call_kwargs = mock_session_instance.run_task.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is fake_symtab
+
+    def test_enter_environment_graceful_degradation_on_malformed_json(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """Malformed JSON causes a warning log and proceeds with resolved_symtab=None."""
+        environment = MagicMock()
+
+        with (
+            patch.object(rust_module, "decode_environment_template"),
+            patch.object(rust_module, "create_environment"),
+            patch.object(
+                rust_module.SerializedSymbolTable,
+                "from_json_str",
+                side_effect=ValueError("bad json"),
+            ),
+            patch.object(rust_module, "logger") as mock_logger,
+        ):
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                resolved_symbol_table_json="not valid json",
+            )
+
+        mock_logger.warning.assert_called_once()
+        assert "resolvedSymbolTable" in mock_logger.warning.call_args[0][0]
+        call_kwargs = mock_session_instance.enter_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is None
+
+    def test_exit_environment_forwards_resolved_symtab_when_json_present(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When resolved_symbol_table_json is provided, it's parsed and forwarded."""
+        symtab_json = '[{"name":"Job.Name","type":"string","value":"TestJob"}]'
+        fake_symtab = MagicMock()
+
+        with patch.object(
+            rust_module.SerializedSymbolTable, "from_json_str", return_value=fake_symtab
+        ) as mock_from_json:
+            adapter.exit_environment(
+                identifier="env-1",
+                resolved_symbol_table_json=symtab_json,
+            )
+
+        mock_from_json.assert_called_once_with(symtab_json)
+        call_kwargs = mock_session_instance.exit_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is fake_symtab
+
+    def test_exit_environment_passes_none_when_json_is_none(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When resolved_symbol_table_json is None, the parser is not invoked."""
+        with patch.object(rust_module.SerializedSymbolTable, "from_json_str") as mock_from_json:
+            adapter.exit_environment(
+                identifier="env-1",
+                resolved_symbol_table_json=None,
+            )
+
+        mock_from_json.assert_not_called()
+        call_kwargs = mock_session_instance.exit_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is None
+
+    def test_exit_environment_graceful_degradation_on_malformed_json(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """Malformed JSON causes a warning log and proceeds with resolved_symtab=None."""
+        with (
+            patch.object(
+                rust_module.SerializedSymbolTable,
+                "from_json_str",
+                side_effect=ValueError("bad json"),
+            ),
+            patch.object(rust_module, "logger") as mock_logger,
+        ):
+            adapter.exit_environment(
+                identifier="env-1",
+                resolved_symbol_table_json="{not json",
+            )
+
+        mock_logger.warning.assert_called_once()
+        assert "resolvedSymbolTable" in mock_logger.warning.call_args[0][0]
+        call_kwargs = mock_session_instance.exit_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is None

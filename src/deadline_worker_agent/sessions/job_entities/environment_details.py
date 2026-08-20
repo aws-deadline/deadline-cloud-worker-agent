@@ -24,6 +24,9 @@ class EnvironmentDetails:
     environment: EnvironmentModel
     """The environment"""
 
+    resolved_symbol_table_json: str | None = None
+    """Pre-resolved symbol table JSON from the service, forwarded to the Rust session runtime."""
+
     @classmethod
     def from_boto(cls, environment_details_data: EnvironmentDetailsData) -> EnvironmentDetails:
         """Converts an environmentDetails entity received from BatchGetJobEntity API response into
@@ -59,7 +62,10 @@ class EnvironmentDetails:
         else:
             raise UnsupportedSchema(schema_version.value)
 
-        return EnvironmentDetails(environment=environment)
+        return EnvironmentDetails(
+            environment=environment,
+            resolved_symbol_table_json=environment_details_data.get("resolvedSymbolTable", None),
+        )
 
     @classmethod
     def validate_entity_data(cls, entity_data: dict[str, Any]) -> EnvironmentDetailsData:
@@ -90,6 +96,7 @@ class EnvironmentDetails:
                 Field(key="environmentId", expected_type=str, required=True),
                 Field(key="jobId", expected_type=str, required=True),
                 Field(key="schemaVersion", expected_type=str, required=True),
+                Field(key="resolvedSymbolTable", expected_type=str, required=False),
                 Field(key="extensions", expected_type=list, required=False),
             ),
         )

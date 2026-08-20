@@ -37,6 +37,9 @@ class StepDetails:
     dependencies: list[str] = field(default_factory=list)
     """The dependencies (a list of IDs) that the step depends on"""
 
+    resolved_symbol_table_json: str | None = None
+    """Pre-resolved symbol table JSON from the service, forwarded to the Rust session runtime."""
+
     @classmethod
     def from_boto(cls, step_details_data: StepDetailsData) -> StepDetails:
         """Converts an stepDetails entity received from BatchGetJobEntity API response into a
@@ -86,6 +89,7 @@ class StepDetails:
             step_template=step_template,
             step_id=step_details_data["stepId"],
             dependencies=step_details_data["dependencies"],
+            resolved_symbol_table_json=step_details_data.get("resolvedSymbolTable", None),
         )
 
     @classmethod
@@ -118,6 +122,7 @@ class StepDetails:
                 Field(key="template", expected_type=dict, required=True),
                 Field(key="stepId", expected_type=str, required=True),
                 Field(key="dependencies", expected_type=list, required=False),
+                Field(key="resolvedSymbolTable", expected_type=str, required=False),
                 Field(key="extensions", expected_type=list, required=False),
             ),
         )

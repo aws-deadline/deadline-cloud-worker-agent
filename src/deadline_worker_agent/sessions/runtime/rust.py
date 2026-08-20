@@ -13,7 +13,7 @@ from shutil import chown
 from typing import TYPE_CHECKING, Any, Optional
 
 from openjd._openjd_rs import create_environment, deserialize_step
-from openjd.expr import PathFormat, PathMappingRule as RustPathMappingRule
+from openjd.expr import PathFormat, PathMappingRule as RustPathMappingRule, SerializedSymbolTable
 from openjd.model._v1 import decode_environment_template
 from openjd.model._v1.types import (
     JobParameterType,
@@ -269,6 +269,21 @@ def _to_rust_model_extensions(
     return extensions, converted_names
 
 
+def _parse_resolved_symtab(json_str: str | None) -> Any:
+    """Parse a resolved symbol table JSON string into a SerializedSymbolTable.
+
+    Returns None when the input is None or when parsing fails (graceful
+    degradation — the session proceeds without the pre-resolved table).
+    """
+    if json_str is None:
+        return None
+    try:
+        return SerializedSymbolTable.from_json_str(json_str)
+    except Exception as e:
+        logger.warning("Failed to parse resolvedSymbolTable; proceeding without it: %s", e)
+        return None
+
+
 class RustSessionRuntime(SessionRuntime):
     """SessionRuntime backed by openjd.sessions._v1 (Rust implementation)."""
 
@@ -345,6 +360,7 @@ class RustSessionRuntime(SessionRuntime):
         environment: EnvironmentModel,
         identifier: Optional[EnvironmentIdentifier] = None,
         os_env_vars: Optional[dict[str, str]] = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> EnvironmentIdentifier:
         # The shared action layer hands a pydantic v2023_09 environment, but the
         # Rust session needs a native _v1 environment. Serialize to the OpenJD
@@ -372,10 +388,15 @@ class RustSessionRuntime(SessionRuntime):
                 supported_extensions=list(self._decode_extensions) or None,
             )
         )
+
+        # Parse the pre-resolved symbol table if the service provided one.
+        resolved_symtab = _parse_resolved_symtab(resolved_symbol_table_json)
+
         return self._session.enter_environment(
             environment=native_environment,
             identifier=identifier,
             os_env_vars=os_env_vars,
+            resolved_symtab=resolved_symtab,
         )
 
     @convert_runtime_crashes
@@ -385,11 +406,14 @@ class RustSessionRuntime(SessionRuntime):
         identifier: EnvironmentIdentifier,
         os_env_vars: Optional[dict[str, str]] = None,
         keep_session_running: bool = False,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
+        resolved_symtab = _parse_resolved_symtab(resolved_symbol_table_json)
         self._session.exit_environment(
             identifier=identifier,
             os_env_vars=os_env_vars,
             keep_session_running=keep_session_running,
+            resolved_symtab=resolved_symtab,
         )
 
     @convert_runtime_crashes
@@ -401,6 +425,7 @@ class RustSessionRuntime(SessionRuntime):
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
         # step_name: forwarded to the _v1 session so RFC 0008's WrappedStep.Name
         # resolves correctly inside onWrapTaskRun hooks.
@@ -419,12 +444,17 @@ class RustSessionRuntime(SessionRuntime):
                 "script": step_script.model_dump(mode="json", by_alias=True, exclude_none=True),
             }
         ).script
+
+        # Parse the pre-resolved symbol table if the service provided one.
+        resolved_symtab = _parse_resolved_symtab(resolved_symbol_table_json)
+
         self._session.run_task(
             step_script=native_step_script,
             task_parameter_values=_to_rust_task_parameter_values(task_parameter_values),
             os_env_vars=os_env_vars,
             log_task_banner=log_task_banner,
             step_name=step_name,
+            resolved_symtab=resolved_symtab,
         )
 
     @convert_runtime_crashes

@@ -1480,6 +1480,79 @@ class TestCreateNewSessions:
         assert result == expected_result
 
 
+class TestCreateNewSessionsPrefetchSymbolTable:
+    """Tests that the scheduler prefetches the resolved symbol table and passes it to Session"""
+
+    @pytest.fixture
+    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+        with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
+            yield job_entities_mock
+
+    def test_passes_prefetched_symbol_table_to_session(
+        self,
+        scheduler: WorkerScheduler,
+        mock_session: MagicMock,
+        mock_job_entities: MagicMock,
+    ) -> None:
+        """Tests that the scheduler calls peek_resolved_symbol_table_json on the queue
+        and passes the result to Session(...) as resolved_symbol_table_json."""
+        # GIVEN
+        table_json = '[{"name":"Job.Name","type":"string","value":"Example Job"}]'
+        queue_id = "queue-abcdef0123456789abcdef0123456789"
+        session_id = "session-abcdef0123456789abcdef0123456789"
+        scheduler._job_run_as_user_override = JobsRunAsUserOverride(run_as_agent=False)
+        assigned_sessions: dict[str, AssignedSession] = {
+            session_id: AssignedSession(
+                queueId=queue_id,
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs",
+                    options={},
+                    parameters={"interval": "15"},
+                ),
+                sessionActions=[
+                    EnvironmentAction(
+                        actionType="ENV_ENTER",
+                        environmentId="env-1",
+                        sessionActionId="action-1",
+                    ),
+                ],
+            ),
+        }
+        job_entity_mock = MagicMock()
+        job_entity_mock.job_details.return_value = JobDetails(
+            log_group_name="/aws/deadline/queue-0000",
+            schema_version=SpecificationRevision.v2023_09,
+            job_run_as_user=JobRunAsUser(
+                posix=(
+                    PosixSessionUser(user="username", group="group") if os.name == "posix" else None
+                ),
+                windows=(
+                    WindowsSessionUser(user="username", password="password")
+                    if os.name == "nt"
+                    else None
+                ),
+                windows_settings=None,
+            ),
+        )
+        mock_job_entities.return_value = job_entity_mock
+
+        with (
+            patch.object(scheduler, "_executor"),
+            patch.object(
+                scheduler_mod.SessionActionQueue,
+                "peek_resolved_symbol_table_json",
+                return_value=table_json,
+            ),
+        ):
+            # WHEN
+            scheduler._create_new_sessions(assigned_sessions=assigned_sessions)
+
+        # THEN
+        mock_session.assert_called_once()
+        assert mock_session.call_args.kwargs["resolved_symbol_table_json"] == table_json
+
+
 class TestCreateNewSessionsRuntimeHint:
     """Tests for runtime hint consumption in WorkerScheduler._create_new_sessions"""
 

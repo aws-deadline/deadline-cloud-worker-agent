@@ -1227,6 +1227,8 @@ class WorkerScheduler:
                 region=self._boto_session.region_name,
             )
 
+            resolved_symbol_table_json = queue.peek_resolved_symbol_table_json()
+
             try:
                 session = Session(
                     id=new_session_id,
@@ -1244,6 +1246,7 @@ class WorkerScheduler:
                     session_root_dir=self._session_root_dir,
                     farm_id=self._farm_id,
                     region=self._boto_session.region_name,
+                    resolved_symbol_table_json=resolved_symbol_table_json,
                 )
             except (ValueError, NotImplementedError, OSError) as e:
                 # Runtime construction can fail per-session (e.g. the selected runtime's

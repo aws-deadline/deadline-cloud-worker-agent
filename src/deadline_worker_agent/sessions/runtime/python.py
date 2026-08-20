@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from openjd.expr import SerializedSymbolTable
 from openjd.model import RevisionExtensions, SpecificationRevision
 from openjd.sessions import Session as OpenJDSession
 
@@ -21,6 +23,29 @@ if TYPE_CHECKING:
     )
 
 __all__ = ["PythonSessionRuntime"]
+
+logger = getLogger(__name__)
+
+
+def _extract_job_name(json_str: str | None) -> str | None:
+    """Extract the Job.Name value from a resolved symbol table JSON string.
+
+    Returns None when the input is None, the table lacks a Job.Name entry, the
+    entry's value is not a string, or parsing fails (graceful degradation —
+    mirrors _parse_resolved_symtab in the Rust adapter).
+    """
+    if json_str is None:
+        return None
+    try:
+        symtab = SerializedSymbolTable.from_json_str(json_str).to_symtab()
+        entry = symtab.get("Job.Name")
+        if entry is None:
+            return None
+        value = entry.item()
+        return value if isinstance(value, str) else None
+    except Exception as e:
+        logger.warning("Failed to extract Job.Name from resolvedSymbolTable: %s", e)
+        return None
 
 
 class PythonSessionRuntime(SessionRuntime):
@@ -38,6 +63,7 @@ class PythonSessionRuntime(SessionRuntime):
             callback=config.action_callback,
             os_env_vars=config.os_env_vars,
             session_root_directory=config.session_root_directory,
+            job_name=_extract_job_name(config.resolved_symbol_table_json),
             revision_extensions=RevisionExtensions(
                 # Currently for simplicity request that our session allow all extensions.
                 # This does not obey the spec. It should be changed at a later date to the
@@ -53,7 +79,10 @@ class PythonSessionRuntime(SessionRuntime):
         environment: EnvironmentModel,
         identifier: Optional[EnvironmentIdentifier] = None,
         os_env_vars: Optional[dict[str, str]] = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> EnvironmentIdentifier:
+        # resolved_symbol_table_json: not forwarded — the v0 Python session does
+        # not support pre-resolved symbol tables.
         return self._session.enter_environment(
             environment=environment,
             identifier=identifier,
@@ -66,7 +95,10 @@ class PythonSessionRuntime(SessionRuntime):
         identifier: EnvironmentIdentifier,
         os_env_vars: Optional[dict[str, str]] = None,
         keep_session_running: bool = False,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
+        # resolved_symbol_table_json: not forwarded — the v0 Python session does
+        # not support pre-resolved symbol tables.
         self._session.exit_environment(
             identifier=identifier,
             os_env_vars=os_env_vars,
@@ -81,7 +113,10 @@ class PythonSessionRuntime(SessionRuntime):
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
+        # resolved_symbol_table_json: not forwarded — the v0 Python session does
+        # not support pre-resolved symbol tables.
         self._session.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,

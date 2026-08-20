@@ -2663,3 +2663,182 @@ class TestRuntimeCrashTelemetry:
             crash_session._start_action()
 
         mock_telemetry.assert_not_called()
+
+
+class TestResolvedSymbolTableForwarding:
+    """Tests for resolved_symbol_table_json forwarding through the session layer."""
+
+    def test_exit_environment_forwards_supplied_table_to_runtime(
+        self,
+        session: Session,
+        mock_runtime: MagicMock,
+    ) -> None:
+        """Session.exit_environment forwards a supplied table to the runtime."""
+        table = '[{"name":"Job.Name","type":"string","value":"Outer"}]'
+        # Set up an active environment to exit
+        from deadline_worker_agent.sessions.session import ActiveEnvironment
+
+        session._active_envs.append(
+            ActiveEnvironment(
+                job_env_id="env-1",
+                session_env_id="session-env-1",
+                resolved_symbol_table_json='[{"name":"Job.Name","type":"string","value":"Stale"}]',
+            )
+        )
+
+        session.exit_environment(
+            job_env_id="env-1",
+            resolved_symbol_table_json=table,
+        )
+
+        mock_runtime.exit_environment.assert_called_once_with(
+            identifier="session-env-1",
+            os_env_vars=None,
+            resolved_symbol_table_json=table,
+        )
+
+    def test_exit_environment_falls_back_to_enter_time_table(
+        self,
+        session: Session,
+        mock_runtime: MagicMock,
+    ) -> None:
+        """Session.exit_environment uses the stored enter-time table when supplied value is None."""
+        enter_table = '[{"name":"Job.Name","type":"string","value":"Outer"}]'
+        from deadline_worker_agent.sessions.session import ActiveEnvironment
+
+        session._active_envs.append(
+            ActiveEnvironment(
+                job_env_id="env-1",
+                session_env_id="session-env-1",
+                resolved_symbol_table_json=enter_table,
+            )
+        )
+
+        session.exit_environment(
+            job_env_id="env-1",
+            resolved_symbol_table_json=None,
+        )
+
+        mock_runtime.exit_environment.assert_called_once_with(
+            identifier="session-env-1",
+            os_env_vars=None,
+            resolved_symbol_table_json=enter_table,
+        )
+
+    def test_exit_environment_supplied_table_takes_precedence(
+        self,
+        session: Session,
+        mock_runtime: MagicMock,
+    ) -> None:
+        """A supplied table takes precedence over the stored enter-time table."""
+        enter_table = '[{"name":"Job.Name","type":"string","value":"EnterTime"}]'
+        exit_table = '[{"name":"Job.Name","type":"string","value":"ExitTime"}]'
+        from deadline_worker_agent.sessions.session import ActiveEnvironment
+
+        session._active_envs.append(
+            ActiveEnvironment(
+                job_env_id="env-1",
+                session_env_id="session-env-1",
+                resolved_symbol_table_json=enter_table,
+            )
+        )
+
+        session.exit_environment(
+            job_env_id="env-1",
+            resolved_symbol_table_json=exit_table,
+        )
+
+        mock_runtime.exit_environment.assert_called_once_with(
+            identifier="session-env-1",
+            os_env_vars=None,
+            resolved_symbol_table_json=exit_table,
+        )
+
+    def test_enter_environment_stores_table_on_active_environment(
+        self,
+        session: Session,
+        mock_runtime: MagicMock,
+    ) -> None:
+        """Successful enter_environment stores the table on the appended ActiveEnvironment."""
+        table = '[{"name":"Job.Name","type":"string","value":"Outer"}]'
+        mock_runtime.enter_environment.return_value = "session-env-1"
+
+        session.enter_environment(
+            job_env_id="env-1",
+            environment=MagicMock(),
+            resolved_symbol_table_json=table,
+        )
+
+        assert len(session._active_envs) == 1
+        assert session._active_envs[0].resolved_symbol_table_json == table
+
+    def test_cleanup_forwards_stored_tables_in_reverse_order(
+        self,
+        session: Session,
+        mock_runtime: MagicMock,
+    ) -> None:
+        """_cleanup forwards each environment's own stored table and preserves reverse order."""
+        outer_table = '[{"name":"Job.Name","type":"string","value":"Outer"}]'
+        inner_table = '[{"name":"Job.Name","type":"string","value":"Inner"}]'
+        from deadline_worker_agent.sessions.session import ActiveEnvironment
+
+        session._active_envs = [
+            ActiveEnvironment(
+                job_env_id="env-outer",
+                session_env_id="session-env-outer",
+                resolved_symbol_table_json=outer_table,
+            ),
+            ActiveEnvironment(
+                job_env_id="env-inner",
+                session_env_id="session-env-inner",
+                resolved_symbol_table_json=inner_table,
+            ),
+        ]
+
+        # Mock _monitor_action so cleanup can run without blocking
+        with patch.object(session, "_monitor_action", return_value=[]):
+            session._cleanup()
+
+        # exit_environment should be called inner-most first, then outer
+        calls = mock_runtime.exit_environment.call_args_list
+        assert len(calls) == 2
+        # First call: inner environment with inner table
+        assert calls[0].kwargs["identifier"] == "session-env-inner"
+        assert calls[0].kwargs["resolved_symbol_table_json"] == inner_table
+        # Second call: outer environment with outer table
+        assert calls[1].kwargs["identifier"] == "session-env-outer"
+        assert calls[1].kwargs["resolved_symbol_table_json"] == outer_table
+
+    def test_init_passes_resolved_symbol_table_json_to_runtime_config(
+        self,
+        asset_sync: MagicMock,
+        job_details: "JobDetails",
+        os_user: "SessionUser | None",
+        mock_create_runtime: MagicMock,
+        queue_id: str,
+        session_action_queue: MagicMock,
+        action_update_callback: MagicMock,
+        action_update_lock: MagicMock,
+        session_root_dir: Path,
+    ) -> None:
+        """Session.__init__ passes the resolved_symbol_table_json into SessionRuntimeConfig."""
+        table = '[{"name":"Job.Name","type":"string","value":"SessionLevel"}]'
+
+        Session(
+            id="session-symtab-test",
+            asset_sync=asset_sync,
+            env=None,
+            job_details=job_details,
+            os_user=os_user,
+            queue=session_action_queue,
+            queue_id=queue_id,
+            job_id="job-1234",
+            action_update_callback=action_update_callback,
+            action_update_lock=action_update_lock,
+            session_root_dir=session_root_dir,
+            resolved_symbol_table_json=table,
+        )
+
+        mock_create_runtime.assert_called_once()
+        config = mock_create_runtime.call_args[0][1]
+        assert config.resolved_symbol_table_json == table

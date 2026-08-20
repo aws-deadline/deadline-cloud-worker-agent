@@ -452,6 +452,7 @@ class SessionActionQueue:
                     next_action = ExitEnvironmentAction(
                         id=action_id,
                         environment_id=environment_id,
+                        details=environment_details,
                     )
                 else:
                     raise ValueError(f'Unknown action type "{action_type}".')
@@ -557,3 +558,51 @@ class SessionActionQueue:
                     f'Unknown action type "{action_type}". Complete action = {action_definition}'
                 )
         return next_action
+
+    def peek_resolved_symbol_table_json(self) -> str | None:
+        """Inspect the first queued action's resolved symbol table without consuming it.
+
+        This accessor is non-consuming: the queue state is not mutated, and a
+        subsequent ``dequeue`` call will still yield the same front action.
+
+        Entity resolution results are cached by ``JobEntities``, so the later
+        ``dequeue`` issues no additional service request for the same entity.
+
+        Returns
+        -------
+        str | None
+            The ``resolved_symbol_table_json`` from the first action's entity,
+            or None when the queue is empty or the action type has no table.
+        """
+        if not self._actions:
+            return None
+
+        action_queue_entry = self._actions[0]
+        action_type = action_queue_entry.definition["actionType"]
+
+        try:
+            if action_type.startswith("ENV_"):
+                action_queue_entry = cast(EnvironmentQueueEntry, action_queue_entry)
+                environment_id = action_queue_entry.definition["environmentId"]
+                environment_details = self._job_entities.environment_details(
+                    environment_id=environment_id
+                )
+                return environment_details.resolved_symbol_table_json
+            elif action_type == "TASK_RUN":
+                action_queue_entry = cast(TaskRunQueueEntry, action_queue_entry)
+                step_id = action_queue_entry.definition["stepId"]
+                step_details = self._job_entities.step_details(step_id=step_id)
+                return step_details.resolved_symbol_table_json
+            else:
+                return None
+        except Exception:
+            # This accessor only seeds session-scoped symbols (e.g. Job.Name),
+            # so a failure must not break session creation. The subsequent
+            # dequeue surfaces the real error through the normal action-failure
+            # path.
+            logger.warning(
+                "Failed to prefetch resolved symbol table for the first queued action "
+                "(type=%s); proceeding without it.",
+                action_type,
+            )
+            return None

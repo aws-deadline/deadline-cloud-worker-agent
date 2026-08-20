@@ -57,6 +57,7 @@ class SessionRuntime(ABC):
         environment: EnvironmentModel,
         identifier: Optional[EnvironmentIdentifier] = None,
         os_env_vars: Optional[dict[str, str]] = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> EnvironmentIdentifier:
         """Enter an environment; returns its identifier."""
         ...
@@ -68,6 +69,7 @@ class SessionRuntime(ABC):
         identifier: EnvironmentIdentifier,
         os_env_vars: Optional[dict[str, str]] = None,
         keep_session_running: bool = False,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
         """Exit a previously entered environment."""
         ...
@@ -81,6 +83,7 @@ class SessionRuntime(ABC):
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
         """Run a task within the session's active environment(s)."""
         ...
