@@ -18,14 +18,27 @@ module_logger = getLogger(__name__)
 class HostMetricsLogger:
     """Context manager that regularly logs host metrics"""
 
-    # How long to wait for the metrics thread to exit during shutdown before
-    # abandoning it. Kept short: the thread is a daemon and setting the stop event wakes
-    # it immediately, so this is only ever paid if a collection is hung.
+    # How long to wait for the metrics thread to exit during shutdown before abandoning
+    # it. Kept short because it is strictly serial latency on every shutdown path,
+    # including the tight Windows service-control and EC2 spot interruption budgets.
+    # Setting the stop event wakes the thread immediately, so this is only ever paid when
+    # a collection is in flight.
+    #
+    # This bound is load-bearing rather than tidiness: GPU_QUERY_TIMEOUT_S cannot fully
+    # bound a collection (see the note there), so the daemon thread plus this join are
+    # what actually keep a stuck collection from holding up shutdown.
     JOIN_TIMEOUT_S = 1.0
 
     # How long to wait for nvidia-smi to report GPU metrics. An unhealthy GPU driver can
-    # leave nvidia-smi unresponsive, which would otherwise block the metrics thread
-    # indefinitely and keep it from noticing the stop event.
+    # leave nvidia-smi unresponsive, which would otherwise block the metrics thread from
+    # observing the stop event.
+    #
+    # Deliberately larger than JOIN_TIMEOUT_S: nvidia-smi can legitimately take more than
+    # a second on a busy host, so a tighter bound would discard good samples. The
+    # trade-off is that a slow query can still outlast the shutdown join, which is why the
+    # metrics thread is a daemon. Note also that this only bounds a *slow* nvidia-smi and
+    # not a wedged one: on timeout, subprocess kills the child and then waits on it
+    # without a bound, which a process in uninterruptible sleep will not honour.
     GPU_QUERY_TIMEOUT_S = 5.0
 
     logger: Logger
@@ -46,8 +59,18 @@ class HostMetricsLogger:
         self.interval_s = interval_s
 
     def __enter__(self) -> HostMetricsLogger:
-        self._stop_event.clear()
-        thread = Thread(target=self._run, name="HostMetricsLogger", daemon=True)
+        # A fresh event, handed to the thread explicitly rather than read back off self:
+        # if a previous __exit__ gave up waiting and abandoned a thread that was still
+        # running, that thread keeps observing its own already-set event and exits, rather
+        # than being revived by a reset event and double-logging alongside its successor.
+        stop_event = Event()
+        self._stop_event = stop_event
+        thread = Thread(
+            target=self._run,
+            args=(stop_event,),
+            name="HostMetricsLogger",
+            daemon=True,
+        )
         try:
             thread.start()
         except RuntimeError as e:
@@ -75,9 +98,9 @@ class HostMetricsLogger:
                 )
             self._thread = None
 
-    def _run(self) -> None:
+    def _run(self, stop_event: Event) -> None:
         self._prime_metrics()
-        while not self._stop_event.wait(self.interval_s):
+        while not stop_event.wait(self.interval_s):
             try:
                 self.log_metrics()
             except Exception as e:

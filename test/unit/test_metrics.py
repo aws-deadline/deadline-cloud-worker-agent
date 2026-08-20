@@ -5,6 +5,7 @@ from collections import namedtuple
 
 import logging
 import subprocess
+import threading
 from typing import Any, Dict, Generator
 from unittest.mock import MagicMock, call, patch
 
@@ -49,7 +50,7 @@ class TestHostMetricsLogger:
 
     def test_enter(self, host_metrics_logger: HostMetricsLogger):
         # GIVEN
-        host_metrics_logger._stop_event = MagicMock()
+        stale_event = host_metrics_logger._stop_event
 
         with patch.object(metrics_mod, "Thread") as mock_thread_cls:
             # WHEN
@@ -57,12 +58,38 @@ class TestHostMetricsLogger:
 
         # THEN
         assert result is host_metrics_logger
-        host_metrics_logger._stop_event.clear.assert_called_once()
+        # A fresh event, and the thread watches that exact event rather than re-reading
+        # the attribute, so an abandoned predecessor can never be revived by a reset
+        assert host_metrics_logger._stop_event is not stale_event
+        assert not host_metrics_logger._stop_event.is_set()
         mock_thread_cls.assert_called_once_with(
-            target=host_metrics_logger._run, name="HostMetricsLogger", daemon=True
+            target=host_metrics_logger._run,
+            args=(host_metrics_logger._stop_event,),
+            name="HostMetricsLogger",
+            daemon=True,
         )
         mock_thread_cls.return_value.start.assert_called_once()
         assert host_metrics_logger._thread is mock_thread_cls.return_value
+
+    def test_enter_does_not_revive_an_abandoned_thread(
+        self, host_metrics_logger: HostMetricsLogger
+    ):
+        """Re-entering must not reset the stop event an abandoned thread is still watching"""
+        # GIVEN a thread was started and then abandoned because it would not join
+        with patch.object(metrics_mod, "Thread"):
+            host_metrics_logger.__enter__()
+        abandoned_event = host_metrics_logger._stop_event
+        host_metrics_logger._thread = MagicMock(**{"is_alive.return_value": True})
+        host_metrics_logger.__exit__(None, None, None)
+        assert abandoned_event.is_set()
+
+        # WHEN the logger is entered again
+        with patch.object(metrics_mod, "Thread"):
+            host_metrics_logger.__enter__()
+
+        # THEN the abandoned thread's event stays set, so that thread still exits
+        assert abandoned_event.is_set()
+        assert not host_metrics_logger._stop_event.is_set()
 
     def test_enter_tolerates_thread_start_failure(
         self,
@@ -139,8 +166,8 @@ class TestHostMetricsLogger:
         host_metrics_logger: HostMetricsLogger,
     ):
         # GIVEN
-        host_metrics_logger._stop_event = MagicMock()
-        host_metrics_logger._stop_event.wait.side_effect = [False, False, True]
+        stop_event = MagicMock()
+        stop_event.wait.side_effect = [False, False, True]
 
         # Record the ordering of prime vs. collect on a shared parent mock
         calls = MagicMock()
@@ -150,12 +177,12 @@ class TestHostMetricsLogger:
             patch.object(host_metrics_logger, "_prime_metrics", calls.prime),
             patch.object(host_metrics_logger, "log_metrics", calls.log_metrics),
         ):
-            host_metrics_logger._run()
+            host_metrics_logger._run(stop_event)
 
         # THEN
         assert calls.mock_calls == [call.prime(), call.log_metrics(), call.log_metrics()]
-        assert host_metrics_logger._stop_event.wait.call_count == 3
-        host_metrics_logger._stop_event.wait.assert_called_with(host_metrics_logger.interval_s)
+        assert stop_event.wait.call_count == 3
+        stop_event.wait.assert_called_with(host_metrics_logger.interval_s)
 
     def test_prime_metrics_sets_rate_baselines(
         self,
@@ -199,8 +226,8 @@ class TestHostMetricsLogger:
         """One failed collection must not stop host metrics for the Worker's lifetime"""
         # GIVEN
         caplog.set_level(0)
-        host_metrics_logger._stop_event = MagicMock()
-        host_metrics_logger._stop_event.wait.side_effect = [False, False, True]
+        stop_event = MagicMock()
+        stop_event.wait.side_effect = [False, False, True]
 
         # WHEN
         with (
@@ -211,12 +238,57 @@ class TestHostMetricsLogger:
                 side_effect=[RuntimeError("logging exploded"), None],
             ) as mock_log_metrics,
         ):
-            host_metrics_logger._run()
+            host_metrics_logger._run(stop_event)
 
         # THEN
         # The loop survived the first failure and collected again
         assert mock_log_metrics.call_count == 2
         assert any("Failed to log host metrics" in msg for msg in caplog.messages)
+
+    def test_thread_lifecycle_end_to_end(
+        self,
+        logger: MagicMock,
+        mock_psutil_module: MagicMock,
+    ):
+        """
+        Exercises the real thread rather than a mocked one.
+
+        Every other test here patches out Thread or the stop event, so none of them would
+        catch the thread target being mis-wired, the loop never reaching log_metrics, or
+        __exit__ failing to stop the thread. This one starts the genuine thread, waits for
+        a real metrics event, and asserts the thread is stopped on the way out.
+        """
+        # GIVEN
+        du = namedtuple("du", ["total", "used", "free", "percent"])
+        mock_psutil_module.disk_usage.return_value = du(100, 25, 75, 40)
+        mock_psutil_module.cpu_percent.return_value = 12.5
+        mock_psutil_module.disk_io_counters.return_value = dioc(0, 0, 0, 0, 0, 0)
+        mock_psutil_module.net_io_counters.return_value = MagicMock(bytes_sent=0, bytes_recv=0)
+
+        logged = threading.Event()
+        logger.info.side_effect = lambda *args, **kwargs: logged.set()
+
+        # A short interval so the test does not wait a full production cycle
+        host_metrics_logger = HostMetricsLogger(logger=logger, interval_s=0.01)
+
+        # WHEN
+        with patch.object(host_metrics_logger, "_get_gpu_metrics", return_value={}):
+            with host_metrics_logger as entered:
+                assert entered is host_metrics_logger
+                thread = host_metrics_logger._thread
+                assert thread is not None
+                assert thread.is_alive()
+                assert logged.wait(timeout=10), "the metrics thread never logged an event"
+
+        # THEN the thread stopped on its own, and the real values made it through
+        assert not thread.is_alive()
+        assert host_metrics_logger._thread is None
+        assert host_metrics_logger._stop_event.is_set()
+
+        log_event = logger.info.call_args_list[0].args[0]
+        assert isinstance(log_event, MetricsLogEvent)
+        assert log_event.metrics["cpu-usage-percent"] == "12.5"
+        assert log_event.metrics["total-disk-used-percent"] == "25.0"
 
     @pytest.fixture
     def mock_subprocess(self) -> Generator[MagicMock, None, None]:
