@@ -229,7 +229,10 @@ class TestHostMetricsLogger:
         @pytest.fixture
         def disk_usage(self) -> tuple:
             du = namedtuple("du", ["total", "used", "free", "percent"])
-            return du(100, 25, 75, 25)
+            # psutil's own "percent" is measured against user-available space, so it does
+            # not equal used/total. It is deliberately different here so that the
+            # total-disk-used-percent assertion pins down which formula is used.
+            return du(100, 25, 75, 40)
 
         @pytest.fixture
         def cpu_percent(self) -> int:
@@ -311,7 +314,9 @@ class TestHostMetricsLogger:
             assert isinstance(log_line, MetricsLogEvent)
             assert log_line.metrics.get("total-disk-bytes", "") == "100"
             assert log_line.metrics.get("total-disk-used-bytes", "") == "25"
-            assert log_line.metrics.get("total-disk-used-percent", "") == "0.2"
+            # 25/100 bytes used, expressed on a 0-100 scale. Note this is derived from the
+            # total/used byte values above, not from psutil's user-space disk.percent (40).
+            assert log_line.metrics.get("total-disk-used-percent", "") == "25.0"
             assert log_line.metrics.get("user-disk-available-bytes", "") == "75"
 
         def test_logs_disk_rate(
