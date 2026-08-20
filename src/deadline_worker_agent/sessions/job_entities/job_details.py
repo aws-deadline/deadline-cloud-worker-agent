@@ -279,6 +279,13 @@ class JobDetails:
     queue_role_arn: str | None = None
     """The ARN of the Job's Queue Role, if it has one."""
 
+    extensions: list[str] | None = None
+    """The OpenJD extensions the job declared, as served by BatchGetJobEntity.
+
+    None means the response omitted the field; see session_extensions() for how
+    that differs from an empty list.
+    """
+
     @classmethod
     def from_boto(cls, job_details_data: JobDetailsData) -> JobDetails:
         """Parses the data returned in the BatchGetJobEntity response
@@ -330,6 +337,7 @@ class JobDetails:
             path_mapping_rules=path_mapping_rules,
             job_attachment_settings=job_attachment_settings,
             queue_role_arn=queue_role_arn,
+            extensions=job_details_data.get("extensions", None),
         )
 
     @classmethod

@@ -774,3 +774,37 @@ def test_input_validation_failure(data: dict[str, Any]) -> None:
     """Test that validate_entity_data() raises a ValueError when nonvalid input data is provided."""
     with pytest.raises(ValueError):
         JobDetails.validate_entity_data(entity_data=data, job_user_override=None)
+
+
+class TestJobDetailsFromBotoExtensions:
+    """Tests for extensions field extraction from BatchGetJobEntity."""
+
+    @pytest.fixture
+    def valid_job_details_data(self) -> JobDetailsData:
+        return cast(
+            JobDetailsData,
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-2023-09",
+            },
+        )
+
+    def test_extensions_absent_defaults_to_none(
+        self, valid_job_details_data: JobDetailsData
+    ) -> None:
+        # extensions not in the response -> None
+        result = JobDetails.from_boto(valid_job_details_data)
+        assert result.extensions is None
+
+    def test_extensions_empty_list(self, valid_job_details_data: JobDetailsData) -> None:
+        data = cast(JobDetailsData, {**valid_job_details_data, "extensions": []})
+        result = JobDetails.from_boto(data)
+        assert result.extensions == []
+
+    def test_extensions_populated(self, valid_job_details_data: JobDetailsData) -> None:
+        data = cast(
+            JobDetailsData, {**valid_job_details_data, "extensions": ["EXPR", "WRAP_ACTIONS"]}
+        )
+        result = JobDetails.from_boto(data)
+        assert result.extensions == ["EXPR", "WRAP_ACTIONS"]
