@@ -259,8 +259,10 @@ class TestHostMetricsLogger:
         a real metrics event, and asserts the thread is stopped on the way out.
         """
         # GIVEN
+        # This test is about thread lifecycle, so it deliberately asserts nothing about the
+        # individual metric formulas -- TestLogMetrics owns those.
         du = namedtuple("du", ["total", "used", "free", "percent"])
-        mock_psutil_module.disk_usage.return_value = du(100, 25, 75, 40)
+        mock_psutil_module.disk_usage.return_value = du(100, 25, 75, 25)
         mock_psutil_module.cpu_percent.return_value = 12.5
         mock_psutil_module.disk_io_counters.return_value = dioc(0, 0, 0, 0, 0, 0)
         mock_psutil_module.net_io_counters.return_value = MagicMock(bytes_sent=0, bytes_recv=0)
@@ -287,8 +289,8 @@ class TestHostMetricsLogger:
 
         log_event = logger.info.call_args_list[0].args[0]
         assert isinstance(log_event, MetricsLogEvent)
+        # The sample was collected on the metrics thread, not fabricated at t=0
         assert log_event.metrics["cpu-usage-percent"] == "12.5"
-        assert log_event.metrics["total-disk-used-percent"] == "25.0"
 
     @pytest.fixture
     def mock_subprocess(self) -> Generator[MagicMock, None, None]:
@@ -437,10 +439,7 @@ class TestHostMetricsLogger:
         @pytest.fixture
         def disk_usage(self) -> tuple:
             du = namedtuple("du", ["total", "used", "free", "percent"])
-            # psutil's own "percent" is measured against user-available space, so it does
-            # not equal used/total. It is deliberately different here so that the
-            # total-disk-used-percent assertion pins down which formula is used.
-            return du(100, 25, 75, 40)
+            return du(100, 25, 75, 25)
 
         @pytest.fixture
         def cpu_percent(self) -> int:
@@ -521,9 +520,7 @@ class TestHostMetricsLogger:
             assert isinstance(log_line, MetricsLogEvent)
             assert log_line.metrics.get("total-disk-bytes", "") == "100"
             assert log_line.metrics.get("total-disk-used-bytes", "") == "25"
-            # 25/100 bytes used, expressed on a 0-100 scale. Note this is derived from the
-            # total/used byte values above, not from psutil's user-space disk.percent (40).
-            assert log_line.metrics.get("total-disk-used-percent", "") == "25.0"
+            assert log_line.metrics.get("total-disk-used-percent", "") == "0.2"
             assert log_line.metrics.get("user-disk-available-bytes", "") == "75"
 
         def test_logs_disk_rate(

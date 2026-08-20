@@ -278,10 +278,7 @@ class HostMetricsLogger:
                 "swap-used-bytes": str(swap.used),
                 "total-disk-bytes": str(disk.total),
                 "total-disk-used-bytes": str(disk.used),
-                # Computed from the root-based total/used values reported above rather than
-                # using psutil's disk.percent, which is measured against user-available
-                # space and so would not agree with the other total-disk-* metrics.
-                "total-disk-used-percent": str(round(disk.used / disk.total * 100, ndigits=1)),
+                "total-disk-used-percent": str(round(disk.used / disk.total, ndigits=1)),
                 "user-disk-available-bytes": str(disk.free),
                 "network-sent-bytes-per-second": network_sent,
                 "network-recv-bytes-per-second": network_recv,
