@@ -101,6 +101,9 @@ class ActiveEnvironment:
     job_env_id: str
     """A unique identifier that identifies the environment within the Open Job Description job model"""
 
+    resolved_symbol_table_json: str | None = None
+    """Retained so environment teardown resolves the same symbols the enter action used."""
+
 
 @dataclass(frozen=True)
 class CurrentAction:
@@ -180,6 +183,7 @@ class Session:
         session_root_dir: Path,
         farm_id: str = "",
         region: Optional[str] = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
         self._id = id
         self._session_runtime_kind = session_runtime_kind
@@ -221,6 +225,7 @@ class Session:
                 session_root_directory=session_root_dir,
                 spec_revision="2023-09",
                 supported_extensions=session_extensions(self._job_details.extensions),
+                resolved_symbol_table_json=resolved_symbol_table_json,
             ),
         )
 
@@ -465,7 +470,11 @@ class Session:
         # After canceling the running action, we exit any active environments
         actions.extend(
             (
-                partial(self._runtime.exit_environment, identifier=env.session_env_id),
+                partial(
+                    self._runtime.exit_environment,
+                    identifier=env.session_env_id,
+                    resolved_symbol_table_json=env.resolved_symbol_table_json,
+                ),
                 f"exit environment {env.job_env_id}",
             )
             for env in reversed(self._active_envs)
@@ -881,6 +890,7 @@ class Session:
             ActiveEnvironment(
                 job_env_id=job_env_id,
                 session_env_id=session_env_id,
+                resolved_symbol_table_json=resolved_symbol_table_json,
             )
         )
 
@@ -889,6 +899,7 @@ class Session:
         *,
         job_env_id: str,
         os_env_vars: Optional[dict[str, str]] = None,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
         if not self._active_envs or self._active_envs[-1].job_env_id != job_env_id:
             env_stack_str = ", ".join(env.job_env_id for env in self._active_envs)
@@ -897,8 +908,18 @@ class Session:
                 f"Active environments from outer-most to inner-most are: {env_stack_str}"
             )
         active_env = self._active_envs[-1]
+        # The exit action's own table is preferred; the enter-time table is used
+        # when the service omits one, because the runtime does not replay
+        # enter-time symbols.
+        effective_table = (
+            resolved_symbol_table_json
+            if resolved_symbol_table_json is not None
+            else active_env.resolved_symbol_table_json
+        )
         self._runtime.exit_environment(
-            identifier=active_env.session_env_id, os_env_vars=os_env_vars
+            identifier=active_env.session_env_id,
+            os_env_vars=os_env_vars,
+            resolved_symbol_table_json=effective_table,
         )
         self._active_envs.pop()
 

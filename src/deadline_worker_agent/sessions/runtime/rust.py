@@ -406,11 +406,14 @@ class RustSessionRuntime(SessionRuntime):
         identifier: EnvironmentIdentifier,
         os_env_vars: Optional[dict[str, str]] = None,
         keep_session_running: bool = False,
+        resolved_symbol_table_json: str | None = None,
     ) -> None:
+        resolved_symtab = _parse_resolved_symtab(resolved_symbol_table_json)
         self._session.exit_environment(
             identifier=identifier,
             os_env_vars=os_env_vars,
             keep_session_running=keep_session_running,
+            resolved_symtab=resolved_symtab,
         )
 
     @convert_runtime_crashes

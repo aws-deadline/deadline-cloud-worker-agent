@@ -49,6 +49,7 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             identifier: Any = None,
             os_env_vars: Optional[dict[str, str]] = None,
             keep_session_running: bool = False,
+            resolved_symbol_table_json: str | None = None,
         ) -> None:
             return None
 

@@ -31,6 +31,7 @@ from deadline_worker_agent.scheduler.session_queue import (
     AttachmentDownloadActionQueueEntry,
     AttachmentUploadActionQueueEntry,
 )
+import deadline_worker_agent.scheduler.session_queue as session_queue_mod
 
 from deadline_worker_agent.sessions.actions import (
     EnterEnvironmentAction,
@@ -131,6 +132,9 @@ class TestSessionActionQueueDequeue:
                 ExitEnvironmentAction(
                     id="id",
                     environment_id="envid",
+                    details=EnvironmentDetails(
+                        environment=Environment(name="TestEnv", script=_TEST_ENVIRONMENT_SCRIPT)
+                    ),
                 ),
                 id="env exit",
             ),
@@ -586,3 +590,198 @@ class TestIdentifiers:
 
         # THEN
         assert identifiers == expected_identifiers
+
+
+class TestPeekResolvedSymbolTableJson:
+    """Tests for SessionActionQueue.peek_resolved_symbol_table_json"""
+
+    def test_returns_none_for_empty_queue(
+        self,
+        session_queue: SessionActionQueue,
+    ) -> None:
+        # GIVEN
+        assert session_queue._actions == []
+
+        # WHEN
+        result = session_queue.peek_resolved_symbol_table_json()
+
+        # THEN
+        assert result is None
+
+    def test_returns_environment_table_when_first_action_is_env_enter(
+        self,
+        session_queue: SessionActionQueue,
+        job_entities: MagicMock,
+    ) -> None:
+        # GIVEN
+        table_json = '[{"name":"Job.Name","type":"string","value":"Example Job"}]'
+        job_entities.environment_details.return_value = EnvironmentDetails(
+            environment=Environment(name="TestEnv", script=_TEST_ENVIRONMENT_SCRIPT),
+            resolved_symbol_table_json=table_json,
+        )
+        entry = EnvironmentQueueEntry(
+            Mock(),
+            EnvironmentAction(
+                sessionActionId="action-1", actionType="ENV_ENTER", environmentId="env-1"
+            ),
+        )
+        session_queue._actions = [entry]
+        session_queue._actions_by_id["action-1"] = entry
+
+        # WHEN
+        result = session_queue.peek_resolved_symbol_table_json()
+
+        # THEN
+        assert result == table_json
+        job_entities.environment_details.assert_called_once_with(environment_id="env-1")
+
+    def test_returns_environment_table_when_first_action_is_env_exit(
+        self,
+        session_queue: SessionActionQueue,
+        job_entities: MagicMock,
+    ) -> None:
+        # GIVEN
+        table_json = '[{"name":"Job.Name","type":"string","value":"Example Job"}]'
+        job_entities.environment_details.return_value = EnvironmentDetails(
+            environment=Environment(name="TestEnv", script=_TEST_ENVIRONMENT_SCRIPT),
+            resolved_symbol_table_json=table_json,
+        )
+        entry = EnvironmentQueueEntry(
+            Mock(),
+            EnvironmentAction(
+                sessionActionId="action-1", actionType="ENV_EXIT", environmentId="env-1"
+            ),
+        )
+        session_queue._actions = [entry]
+        session_queue._actions_by_id["action-1"] = entry
+
+        # WHEN
+        result = session_queue.peek_resolved_symbol_table_json()
+
+        # THEN
+        assert result == table_json
+        job_entities.environment_details.assert_called_once_with(environment_id="env-1")
+
+    def test_returns_step_table_when_first_action_is_task_run(
+        self,
+        session_queue: SessionActionQueue,
+        job_entities: MagicMock,
+    ) -> None:
+        # GIVEN
+        table_json = '[{"name":"Job.Name","type":"string","value":"Example Job"}]'
+        job_entities.step_details.return_value = StepDetails(
+            step_template=_TEST_STEP_TEMPLATE,
+            step_id="step-1",
+            resolved_symbol_table_json=table_json,
+        )
+        entry = TaskRunQueueEntry(
+            Mock(),
+            TaskRunAction(
+                sessionActionId="action-1",
+                actionType="TASK_RUN",
+                stepId="step-1",
+                taskId="task-1",
+                parameters={},
+            ),
+        )
+        session_queue._actions = [entry]
+        session_queue._actions_by_id["action-1"] = entry
+
+        # WHEN
+        result = session_queue.peek_resolved_symbol_table_json()
+
+        # THEN
+        assert result == table_json
+        job_entities.step_details.assert_called_once_with(step_id="step-1")
+
+    def test_returns_none_and_does_not_raise_when_entity_resolution_raises(
+        self,
+        session_queue: SessionActionQueue,
+        job_entities: MagicMock,
+    ) -> None:
+        # GIVEN
+        job_entities.environment_details.side_effect = RuntimeError("service unavailable")
+        entry = EnvironmentQueueEntry(
+            Mock(),
+            EnvironmentAction(
+                sessionActionId="action-1", actionType="ENV_ENTER", environmentId="env-1"
+            ),
+        )
+        session_queue._actions = [entry]
+        session_queue._actions_by_id["action-1"] = entry
+
+        # WHEN
+        with patch.object(session_queue_mod, "logger") as mock_logger:
+            result = session_queue.peek_resolved_symbol_table_json()
+
+        # THEN
+        assert result is None
+        mock_logger.warning.assert_called_once()
+
+    def test_does_not_consume_queue(
+        self,
+        session_queue: SessionActionQueue,
+        job_entities: MagicMock,
+    ) -> None:
+        # GIVEN
+        table_json = '[{"name":"Job.Name","type":"string","value":"Example Job"}]'
+        job_entities.environment_details.return_value = EnvironmentDetails(
+            environment=Environment(name="TestEnv", script=_TEST_ENVIRONMENT_SCRIPT),
+            resolved_symbol_table_json=table_json,
+        )
+        entry = EnvironmentQueueEntry(
+            Mock(),
+            EnvironmentAction(
+                sessionActionId="action-1", actionType="ENV_ENTER", environmentId="env-1"
+            ),
+        )
+        session_queue._actions = [entry]
+        session_queue._actions_by_id["action-1"] = entry
+
+        # WHEN
+        peek_result = session_queue.peek_resolved_symbol_table_json()
+
+        # THEN — queue is unmodified
+        assert len(session_queue._actions) == 1
+        assert "action-1" in session_queue._actions_by_id
+
+        # AND — subsequent dequeue yields the same action
+        dequeue_result = session_queue.dequeue()
+        assert dequeue_result is not None
+        assert dequeue_result.id == "action-1"
+        assert peek_result == table_json
+
+
+class TestDequeueEnvExitDetails:
+    """Tests that ENV_EXIT dequeue produces an ExitEnvironmentAction carrying fetched details"""
+
+    def test_env_exit_dequeue_includes_details(
+        self,
+        session_queue: SessionActionQueue,
+        job_entities: MagicMock,
+    ) -> None:
+        # GIVEN
+        table_json = '[{"name":"Job.Name","type":"string","value":"Example Job"}]'
+        env_details = EnvironmentDetails(
+            environment=Environment(name="TestEnv", script=_TEST_ENVIRONMENT_SCRIPT),
+            resolved_symbol_table_json=table_json,
+        )
+        job_entities.environment_details.return_value = env_details
+        entry = EnvironmentQueueEntry(
+            Mock(),
+            EnvironmentAction(
+                sessionActionId="action-1", actionType="ENV_EXIT", environmentId="env-1"
+            ),
+        )
+        session_queue._actions = [entry]
+        session_queue._actions_by_id["action-1"] = entry
+
+        # WHEN
+        result = session_queue.dequeue()
+
+        # THEN
+        assert isinstance(result, ExitEnvironmentAction)
+        assert result.id == "action-1"
+        # The details kwarg is passed to ExitEnvironmentAction; verify the
+        # attribute is set (concurrent agent adds _details field).
+        assert result._details is env_details  # type: ignore[attr-defined]
