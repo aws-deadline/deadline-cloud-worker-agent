@@ -32,7 +32,7 @@ LOG = logging.getLogger(__name__)
 
 
 @pytest.mark.skipif(
-    os.environ["OPERATING_SYSTEM"] == "linux",
+    os.environ["OPERATING_SYSTEM"] != "windows",
     reason="Windows Specific Job User Override Tests.",
 )
 class TestWindowsJobUserOverride:
@@ -314,8 +314,8 @@ class TestWindowsJobUserOverride:
 
 
 @pytest.mark.skipif(
-    os.environ["OPERATING_SYSTEM"] == "windows",
-    reason="Linux specific Job User Override tests",
+    os.environ["OPERATING_SYSTEM"] != "linux",
+    reason="Linux (systemd) specific Job User Override tests",
 )
 class TestLinuxJobUserOverride:
     @staticmethod

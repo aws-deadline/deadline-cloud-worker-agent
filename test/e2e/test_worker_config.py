@@ -121,14 +121,14 @@ class TestWorkerConfiguration:
             session_id: str = session["sessionId"]
             session_logs_file_path: str = (
                 os.path.join("/var/log/amazon/deadline", job.queue.id, f"{session_id}.log")
-                if os.environ["OPERATING_SYSTEM"] == "linux"
+                if os.environ["OPERATING_SYSTEM"] != "windows"
                 else os.path.join(
                     "C:/ProgramData/Amazon/Deadline/Logs",
                     job.queue.id,
                     f"{session_id}.log",
                 )
             )
-            if os.environ["OPERATING_SYSTEM"] == "linux":
+            if os.environ["OPERATING_SYSTEM"] != "windows":
                 # Linux worker
                 check_log_exists_result = worker_with_local_session_logs_off.send_command(
                     command=f'[ -e "{session_logs_file_path}" ]'

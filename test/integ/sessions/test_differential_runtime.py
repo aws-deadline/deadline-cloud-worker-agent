@@ -381,3 +381,74 @@ class TestDifferentialSessionRuntime:
         _cancel_when_registered(runtime)
 
         assert _wait_for_terminal(runtime) == "CANCELED"
+
+    @pytest.mark.timeout(60)
+    @pytest.mark.parametrize("runtime_kind", _RUNTIME_KINDS)
+    def test_enter_environment_when_job_has_typed_params_resolves_param_reference(
+        self, runtime_kind: SessionRuntimeKind, tmp_path: Path
+    ) -> None:
+        """An environment referencing {{Param.X}} succeeds when the runtime is
+        constructed with non-empty job_parameter_values including non-STRING
+        types. This exercises the REAL decoder through the adapter — unit tests
+        mock it and cannot validate payload shape."""
+        from openjd.model._types import ParameterValue, ParameterValueType
+
+        root = tmp_path / f"session-params-{runtime_kind.name.lower()}"
+        root.mkdir(parents=True, exist_ok=True)
+        recorder = _StatusRecorder()
+        config = SessionRuntimeConfig(
+            session_id=f"session-params-{runtime_kind.name.lower()}",
+            job_parameter_values={
+                "Message": ParameterValue(type=ParameterValueType.STRING, value="hello-world"),
+                "Count": ParameterValue(type=ParameterValueType.INT, value="42"),
+            },
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=recorder,
+            os_env_vars=None,
+            session_root_directory=root,
+        )
+        runtime = create_session_runtime(runtime_kind, config)
+        try:
+            # The environment's onEnter script references {{Param.Message}} — the
+            # decoder must resolve it using the parameterDefinitions we supply.
+            env_template = decode_environment_template(
+                template={
+                    "specificationVersion": "environment-2023-09",
+                    "environment": {
+                        "name": "ParamEnv",
+                        "script": {
+                            "actions": {
+                                "onEnter": {
+                                    "command": sys.executable,
+                                    "args": ["-c", "print('{{Param.Message}}')"],
+                                }
+                            }
+                        },
+                    },
+                    "parameterDefinitions": [
+                        {"name": "Message", "type": "STRING"},
+                        {"name": "Count", "type": "INT"},
+                    ],
+                }
+            )
+            environment = env_template.environment
+
+            prev = len(recorder.statuses)
+            identifier = runtime.enter_environment(environment=environment)
+            assert _wait_for_new_action(recorder, prev)
+            terminal = _wait_for_terminal(runtime)
+            assert terminal == "SUCCESS", (
+                f"Expected SUCCESS but got {terminal}; statuses={recorder.state_names}"
+            )
+
+            prev = len(recorder.statuses)
+            runtime.exit_environment(identifier=identifier)
+            assert _wait_for_new_action(recorder, prev)
+            assert _wait_for_terminal(runtime) == "SUCCESS"
+        finally:
+            try:
+                runtime.cleanup()
+            except Exception:
+                pass

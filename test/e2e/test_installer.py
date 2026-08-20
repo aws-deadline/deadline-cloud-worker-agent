@@ -32,23 +32,30 @@ LOG = logging.getLogger(__name__)
 
 @pytest.mark.skipif(
     os.environ["OPERATING_SYSTEM"] == "windows",
-    reason="Linux specific test",
+    reason="POSIX specific test",
 )
 class TestInstaller:
     def test_installer_shutdown_permission(
         self,
         session_worker: EC2InstanceWorker,
     ) -> None:
+        # The sudoers rule grants exactly the shutdown command the agent invokes,
+        # which differs by platform: BSD shutdown requires -h (halt).
+        expected_rule = (
+            "^deadline-worker ALL=\\(root\\) NOPASSWD: /sbin/shutdown -h now$"
+            if os.environ["OPERATING_SYSTEM"] == "macos"
+            else "^deadline-worker ALL=\\(root\\) NOPASSWD: /usr/sbin/shutdown now$"
+        )
         cmd_result = session_worker.send_command(
-            "egrep \
-                '^deadline-worker ALL=\\(root\\) NOPASSWD: /usr/sbin/shutdown now$' \
+            f"egrep \
+                '{expected_rule}' \
                 /etc/sudoers.d/deadline-worker-shutdown"
         )
 
         assert cmd_result.exit_code == 0, f"Shutdown WA permission do not exist: {cmd_result}"
 
 
-@pytest.mark.skipif(os.environ["OPERATING_SYSTEM"] == "linux", reason="Windows specific tests")
+@pytest.mark.skipif(os.environ["OPERATING_SYSTEM"] != "windows", reason="Windows specific tests")
 @pytest.mark.usefixtures("test_job")
 class TestWindowsInstaller:
     # Names for tests

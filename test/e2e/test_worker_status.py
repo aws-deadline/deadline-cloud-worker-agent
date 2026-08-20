@@ -19,8 +19,8 @@ LOG = logging.getLogger(__name__)
 
 class TestWorkerStatus:
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Linux specific test",
+        os.environ["OPERATING_SYSTEM"] != "linux",
+        reason="Linux (systemd) specific test",
     )
     def test_linux_worker_restarts_process(
         self,
@@ -110,7 +110,7 @@ class TestWorkerStatus:
         check_worker_processes_exist()
 
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "linux",
+        os.environ["OPERATING_SYSTEM"] != "windows",
         reason="Windows specific test",
     )
     def test_windows_worker_restarts_process(

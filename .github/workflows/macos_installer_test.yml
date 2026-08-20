@@ -1,0 +1,62 @@
+name: macOS Installer Test
+
+# Runs the install_macos.sh integration tests (test/integ/macos/test_installer.py)
+# on a macOS runner. The tests execute the installer for real (as root) and assert
+# the security invariants it must establish: user/group isolation, file modes, the
+# LaunchDaemon plist, and the --allow-shutdown sudoers rule. They mutate host state, so they are
+# gated behind RUN_INSTALLER_TESTS=true and belong on throwaway CI runners only.
+# No AWS access is needed: the farm/fleet ids are fakes and the agent never
+# successfully starts.
+
+# Runs on every PR rather than behind a paths filter: the installer's behaviour depends
+# on more than the installer directory (config defaults, the settings model, the launchd
+# label used by the e2e suite), and a filtered job that misses one of those reads as a
+# pass.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ mainline, release ]
+
+jobs:
+  macos-installer:
+    name: Python ${{ matrix.python-version }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Matches code_quality.yml and requires-python >=3.9.
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the worker agent from this checkout
+        run: |
+          set -euxo pipefail
+          sudo mkdir -p /opt/wa-venv
+          sudo chown "$(id -un)" /opt/wa-venv
+          python -m venv /opt/wa-venv
+          /opt/wa-venv/bin/pip install --quiet .
+          # The installer resolves deadline-worker-agent in --scripts-path and
+          # validates --python-interpreter-path exists.
+          test -x /opt/wa-venv/bin/deadline-worker-agent
+
+      - name: Install Hatch
+        # virtualenv 21 removed an API that the hatch version resolvable on 3.9 still calls,
+        # so `hatch run` fails there with "Environment `default` is incompatible". Same
+        # constraint the other workflows in this repo use.
+        run: pip install --upgrade hatch 'virtualenv<21; python_version < "3.10"'
+
+      - name: Run integration tests
+        env:
+          RUN_INSTALLER_TESTS: "true"
+          WA_VENV_BIN: /opt/wa-venv/bin
+        # Runs the whole integ suite (the hatch script targets test/integ); the
+        # installer tests activate via RUN_INSTALLER_TESTS and rely on their
+        # in-file order (VFS rejection asserts a pristine system, install
+        # fixtures build on it), which is pytest's default ordering.
+        run: hatch run integ-test -v

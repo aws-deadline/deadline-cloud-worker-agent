@@ -11,6 +11,7 @@ import sys
 import sysconfig
 
 from deadline_worker_agent.config.settings import (
+    DEFAULT_MACOS_SESSION_ROOT_DIR,
     DEFAULT_POSIX_SESSION_ROOT_DIR,
     DEFAULT_WINDOWS_SESSION_ROOT_DIR,
 )
@@ -25,6 +26,7 @@ if sys.platform == "win32":
 
 INSTALLER_PATH = {
     "linux": Path(__file__).parent / "install.sh",
+    "darwin": Path(__file__).parent / "install_macos.sh",
 }
 
 
@@ -70,13 +72,19 @@ def _get_ec2_region() -> Optional[str]:
 def install() -> None:
     """Installer entrypoint for the AWS Deadline Cloud Worker Agent"""
 
-    if sys.platform not in ["linux", "win32"]:
+    if sys.platform not in ["linux", "darwin", "win32"]:
         print(f"ERROR: Unsupported platform {sys.platform}")
         sys.exit(1)
 
     arg_parser = get_argument_parser()
     args = arg_parser.parse_args(namespace=ParsedCommandLineArguments())
     scripts_path = Path(sysconfig.get_path("scripts"))
+
+    # The Deadline Virtual File System (VFS) is not supported on macOS. Reject the option here
+    # so the error surfaces before we shell out to install_macos.sh (which also rejects it).
+    if sys.platform == "darwin" and args.vfs_install_path:
+        print("ERROR: --vfs-install-path is not supported on macOS.")
+        sys.exit(1)
 
     if args.region is None:
         args.region = _get_ec2_region()
@@ -275,7 +283,11 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
         default=(
             str(DEFAULT_WINDOWS_SESSION_ROOT_DIR)
             if sys.platform == "win32"
-            else str(DEFAULT_POSIX_SESSION_ROOT_DIR)
+            else (
+                str(DEFAULT_MACOS_SESSION_ROOT_DIR)
+                if sys.platform == "darwin"
+                else str(DEFAULT_POSIX_SESSION_ROOT_DIR)
+            )
         ),  # pragma: nocover
     )
 

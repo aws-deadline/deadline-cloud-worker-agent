@@ -58,6 +58,7 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             task_parameter_values: dict[str, Any] | None = None,
             os_env_vars: Optional[dict[str, str]] = None,
             log_task_banner: bool = True,
+            step_name: str | None = None,
         ) -> None:
             return None
 
@@ -68,6 +69,7 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             task_parameter_values: dict[str, Any] | None = None,
             os_env_vars: Optional[dict[str, str]] = None,
             log_task_banner: bool = True,
+            step_name: str | None = None,
         ) -> None:
             return None
 

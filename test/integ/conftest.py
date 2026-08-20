@@ -7,5 +7,5 @@ import sys
 collect_ignore: list[str] = []
 if sys.platform != "win32":
     collect_ignore.append("windows")
-elif sys.platform != "linux":
-    collect_ignore.append("linux")
+if sys.platform != "darwin":
+    collect_ignore.append("macos")

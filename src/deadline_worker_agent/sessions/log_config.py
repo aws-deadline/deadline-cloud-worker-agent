@@ -16,7 +16,6 @@ from typing import Any, Callable, ContextManager
 
 from ..log_sync.log_constants import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,
-    LOG_CONFIG_OPTION_REGION_KEY,
     LOG_CONFIG_OPTION_STREAM_NAME_KEY,
 )
 from ..api_models import LogConfiguration as BotoSessionLogConfiguration
@@ -315,15 +314,7 @@ class LogConfiguration:
         return CloudWatchHandler(
             log_group_name=log_group,
             log_stream_name=log_stream,
-            logs_client=boto_session.client(
-                "logs",
-                config=OTHER_BOTOCORE_CONFIG,
-                **(
-                    {"region_name": region}
-                    if (region := self.options.get(LOG_CONFIG_OPTION_REGION_KEY))
-                    else {}
-                ),
-            ),
+            logs_client=boto_session.client("logs", config=OTHER_BOTOCORE_CONFIG),
         )
 
     def create_local_file_handler(self) -> logging.FileHandler:

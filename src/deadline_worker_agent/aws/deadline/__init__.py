@@ -41,7 +41,6 @@ from ...api_models import (
 )
 from ...log_sync.log_constants import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,
-    LOG_CONFIG_OPTION_REGION_KEY,
     LOG_CONFIG_OPTION_STREAM_NAME_KEY,
 )
 
@@ -152,11 +151,6 @@ class WorkerLogConfig:
 
     cloudwatch_log_stream: str
     """The name of the CloudWatch Log Stream that the Agent log should be streamed to"""
-
-    cloudwatch_region: Optional[str] = None
-    """The AWS region where the CloudWatch Log Group resides. If None, the agent's local region
-    is used. This enables satellite workers in multi-region fleets to write logs to the home
-    region's log groups."""
 
 
 def _get_error_code_from_header(response: dict[str, Any]) -> Optional[str]:
@@ -760,7 +754,6 @@ def construct_worker_log_config(log_config: LogConfiguration) -> Optional[Worker
         return WorkerLogConfig(
             cloudwatch_log_group=log_group_name,
             cloudwatch_log_stream=log_stream_name,
-            cloudwatch_region=log_config_options.get(LOG_CONFIG_OPTION_REGION_KEY),
         )
     else:
         _logger.warning(

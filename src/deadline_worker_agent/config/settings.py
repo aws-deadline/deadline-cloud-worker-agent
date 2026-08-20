@@ -13,6 +13,7 @@ from .._session_runtime_kind import SessionRuntimeKind
 from .config_file import ConfigFile
 
 import os
+import sys
 
 
 # Default path for the worker's logs.
@@ -28,6 +29,9 @@ DEFAULT_WINDOWS_WORKER_PERSISTENCE_DIR = Path(
 )
 
 DEFAULT_POSIX_SESSION_ROOT_DIR = Path("/sessions")
+# macOS seals the root volume read-only (macOS 10.15+), so a top-level directory like
+# /sessions cannot be created. Use a path under /var (writable) instead.
+DEFAULT_MACOS_SESSION_ROOT_DIR = Path("/var/lib/deadline/sessions")
 DEFAULT_WINDOWS_SESSION_ROOT_DIR: Path = (
     Path(os.getenv("PROGRAMDATA", "C:\\ProgramData")) / "Amazon" / "OpenJD"
 )
@@ -129,7 +133,13 @@ class WorkerSettings(BaseSettings):
     session_runtime: SessionRuntimeKind = SessionRuntimeKind.PYTHON
     telemetry_opt_out: bool = False
     session_root_dir: Path = (
-        DEFAULT_WINDOWS_SESSION_ROOT_DIR if os.name == "nt" else DEFAULT_POSIX_SESSION_ROOT_DIR
+        DEFAULT_WINDOWS_SESSION_ROOT_DIR
+        if os.name == "nt"
+        else (
+            DEFAULT_MACOS_SESSION_ROOT_DIR
+            if sys.platform == "darwin"
+            else DEFAULT_POSIX_SESSION_ROOT_DIR
+        )
     )
 
     class Config:

@@ -141,6 +141,7 @@ class TestPythonSessionRuntimeDelegation:
             task_parameter_values=task_params,
             os_env_vars={"X": "Y"},
             log_task_banner=False,
+            step_name=None,
         )
 
     def test_run_task_without_session_env_when_called_delegates_to_private_method(

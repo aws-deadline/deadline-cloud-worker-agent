@@ -8,6 +8,7 @@ from openjd.model import parse_model, TemplateSpecificationVersion, UnsupportedS
 from openjd.model.v2023_09 import StepTemplate as StepTemplate_2023_09
 
 from ...api_models import StepDetailsData
+from .._extensions import resolve_supported_extensions
 from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
 
@@ -65,12 +66,18 @@ class StepDetails:
             details_data = step_details_data["template"]
             if "name" in details_data:
                 # New API shape -- 'template' contains a StepTemplate
-                step_template = parse_model(model=StepTemplate_2023_09, obj=details_data)
+                step_template = parse_model(
+                    model=StepTemplate_2023_09,
+                    obj=details_data,
+                    supported_extensions=resolve_supported_extensions(step_details_data),
+                )
             else:
                 # Old API shape -- 'template' contains a StepScript.
                 # If we're GA and you're reading this, then delete this code path.
                 step_template = parse_model(
-                    model=StepTemplate_2023_09, obj={"name": "Placeholder", "script": details_data}
+                    model=StepTemplate_2023_09,
+                    obj={"name": "Placeholder", "script": details_data},
+                    supported_extensions=resolve_supported_extensions(step_details_data),
                 )
         else:
             raise UnsupportedSchema(schema_version.value)
@@ -111,6 +118,7 @@ class StepDetails:
                 Field(key="template", expected_type=dict, required=True),
                 Field(key="stepId", expected_type=str, required=True),
                 Field(key="dependencies", expected_type=list, required=False),
+                Field(key="extensions", expected_type=list, required=False),
             ),
         )
         if dependencies := entity_data.get("dependencies"):

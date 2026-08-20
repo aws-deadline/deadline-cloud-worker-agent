@@ -39,6 +39,11 @@ from openjd.sessions._v1 import (
     WindowsSessionUser as RustWindowsSessionUser,
 )
 
+from deadline_worker_agent.file_system_operations import (
+    FileSystemPermissionEnum,
+    set_permissions,
+)
+
 from . import SessionRuntime, SessionRuntimeConfig
 from ._abc import convert_runtime_crashes
 
@@ -157,6 +162,41 @@ def _to_rust_task_parameter_values(values: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _to_environment_parameter_definitions(values: dict[str, Any]) -> list[dict[str, str]]:
+    """Synthesize parameterDefinitions entries from job parameter values.
+
+    The environment template is decoded standalone (lifted out of its job
+    context), so the job's parameter declarations must be re-supplied here for
+    ``{{Param.X}}`` references to resolve. Every ``JobParameterType`` member is a
+    valid environment-template parameter type — only task-parameter-space types
+    like ``CHUNK[INT]`` are rejected, and those cannot reach here:
+    ``JobDetails._validate_job_parameters`` restricts jobDetails parameters to
+    the job-parameter-type subset (string/path/int/float), and raw dicts
+    originate from the wire which only carries job parameter types.
+
+    No type filter is applied. All values are declared unconditionally.
+
+    Known limitation: only parameters that have *values* are declared. A job
+    parameter with no value supplied would still fail validation at decode time.
+    In practice everything reaching the worker has a default or submitted value.
+    """
+    definitions: list[dict[str, str]] = []
+    for name, value in values.items():
+        if isinstance(value, dict):
+            type_str = value.get("type")
+            if type_str is None:
+                # Skip malformed entries rather than raising — the same raw dict
+                # is passed to _to_rust_job_parameter_values moments later, so a
+                # genuinely invalid value still fails at Rust session construction
+                # with the session's own clear error. This matches the sibling
+                # helper's convention of deferring dict validation to the Rust session.
+                continue
+        else:
+            type_str = value.type.value
+        definitions.append({"name": name, "type": type_str})
+    return definitions
+
+
 def _to_rust_path_mapping_rule(rule: PathMappingRule) -> RustPathMappingRule:
     """Convert one worker (v0) PathMappingRule into the _v1 (openjd.expr) type.
 
@@ -202,6 +242,8 @@ class RustSessionRuntime(SessionRuntime):
 
     _session: OpenJDRustSession
     _user: Optional[SessionUser]
+    _environment_parameter_definitions: list[dict[str, str]]
+    _supported_extensions: tuple[str, ...]
 
     def __init__(self, config: SessionRuntimeConfig) -> None:
         try:
@@ -221,6 +263,9 @@ class RustSessionRuntime(SessionRuntime):
         # decode time with a clear error, matching how the v0 session
         # tolerates extension names it doesn't recognize.
         extensions: list[ModelExtension] = []
+        # Kept in sync with `extensions` — only names that convert successfully
+        # are retained, so both lists always describe the same set.
+        supported_extension_names: list[str] = []
         for name in config.supported_extensions:
             extension = ModelExtension.from_str(name)
             if extension is None:
@@ -230,11 +275,20 @@ class RustSessionRuntime(SessionRuntime):
                 )
                 continue
             extensions.append(extension)
+            supported_extension_names.append(name)
+        self._supported_extensions: tuple[str, ...] = tuple(supported_extension_names)
 
         # Kept for the attachment-sync path: on POSIX it grants the files it
         # writes group-read access for the session user's group, so the job
         # (which runs as that user) can read them.
         self._user = config.user
+
+        # Job parameter values are fixed for the session's lifetime, so the
+        # declarations are synthesized once here. See
+        # _to_environment_parameter_definitions for why they are needed at all.
+        self._environment_parameter_definitions = _to_environment_parameter_definitions(
+            config.job_parameter_values
+        )
 
         # The _v1 session reports status with _v1 ActionStatus/ActionState, but
         # the worker's callback expects the v0 types, so translate on the way out.
@@ -268,14 +322,21 @@ class RustSessionRuntime(SessionRuntime):
         # wire shape and rebuild it natively. exclude_none=True is required, not
         # cosmetic: the Rust decoder rejects explicit nulls (OpenJD treats
         # absent and null as equivalent).
+        template: dict[str, Any] = {
+            "specificationVersion": "environment-2023-09",
+            "environment": environment.model_dump(mode="json", by_alias=True, exclude_none=True),
+        }
+        # The job's parameter declarations must accompany the environment or its
+        # {{Param.X}} references cannot resolve. The key is omitted entirely when
+        # empty, because the schema rejects "parameterDefinitions": [].
+        if self._environment_parameter_definitions:
+            template["parameterDefinitions"] = self._environment_parameter_definitions
+        if self._supported_extensions:
+            template["extensions"] = list(self._supported_extensions)
         native_environment = create_environment(
             decode_environment_template(
-                {
-                    "specificationVersion": "environment-2023-09",
-                    "environment": environment.model_dump(
-                        mode="json", by_alias=True, exclude_none=True
-                    ),
-                }
+                template,
+                supported_extensions=list(self._supported_extensions) or None,
             )
         )
         return self._session.enter_environment(
@@ -306,7 +367,11 @@ class RustSessionRuntime(SessionRuntime):
         task_parameter_values: dict[str, Any],
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
+        step_name: str | None = None,
     ) -> None:
+        # step_name: forwarded to the _v1 session so RFC 0008's WrappedStep.Name
+        # resolves correctly inside onWrapTaskRun hooks.
+        #
         # The shared action layer hands a pydantic v2023_09 StepScript, but the
         # Rust session needs a native _v1 step. Serialize to the OpenJD wire
         # shape and rebuild it natively. deserialize_step requires a named step
@@ -317,7 +382,7 @@ class RustSessionRuntime(SessionRuntime):
         # explicit nulls (OpenJD treats absent and null as equivalent).
         native_step_script = deserialize_step(
             {
-                "name": "Placeholder",
+                "name": step_name or "Placeholder",
                 "script": step_script.model_dump(mode="json", by_alias=True, exclude_none=True),
             }
         ).script
@@ -326,6 +391,7 @@ class RustSessionRuntime(SessionRuntime):
             task_parameter_values=_to_rust_task_parameter_values(task_parameter_values),
             os_env_vars=os_env_vars,
             log_task_banner=log_task_banner,
+            step_name=step_name,
         )
 
     @convert_runtime_crashes
@@ -336,6 +402,7 @@ class RustSessionRuntime(SessionRuntime):
         task_parameter_values: dict[str, Any],
         os_env_vars: Optional[dict[str, str]] = None,
         log_task_banner: bool = True,
+        step_name: str | None = None,
     ) -> None:
         # Attachment-sync path: the native run_task's embedded-file handling is
         # unavailable here, so materialize the script's embedded files to the
@@ -360,15 +427,26 @@ class RustSessionRuntime(SessionRuntime):
                 # manifest JSON, which the reader script decodes as UTF-8.
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(str(embedded_file.data))
-                # Owner read/write. On POSIX, also grant the session user's group
-                # read access so the job user can read the materialized file.
+                # Owner read/write. On POSIX, grant the session user's group read
+                # access so the job user can read the materialized file. On Windows,
+                # set an explicit ACL (agent=full control, job user=read) rather than
+                # relying on NTFS inheritance which may be absent or misconfigured.
                 mode = stat.S_IRUSR | stat.S_IWUSR
                 if self._user is not None and os.name == "posix":
                     group = getattr(self._user, "group", None)
                     if group is not None:
                         chown(path, group=group)
                         mode |= stat.S_IRGRP
-                os.chmod(path, mode)
+                    os.chmod(path, mode)
+                elif self._user is not None and os.name == "nt":
+                    set_permissions(
+                        file_path=Path(path),
+                        agent_user_permission=FileSystemPermissionEnum.READ_WRITE,
+                        user_permission=FileSystemPermissionEnum.READ,
+                        permitted_user=self._user,
+                    )
+                else:
+                    os.chmod(path, mode)
                 file_paths[embedded_file.name] = path
 
         command = str(step_script.actions.onRun.command)

@@ -116,12 +116,12 @@ def submit_sleep_job(
                             "onRun": {
                                 "command": (
                                     "/bin/sleep"
-                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    if os.environ["OPERATING_SYSTEM"] != "windows"
                                     else "powershell"
                                 ),
                                 "args": (
                                     ["5"]
-                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    if os.environ["OPERATING_SYSTEM"] != "windows"
                                     else ["ping", "localhost"]
                                 ),
                             },
@@ -302,7 +302,7 @@ def submit_custom_job(
                     "actions": {
                         "onRun": (
                             {"command": "{{ Task.File.runScript }}"}
-                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            if os.environ["OPERATING_SYSTEM"] != "windows"
                             else {
                                 "command": "powershell",
                                 "args": ["{{ Task.File.runScript }}"],  # type: ignore[dict-item]
@@ -382,18 +382,7 @@ def is_worker_stopped(
 def get_shutdown_on_stop_status_from_toml(
     worker: EC2InstanceWorker,
 ) -> str:
-    if os.environ["OPERATING_SYSTEM"] == "linux":
-        cmd_result = worker.send_command(
-            command="""
-grep -E \
-  '^(# shutdown_on_stop =|shutdown_on_stop =)' \
-  /etc/amazon/deadline/worker.toml
-"""
-        )
-        assert cmd_result.exit_code == 0, "Failed to execute Linux command on .toml"
-        assert "shutdown_on_stop" in cmd_result.stdout, "shutdown_on_stop not found in .toml"
-        return cmd_result.stdout.strip()
-    elif os.environ["OPERATING_SYSTEM"] == "windows":
+    if os.environ["OPERATING_SYSTEM"] == "windows":
         cmd_result = worker.send_command(
             command="""
 $content = Get-Content "C:\\ProgramData\\Amazon\\Deadline\\Config\\worker.toml"
@@ -404,7 +393,17 @@ $content | Select-String -Pattern "^# shutdown_on_stop =|^shutdown_on_stop ="
         assert "shutdown_on_stop" in cmd_result.stdout, "shutdown_on_stop not found in .toml"
         return cmd_result.stdout.strip()
     else:
-        raise Exception(f"Unsupported operating system: {os.environ['OPERATING_SYSTEM']}")
+        # POSIX (linux and macos): the worker.toml path is identical on both.
+        cmd_result = worker.send_command(
+            command="""
+grep -E \
+  '^(# shutdown_on_stop =|shutdown_on_stop =)' \
+  /etc/amazon/deadline/worker.toml
+"""
+        )
+        assert cmd_result.exit_code == 0, "Failed to execute POSIX command on .toml"
+        assert "shutdown_on_stop" in cmd_result.stdout, "shutdown_on_stop not found in .toml"
+        return cmd_result.stdout.strip()
 
 
 def submit_job_from_create_job_API(

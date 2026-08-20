@@ -84,4 +84,5 @@ class RunStepTaskAction(OpenjdAction):
             step_script=cast("StepScript", self._details.step_template.script),
             task_parameter_values=self._task_parameter_values,
             os_env_vars=env_vars,
+            step_name=self._details.step_template.name,
         )

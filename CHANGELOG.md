@@ -1,3 +1,30 @@
+## 0.32.0 (2026-08-14)
+
+### BREAKING CHANGES
+* The worker agent no longer honors a region in the log configuration options for CloudWatch Logs routing. Workers already route session logs to the home region by default, so cross-region log routing via log config options has been removed. (#1050)
+
+### Features
+* The worker agent now correctly parses OpenJD templates that use the WRAP_ACTIONS extension (onWrapEnvEnter, onWrapTaskRun, onWrapEnvExit). Previously, environments and steps using wrap action hooks failed to parse. (#1049)
+
+### Bug Fixes
+* Fixed an issue where OpenJD environments referencing job parameters (e.g., `Param.Message`) failed to enter on the Rust session runtime with a `ModelValidationError`. (#1051)
+* Raised the openjd-model dependency floor to >= 0.11.3, which fixes: Env.File.* references now resolve inside wrap action hooks, `repr_sh(flatten([]))` no longer errors on empty lists, and IntRangeExpr expansion is no longer capped at 1024 elements. (#1054)
+## 0.31.1 (2026-08-12)
+
+### Features
+* The worker agent installer (`install-deadline-worker`) now experimentally supports macOS (darwin), allowing macOS hosts to be configured as workers in a customer-managed fleet. Note that the `--vfs-install-path` option is not supported on macOS. (#1012)
+## 0.31.0 (2026-08-11)
+
+### Features
+* Rust session runtime adapter: sessions can run on the OpenJD v1 Rust runtime as an alternative to the Python runtime. Select it by setting `session_runtime` in worker.toml to `python`, `rust`, or `service-selected`. (#1002)
+* With `service-selected`, the session runtime (Python or Rust) is chosen from a `runtimeHint` provided by the service, defaulting to Python when no hint is given. (#1009, #1016)
+* Runtime selection and failure telemetry events added. To opt out, set `opt_out = true` under `[telemetry]` in worker.toml, pass `--telemetry-opt-out` to the installer, or set the `DEADLINE_CLOUD_TELEMETRY_OPT_OUT=true` environment variable. (#1021)
+
+### Bug Fixes
+* Wrap-environment jobs failed on both the Python and Rust runtimes because `step_name` wasn't forwarded, leaving RFC 0008's `WrappedStep.Name` unresolved; both runtime paths now forward it. (#1039, #1040)
+* Rust runtime panics no longer silently kill the session thread; they are now reported as a failed session with proper cleanup and telemetry. (#1026)
+* Transient network errors (connection closed, connect/read timeout, endpoint connection) are now retried with exponential backoff instead of terminating the agent. (#1013)
+* Credentials expiring mid-call during hibernate/sleep no longer cause an unrecoverable exit; the agent now detects the time jump and retries with bootstrap credentials. (#1014)
 ## 0.30.2 (2026-07-14)
 
 ### Features
