@@ -59,7 +59,7 @@ from deadline.job_attachments.progress_tracker import ProgressReportMetadata
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
 from ..aws.deadline import record_runtime_failure_telemetry_event
-from ._extensions import RUNTIME_CAPABILITY_EXTENSIONS
+from ._extensions import session_extensions
 from .runtime._abc import SessionRuntimeCrashError
 from .runtime import (
     SessionRuntimeKind,
@@ -220,7 +220,7 @@ class Session:
                 os_env_vars=self._env,
                 session_root_directory=session_root_dir,
                 spec_revision="2023-09",
-                supported_extensions=RUNTIME_CAPABILITY_EXTENSIONS,
+                supported_extensions=session_extensions(self._job_details.extensions),
             ),
         )
 

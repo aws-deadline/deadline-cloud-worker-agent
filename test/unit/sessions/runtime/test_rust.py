@@ -9,7 +9,7 @@ from datetime import timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, Generator
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -23,6 +23,17 @@ from deadline_worker_agent.sessions.runtime import rust as rust_module
 from deadline_worker_agent.sessions.runtime.rust import RustSessionRuntime
 from deadline_worker_agent.sessions.runtime.rust import _to_rust_task_parameter_values
 from deadline_worker_agent.sessions.runtime.rust import _to_environment_parameter_definitions
+
+# Literal expected value: the Rust-convertible subset of RUNTIME_CAPABILITY_EXTENSIONS
+# in ExtensionName declaration order.  Determined by printing ExtensionName members and
+# verifying each converts via ModelExtension.from_str (all 5 do today).
+_EXPECTED_DECODE_EXTENSIONS: list[str] = [
+    "TASK_CHUNKING",
+    "REDACTED_ENV_VARS",
+    "FEATURE_BUNDLE_1",
+    "EXPR",
+    "WRAP_ACTIONS",
+]
 
 
 @pytest.fixture()
@@ -71,14 +82,17 @@ class TestRustSessionRuntimeConstruction:
         self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
     ) -> None:
         # Proves the extensions are NOT hardcoded: an empty config yields an
-        # empty extensions list rather than a fixed set.
+        # empty ModelProfile extensions list rather than a fixed set.  The
+        # decode path still converts RUNTIME_CAPABILITY_EXTENSIONS, so
+        # from_str IS called — but no warning is emitted because
+        # warn_on_unsupported=False for the decode conversion.
         with (
             patch.object(rust_module, "ModelProfile") as mock_profile,
-            patch.object(rust_module, "ModelExtension") as mock_extension,
+            patch.object(rust_module, "logger") as mock_logger,
         ):
             RustSessionRuntime(runtime_config)
 
-        mock_extension.from_str.assert_not_called()
+        mock_logger.warning.assert_not_called()
         profile_kwargs = mock_profile.call_args.kwargs
         assert profile_kwargs["extensions"] == []
         assert profile_kwargs["revision"] == SpecificationRevision.v2023_09
@@ -105,8 +119,7 @@ class TestRustSessionRuntimeConstruction:
             mock_extension.from_str.side_effect = lambda name: f"EXT::{name}"
             RustSessionRuntime(config)
 
-        # Each configured extension identifier is coerced via from_str, in order.
-        assert mock_extension.from_str.call_args_list == [call("EXPR"), call("TASK_CHUNKING")]
+        # ModelProfile receives exactly the job-narrowed converted list.
         profile_kwargs = mock_profile.call_args.kwargs
         assert profile_kwargs["extensions"] == ["EXT::EXPR", "EXT::TASK_CHUNKING"]
 
@@ -243,15 +256,16 @@ class TestRustSessionRuntimeDelegation:
         # The pydantic environment is serialized and rebuilt natively before
         # being handed to the session. The fixture's job_parameter_values
         # contains one STRING param in dict form, which must appear as a
-        # parameterDefinitions entry. The fixture declares no extensions, so the
-        # extensions key is omitted and the decode kwarg is None.
+        # parameterDefinitions entry. Decode uses the runtime capability ceiling
+        # (all Rust-convertible extensions), regardless of the per-job narrowing.
         mock_decode.assert_called_once_with(
             {
                 "specificationVersion": "environment-2023-09",
                 "environment": environment.model_dump.return_value,
                 "parameterDefinitions": [{"name": "Param1", "type": "STRING"}],
+                "extensions": _EXPECTED_DECODE_EXTENSIONS,
             },
-            supported_extensions=None,
+            supported_extensions=_EXPECTED_DECODE_EXTENSIONS,
         )
         environment.model_dump.assert_called_once_with(
             mode="json", by_alias=True, exclude_none=True
@@ -329,6 +343,7 @@ class TestRustSessionRuntimeDelegation:
         assert template == {
             "specificationVersion": "environment-2023-09",
             "environment": environment.model_dump.return_value,
+            "extensions": _EXPECTED_DECODE_EXTENSIONS,
         }
         assert "parameterDefinitions" not in template
 
@@ -891,9 +906,47 @@ class TestRustSessionRuntimeTypeConversions:
 
     def test_parameter_values_when_type_unknown_to_binding_raises(self) -> None:
         """A parameter type the _v1 binding does not define fails loud."""
-        bogus = SimpleNamespace(type=SimpleNamespace(value="HOLOGRAM"), value="x")
+        bogus = SimpleNamespace(type=SimpleNamespace(name="HOLOGRAM", value="HOLOGRAM"), value="x")
         with pytest.raises(ValueError, match="HOLOGRAM.*JobParameterType does not define"):
             rust_module._to_rust_job_parameter_values({"P": bogus})
+
+    @pytest.mark.parametrize(
+        "param_type, value",
+        [
+            pytest.param(ParameterValueType.BOOL, True, id="bool"),
+            pytest.param(ParameterValueType.RANGE_EXPR, "1-10:2", id="rangeExpr"),
+            pytest.param(ParameterValueType.LIST_STRING, ["a", "b"], id="list-string"),
+            pytest.param(ParameterValueType.LIST_PATH, ["/tmp/a", "/tmp/b"], id="list-path"),
+            pytest.param(ParameterValueType.LIST_INT, ["1", "2"], id="list-int"),
+            pytest.param(ParameterValueType.LIST_FLOAT, ["1.5", "2.5"], id="list-float"),
+            pytest.param(ParameterValueType.LIST_BOOL, [True, False], id="list-bool"),
+            pytest.param(ParameterValueType.LIST_LIST_INT, [["1"], ["2", "3"]], id="list-list-int"),
+        ],
+    )
+    def test_expr_job_parameter_values_convert_to_native(
+        self, param_type: ParameterValueType, value: Any
+    ) -> None:
+        """EXPR-typed job parameters resolve their _v1 enum member by name.
+
+        The bracketed enum values ("LIST[STRING]") are not attribute names, so
+        a lookup by value misses members the binding does define.
+        """
+        from openjd.model._v1.types import JobParameterType
+
+        result = rust_module._to_rust_job_parameter_values(
+            {"P": ParameterValue(type=param_type, value=value)}
+        )
+
+        converted = result["P"]
+        assert isinstance(converted, rust_module.JobParameterValue)
+        assert str(converted.type) == str(getattr(JobParameterType, param_type.name))
+
+    def test_expr_type_on_task_parameters_still_fails_loud(self) -> None:
+        """EXPR types are job-parameter-only; the task binding rejects them."""
+        with pytest.raises(ValueError, match="LIST\\[STRING\\].*TaskParameterType does not define"):
+            rust_module._to_rust_task_parameter_values(
+                {"P": ParameterValue(type=ParameterValueType.LIST_STRING, value=["a"])}
+            )
 
     def test_every_v1_action_state_maps_to_v0(self) -> None:
         """Every member of the REAL _v1 ActionState enum maps to a v0 member.
@@ -1131,6 +1184,23 @@ class TestToRustTaskParameterValues:
     def test_empty_dict_returns_empty_dict(self) -> None:
         """An empty input produces an empty output."""
         assert _to_rust_task_parameter_values({}) == {}
+
+    def test_chunk_int_parameter_converts_to_native(self) -> None:
+        """CHUNK[INT] task parameters resolve their _v1 enum member by name.
+
+        The enum value "CHUNK[INT]" is not an attribute name, so a lookup by
+        value misses the CHUNK_INT member the binding defines.
+        """
+        from openjd.model._v1.types import TaskParameterType
+
+        result = _to_rust_task_parameter_values(
+            {"Frames": ParameterValue(type=ParameterValueType.CHUNK_INT, value="1-10")}
+        )
+
+        converted = result["Frames"]
+        assert isinstance(converted, rust_module.TaskParameterValue)
+        assert str(converted.type) == str(TaskParameterType.CHUNK_INT)
+        assert converted.value == "1-10"
 
     def test_mixed_parameter_values_and_dicts(self) -> None:
         """ParameterValue objects convert to native types; plain dicts pass through."""
