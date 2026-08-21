@@ -91,6 +91,29 @@ class TestHostMetricsLogger:
         assert abandoned_event.is_set()
         assert not host_metrics_logger._stop_event.is_set()
 
+    def test_enter_twice_stops_the_first_thread(self, host_metrics_logger: HostMetricsLogger):
+        """Re-entering must not orphan a thread that nothing is left able to signal or join"""
+        # GIVEN
+        first = MagicMock(**{"is_alive.return_value": False})
+        second = MagicMock(**{"is_alive.return_value": False})
+
+        with patch.object(metrics_mod, "Thread") as mock_thread_cls:
+            mock_thread_cls.side_effect = [first, second]
+
+            # WHEN entered twice with no intervening exit
+            host_metrics_logger.__enter__()
+            first_event = host_metrics_logger._stop_event
+            host_metrics_logger.__enter__()
+
+        # THEN the first thread was signalled and joined rather than left running
+        assert first_event.is_set()
+        first.join.assert_called_once_with(timeout=HostMetricsLogger.JOIN_TIMEOUT_S)
+
+        # AND the second thread is the one now being tracked, on its own live event
+        assert host_metrics_logger._thread is second
+        assert host_metrics_logger._stop_event is not first_event
+        assert not host_metrics_logger._stop_event.is_set()
+
     def test_enter_tolerates_thread_start_failure(
         self,
         host_metrics_logger: HostMetricsLogger,
@@ -181,8 +204,10 @@ class TestHostMetricsLogger:
 
         # THEN
         assert calls.mock_calls == [call.prime(), call.log_metrics(), call.log_metrics()]
-        assert stop_event.wait.call_count == 3
-        stop_event.wait.assert_called_with(host_metrics_logger.interval_s)
+        # Every wait is a full interval, including the first. Shortening the first one to get
+        # an earlier startup sample would reintroduce the bug this fixes, because a
+        # cpu_percent() call taken moments after priming reports psutil's near-zero again.
+        assert stop_event.wait.call_args_list == [call(host_metrics_logger.interval_s)] * 3
 
     def test_prime_metrics_sets_rate_baselines(
         self,
@@ -263,7 +288,10 @@ class TestHostMetricsLogger:
         # individual metric formulas -- TestLogMetrics owns those.
         du = namedtuple("du", ["total", "used", "free", "percent"])
         mock_psutil_module.disk_usage.return_value = du(100, 25, 75, 25)
-        mock_psutil_module.cpu_percent.return_value = 12.5
+        # The first call is the priming call, whose value is discarded rather than logged.
+        # Distinguishing it is what makes the assertion below evidence that the logged sample
+        # came from a later call on the metrics thread, rather than from priming.
+        mock_psutil_module.cpu_percent.side_effect = [0.0, *([12.5] * 1000)]
         mock_psutil_module.disk_io_counters.return_value = dioc(0, 0, 0, 0, 0, 0)
         mock_psutil_module.net_io_counters.return_value = MagicMock(bytes_sent=0, bytes_recv=0)
 
@@ -289,7 +317,8 @@ class TestHostMetricsLogger:
 
         log_event = logger.info.call_args_list[0].args[0]
         assert isinstance(log_event, MetricsLogEvent)
-        # The sample was collected on the metrics thread, not fabricated at t=0
+        # 12.5 rather than the priming call's 0.0, so this sample was measured against the
+        # baseline primed on this thread rather than being the thread's own first call
         assert log_event.metrics["cpu-usage-percent"] == "12.5"
 
     @pytest.fixture
@@ -426,6 +455,11 @@ class TestHostMetricsLogger:
         assert gpu_metrics["gpu-utilization-percent"] == "100.0"
 
     class TestLogMetrics:
+        @pytest.fixture(autouse=True)
+        def no_real_nvidia_smi(self, mock_subprocess: MagicMock) -> MagicMock:
+            """These tests call the real log_metrics, which must not fork a real nvidia-smi"""
+            return mock_subprocess
+
         @pytest.fixture
         def virtual_memory(self) -> tuple:
             vm = namedtuple("vm", ["total", "available", "percent", "used", "free"])

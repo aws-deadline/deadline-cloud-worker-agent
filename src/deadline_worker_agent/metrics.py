@@ -18,27 +18,15 @@ module_logger = getLogger(__name__)
 class HostMetricsLogger:
     """Context manager that regularly logs host metrics"""
 
-    # How long to wait for the metrics thread to exit during shutdown before abandoning
-    # it. Kept short because it is strictly serial latency on every shutdown path,
-    # including the tight Windows service-control and EC2 spot interruption budgets.
-    # Setting the stop event wakes the thread immediately, so this is only ever paid when
-    # a collection is in flight.
-    #
-    # This bound is load-bearing rather than tidiness: GPU_QUERY_TIMEOUT_S cannot fully
-    # bound a collection (see the note there), so the daemon thread plus this join are
-    # what actually keep a stuck collection from holding up shutdown.
+    # How long to wait for the metrics thread to exit during shutdown before abandoning it.
+    # Kept short because it is serial latency on every shutdown path, and only ever paid when
+    # a collection is in flight -- the stop event wakes an idle thread immediately.
     JOIN_TIMEOUT_S = 1.0
 
-    # How long to wait for nvidia-smi to report GPU metrics. An unhealthy GPU driver can
-    # leave nvidia-smi unresponsive, which would otherwise block the metrics thread from
-    # observing the stop event.
-    #
-    # Deliberately larger than JOIN_TIMEOUT_S: nvidia-smi can legitimately take more than
-    # a second on a busy host, so a tighter bound would discard good samples. The
-    # trade-off is that a slow query can still outlast the shutdown join, which is why the
-    # metrics thread is a daemon. Note also that this only bounds a *slow* nvidia-smi and
-    # not a wedged one: on timeout, subprocess kills the child and then waits on it
-    # without a bound, which a process in uninterruptible sleep will not honour.
+    # How long to wait for nvidia-smi, so an unresponsive driver cannot keep the metrics
+    # thread from observing the stop event. Bounds a slow nvidia-smi, not a wedged one -- on
+    # timeout subprocess waits on the killed child unbounded -- which is why the thread is a
+    # daemon and the shutdown join is bounded.
     GPU_QUERY_TIMEOUT_S = 5.0
 
     logger: Logger
@@ -59,6 +47,12 @@ class HostMetricsLogger:
         self.interval_s = interval_s
 
     def __enter__(self) -> HostMetricsLogger:
+        # Re-entry is not expected, but stop any running thread rather than replacing the only
+        # references to it: its successor overwrites both _thread and _stop_event, leaving
+        # nothing able to signal or join it, and it would log alongside its successor forever.
+        if self._thread:
+            self.__exit__(None, None, None)
+
         # A fresh event, handed to the thread explicitly rather than read back off self:
         # if a previous __exit__ gave up waiting and abandoned a thread that was still
         # running, that thread keeps observing its own already-set event and exits, rather
@@ -113,10 +107,14 @@ class HostMetricsLogger:
         """
         Establishes the baselines that the first logged sample is measured against.
 
-        psutil tracks non-blocking CPU samples per thread, so the CPU baseline must be
-        primed on this long-lived thread for every logged value to cover one complete
-        metrics interval. The network and disk counters are primed here for the same
-        reason: the gap between priming and the first collection is exactly one interval.
+        psutil tracks non-blocking CPU samples per thread, so priming has to happen on this
+        long-lived thread: without it every sample would be that thread's first call and
+        report psutil's uninitialized zero. The network and disk counters are primed here too,
+        so the first logged sample reports measured rates rather than zeroes.
+
+        Note that a sample covers one interval plus however long the collection itself takes,
+        because the wait starts after log_metrics returns, while the reported rates divide by
+        interval_s alone. Pre-existing, and small at the default interval.
         """
         try:
             psutil.cpu_percent()
