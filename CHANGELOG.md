@@ -1,3 +1,18 @@
+## 0.33.0 (2026-08-21)
+
+### BREAKING CHANGES
+* The `total-disk-used-percent` metric now reports values on a 0-100 scale instead of a 0.0-1.0 fraction. Previously, a 25% full disk was incorrectly reported as 0.25; it now correctly reports as 25. (#1067)
+
+### Features
+* The worker agent now accepts and forwards the `resolvedSymbolTable` field from `BatchGetJobEntity` step and environment details to the session runtime, enabling pre-resolved EXPR symbols (Job.Name, Param.*, RawParam.*, step let values) to be used in sessions. (#1063)
+* Session extension enablement is now driven by the job's `extensions` declaration from `BatchGetJobEntity`. Jobs can explicitly declare which extensions to enable, with backward compatibility maintained when the field is absent. (#1062)
+* Added support for 8 new EXPR parameter types (`bool`, `rangeExpr`, `stringList`, `pathList`, `intList`, `floatList`, `boolList`, `intListList`) in API response parsing. Jobs using these parameter types will no longer crash the session. (#1064)
+
+### Bug Fixes
+* Fixed a crash when jobs use EXPR parameter types (e.g., `bool`, `rangeExpr`, list types) — entity validation previously rejected these types before they could be parsed. (#1065)
+* Fixed parameter type resolution for LIST[*] job parameter types (LIST_STRING, LIST_INT, etc.) which previously failed with a "type not defined" error due to incorrect enum member lookup. (#1066)
+* Step-scoped environments now correctly receive their step's name and let bindings. (#1061)
+* On Windows, materialized embedded files now have explicit ACLs granting the agent user full control and the job user read access, fixing issues where files could be unreadable or over-exposed when NTFS inheritance is misconfigured. (#1059)
 ## 0.33.0 (2026-08-20)
 
 ### BREAKING CHANGES
