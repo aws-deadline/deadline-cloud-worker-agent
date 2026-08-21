@@ -105,10 +105,40 @@ class TestPythonSessionRuntimeDelegation:
         )
 
         mock_session_instance.enter_environment.assert_called_once_with(
-            environment=env, identifier=identifier, os_env_vars=os_env
+            environment=env,
+            identifier=identifier,
+            os_env_vars=os_env,
+            step_name=None,
+            extra_let_bindings=None,
         )
         # enter_environment is the only non-void method — verify the return value
         # (EnvironmentIdentifier) flows through the adapter.
+        assert result is mock_session_instance.enter_environment.return_value
+
+    def test_enter_environment_forwards_step_context_to_wrapped_session(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """Non-None step_name and extra_let_bindings are forwarded to the
+        Python session, which uses them for wrap-action symbol resolution."""
+        env = MagicMock()
+        identifier = "env-123"
+        os_env = {"K": "V"}
+
+        result = adapter.enter_environment(
+            environment=env,
+            identifier=identifier,
+            os_env_vars=os_env,
+            step_name="MyStep",
+            extra_let_bindings=["VAR=value"],
+        )
+
+        mock_session_instance.enter_environment.assert_called_once_with(
+            environment=env,
+            identifier=identifier,
+            os_env_vars=os_env,
+            step_name="MyStep",
+            extra_let_bindings=["VAR=value"],
+        )
         assert result is mock_session_instance.enter_environment.return_value
 
     def test_exit_environment_when_called_delegates_to_wrapped_session(

@@ -80,6 +80,8 @@ class PythonSessionRuntime(SessionRuntime):
         identifier: Optional[EnvironmentIdentifier] = None,
         os_env_vars: Optional[dict[str, str]] = None,
         resolved_symbol_table_json: str | None = None,
+        step_name: str | None = None,
+        extra_let_bindings: list[str] | None = None,
     ) -> EnvironmentIdentifier:
         # resolved_symbol_table_json: not forwarded — the v0 Python session does
         # not support pre-resolved symbol tables.
@@ -87,6 +89,8 @@ class PythonSessionRuntime(SessionRuntime):
             environment=environment,
             identifier=identifier,
             os_env_vars=os_env_vars,
+            step_name=step_name,
+            extra_let_bindings=extra_let_bindings,
         )
 
     def exit_environment(

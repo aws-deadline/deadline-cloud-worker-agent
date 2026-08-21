@@ -61,6 +61,25 @@ else:
 
 logger = getLogger(__name__)
 
+_STEP_ENVIRONMENT_ID_PREFIX = "STEP:"
+
+
+def _step_id_from_environment_id(environment_id: str) -> str | None:
+    """Extract the step id from a step-scoped environment id.
+
+    Environment ids are scope-prefixed and carry their scope's id, as in
+    ``STEP:step-<uuid>:<environment name>`` or ``JOB:job-<uuid>:<name>``.
+    Returns None for anything that is not step-scoped, so job-scoped
+    environments are never given a step's context.
+    """
+    if not environment_id.startswith(_STEP_ENVIRONMENT_ID_PREFIX):
+        return None
+    remainder = environment_id[len(_STEP_ENVIRONMENT_ID_PREFIX) :]
+    step_id, separator, _ = remainder.partition(":")
+    if not separator or not step_id:
+        return None
+    return step_id
+
 
 @dataclass(frozen=True)
 class SessionActionQueueEntry(Generic[D]):
@@ -443,10 +462,31 @@ class SessionActionQueue:
                             action_id, SessionActionLogKind.ENV_EXIT, str(e)
                         ) from e
                 if action_type == "ENV_ENTER":
+                    # Step-scoped environments need the step's name and `let`
+                    # bindings so their scripts can resolve Step.Name and
+                    # step-level let values. The step id is carried in the
+                    # environment id itself, so this does not depend on where
+                    # the action sits in the queue.
+                    step_name: str | None = None
+                    extra_let_bindings: list[str] | None = None
+                    if (env_step_id := _step_id_from_environment_id(environment_id)) is not None:
+                        try:
+                            env_step_details = self._job_entities.step_details(step_id=env_step_id)
+                        except (ValueError, RuntimeError, UnsupportedSchema):
+                            # The task run for this step will surface the real
+                            # entity error; entering without step context here
+                            # matches the pre-existing behavior.
+                            pass
+                        else:
+                            step_name = env_step_details.step_template.name
+                            extra_let_bindings = env_step_details.step_template.let
+
                     next_action = EnterEnvironmentAction(
                         id=action_id,
                         job_env_id=environment_id,
                         details=environment_details,
+                        step_name=step_name,
+                        extra_let_bindings=extra_let_bindings,
                     )
                 elif action_type == "ENV_EXIT":
                     next_action = ExitEnvironmentAction(
