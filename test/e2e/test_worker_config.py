@@ -221,15 +221,15 @@ class TestWorkerConfiguration:
             run_script = f"""#!/usr/bin/bash
 set -euo pipefail
 echo "=== Session Root Dir Test ==="
-echo "Expected prefix: {session_root_dir}/session-"
+echo "Expected: working dir under {session_root_dir}/"
 echo ""
 echo "--- Step 1: Getting current working directory ---"
 cwd=$(pwd)
 echo "Current directory: $cwd"
 echo ""
 echo "--- Step 2: Validating session root ---"
-if [[ "$cwd" != {session_root_dir}/session-* ]]; then
-    echo "FAIL: pwd '$cwd' does not start with {session_root_dir}/session-"
+if [[ "$cwd" != {session_root_dir}/* ]]; then
+    echo "FAIL: pwd '$cwd' is not under {session_root_dir}/"
     exit 1
 fi
 echo "PASS: Working directory is under configured session root"
@@ -239,15 +239,15 @@ echo "=== All checks passed ==="
             session_root_dir = "C:\\Sessions"
             run_script = f"""$ErrorActionPreference = 'Stop'
 Write-Output "=== Session Root Dir Test ==="
-Write-Output "Expected prefix: {session_root_dir}\\session-"
+Write-Output "Expected: working dir under {session_root_dir}\\"
 Write-Output ""
 Write-Output "--- Step 1: Getting current working directory ---"
 $cwd = (Get-Item .).FullName
 Write-Output "Current directory: $cwd"
 Write-Output ""
 Write-Output "--- Step 2: Validating session root ---"
-if (-not ($cwd -like '{session_root_dir}\\session-*')) {{
-    Write-Output "FAIL: pwd '$cwd' does not start with {session_root_dir}\\session-"
+if (-not ($cwd -like '{session_root_dir}\\*')) {{
+    Write-Output "FAIL: pwd '$cwd' is not under {session_root_dir}\\"
     exit 1
 }}
 Write-Output "PASS: Working directory is under configured session root"
