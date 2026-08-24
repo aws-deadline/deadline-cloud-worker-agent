@@ -598,7 +598,14 @@ class SessionActionQueue:
         return next_action
 
     def peek_resolved_symbol_table_json(self) -> str | None:
-        """Inspect the first queued action's resolved symbol table without consuming it.
+        """Scan queued actions for the first resolved symbol table without consuming.
+
+        The scan skips action types that carry no symbol table (e.g. attachment
+        sync actions) and returns the table from the first ``ENV_*`` or
+        ``TASK_RUN`` entry found.  This is necessary because the service may
+        place ``SYNC_INPUT_JOB_ATTACHMENTS`` before environment-enter actions
+        for any job with attachments — without the scan, session-scoped symbols
+        such as ``Job.Name`` would be unavailable.
 
         This accessor is non-consuming: the queue state is not mutated, and a
         subsequent ``dequeue`` call will still yield the same front action.
@@ -609,38 +616,39 @@ class SessionActionQueue:
         Returns
         -------
         str | None
-            The ``resolved_symbol_table_json`` from the first action's entity,
-            or None when the queue is empty or the action type has no table.
+            The ``resolved_symbol_table_json`` from the first action whose type
+            carries a table, or None when the queue is empty or contains only
+            action types without a table.
         """
-        if not self._actions:
-            return None
-
-        action_queue_entry = self._actions[0]
-        action_type = action_queue_entry.definition["actionType"]
-
-        try:
-            if action_type.startswith("ENV_"):
-                action_queue_entry = cast(EnvironmentQueueEntry, action_queue_entry)
-                environment_id = action_queue_entry.definition["environmentId"]
-                environment_details = self._job_entities.environment_details(
-                    environment_id=environment_id
+        # The service emits the same session-scoped symbols (e.g. Job.Name)
+        # into every step and environment entity's table, so it is safe to
+        # return the first match regardless of position in the queue.
+        for action_queue_entry in self._actions:
+            action_type = action_queue_entry.definition["actionType"]
+            try:
+                if action_type.startswith("ENV_"):
+                    action_queue_entry = cast(EnvironmentQueueEntry, action_queue_entry)
+                    environment_id = action_queue_entry.definition["environmentId"]
+                    environment_details = self._job_entities.environment_details(
+                        environment_id=environment_id
+                    )
+                    return environment_details.resolved_symbol_table_json
+                elif action_type == "TASK_RUN":
+                    action_queue_entry = cast(TaskRunQueueEntry, action_queue_entry)
+                    step_id = action_queue_entry.definition["stepId"]
+                    step_details = self._job_entities.step_details(step_id=step_id)
+                    return step_details.resolved_symbol_table_json
+                else:
+                    continue
+            except Exception:
+                # This accessor only seeds session-scoped symbols (e.g.
+                # Job.Name), so a failure must not break session creation.
+                # Skip to the next candidate — the subsequent dequeue surfaces
+                # the real error through the normal action-failure path.
+                logger.warning(
+                    "Failed to prefetch resolved symbol table for a queued action "
+                    "(type=%s); scanning next action.",
+                    action_type,
                 )
-                return environment_details.resolved_symbol_table_json
-            elif action_type == "TASK_RUN":
-                action_queue_entry = cast(TaskRunQueueEntry, action_queue_entry)
-                step_id = action_queue_entry.definition["stepId"]
-                step_details = self._job_entities.step_details(step_id=step_id)
-                return step_details.resolved_symbol_table_json
-            else:
-                return None
-        except Exception:
-            # This accessor only seeds session-scoped symbols (e.g. Job.Name),
-            # so a failure must not break session creation. The subsequent
-            # dequeue surfaces the real error through the normal action-failure
-            # path.
-            logger.warning(
-                "Failed to prefetch resolved symbol table for the first queued action "
-                "(type=%s); proceeding without it.",
-                action_type,
-            )
-            return None
+                continue
+        return None

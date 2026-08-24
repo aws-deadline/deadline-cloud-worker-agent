@@ -752,6 +752,118 @@ class TestPeekResolvedSymbolTableJson:
         assert peek_result == table_json
 
 
+class TestPeekResolvedSymbolTableJsonScansPastSync:
+    """Tests that peek scans past non-ENV/non-TASK actions to find the symbol table.
+
+    These cover the gap-22 scenario: when SYNC_INPUT_JOB_ATTACHMENTS is the
+    first queued action, Job.Name must still be resolved from a subsequent
+    ENV_* or TASK_RUN action.
+    """
+
+    def test_returns_env_table_when_sync_input_precedes_env_enter(
+        self,
+        session_queue: SessionActionQueue,
+        job_entities: MagicMock,
+    ) -> None:
+        # GIVEN — sync action is first, env action is second
+        table_json = '[{"name":"Job.Name","type":"string","value":"MyJob"}]'
+        job_entities.environment_details.return_value = EnvironmentDetails(
+            environment=Environment(name="TestEnv", script=_TEST_ENVIRONMENT_SCRIPT),
+            resolved_symbol_table_json=table_json,
+        )
+        sync_entry = AttachmentDownloadActionQueueEntry(
+            Mock(),
+            AttachmentDownloadActionBoto(
+                sessionActionId="sync-1", actionType="SYNC_INPUT_JOB_ATTACHMENTS"
+            ),
+        )
+        env_entry = EnvironmentQueueEntry(
+            Mock(),
+            EnvironmentAction(
+                sessionActionId="env-1", actionType="ENV_ENTER", environmentId="env-1"
+            ),
+        )
+        session_queue._actions = [sync_entry, env_entry]
+        session_queue._actions_by_id["sync-1"] = sync_entry
+        session_queue._actions_by_id["env-1"] = env_entry
+
+        # WHEN
+        result = session_queue.peek_resolved_symbol_table_json()
+
+        # THEN
+        assert result == table_json
+        job_entities.environment_details.assert_called_once_with(environment_id="env-1")
+
+    def test_returns_none_when_queue_has_only_sync_actions(
+        self,
+        session_queue: SessionActionQueue,
+    ) -> None:
+        # GIVEN — queue contains only attachment sync actions (no ENV/TASK)
+        sync_entry = AttachmentDownloadActionQueueEntry(
+            Mock(),
+            AttachmentDownloadActionBoto(
+                sessionActionId="sync-1", actionType="SYNC_INPUT_JOB_ATTACHMENTS"
+            ),
+        )
+        upload_entry = AttachmentUploadActionQueueEntry(
+            Mock(),
+            AttachmentUploadActionBoto(
+                sessionActionId="upload-1",
+                actionType="SYNC_OUTPUT_JOB_ATTACHMENTS",
+                stepId="step-1",
+                startTime=0.0,
+            ),
+        )
+        session_queue._actions = [sync_entry, upload_entry]
+        session_queue._actions_by_id["sync-1"] = sync_entry
+        session_queue._actions_by_id["upload-1"] = upload_entry
+
+        # WHEN
+        result = session_queue.peek_resolved_symbol_table_json()
+
+        # THEN — no ENV/TASK action exists, so None is correct
+        assert result is None
+
+    def test_skips_action_whose_entity_resolution_fails_and_returns_next(
+        self,
+        session_queue: SessionActionQueue,
+        job_entities: MagicMock,
+    ) -> None:
+        # GIVEN — first ENV action's entity resolution fails, second succeeds
+        table_json = '[{"name":"Job.Name","type":"string","value":"MyJob"}]'
+        env_details_good = EnvironmentDetails(
+            environment=Environment(name="TestEnv", script=_TEST_ENVIRONMENT_SCRIPT),
+            resolved_symbol_table_json=table_json,
+        )
+        job_entities.environment_details.side_effect = [
+            RuntimeError("entity fetch failed"),
+            env_details_good,
+        ]
+        entry_bad = EnvironmentQueueEntry(
+            Mock(),
+            EnvironmentAction(
+                sessionActionId="env-bad", actionType="ENV_ENTER", environmentId="env-bad"
+            ),
+        )
+        entry_good = EnvironmentQueueEntry(
+            Mock(),
+            EnvironmentAction(
+                sessionActionId="env-good", actionType="ENV_ENTER", environmentId="env-good"
+            ),
+        )
+        session_queue._actions = [entry_bad, entry_good]
+        session_queue._actions_by_id["env-bad"] = entry_bad
+        session_queue._actions_by_id["env-good"] = entry_good
+
+        # WHEN
+        with patch.object(session_queue_mod, "logger") as mock_logger:
+            result = session_queue.peek_resolved_symbol_table_json()
+
+        # THEN — skipped the failed entity, returned from the good one
+        assert result == table_json
+        mock_logger.warning.assert_called_once()
+
+
 class TestDequeueEnvExitDetails:
     """Tests that ENV_EXIT dequeue produces an ExitEnvironmentAction carrying fetched details"""
 
