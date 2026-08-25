@@ -29,16 +29,16 @@ def _resolve_step_script(
     `extra_let_bindings` or step-scope names are missing from the session's
     symbol table.
 
-    A FEATURE_BUNDLE_1 simple-action template (`bash:`, `powershell:`, `cmd:`,
-    `python:`, `node:`) has no `script` at all -- the service serves the sugar
-    as authored, and the worker never instantiates a job, so nothing de-sugars
-    it. `resolve_syntax_sugar()` does that here, returning a new template whose
-    script carries `[*step lets, *simple-action lets]`.
+    A FEATURE_BUNDLE_1 simple-action template (`bash:`, `cmd:`, `node:`,
+    `powershell:`, `python:`) has no `script` at all. The service serves the
+    sugar as authored and the worker never instantiates a job, so nothing
+    de-sugars it. `resolve_syntax_sugar()` does that here, returning a new
+    template whose script carries `[*step lets, *simple-action lets]`.
 
     That fold is why the de-sugared path sends `extra_let_bindings=None`: the
-    step-scope bindings are already inside `script.let`, and applying them a
-    second time is not harmless. A literal binding is idempotent, but a
-    self-referential one is not -- `n = n + 1` applied twice yields 3.
+    step-scope bindings are already inside `script.let`, and applying them
+    twice is not harmless. A literal binding is idempotent, but a
+    self-referential one is not, and `n = n + 1` applied twice yields 3.
     """
     script = step_template.script
     if script is not None:
