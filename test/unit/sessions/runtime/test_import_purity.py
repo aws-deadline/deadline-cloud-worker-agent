@@ -122,6 +122,67 @@ def test_importing_python_runtime_does_not_resolve_openjd_expr(tmp_path: Path) -
     )
 
 
+def test_constructing_runtime_without_table_does_not_load_native_extension(
+    tmp_path: Path,
+) -> None:
+    """Building a runtime with no resolved table must not load the extension.
+
+    The two probes above pin import time only. This one pins construction: the
+    ctor runs ``_extract_job_name(config.resolved_symbol_table_json)``, and the
+    None guard there is the thing that keeps the extension out of a worker
+    process that only ever runs non-EXPR templates. ``_parse_resolved_symtab``
+    is exercised too, since the same guard protects it on the action paths.
+
+    ``path_mapping_rules=None`` is load-bearing: real path mapping rules load
+    the extension themselves (a known open limitation in the sessions repo), so
+    a probe that passed rules would fail for a reason this test is not about.
+    """
+    # WHEN
+    loaded = _run_probe(
+        tmp_path,
+        """
+        import tempfile
+        from pathlib import Path
+
+        from deadline_worker_agent.sessions.runtime import SessionRuntimeConfig
+        from deadline_worker_agent.sessions.runtime.python import (
+            PythonSessionRuntime,
+            _parse_resolved_symtab,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            runtime = PythonSessionRuntime(
+                SessionRuntimeConfig(
+                    session_id="purity-probe",
+                    job_parameter_values={},
+                    path_mapping_rules=None,
+                    retain_working_dir=False,
+                    user=None,
+                    action_callback=lambda session_id, status: None,
+                    os_env_vars=None,
+                    session_root_directory=Path(td),
+                    resolved_symbol_table_json=None,
+                )
+            )
+            # Release the working directory before the tempdir is removed --
+            # Windows refuses to delete a directory that is still in use.
+            runtime.cleanup()
+            _parse_resolved_symtab(None)
+
+        print(RS in sys.modules)
+        """,
+    )
+
+    # THEN
+    assert loaded == "False", (
+        "constructing PythonSessionRuntime with resolved_symbol_table_json=None "
+        "loaded the native extension. The imports in _extract_job_name and "
+        "_parse_resolved_symtab must stay inside their functions, after the "
+        "None guard -- a session that never receives a resolved table must not "
+        "pay for the extension."
+    )
+
+
 def test_native_extension_is_available(tmp_path: Path) -> None:
     """Positive control: the extension really is installed here. Without this,
     every "must not be loaded" test above would pass trivially in an
