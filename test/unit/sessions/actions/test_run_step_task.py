@@ -1,5 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+from typing import Any
 from unittest.mock import Mock
 import pytest
 
@@ -137,3 +138,116 @@ class TestRunStepTaskActionStepScopeLetBindings:
 
         call_kwargs = mock_session.run_task.call_args.kwargs
         assert call_kwargs["extra_let_bindings"] is None
+
+
+def _step_details_from_template(template: dict[str, Any], extensions: list[str]) -> StepDetails:
+    """Parse a served step template the way BatchGetJobEntity delivers it."""
+    payload: Any = {
+        "jobId": "job-123",
+        "stepId": "step-123",
+        "schemaVersion": "jobtemplate-2023-09",
+        "dependencies": [],
+        "extensions": extensions,
+        "template": template,
+    }
+    return StepDetails.from_boto(payload)
+
+
+class TestRunStepTaskActionSimpleActionSugar:
+    """A served FEATURE_BUNDLE_1 simple action has no ``script`` to forward.
+
+    Gap 25: the service serves the sugar as authored, so
+    ``StepTemplate.script`` is None. The action de-sugars it here, because
+    nothing else on the worker's path does -- ``create_job`` only de-sugars for
+    callers that instantiate a job.
+
+    Real templates rather than Mocks: the whole point is what the model's
+    ``resolve_syntax_sugar()`` produces, which a Mock cannot tell us.
+    """
+
+    def test_start_de_sugars_a_bash_step_and_sends_no_extra_bindings(
+        self, mock_session, mock_executor
+    ):
+        """The folded script goes out, and ``extra_let_bindings`` is None.
+
+        ``resolve_syntax_sugar()`` folds step-scope ``let`` into the script's own
+        ``let`` as ``[*step lets, *simple-action lets]``, so sending the step's
+        bindings again would apply them twice. That is idempotent for a literal
+        but not for a self-referential binding (``n = n + 1`` twice yields 3),
+        so this path must send None.
+        """
+        details = _step_details_from_template(
+            {
+                "name": "MyStep",
+                "let": ["base = 'from step'"],
+                "bash": {"let": ["msg = base"], "script": "echo hi"},
+            },
+            ["FEATURE_BUNDLE_1", "EXPR"],
+        )
+        assert details.step_template.script is None
+        action = RunStepTaskAction(
+            id="action-123",
+            details=details,
+            task_id="task-456",
+            task_parameter_values={},
+        )
+
+        action.start(session=mock_session, executor=mock_executor)
+
+        call_kwargs = mock_session.run_task.call_args.kwargs
+        assert call_kwargs["extra_let_bindings"] is None
+        step_script = call_kwargs["step_script"]
+        assert step_script is not None
+        # Both scopes present exactly once, step bindings first.
+        assert step_script.let == ["base = 'from step'", "msg = base"]
+        assert step_script.actions.onRun.command == "bash"
+
+    def test_start_does_not_mutate_the_served_template(self, mock_session, mock_executor):
+        """De-sugaring returns a new template; the entity's own is untouched.
+
+        StepDetails is cached and re-used across the tasks of a step, so a
+        de-sugar that mutated in place would leave later reads of the same
+        entity looking at a different shape than the service sent.
+        """
+        details = _step_details_from_template(
+            {"name": "MyStep", "bash": {"script": "echo hi"}},
+            ["FEATURE_BUNDLE_1", "EXPR"],
+        )
+        action = RunStepTaskAction(
+            id="action-123",
+            details=details,
+            task_parameter_values={},
+        )
+
+        action.start(session=mock_session, executor=mock_executor)
+
+        assert details.step_template.script is None
+        assert details.step_template.bash is not None
+
+    def test_start_forwards_a_plain_script_unchanged(self, mock_session, mock_executor):
+        """Control: a ``script:`` template still sends its own script and ``let``.
+
+        Guards the other direction -- de-sugaring unconditionally would also
+        fold ``let`` into ``script.let``, so a plain step would resolve its
+        step-scope bindings through a different channel than the one
+        test_session.py pins.
+        """
+        details = _step_details_from_template(
+            {
+                "name": "MyStep",
+                "let": ["region = 'us-west-2'"],
+                "script": {"actions": {"onRun": {"command": "echo", "args": ["hi"]}}},
+            },
+            ["EXPR"],
+        )
+        action = RunStepTaskAction(
+            id="action-123",
+            details=details,
+            task_parameter_values={},
+        )
+
+        action.start(session=mock_session, executor=mock_executor)
+
+        call_kwargs = mock_session.run_task.call_args.kwargs
+        assert call_kwargs["step_script"] is details.step_template.script
+        assert call_kwargs["extra_let_bindings"] == ["region = 'us-west-2'"]

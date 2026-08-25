@@ -10,10 +10,45 @@ from ...log_messages import SessionActionLogKind
 from .openjd_action import OpenjdAction
 
 if TYPE_CHECKING:
-    from openjd.model.v2023_09 import StepScript
+    from openjd.model.v2023_09 import StepScript, StepTemplate
 
     from ..job_entities import StepDetails
     from ..session import Session
+
+
+def _resolve_step_script(
+    step_template: StepTemplate,
+) -> tuple[StepScript, Optional[list[str]]]:
+    """Pick the StepScript to run, and the step-scope `let` to send with it.
+
+    The step template arrives un-instantiated, in either of two shapes.
+
+    A `script:` template has step-scope `let` (StepTemplate.let) and
+    script-scope `let` (StepTemplate.script.let) as separate fields. Nothing
+    folds the former into the latter on this path, so it goes out as
+    `extra_let_bindings` or step-scope names are missing from the session's
+    symbol table.
+
+    A FEATURE_BUNDLE_1 simple-action template (`bash:`, `powershell:`, `cmd:`,
+    `python:`, `node:`) has no `script` at all -- the service serves the sugar
+    as authored, and the worker never instantiates a job, so nothing de-sugars
+    it. `resolve_syntax_sugar()` does that here, returning a new template whose
+    script carries `[*step lets, *simple-action lets]`.
+
+    That fold is why the de-sugared path sends `extra_let_bindings=None`: the
+    step-scope bindings are already inside `script.let`, and applying them a
+    second time is not harmless. A literal binding is idempotent, but a
+    self-referential one is not -- `n = n + 1` applied twice yields 3.
+    """
+    script = step_template.script
+    if script is not None:
+        return script, step_template.let
+
+    # The model rejects a StepTemplate carrying neither `script` nor a simple
+    # action, so the fold always produces a script. The cast records that
+    # invariant for the type checker; it is not a runtime conversion.
+    folded = step_template.resolve_syntax_sugar()
+    return cast("StepScript", folded.script), None
 
 
 class RunStepTaskAction(OpenjdAction):
@@ -79,18 +114,14 @@ class RunStepTaskAction(OpenjdAction):
         if self.task_id is not None:
             env_vars["DEADLINE_TASK_ID"] = self.task_id
 
-        # The service resolves step template syntax sugar, so script is always present.
-        #
-        # extra_let_bindings: the step template arrives un-instantiated, with
-        # step-scope `let` (StepTemplate.let) and script-scope `let`
-        # (StepTemplate.script.let) as separate fields. Nothing folds the former
-        # into the latter on this path, so pass it explicitly or step-scope names
-        # are missing from the Python session's symbol table.
+        step_template = self._details.step_template
+        step_script, extra_let_bindings = _resolve_step_script(step_template)
+
         session.run_task(
-            step_script=cast("StepScript", self._details.step_template.script),
+            step_script=step_script,
             task_parameter_values=self._task_parameter_values,
             os_env_vars=env_vars,
-            step_name=self._details.step_template.name,
+            step_name=step_template.name,
             resolved_symbol_table_json=self._details.resolved_symbol_table_json,
-            extra_let_bindings=self._details.step_template.let,
+            extra_let_bindings=extra_let_bindings,
         )

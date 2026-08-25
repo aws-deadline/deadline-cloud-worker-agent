@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -100,6 +101,43 @@ def _step_details(
         "schemaVersion": "jobtemplate-2023-09",
         "dependencies": [],
         "extensions": ["EXPR"],
+        "template": template,
+    }
+    if resolved_symbol_table is not None:
+        payload["resolvedSymbolTable"] = json.dumps(resolved_symbol_table)
+
+    return StepDetails.from_boto(payload)
+
+
+def _bash_sugar_step_details(
+    *,
+    step_let: list[str] | None,
+    sugar_let: list[str] | None,
+    script_body: str,
+    resolved_symbol_table: list[dict[str, str]] | None = None,
+) -> StepDetails:
+    """Build a StepDetails for a FEATURE_BUNDLE_1 ``bash:`` simple action.
+
+    A sibling of ``_step_details`` rather than a parameter on it: the served
+    shape is genuinely different. There is no ``script`` field at all, the
+    command and embedded file do not exist yet, and the simple action carries
+    its own ``let`` alongside the step's. ``FEATURE_BUNDLE_1`` has to be in the
+    payload's ``extensions`` or the parse rejects the sugar.
+    """
+    bash: dict[str, Any] = {"script": script_body}
+    if sugar_let is not None:
+        bash["let"] = sugar_let
+
+    template: dict[str, Any] = {"name": "MyStep", "bash": bash}
+    if step_let is not None:
+        template["let"] = step_let
+
+    payload: StepDetailsData = {
+        "jobId": "job-123",
+        "stepId": "step-123",
+        "schemaVersion": "jobtemplate-2023-09",
+        "dependencies": [],
+        "extensions": ["FEATURE_BUNDLE_1", "EXPR"],
         "template": template,
     }
     if resolved_symbol_table is not None:
@@ -320,3 +358,95 @@ class TestResolvedSymbolTableEndToEnd:
 
         assert state == ActionState.SUCCESS
         assert any("NOTABLE:ok" in m for m in caplog.messages)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the de-sugared bash: action spawns `bash`, which stock Windows lacks. "
+    "The de-sugar branch itself is pinned on every platform by "
+    "TestRunStepTaskActionSimpleActionSugar in actions/test_run_step_task.py.",
+)
+class TestSimpleActionSugarEndToEnd:
+    """A served FEATURE_BUNDLE_1 simple action runs, and its ``let`` resolves once.
+
+    Gap 25: the service serves simple-action sugar as authored, so
+    ``StepTemplate.script`` is None and ``StepTemplate.bash`` holds the body.
+    ``create_job`` de-sugars during instantiation, so a caller that instantiates
+    a job locally (openjd-cli) never sees this -- the worker is handed the
+    un-instantiated template and has to de-sugar it itself.
+    """
+
+    def test_a_bash_sugar_step_runs_and_resolves_its_own_let(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """This is the regression.
+
+        Before the fix the action forwarded ``step_template.script`` -- None for
+        a sugar template -- under a comment claiming the service had already
+        resolved the sugar, and the task failed before its command ran.
+        """
+        caplog.set_level(logging.INFO)
+        details = _bash_sugar_step_details(
+            step_let=None,
+            sugar_let=["msg = 'hello from bash'"],
+            script_body='echo "BASH:{{ msg }}"',
+        )
+        assert details.step_template.script is None
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.SUCCESS
+        assert any("BASH:hello from bash" in m for m in caplog.messages)
+
+    def test_step_and_sugar_scope_let_each_resolve_exactly_once(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The no-double-apply pin for the de-sugared path.
+
+        ``resolve_syntax_sugar()`` folds step-scope ``let`` into the script's own
+        ``let``, so the de-sugared path must send ``extra_let_bindings=None``.
+        Sending the step's bindings as well would apply them twice, which is
+        invisible for a literal but not for a self-referential binding: ``n``
+        arrives as ``"a"`` from the served table, ``n = n + 'b'`` yields ``"ab"``
+        applied once and ``"abb"`` applied twice.
+        """
+        caplog.set_level(logging.INFO)
+        details = _bash_sugar_step_details(
+            step_let=["n = n + 'b'"],
+            sugar_let=["out = n + '|sugar'"],
+            script_body='echo "OUT:{{ out }}"',
+            resolved_symbol_table=[{"name": "n", "type": "string", "value": "a"}],
+        )
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.SUCCESS
+        assert any("OUT:ab|sugar" in m for m in caplog.messages)
+        assert not any("OUT:abb|sugar" in m for m in caplog.messages), (
+            "the step-scope binding was applied twice -- the de-sugared path must send no extra bindings"
+        )
+
+    def test_a_plain_script_step_applies_step_scope_let_exactly_once(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Control: the ``script:`` branch is unchanged, and also applies once.
+
+        The other direction of over-correction -- de-sugaring every template
+        *and* still sending ``extra_let_bindings`` -- resolves to the same values
+        for the literal bindings the rest of this file uses. It shows up only
+        against a self-referential binding, so this control carries one.
+        """
+        caplog.set_level(logging.INFO)
+        details = _step_details(
+            step_let=["n = n + 'b'"],
+            script_let=["out = n + '|script'"],
+            args=["OUT:{{ out }}"],
+            resolved_symbol_table=[{"name": "n", "type": "string", "value": "a"}],
+        )
+        assert details.step_template.script is not None
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.SUCCESS
+        assert any("OUT:ab|script" in m for m in caplog.messages)
+        assert not any("OUT:abb|script" in m for m in caplog.messages)
