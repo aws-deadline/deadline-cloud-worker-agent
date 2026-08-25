@@ -27,6 +27,7 @@ names are simply absent from the task's symbol table.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -37,6 +38,7 @@ from unittest.mock import Mock
 import pytest
 from openjd.sessions import ActionState
 
+from deadline_worker_agent.api_models import StepDetailsData
 from deadline_worker_agent.sessions.actions.run_step_task import RunStepTaskAction
 from deadline_worker_agent.sessions.job_entities.step_details import StepDetails
 from deadline_worker_agent.sessions.runtime import SessionRuntimeConfig
@@ -72,11 +74,16 @@ def _step_details(
     step_let: list[str] | None,
     script_let: list[str] | None,
     args: list[str],
+    resolved_symbol_table: list[dict[str, str]] | None = None,
 ) -> StepDetails:
     """Build a StepDetails from the shape the service actually serves.
 
     Note ``let`` and ``script.let`` are siblings here, never folded together --
     that is the served shape, and the reason this defect exists.
+
+    ``resolved_symbol_table`` is a list of ``{"name", "type", "value"}`` entries
+    serialized into the payload's ``resolvedSymbolTable`` field -- the JSON
+    string ``create_job`` pre-resolves and ``BatchGetJobEntity`` serves.
     """
     template: dict[str, Any] = {
         "name": "MyStep",
@@ -87,16 +94,18 @@ def _step_details(
     if script_let is not None:
         template["script"]["let"] = script_let
 
-    return StepDetails.from_boto(
-        {
-            "jobId": "job-123",
-            "stepId": "step-123",
-            "schemaVersion": "jobtemplate-2023-09",
-            "dependencies": [],
-            "extensions": ["EXPR"],
-            "template": template,
-        }
-    )
+    payload: StepDetailsData = {
+        "jobId": "job-123",
+        "stepId": "step-123",
+        "schemaVersion": "jobtemplate-2023-09",
+        "dependencies": [],
+        "extensions": ["EXPR"],
+        "template": template,
+    }
+    if resolved_symbol_table is not None:
+        payload["resolvedSymbolTable"] = json.dumps(resolved_symbol_table)
+
+    return StepDetails.from_boto(payload)
 
 
 def _run_action_to_completion(
@@ -260,3 +269,54 @@ class TestStepScopeLetEndToEnd:
         state, _ = _run_action_to_completion(details, tmp_path)
 
         assert state == ActionState.FAILED
+
+
+class TestResolvedSymbolTableEndToEnd:
+    """The served ``resolvedSymbolTable`` reaches the v0 session's symbol table.
+
+    Same real chain as TestStepScopeLetEndToEnd, but the symbol under test
+    arrives via the entity's pre-resolved symbol table rather than the
+    template's ``let`` -- the channel this fix adds for the Python runtime.
+    """
+
+    def test_symbol_from_resolved_table_resolves_in_the_task_command(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A symbol the template's ``let`` does NOT define resolves from the
+        served table.
+
+        This is the regression. Before the fix the Python runtime dropped
+        ``resolvedSymbolTable``, so ``{{ from_base }}`` had no definition and
+        the action failed to resolve it.
+        """
+        caplog.set_level(logging.INFO)
+        details = _step_details(
+            step_let=None,
+            script_let=None,
+            args=["BASE:{{ from_base }}"],
+            resolved_symbol_table=[
+                {"name": "from_base", "type": "string", "value": "served value"}
+            ],
+        )
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.SUCCESS
+        assert any("BASE:served value" in m for m in caplog.messages)
+
+    def test_a_step_without_resolved_table_still_runs(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Negative control: no table and no ``let`` is today's common case.
+
+        Guards against over-correction -- a fix that only works when a table is
+        served, or that breaks when ``resolvedSymbolTable`` is absent.
+        """
+        caplog.set_level(logging.INFO)
+        details = _step_details(step_let=None, script_let=None, args=["NOTABLE:ok"])
+        assert details.resolved_symbol_table_json is None
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.SUCCESS
+        assert any("NOTABLE:ok" in m for m in caplog.messages)

@@ -110,6 +110,7 @@ class TestPythonSessionRuntimeDelegation:
             os_env_vars=os_env,
             step_name=None,
             extra_let_bindings=None,
+            resolved_symtab=None,
         )
         # enter_environment is the only non-void method — verify the return value
         # (EnvironmentIdentifier) flows through the adapter.
@@ -138,6 +139,7 @@ class TestPythonSessionRuntimeDelegation:
             os_env_vars=os_env,
             step_name="MyStep",
             extra_let_bindings=["VAR=value"],
+            resolved_symtab=None,
         )
         assert result is mock_session_instance.enter_environment.return_value
 
@@ -151,22 +153,10 @@ class TestPythonSessionRuntimeDelegation:
         )
 
         mock_session_instance.exit_environment.assert_called_once_with(
-            identifier=identifier, os_env_vars={"A": "B"}, keep_session_running=True
-        )
-
-    def test_exit_environment_does_not_forward_resolved_symbol_table_json(
-        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
-    ) -> None:
-        """The v0 Python session has no resolved-table API; the kwarg is accepted but not forwarded."""
-        identifier = MagicMock()
-
-        adapter.exit_environment(
             identifier=identifier,
-            resolved_symbol_table_json='[{"name":"Job.Name","type":"string","value":"X"}]',
-        )
-
-        mock_session_instance.exit_environment.assert_called_once_with(
-            identifier=identifier, os_env_vars=None, keep_session_running=False
+            os_env_vars={"A": "B"},
+            keep_session_running=True,
+            resolved_symtab=None,
         )
 
     def test_run_task_when_called_delegates_to_wrapped_session(
@@ -189,6 +179,7 @@ class TestPythonSessionRuntimeDelegation:
             log_task_banner=False,
             step_name=None,
             extra_let_bindings=None,
+            resolved_symtab=None,
         )
 
     def test_run_task_forwards_step_scope_let_bindings_to_wrapped_session(
@@ -216,6 +207,7 @@ class TestPythonSessionRuntimeDelegation:
             log_task_banner=True,
             step_name="MyStep",
             extra_let_bindings=["region = 'us-west-2'"],
+            resolved_symtab=None,
         )
 
     def test_run_task_without_session_env_when_called_delegates_to_private_method(
@@ -375,3 +367,154 @@ class TestPythonSessionRuntimeJobName:
         mock_logger.warning.assert_called_once()
         call_kwargs = mock_openjd_session.call_args.kwargs
         assert call_kwargs["job_name"] is None
+
+
+class TestResolvedSymbolTableForwarding:
+    """Tests for resolved_symbol_table_json parsing and forwarding to the v0 session.
+
+    Mirrors TestResolvedSymbolTableForwarding in test_rust.py. python.py imports
+    SerializedSymbolTable lazily (extension purity), so the class is patched at
+    its source (openjd.expr) rather than as a module attribute of python.py.
+    """
+
+    @pytest.fixture()
+    def adapter(
+        self, runtime_config: SessionRuntimeConfig, mock_openjd_session: MagicMock
+    ) -> PythonSessionRuntime:
+        return PythonSessionRuntime(runtime_config)
+
+    @pytest.fixture()
+    def mock_session_instance(self, mock_openjd_session: MagicMock) -> MagicMock:
+        return mock_openjd_session.return_value
+
+    def test_enter_environment_forwards_resolved_symtab_when_json_present(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When resolved_symbol_table_json is provided, it's parsed and forwarded."""
+        from openjd.expr import SerializedSymbolTable
+
+        environment = MagicMock()
+        symtab_json = '[{"name":"Job.Name","type":"string","value":"TestJob"}]'
+        fake_symtab = MagicMock()
+
+        with patch.object(
+            SerializedSymbolTable, "from_json_str", return_value=fake_symtab
+        ) as mock_from_json:
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                resolved_symbol_table_json=symtab_json,
+            )
+
+        mock_from_json.assert_called_once_with(symtab_json)
+        call_kwargs = mock_session_instance.enter_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is fake_symtab
+
+    def test_run_task_forwards_resolved_symtab_when_json_present(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When resolved_symbol_table_json is provided, it's parsed and forwarded."""
+        from openjd.expr import SerializedSymbolTable
+
+        step_script = MagicMock()
+        symtab_json = '[{"name":"Job.Name","type":"string","value":"TestJob"}]'
+        fake_symtab = MagicMock()
+
+        with patch.object(
+            SerializedSymbolTable, "from_json_str", return_value=fake_symtab
+        ) as mock_from_json:
+            adapter.run_task(
+                step_script=step_script,
+                task_parameter_values={},
+                resolved_symbol_table_json=symtab_json,
+            )
+
+        mock_from_json.assert_called_once_with(symtab_json)
+        call_kwargs = mock_session_instance.run_task.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is fake_symtab
+
+    def test_exit_environment_forwards_resolved_symtab_when_json_present(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When resolved_symbol_table_json is provided, it's parsed and forwarded."""
+        from openjd.expr import SerializedSymbolTable
+
+        symtab_json = '[{"name":"Job.Name","type":"string","value":"TestJob"}]'
+        fake_symtab = MagicMock()
+
+        with patch.object(
+            SerializedSymbolTable, "from_json_str", return_value=fake_symtab
+        ) as mock_from_json:
+            adapter.exit_environment(
+                identifier="env-1",
+                resolved_symbol_table_json=symtab_json,
+            )
+
+        mock_from_json.assert_called_once_with(symtab_json)
+        call_kwargs = mock_session_instance.exit_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is fake_symtab
+
+    def test_exit_environment_passes_none_when_json_is_none(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When resolved_symbol_table_json is None, the parser is not invoked."""
+        from openjd.expr import SerializedSymbolTable
+
+        with patch.object(SerializedSymbolTable, "from_json_str") as mock_from_json:
+            adapter.exit_environment(
+                identifier="env-1",
+                resolved_symbol_table_json=None,
+            )
+
+        mock_from_json.assert_not_called()
+        call_kwargs = mock_session_instance.exit_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is None
+
+    def test_enter_environment_graceful_degradation_on_malformed_json(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """Malformed JSON causes a warning log and proceeds with resolved_symtab=None."""
+        environment = MagicMock()
+
+        with patch.object(python_module, "logger") as mock_logger:
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                resolved_symbol_table_json="not valid json",
+            )
+
+        mock_logger.warning.assert_called_once()
+        assert "resolvedSymbolTable" in mock_logger.warning.call_args[0][0]
+        call_kwargs = mock_session_instance.enter_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is None
+
+    def test_run_task_graceful_degradation_on_malformed_json(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """Malformed JSON causes a warning log and proceeds with resolved_symtab=None."""
+        with patch.object(python_module, "logger") as mock_logger:
+            adapter.run_task(
+                step_script=MagicMock(),
+                task_parameter_values={},
+                resolved_symbol_table_json="{not json",
+            )
+
+        mock_logger.warning.assert_called_once()
+        assert "resolvedSymbolTable" in mock_logger.warning.call_args[0][0]
+        call_kwargs = mock_session_instance.run_task.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is None
+
+    def test_exit_environment_graceful_degradation_on_malformed_json(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """Malformed JSON causes a warning log and proceeds with resolved_symtab=None."""
+        with patch.object(python_module, "logger") as mock_logger:
+            adapter.exit_environment(
+                identifier="env-1",
+                resolved_symbol_table_json="{not json",
+            )
+
+        mock_logger.warning.assert_called_once()
+        assert "resolvedSymbolTable" in mock_logger.warning.call_args[0][0]
+        call_kwargs = mock_session_instance.exit_environment.call_args.kwargs
+        assert call_kwargs["resolved_symtab"] is None

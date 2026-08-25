@@ -7,13 +7,13 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
-from openjd.expr import SerializedSymbolTable
 from openjd.model import RevisionExtensions, SpecificationRevision
 from openjd.sessions import Session as OpenJDSession
 
 from . import SessionRuntime, SessionRuntimeConfig
 
 if TYPE_CHECKING:
+    from openjd.expr import SerializedSymbolTable
     from openjd.sessions import (
         ActionStatus,
         EnvironmentIdentifier,
@@ -36,6 +36,11 @@ def _extract_job_name(json_str: str | None) -> str | None:
     """
     if json_str is None:
         return None
+    # Imported lazily, behind the None guard above: SerializedSymbolTable lives
+    # in openjd.expr, a facade over the native extension. A session that never
+    # receives a resolved table must not load the extension.
+    from openjd.expr import SerializedSymbolTable
+
     try:
         symtab = SerializedSymbolTable.from_json_str(json_str).to_symtab()
         entry = symtab.get("Job.Name")
@@ -45,6 +50,25 @@ def _extract_job_name(json_str: str | None) -> str | None:
         return value if isinstance(value, str) else None
     except Exception as e:
         logger.warning("Failed to extract Job.Name from resolvedSymbolTable: %s", e)
+        return None
+
+
+def _parse_resolved_symtab(json_str: str | None) -> Optional["SerializedSymbolTable"]:
+    """Parse a resolved symbol table JSON string into a SerializedSymbolTable.
+
+    Returns None when the input is None or when parsing fails (graceful
+    degradation — the session proceeds without the pre-resolved table).
+    Mirrors _parse_resolved_symtab in the Rust adapter.
+    """
+    if json_str is None:
+        return None
+    # Imported lazily, behind the None guard above: see _extract_job_name.
+    from openjd.expr import SerializedSymbolTable
+
+    try:
+        return SerializedSymbolTable.from_json_str(json_str)
+    except Exception as e:
+        logger.warning("Failed to parse resolvedSymbolTable; proceeding without it: %s", e)
         return None
 
 
@@ -83,14 +107,16 @@ class PythonSessionRuntime(SessionRuntime):
         step_name: str | None = None,
         extra_let_bindings: list[str] | None = None,
     ) -> EnvironmentIdentifier:
-        # resolved_symbol_table_json: not forwarded — the v0 Python session does
-        # not support pre-resolved symbol tables.
+        # Parse the pre-resolved symbol table if the service provided one. The
+        # v0 session seeds it as the base of its per-action symbol table, the
+        # same layering the _v1 (Rust) session applies.
         return self._session.enter_environment(
             environment=environment,
             identifier=identifier,
             os_env_vars=os_env_vars,
             step_name=step_name,
             extra_let_bindings=extra_let_bindings,
+            resolved_symtab=_parse_resolved_symtab(resolved_symbol_table_json),
         )
 
     def exit_environment(
@@ -101,12 +127,12 @@ class PythonSessionRuntime(SessionRuntime):
         keep_session_running: bool = False,
         resolved_symbol_table_json: str | None = None,
     ) -> None:
-        # resolved_symbol_table_json: not forwarded — the v0 Python session does
-        # not support pre-resolved symbol tables.
+        # Parse the pre-resolved symbol table if the service provided one.
         self._session.exit_environment(
             identifier=identifier,
             os_env_vars=os_env_vars,
             keep_session_running=keep_session_running,
+            resolved_symtab=_parse_resolved_symtab(resolved_symbol_table_json),
         )
 
     def run_task(
@@ -120,9 +146,11 @@ class PythonSessionRuntime(SessionRuntime):
         resolved_symbol_table_json: str | None = None,
         extra_let_bindings: list[str] | None = None,
     ) -> None:
-        # resolved_symbol_table_json: not forwarded — the v0 Python session does
-        # not support pre-resolved symbol tables. extra_let_bindings is how this
-        # runtime gets the step-scope `let` values that table would have carried.
+        # Parse the pre-resolved symbol table if the service provided one. The
+        # v0 session seeds it first and layers Session.*/Task.* values on top,
+        # matching the _v1 (Rust) session. extra_let_bindings is still forwarded
+        # as the fallback channel for step-scope `let` values when no table is
+        # served; when both are present the values agree.
         self._session.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,
@@ -130,6 +158,7 @@ class PythonSessionRuntime(SessionRuntime):
             log_task_banner=log_task_banner,
             step_name=step_name,
             extra_let_bindings=extra_let_bindings,
+            resolved_symtab=_parse_resolved_symtab(resolved_symbol_table_json),
         )
 
     def _run_task_without_session_env(
