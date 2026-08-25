@@ -105,7 +105,6 @@ class PythonSessionRuntime(SessionRuntime):
         os_env_vars: Optional[dict[str, str]] = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
-        extra_let_bindings: list[str] | None = None,
     ) -> EnvironmentIdentifier:
         # Parse the pre-resolved symbol table if the service provided one. The
         # v0 session seeds it as the base of its per-action symbol table, the
@@ -115,7 +114,6 @@ class PythonSessionRuntime(SessionRuntime):
             identifier=identifier,
             os_env_vars=os_env_vars,
             step_name=step_name,
-            extra_let_bindings=extra_let_bindings,
             resolved_symtab=_parse_resolved_symtab(resolved_symbol_table_json),
         )
 
@@ -144,20 +142,17 @@ class PythonSessionRuntime(SessionRuntime):
         log_task_banner: bool = True,
         step_name: str | None = None,
         resolved_symbol_table_json: str | None = None,
-        extra_let_bindings: list[str] | None = None,
     ) -> None:
         # Parse the pre-resolved symbol table if the service provided one. The
         # v0 session seeds it first and layers Session.*/Task.* values on top,
-        # matching the _v1 (Rust) session. extra_let_bindings is still forwarded
-        # as the fallback channel for step-scope `let` values when no table is
-        # served; when both are present the values agree.
+        # matching the _v1 (Rust) session. It is the only channel for
+        # step-scope `let` values.
         self._session.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,
             os_env_vars=os_env_vars,
             log_task_banner=log_task_banner,
             step_name=step_name,
-            extra_let_bindings=extra_let_bindings,
             resolved_symtab=_parse_resolved_symtab(resolved_symbol_table_json),
         )
 

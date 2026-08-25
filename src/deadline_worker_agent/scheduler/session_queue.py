@@ -462,13 +462,13 @@ class SessionActionQueue:
                             action_id, SessionActionLogKind.ENV_EXIT, str(e)
                         ) from e
                 if action_type == "ENV_ENTER":
-                    # Step-scoped environments need the step's name and `let`
-                    # bindings so their scripts can resolve Step.Name and
-                    # step-level let values. The step id is carried in the
-                    # environment id itself, so this does not depend on where
-                    # the action sits in the queue.
+                    # Step-scoped environments need the step's name so their
+                    # scripts can resolve Step.Name. The step id is carried in
+                    # the environment id itself, so this does not depend on
+                    # where the action sits in the queue. Step-scope `let`
+                    # values arrive separately, in the environment's own
+                    # resolved symbol table.
                     step_name: str | None = None
-                    extra_let_bindings: list[str] | None = None
                     if (env_step_id := _step_id_from_environment_id(environment_id)) is not None:
                         try:
                             env_step_details = self._job_entities.step_details(step_id=env_step_id)
@@ -479,14 +479,12 @@ class SessionActionQueue:
                             pass
                         else:
                             step_name = env_step_details.step_template.name
-                            extra_let_bindings = env_step_details.step_template.let
 
                     next_action = EnterEnvironmentAction(
                         id=action_id,
                         job_env_id=environment_id,
                         details=environment_details,
                         step_name=step_name,
-                        extra_let_bindings=extra_let_bindings,
                     )
                 elif action_type == "ENV_EXIT":
                     next_action = ExitEnvironmentAction(

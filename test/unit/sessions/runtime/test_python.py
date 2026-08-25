@@ -109,7 +109,6 @@ class TestPythonSessionRuntimeDelegation:
             identifier=identifier,
             os_env_vars=os_env,
             step_name=None,
-            extra_let_bindings=None,
             resolved_symtab=None,
         )
         # enter_environment is the only non-void method — verify the return value
@@ -119,8 +118,8 @@ class TestPythonSessionRuntimeDelegation:
     def test_enter_environment_forwards_step_context_to_wrapped_session(
         self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
-        """Non-None step_name and extra_let_bindings are forwarded to the
-        Python session, which uses them for wrap-action symbol resolution."""
+        """A non-None step_name is forwarded to the Python session, which uses
+        it for wrap-action symbol resolution."""
         env = MagicMock()
         identifier = "env-123"
         os_env = {"K": "V"}
@@ -130,7 +129,6 @@ class TestPythonSessionRuntimeDelegation:
             identifier=identifier,
             os_env_vars=os_env,
             step_name="MyStep",
-            extra_let_bindings=["VAR=value"],
         )
 
         mock_session_instance.enter_environment.assert_called_once_with(
@@ -138,7 +136,6 @@ class TestPythonSessionRuntimeDelegation:
             identifier=identifier,
             os_env_vars=os_env,
             step_name="MyStep",
-            extra_let_bindings=["VAR=value"],
             resolved_symtab=None,
         )
         assert result is mock_session_instance.enter_environment.return_value
@@ -178,35 +175,6 @@ class TestPythonSessionRuntimeDelegation:
             os_env_vars={"X": "Y"},
             log_task_banner=False,
             step_name=None,
-            extra_let_bindings=None,
-            resolved_symtab=None,
-        )
-
-    def test_run_task_forwards_step_scope_let_bindings_to_wrapped_session(
-        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
-    ) -> None:
-        """Step-template-scope `let` bindings reach the Python session.
-
-        The service serves an un-instantiated StepTemplate, so StepTemplate.let
-        is never folded into script.let on this path. This kwarg is the only way
-        those bindings reach the v0 session's task symbol table.
-        """
-        step_script = MagicMock()
-
-        adapter.run_task(
-            step_script=step_script,
-            task_parameter_values={},
-            step_name="MyStep",
-            extra_let_bindings=["region = 'us-west-2'"],
-        )
-
-        mock_session_instance.run_task.assert_called_once_with(
-            step_script=step_script,
-            task_parameter_values={},
-            os_env_vars=None,
-            log_task_banner=True,
-            step_name="MyStep",
-            extra_let_bindings=["region = 'us-west-2'"],
             resolved_symtab=None,
         )
 

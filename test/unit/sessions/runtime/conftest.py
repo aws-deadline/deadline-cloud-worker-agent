@@ -41,7 +41,6 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             os_env_vars: Optional[dict[str, str]] = None,
             resolved_symbol_table_json: str | None = None,
             step_name: str | None = None,
-            extra_let_bindings: list[str] | None = None,
         ) -> str:
             return "env-id"
 
@@ -64,7 +63,6 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             log_task_banner: bool = True,
             step_name: str | None = None,
             resolved_symbol_table_json: str | None = None,
-            extra_let_bindings: list[str] | None = None,
         ) -> None:
             return None
 

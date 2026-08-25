@@ -59,7 +59,6 @@ class SessionRuntime(ABC):
         os_env_vars: Optional[dict[str, str]] = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
-        extra_let_bindings: list[str] | None = None,
     ) -> EnvironmentIdentifier:
         """Enter an environment; returns its identifier."""
         ...
@@ -86,17 +85,13 @@ class SessionRuntime(ABC):
         log_task_banner: bool = True,
         step_name: str | None = None,
         resolved_symbol_table_json: str | None = None,
-        extra_let_bindings: list[str] | None = None,
     ) -> None:
         """Run a task within the session's active environment(s).
 
-        ``extra_let_bindings`` carries the step's step-template-scope EXPR
-        ``let`` bindings (``StepTemplate.let``, RFC 0005 §3.6). The Python
-        runtime needs them: that scope resolves at job instantiation, and the
-        service serves an un-instantiated ``StepTemplate`` whose ``let`` and
-        ``script.let`` are separate fields, so without them a step-scope name
-        is absent from the session's symbol table. The Rust runtime gets the
-        same values inside ``resolved_symbol_table_json`` and ignores this.
+        ``resolved_symbol_table_json`` is the authoritative source of
+        step-scope EXPR ``let`` values (``StepTemplate.let``, RFC 0005 §3.6):
+        the service resolves that scope and serves it in the table, which both
+        runtimes seed as the base of their per-action symbol table.
         """
         ...
 

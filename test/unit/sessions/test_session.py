@@ -2573,24 +2573,28 @@ class TestRunAttachmentSyncTask:
         )
 
 
-class TestRunTaskStepScopeLetBindings:
-    """Session.run_task must pass step-scope `let` bindings to the runtime.
+class TestRunTask:
+    """Session.run_task is a pass-through to the configured runtime.
 
-    Session.run_task is a pass-through to the configured runtime; this pins the
-    step-scope `let` channel so the Python runtime can seed those names into the
+    The resolved symbol table is the only channel carrying step-scope EXPR
+    `let` values, so its forwarding is what pins those names reaching the
     task's symbol table.
     """
 
     @pytest.mark.parametrize(
-        "extra_let_bindings",
-        [None, ["region = 'us-west-2'"], ["a = 1", "b = a + 1"]],
+        "resolved_symbol_table_json",
+        [
+            None,
+            '[{"name":"region","type":"string","value":"us-west-2"}]',
+            '[{"name":"a","type":"int","value":"1"},{"name":"b","type":"int","value":"2"}]',
+        ],
         ids=["none", "single", "multiple_dependent"],
     )
-    def test_forwards_extra_let_bindings_to_runtime(
+    def test_forwards_resolved_symbol_table_json_to_runtime(
         self,
         session: Session,
         mock_runtime: MagicMock,
-        extra_let_bindings: list[str] | None,
+        resolved_symbol_table_json: str | None,
     ) -> None:
         # GIVEN
         step_script_model = MagicMock()
@@ -2599,11 +2603,14 @@ class TestRunTaskStepScopeLetBindings:
         session.run_task(
             step_script=step_script_model,
             task_parameter_values=dict[str, ParameterValue](),
-            extra_let_bindings=extra_let_bindings,
+            resolved_symbol_table_json=resolved_symbol_table_json,
         )
 
         # THEN
-        assert mock_runtime.run_task.call_args.kwargs["extra_let_bindings"] is extra_let_bindings
+        assert (
+            mock_runtime.run_task.call_args.kwargs["resolved_symbol_table_json"]
+            is resolved_symbol_table_json
+        )
 
     def test_propagates_exception_from_openjd_session(
         self,

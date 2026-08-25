@@ -16,13 +16,13 @@ call arguments. The plumbing-level assertions live in test_python.py,
 test_rust.py, test_session.py and actions/test_run_step_task.py; this file
 exists to prove the whole path resolves a real step-scope name.
 
-Why the defect is invisible to most callers: step-scope ``let`` resolves at job
-instantiation, and ``create_job`` folds ``StepTemplate.let`` into
-``script.let``. Anyone instantiating a job locally (openjd-cli) therefore never
-sees a problem. The worker is handed a service-resolved, *un-instantiated*
-``StepTemplate`` whose ``let`` and ``script.let`` are separate fields, and it
-never calls ``resolve_syntax_sugar``. Without an explicit channel the step-scope
-names are simply absent from the task's symbol table.
+Step-scope ``let`` resolves at job instantiation, and the worker never
+instantiates a job: it is handed an *un-instantiated* ``StepTemplate`` whose
+``let`` and ``script.let`` are separate fields. The service resolves that scope
+and serves the result in the entity's ``resolvedSymbolTable``, which is the
+single authoritative channel for those values -- the worker reads the table and
+does not re-evaluate ``StepTemplate.let``. These tests therefore seed step-scope
+names through the served table, exactly as production does.
 """
 
 from __future__ import annotations
@@ -57,10 +57,10 @@ class _RunTaskOnlySession:
     The real class is a scheduler-facing orchestrator (queue, asset sync,
     telemetry, action reporting) whose construction pulls in far more than this
     test needs. Its ``run_task`` is a verbatim pass-through to the runtime, and
-    that pass-through -- including ``extra_let_bindings`` -- is pinned
-    independently by ``TestRunTaskStepScopeLetBindings`` in test_session.py. So
-    this reproduces just that one hop and lets the real runtime and the real
-    openjd session do the work.
+    that pass-through -- including ``resolved_symbol_table_json`` -- is pinned
+    independently by ``TestRunTask`` in test_session.py. So this reproduces just
+    that one hop and lets the real runtime and the real openjd session do the
+    work.
     """
 
     def __init__(self, runtime: PythonSessionRuntime) -> None:
@@ -195,15 +195,16 @@ class TestStepScopeLetEndToEnd:
     ) -> None:
         """A step-scope ``let`` name resolves in the command the task runs.
 
-        This is the regression. Before the fix the action dropped
-        ``StepTemplate.let``, so ``{{ from_step }}`` had no definition and the
-        action failed to resolve it.
+        The served shape production sends: the un-instantiated template still
+        carries ``let``, and the table carries that scope already resolved. The
+        table is authoritative, so ``{{ from_step }}`` resolves from it.
         """
         caplog.set_level(logging.INFO)
         details = _step_details(
             step_let=["from_step = 'step value'"],
             script_let=None,
             args=["STEP:{{ from_step }}"],
+            resolved_symbol_table=[{"name": "from_step", "type": "string", "value": "step value"}],
         )
 
         state, _ = _run_action_to_completion(details, tmp_path)
@@ -218,13 +219,19 @@ class TestStepScopeLetEndToEnd:
 
         RFC 0005 orders step-scope bindings before script-scope ones, so a
         script-scope binding of the same name shadows the step's, and a
-        script-scope binding may reference a step-scope one.
+        script-scope binding may reference a step-scope one. The step's scope
+        arrives resolved in the served table; the script's is evaluated on top
+        of it by the session.
         """
         caplog.set_level(logging.INFO)
         details = _step_details(
             step_let=["shared = 'from step'", "base = 'step base'"],
             script_let=["shared = 'from script'", "derived = base + ' + script'"],
             args=["SHARED:{{ shared }} DERIVED:{{ derived }}"],
+            resolved_symbol_table=[
+                {"name": "shared", "type": "string", "value": "from step"},
+                {"name": "base", "type": "string", "value": "step base"},
+            ],
         )
 
         state, _ = _run_action_to_completion(details, tmp_path)
@@ -233,19 +240,19 @@ class TestStepScopeLetEndToEnd:
         assert any("SHARED:from script" in m for m in caplog.messages)
         assert any("DERIVED:step base + script" in m for m in caplog.messages)
 
-    def test_step_scope_let_can_reference_step_name(
+    def test_script_scope_let_can_reference_step_name(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Step-scope bindings evaluate after ``Step.Name`` is seeded.
+        """Script-scope bindings evaluate after ``Step.Name`` is seeded.
 
         Pins the seeding order through the whole worker chain: the action passes
-        ``step_name`` and ``extra_let_bindings`` together, and the session must
-        place ``Step.Name`` in the table before evaluating the bindings.
+        ``step_name``, and the session must place ``Step.Name`` in the table
+        before evaluating the script's own bindings.
         """
         caplog.set_level(logging.INFO)
         details = _step_details(
-            step_let=["msg = 'step is ' + Step.Name"],
-            script_let=None,
+            step_let=None,
+            script_let=["msg = 'step is ' + Step.Name"],
             args=["NAME:{{ msg }}"],
         )
 
@@ -274,10 +281,11 @@ class TestStepScopeLetEndToEnd:
     def test_script_scope_let_alone_still_resolves(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Negative control: script-scope ``let`` was never broken.
+        """Negative control: script-scope ``let`` resolves on its own.
 
-        It travels inside the StepScript the action already forwards. If a
-        change to the step-scope channel were to disturb it, this fails.
+        It travels inside the StepScript the action forwards, with no served
+        table involved. If a change to the table channel were to disturb it,
+        this fails.
         """
         caplog.set_level(logging.INFO)
         details = _step_details(
@@ -291,16 +299,16 @@ class TestStepScopeLetEndToEnd:
         assert state == ActionState.SUCCESS
         assert any("SCRIPT:script value" in m for m in caplog.messages)
 
-    def test_a_broken_step_scope_binding_fails_the_action_cleanly(self, tmp_path: Path) -> None:
-        """An unresolvable step-scope binding fails the action, not the worker.
+    def test_a_broken_script_scope_binding_fails_the_action_cleanly(self, tmp_path: Path) -> None:
+        """An unresolvable binding fails the action, not the worker.
 
         The binding references an undefined symbol. The session must fail the
         action before starting the subprocess rather than raising out through
         the worker's action layer.
         """
         details = _step_details(
-            step_let=["msg = NoSuchSymbol"],
-            script_let=None,
+            step_let=None,
+            script_let=["msg = NoSuchSymbol"],
             args=["NEVER:{{ msg }}"],
         )
 
@@ -367,7 +375,7 @@ class TestResolvedSymbolTableEndToEnd:
     "TestRunStepTaskActionSimpleActionSugar in actions/test_run_step_task.py.",
 )
 class TestSimpleActionSugarEndToEnd:
-    """A served FEATURE_BUNDLE_1 simple action runs, and its ``let`` resolves once.
+    """A served FEATURE_BUNDLE_1 simple action runs, and its ``let`` resolves.
 
     Gap 25: the service serves simple-action sugar as authored, so
     ``StepTemplate.script`` is None and ``StepTemplate.bash`` holds the body.
@@ -398,55 +406,26 @@ class TestSimpleActionSugarEndToEnd:
         assert state == ActionState.SUCCESS
         assert any("BASH:hello from bash" in m for m in caplog.messages)
 
-    def test_step_and_sugar_scope_let_each_resolve_exactly_once(
+    def test_step_and_sugar_scope_let_both_resolve_through_the_fold(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """The no-double-apply pin for the de-sugared path.
+        """Both scopes of a sugar template resolve, via the fold alone.
 
-        ``resolve_syntax_sugar()`` folds step-scope ``let`` into the script's own
-        ``let``, so the de-sugared path must send ``extra_let_bindings=None``.
-        Sending the step's bindings as well would apply them twice, which is
-        invisible for a literal but not for a self-referential binding: ``n``
-        arrives as ``"a"`` from the served table, ``n = n + 'b'`` yields ``"ab"``
-        applied once and ``"abb"`` applied twice.
+        ``resolve_syntax_sugar()`` folds the step's ``let`` into the script's own
+        as ``[*step lets, *simple-action lets]``, so the de-sugared script
+        carries both scopes in RFC 0005 order and a sugar-scope binding can
+        reference a step-scope one. This is the only thing that resolves the
+        step's scope on this path -- nothing else re-applies it.
         """
         caplog.set_level(logging.INFO)
         details = _bash_sugar_step_details(
-            step_let=["n = n + 'b'"],
-            sugar_let=["out = n + '|sugar'"],
+            step_let=["base = 'from step'"],
+            sugar_let=["out = base + '|sugar'"],
             script_body='echo "OUT:{{ out }}"',
-            resolved_symbol_table=[{"name": "n", "type": "string", "value": "a"}],
         )
+        assert details.step_template.script is None
 
         state, _ = _run_action_to_completion(details, tmp_path)
 
         assert state == ActionState.SUCCESS
-        assert any("OUT:ab|sugar" in m for m in caplog.messages)
-        assert not any("OUT:abb|sugar" in m for m in caplog.messages), (
-            "the step-scope binding was applied twice -- the de-sugared path must send no extra bindings"
-        )
-
-    def test_a_plain_script_step_applies_step_scope_let_exactly_once(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """Control: the ``script:`` branch is unchanged, and also applies once.
-
-        The other direction of over-correction -- de-sugaring every template
-        *and* still sending ``extra_let_bindings`` -- resolves to the same values
-        for the literal bindings the rest of this file uses. It shows up only
-        against a self-referential binding, so this control carries one.
-        """
-        caplog.set_level(logging.INFO)
-        details = _step_details(
-            step_let=["n = n + 'b'"],
-            script_let=["out = n + '|script'"],
-            args=["OUT:{{ out }}"],
-            resolved_symbol_table=[{"name": "n", "type": "string", "value": "a"}],
-        )
-        assert details.step_template.script is not None
-
-        state, _ = _run_action_to_completion(details, tmp_path)
-
-        assert state == ActionState.SUCCESS
-        assert any("OUT:ab|script" in m for m in caplog.messages)
-        assert not any("OUT:abb|script" in m for m in caplog.messages)
+        assert any("OUT:from step|sugar" in m for m in caplog.messages)

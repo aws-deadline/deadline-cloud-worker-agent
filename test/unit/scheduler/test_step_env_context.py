@@ -70,7 +70,6 @@ class TestDequeueStepContext:
         mock = MagicMock()
         step_template = MagicMock()
         step_template.name = "MyStep"
-        step_template.let = ["VAR=value"]
         mock.step_details.return_value.step_template = step_template
         return mock
 
@@ -87,7 +86,7 @@ class TestDequeueStepContext:
     def test_step_scoped_env_gets_step_context(
         self, session_queue: SessionActionQueue, job_entities: MagicMock
     ) -> None:
-        """A STEP:-prefixed env-enter receives step name and let bindings."""
+        """A STEP:-prefixed env-enter receives the step name."""
         entry = EnvironmentQueueEntry(
             cancel=Mock(),
             definition=EnvironmentAction(
@@ -103,7 +102,6 @@ class TestDequeueStepContext:
 
         assert isinstance(result, EnterEnvironmentAction)
         assert result._step_name == "MyStep"
-        assert result._extra_let_bindings == ["VAR=value"]
         job_entities.step_details.assert_called_once_with(step_id="step-abc123")
 
     def test_job_scoped_env_gets_no_step_context(
@@ -125,7 +123,6 @@ class TestDequeueStepContext:
 
         assert isinstance(result, EnterEnvironmentAction)
         assert result._step_name is None
-        assert result._extra_let_bindings is None
         job_entities.step_details.assert_not_called()
 
     def test_two_consecutive_step_envs_both_get_context(
@@ -180,4 +177,3 @@ class TestDequeueStepContext:
 
         assert isinstance(result, EnterEnvironmentAction)
         assert result._step_name is None
-        assert result._extra_let_bindings is None

@@ -96,50 +96,6 @@ class TestRunStepTaskAction:
         assert "DEADLINE_TASK_ID" not in env_vars
 
 
-class TestRunStepTaskActionStepScopeLetBindings:
-    """The action must hand the step's step-template-scope `let` to the session.
-
-    The service serves an un-instantiated StepTemplate: step-scope `let` lives
-    in StepTemplate.let and script-scope `let` in StepTemplate.script.let, as
-    separate fields. Nothing folds the former into the latter on the worker's
-    path, so if the action drops StepTemplate.let then a step-scope name is
-    simply absent from the Python session's symbol table and every reference to
-    it fails to resolve.
-    """
-
-    def test_start_passes_step_scope_let_bindings(
-        self, mock_step_details, mock_session, mock_executor
-    ):
-        mock_step_details.step_template.let = ["region = 'us-west-2'"]
-        action = RunStepTaskAction(
-            id="action-123",
-            details=mock_step_details,
-            task_id="task-456",
-            task_parameter_values={},
-        )
-
-        action.start(session=mock_session, executor=mock_executor)
-
-        call_kwargs = mock_session.run_task.call_args.kwargs
-        assert call_kwargs["extra_let_bindings"] == ["region = 'us-west-2'"]
-
-    def test_start_passes_none_when_step_has_no_let_bindings(
-        self, mock_step_details, mock_session, mock_executor
-    ):
-        """A step without `let` must send None, not an empty list or a Mock."""
-        mock_step_details.step_template.let = None
-        action = RunStepTaskAction(
-            id="action-123",
-            details=mock_step_details,
-            task_parameter_values={},
-        )
-
-        action.start(session=mock_session, executor=mock_executor)
-
-        call_kwargs = mock_session.run_task.call_args.kwargs
-        assert call_kwargs["extra_let_bindings"] is None
-
-
 def _step_details_from_template(template: dict[str, Any], extensions: list[str]) -> StepDetails:
     """Parse a served step template the way BatchGetJobEntity delivers it."""
     payload: Any = {
@@ -165,16 +121,12 @@ class TestRunStepTaskActionSimpleActionSugar:
     ``resolve_syntax_sugar()`` produces, which a Mock cannot tell us.
     """
 
-    def test_start_de_sugars_a_bash_step_and_sends_no_extra_bindings(
-        self, mock_session, mock_executor
-    ):
-        """The folded script goes out, and ``extra_let_bindings`` is None.
+    def test_start_de_sugars_a_bash_step(self, mock_session, mock_executor):
+        """The folded script goes out, carrying both `let` scopes in order.
 
         ``resolve_syntax_sugar()`` folds step-scope ``let`` into the script's own
-        ``let`` as ``[*step lets, *simple-action lets]``, so sending the step's
-        bindings again would apply them twice. That is idempotent for a literal
-        but not for a self-referential binding (``n = n + 1`` twice yields 3),
-        so this path must send None.
+        ``let`` as ``[*step lets, *simple-action lets]``. Without that fold the
+        action would have no script at all to send.
         """
         details = _step_details_from_template(
             {
@@ -195,7 +147,6 @@ class TestRunStepTaskActionSimpleActionSugar:
         action.start(session=mock_session, executor=mock_executor)
 
         call_kwargs = mock_session.run_task.call_args.kwargs
-        assert call_kwargs["extra_let_bindings"] is None
         step_script = call_kwargs["step_script"]
         assert step_script is not None
         # Both scopes present exactly once, step bindings first.
@@ -225,12 +176,11 @@ class TestRunStepTaskActionSimpleActionSugar:
         assert details.step_template.bash is not None
 
     def test_start_forwards_a_plain_script_unchanged(self, mock_session, mock_executor):
-        """Control: a ``script:`` template still sends its own script and ``let``.
+        """Control: a ``script:`` template sends its own script object untouched.
 
-        Guards the other direction -- de-sugaring unconditionally would also
-        fold ``let`` into ``script.let``, so a plain step would resolve its
-        step-scope bindings through a different channel than the one
-        test_session.py pins.
+        Guards the other direction -- de-sugaring unconditionally would fold
+        the step's ``let`` into ``script.let`` and send a rebuilt script, so a
+        plain step's script must come through by identity.
         """
         details = _step_details_from_template(
             {
@@ -249,5 +199,8 @@ class TestRunStepTaskActionSimpleActionSugar:
         action.start(session=mock_session, executor=mock_executor)
 
         call_kwargs = mock_session.run_task.call_args.kwargs
-        assert call_kwargs["step_script"] is details.step_template.script
-        assert call_kwargs["extra_let_bindings"] == ["region = 'us-west-2'"]
+        script = details.step_template.script
+        assert script is not None
+        assert call_kwargs["step_script"] is script
+        # No fold happened: the step's own `let` stayed out of script.let.
+        assert script.let is None

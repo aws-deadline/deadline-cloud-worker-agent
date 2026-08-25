@@ -880,7 +880,6 @@ class Session:
         os_env_vars: Optional[dict[str, str]] = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
-        extra_let_bindings: list[str] | None = None,
     ) -> None:
         session_env_id = self._runtime.enter_environment(
             environment=environment,
@@ -888,7 +887,6 @@ class Session:
             os_env_vars=os_env_vars,
             resolved_symbol_table_json=resolved_symbol_table_json,
             step_name=step_name,
-            extra_let_bindings=extra_let_bindings,
         )
         self._active_envs.append(
             ActiveEnvironment(
@@ -1232,7 +1230,6 @@ class Session:
         log_task_banner: bool = True,
         step_name: str | None = None,
         resolved_symbol_table_json: str | None = None,
-        extra_let_bindings: list[str] | None = None,
     ) -> None:
         self._runtime.run_task(
             step_script=step_script,
@@ -1241,7 +1238,6 @@ class Session:
             log_task_banner=log_task_banner,
             step_name=step_name,
             resolved_symbol_table_json=resolved_symbol_table_json,
-            extra_let_bindings=extra_let_bindings,
         )
 
     def _run_attachment_sync_task(

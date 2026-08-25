@@ -16,18 +16,13 @@ if TYPE_CHECKING:
     from ..session import Session
 
 
-def _resolve_step_script(
-    step_template: StepTemplate,
-) -> tuple[StepScript, Optional[list[str]]]:
-    """Pick the StepScript to run, and the step-scope `let` to send with it.
+def _resolve_step_script(step_template: StepTemplate) -> StepScript:
+    """Pick the StepScript to run.
 
     The step template arrives un-instantiated, in either of two shapes.
 
-    A `script:` template has step-scope `let` (StepTemplate.let) and
-    script-scope `let` (StepTemplate.script.let) as separate fields. Nothing
-    folds the former into the latter on this path, so it goes out as
-    `extra_let_bindings` or step-scope names are missing from the session's
-    symbol table.
+    A `script:` template already carries the script to run, in
+    `StepTemplate.script`.
 
     A FEATURE_BUNDLE_1 simple-action template (`bash:`, `cmd:`, `node:`,
     `powershell:`, `python:`) has no `script` at all. The service serves the
@@ -35,20 +30,18 @@ def _resolve_step_script(
     de-sugars it. `resolve_syntax_sugar()` does that here, returning a new
     template whose script carries `[*step lets, *simple-action lets]`.
 
-    That fold is why the de-sugared path sends `extra_let_bindings=None`: the
-    step-scope bindings are already inside `script.let`, and applying them
-    twice is not harmless. A literal binding is idempotent, but a
-    self-referential one is not, and `n = n + 1` applied twice yields 3.
+    Step-scope `let` values reach the session through the resolved symbol
+    table the service serves, not through this function.
     """
     script = step_template.script
     if script is not None:
-        return script, step_template.let
+        return script
 
     # The model rejects a StepTemplate carrying neither `script` nor a simple
     # action, so the fold always produces a script. The cast records that
     # invariant for the type checker; it is not a runtime conversion.
     folded = step_template.resolve_syntax_sugar()
-    return cast("StepScript", folded.script), None
+    return cast("StepScript", folded.script)
 
 
 class RunStepTaskAction(OpenjdAction):
@@ -115,7 +108,7 @@ class RunStepTaskAction(OpenjdAction):
             env_vars["DEADLINE_TASK_ID"] = self.task_id
 
         step_template = self._details.step_template
-        step_script, extra_let_bindings = _resolve_step_script(step_template)
+        step_script = _resolve_step_script(step_template)
 
         session.run_task(
             step_script=step_script,
@@ -123,5 +116,4 @@ class RunStepTaskAction(OpenjdAction):
             os_env_vars=env_vars,
             step_name=step_template.name,
             resolved_symbol_table_json=self._details.resolved_symbol_table_json,
-            extra_let_bindings=extra_let_bindings,
         )
