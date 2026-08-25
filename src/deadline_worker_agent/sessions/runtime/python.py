@@ -118,15 +118,18 @@ class PythonSessionRuntime(SessionRuntime):
         log_task_banner: bool = True,
         step_name: str | None = None,
         resolved_symbol_table_json: str | None = None,
+        extra_let_bindings: list[str] | None = None,
     ) -> None:
         # resolved_symbol_table_json: not forwarded — the v0 Python session does
-        # not support pre-resolved symbol tables.
+        # not support pre-resolved symbol tables. extra_let_bindings is how this
+        # runtime gets the step-scope `let` values that table would have carried.
         self._session.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,
             os_env_vars=os_env_vars,
             log_task_banner=log_task_banner,
             step_name=step_name,
+            extra_let_bindings=extra_let_bindings,
         )
 
     def _run_task_without_session_env(

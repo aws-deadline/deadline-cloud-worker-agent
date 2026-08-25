@@ -93,3 +93,47 @@ class TestRunStepTaskAction:
         assert env_vars["DEADLINE_STEP_ID"] == "step-123"
         assert env_vars["DEADLINE_SESSIONACTION_ID"] == "action-123"
         assert "DEADLINE_TASK_ID" not in env_vars
+
+
+class TestRunStepTaskActionStepScopeLetBindings:
+    """The action must hand the step's step-template-scope `let` to the session.
+
+    The service serves an un-instantiated StepTemplate: step-scope `let` lives
+    in StepTemplate.let and script-scope `let` in StepTemplate.script.let, as
+    separate fields. Nothing folds the former into the latter on the worker's
+    path, so if the action drops StepTemplate.let then a step-scope name is
+    simply absent from the Python session's symbol table and every reference to
+    it fails to resolve.
+    """
+
+    def test_start_passes_step_scope_let_bindings(
+        self, mock_step_details, mock_session, mock_executor
+    ):
+        mock_step_details.step_template.let = ["region = 'us-west-2'"]
+        action = RunStepTaskAction(
+            id="action-123",
+            details=mock_step_details,
+            task_id="task-456",
+            task_parameter_values={},
+        )
+
+        action.start(session=mock_session, executor=mock_executor)
+
+        call_kwargs = mock_session.run_task.call_args.kwargs
+        assert call_kwargs["extra_let_bindings"] == ["region = 'us-west-2'"]
+
+    def test_start_passes_none_when_step_has_no_let_bindings(
+        self, mock_step_details, mock_session, mock_executor
+    ):
+        """A step without `let` must send None, not an empty list or a Mock."""
+        mock_step_details.step_template.let = None
+        action = RunStepTaskAction(
+            id="action-123",
+            details=mock_step_details,
+            task_parameter_values={},
+        )
+
+        action.start(session=mock_session, executor=mock_executor)
+
+        call_kwargs = mock_session.run_task.call_args.kwargs
+        assert call_kwargs["extra_let_bindings"] is None

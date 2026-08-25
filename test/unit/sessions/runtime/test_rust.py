@@ -1415,6 +1415,25 @@ class TestResolvedSymbolTableForwarding:
         call_kwargs = mock_session_instance.run_task.call_args.kwargs
         assert call_kwargs["resolved_symtab"] is fake_symtab
 
+    def test_run_task_omits_extra_let_bindings_from_rust_session(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """extra_let_bindings is accepted and not forwarded to the _v1 session.
+
+        The step-scope `let` values it carries are already inside
+        resolved_symtab, which create_job pre-resolved. Forwarding them too
+        would define the same names twice.
+        """
+        with patch.object(rust_module, "deserialize_step"):
+            adapter.run_task(
+                step_script=MagicMock(),
+                task_parameter_values={},
+                extra_let_bindings=["region = 'us-west-2'"],
+            )
+
+        call_kwargs = mock_session_instance.run_task.call_args.kwargs
+        assert "extra_let_bindings" not in call_kwargs
+
     def test_enter_environment_graceful_degradation_on_malformed_json(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
     ) -> None:

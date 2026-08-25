@@ -430,7 +430,14 @@ class RustSessionRuntime(SessionRuntime):
         log_task_banner: bool = True,
         step_name: str | None = None,
         resolved_symbol_table_json: str | None = None,
+        extra_let_bindings: list[str] | None = None,
     ) -> None:
+        # extra_let_bindings: accepted and not forwarded. The step-scope `let`
+        # values it carries are already inside resolved_symbol_table_json, which
+        # create_job pre-resolved and which the _v1 session takes as the base of
+        # its per-action table. Applying them a second time here would duplicate
+        # the definitions. Mirrors how enter_environment drops it.
+        #
         # step_name: forwarded to the _v1 session so RFC 0008's WrappedStep.Name
         # resolves correctly inside onWrapTaskRun hooks.
         #

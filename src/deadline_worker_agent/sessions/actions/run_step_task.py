@@ -80,10 +80,17 @@ class RunStepTaskAction(OpenjdAction):
             env_vars["DEADLINE_TASK_ID"] = self.task_id
 
         # The service resolves step template syntax sugar, so script is always present.
+        #
+        # extra_let_bindings: the step template arrives un-instantiated, with
+        # step-scope `let` (StepTemplate.let) and script-scope `let`
+        # (StepTemplate.script.let) as separate fields. Nothing folds the former
+        # into the latter on this path, so pass it explicitly or step-scope names
+        # are missing from the Python session's symbol table.
         session.run_task(
             step_script=cast("StepScript", self._details.step_template.script),
             task_parameter_values=self._task_parameter_values,
             os_env_vars=env_vars,
             step_name=self._details.step_template.name,
             resolved_symbol_table_json=self._details.resolved_symbol_table_json,
+            extra_let_bindings=self._details.step_template.let,
         )

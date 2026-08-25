@@ -1,0 +1,262 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+"""End-to-end coverage for step-template-scope ``let`` delivery (RFC 0005 §3.6).
+
+This drives the worker's real chain for a task run --
+
+    BatchGetJobEntity payload
+      -> StepDetails.from_boto        (real parse, real extension gating)
+      -> RunStepTaskAction.start      (real action)
+      -> Session.run_task             (stood in for; see _RunTaskOnlySession)
+      -> PythonSessionRuntime.run_task(real adapter)
+      -> openjd.sessions.Session      (real v0 session, real subprocess)
+
+-- and asserts on the *actual* text the task's command emitted, not on mock
+call arguments. The plumbing-level assertions live in test_python.py,
+test_rust.py, test_session.py and actions/test_run_step_task.py; this file
+exists to prove the whole path resolves a real step-scope name.
+
+Why the defect is invisible to most callers: step-scope ``let`` resolves at job
+instantiation, and ``create_job`` folds ``StepTemplate.let`` into
+``script.let``. Anyone instantiating a job locally (openjd-cli) therefore never
+sees a problem. The worker is handed a service-resolved, *un-instantiated*
+``StepTemplate`` whose ``let`` and ``script.let`` are separate fields, and it
+never calls ``resolve_syntax_sugar``. Without an explicit channel the step-scope
+names are simply absent from the task's symbol table.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+from unittest.mock import Mock
+
+import pytest
+from openjd.sessions import ActionState
+
+from deadline_worker_agent.sessions.actions.run_step_task import RunStepTaskAction
+from deadline_worker_agent.sessions.job_entities.step_details import StepDetails
+from deadline_worker_agent.sessions.runtime import SessionRuntimeConfig
+from deadline_worker_agent.sessions.runtime.python import PythonSessionRuntime
+
+# Bound on how long a single `echo` task may take before the test gives up.
+# Generous: this waits on a real subprocess, and a hang is a test bug worth
+# failing loudly rather than blocking the suite forever.
+_ACTION_TIMEOUT = 30.0
+
+
+class _RunTaskOnlySession:
+    """Stands in for ``deadline_worker_agent.sessions.Session``.
+
+    The real class is a scheduler-facing orchestrator (queue, asset sync,
+    telemetry, action reporting) whose construction pulls in far more than this
+    test needs. Its ``run_task`` is a verbatim pass-through to the runtime, and
+    that pass-through -- including ``extra_let_bindings`` -- is pinned
+    independently by ``TestRunTaskStepScopeLetBindings`` in test_session.py. So
+    this reproduces just that one hop and lets the real runtime and the real
+    openjd session do the work.
+    """
+
+    def __init__(self, runtime: PythonSessionRuntime) -> None:
+        self._runtime = runtime
+
+    def run_task(self, **kwargs: Any) -> None:
+        self._runtime.run_task(**kwargs)
+
+
+def _step_details(
+    *,
+    step_let: list[str] | None,
+    script_let: list[str] | None,
+    args: list[str],
+) -> StepDetails:
+    """Build a StepDetails from the shape the service actually serves.
+
+    Note ``let`` and ``script.let`` are siblings here, never folded together --
+    that is the served shape, and the reason this defect exists.
+    """
+    template: dict[str, Any] = {
+        "name": "MyStep",
+        "script": {"actions": {"onRun": {"command": "echo", "args": args}}},
+    }
+    if step_let is not None:
+        template["let"] = step_let
+    if script_let is not None:
+        template["script"]["let"] = script_let
+
+    return StepDetails.from_boto(
+        {
+            "jobId": "job-123",
+            "stepId": "step-123",
+            "schemaVersion": "jobtemplate-2023-09",
+            "dependencies": [],
+            "extensions": ["EXPR"],
+            "template": template,
+        }
+    )
+
+
+def _run_action_to_completion(
+    details: StepDetails, session_root: Path
+) -> tuple[ActionState, PythonSessionRuntime]:
+    """Run the step's task through the real chain and return its final state."""
+    runtime = PythonSessionRuntime(
+        SessionRuntimeConfig(
+            session_id=f"session-{uuid.uuid4().hex}",
+            job_parameter_values={},
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda session_id, status: None,
+            os_env_vars=None,
+            session_root_directory=session_root,
+            supported_extensions=("EXPR",),
+        )
+    )
+    try:
+        action = RunStepTaskAction(
+            id="sessionaction-123",
+            details=details,
+            task_id="task-456",
+            task_parameter_values={},
+        )
+
+        action.start(session=_RunTaskOnlySession(runtime), executor=Mock())  # type: ignore[arg-type]
+
+        # run_task is asynchronous -- it spawns the subprocess on its own
+        # thread. Poll the real status rather than sleeping a fixed amount.
+        deadline = time.monotonic() + _ACTION_TIMEOUT
+        while True:
+            status = runtime.action_status
+            if status is not None and status.state != ActionState.RUNNING:
+                return status.state, runtime
+            if time.monotonic() > deadline:
+                pytest.fail(
+                    f"task action did not finish within {_ACTION_TIMEOUT}s (last status: {status})"
+                )
+            time.sleep(0.05)
+    finally:
+        runtime.cleanup()
+
+
+class TestStepScopeLetEndToEnd:
+    def test_step_scope_let_resolves_in_the_task_command(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A step-scope ``let`` name resolves in the command the task runs.
+
+        This is the regression. Before the fix the action dropped
+        ``StepTemplate.let``, so ``{{ from_step }}`` had no definition and the
+        action failed to resolve it.
+        """
+        caplog.set_level(logging.INFO)
+        details = _step_details(
+            step_let=["from_step = 'step value'"],
+            script_let=None,
+            args=["STEP:{{ from_step }}"],
+        )
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.SUCCESS
+        assert any("STEP:step value" in m for m in caplog.messages)
+
+    def test_both_scopes_resolve_and_script_scope_shadows_step_scope(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Both scopes reach the task, and script scope wins on a name clash.
+
+        RFC 0005 orders step-scope bindings before script-scope ones, so a
+        script-scope binding of the same name shadows the step's, and a
+        script-scope binding may reference a step-scope one.
+        """
+        caplog.set_level(logging.INFO)
+        details = _step_details(
+            step_let=["shared = 'from step'", "base = 'step base'"],
+            script_let=["shared = 'from script'", "derived = base + ' + script'"],
+            args=["SHARED:{{ shared }} DERIVED:{{ derived }}"],
+        )
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.SUCCESS
+        assert any("SHARED:from script" in m for m in caplog.messages)
+        assert any("DERIVED:step base + script" in m for m in caplog.messages)
+
+    def test_step_scope_let_can_reference_step_name(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Step-scope bindings evaluate after ``Step.Name`` is seeded.
+
+        Pins the seeding order through the whole worker chain: the action passes
+        ``step_name`` and ``extra_let_bindings`` together, and the session must
+        place ``Step.Name`` in the table before evaluating the bindings.
+        """
+        caplog.set_level(logging.INFO)
+        details = _step_details(
+            step_let=["msg = 'step is ' + Step.Name"],
+            script_let=None,
+            args=["NAME:{{ msg }}"],
+        )
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.SUCCESS
+        assert any("NAME:step is MyStep" in m for m in caplog.messages)
+
+    def test_a_step_without_let_bindings_still_runs(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Negative control: the common no-``let`` step is unaffected.
+
+        Guards against over-correction -- a fix that only works when bindings
+        are present, or that breaks when ``StepTemplate.let`` is None.
+        """
+        caplog.set_level(logging.INFO)
+        details = _step_details(step_let=None, script_let=None, args=["PLAIN:ok"])
+        assert details.step_template.let is None
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.SUCCESS
+        assert any("PLAIN:ok" in m for m in caplog.messages)
+
+    def test_script_scope_let_alone_still_resolves(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Negative control: script-scope ``let`` was never broken.
+
+        It travels inside the StepScript the action already forwards. If a
+        change to the step-scope channel were to disturb it, this fails.
+        """
+        caplog.set_level(logging.INFO)
+        details = _step_details(
+            step_let=None,
+            script_let=["from_script = 'script value'"],
+            args=["SCRIPT:{{ from_script }}"],
+        )
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.SUCCESS
+        assert any("SCRIPT:script value" in m for m in caplog.messages)
+
+    def test_a_broken_step_scope_binding_fails_the_action_cleanly(self, tmp_path: Path) -> None:
+        """An unresolvable step-scope binding fails the action, not the worker.
+
+        The binding references an undefined symbol. The session must fail the
+        action before starting the subprocess rather than raising out through
+        the worker's action layer.
+        """
+        details = _step_details(
+            step_let=["msg = NoSuchSymbol"],
+            script_let=None,
+            args=["NEVER:{{ msg }}"],
+        )
+
+        state, _ = _run_action_to_completion(details, tmp_path)
+
+        assert state == ActionState.FAILED

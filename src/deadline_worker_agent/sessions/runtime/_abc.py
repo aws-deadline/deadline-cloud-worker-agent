@@ -86,8 +86,18 @@ class SessionRuntime(ABC):
         log_task_banner: bool = True,
         step_name: str | None = None,
         resolved_symbol_table_json: str | None = None,
+        extra_let_bindings: list[str] | None = None,
     ) -> None:
-        """Run a task within the session's active environment(s)."""
+        """Run a task within the session's active environment(s).
+
+        ``extra_let_bindings`` carries the step's step-template-scope EXPR
+        ``let`` bindings (``StepTemplate.let``, RFC 0005 §3.6). The Python
+        runtime needs them: that scope resolves at job instantiation, and the
+        service serves an un-instantiated ``StepTemplate`` whose ``let`` and
+        ``script.let`` are separate fields, so without them a step-scope name
+        is absent from the session's symbol table. The Rust runtime gets the
+        same values inside ``resolved_symbol_table_json`` and ignores this.
+        """
         ...
 
     @abstractmethod
