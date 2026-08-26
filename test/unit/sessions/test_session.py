@@ -2572,6 +2572,25 @@ class TestRunAttachmentSyncTask:
             log_task_banner=log_task_banner,
         )
 
+    def test_propagates_exception_from_openjd_session(
+        self,
+        session: Session,
+        mock_runtime: MagicMock,
+    ) -> None:
+        """Tests that exceptions from the underlying Open Job Description session are propagated."""
+        # GIVEN
+        expected_exception = RuntimeError("Task execution failed")
+        mock_runtime._run_task_without_session_env.side_effect = expected_exception
+
+        # WHEN / THEN
+        with pytest.raises(RuntimeError) as exc_info:
+            session._run_attachment_sync_task(
+                step_script=MagicMock(),
+                task_parameter_values={},
+            )
+
+        assert exc_info.value is expected_exception
+
 
 class TestRunTask:
     """Session.run_task is a pass-through to the configured runtime.
@@ -2611,25 +2630,6 @@ class TestRunTask:
             mock_runtime.run_task.call_args.kwargs["resolved_symbol_table_json"]
             is resolved_symbol_table_json
         )
-
-    def test_propagates_exception_from_openjd_session(
-        self,
-        session: Session,
-        mock_runtime: MagicMock,
-    ) -> None:
-        """Tests that exceptions from the underlying Open Job Description session are propagated."""
-        # GIVEN
-        expected_exception = RuntimeError("Task execution failed")
-        mock_runtime._run_task_without_session_env.side_effect = expected_exception
-
-        # WHEN / THEN
-        with pytest.raises(RuntimeError) as exc_info:
-            session._run_attachment_sync_task(
-                step_script=MagicMock(),
-                task_parameter_values={},
-            )
-
-        assert exc_info.value is expected_exception
 
 
 class TestRuntimeCrashTelemetry:
