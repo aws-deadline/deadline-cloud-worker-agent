@@ -30,8 +30,18 @@ def _resolve_step_script(step_template: StepTemplate) -> StepScript:
     de-sugars it. `resolve_syntax_sugar()` does that here, returning a new
     template whose script carries `[*step lets, *simple-action lets]`.
 
-    Step-scope `let` values reach the session through the resolved symbol
-    table the service serves, not through this function.
+    Step-scope `let` values reach the session through the resolved symbol table
+    the service serves. For a `script:` template that is the only channel, and
+    the source expressions are never re-evaluated here.
+
+    That is not true of the sugar path: the fold above re-declares every
+    step-scope binding in the produced `script.let`, so on a sugar template
+    those names arrive twice -- once resolved by the service in the table, and
+    once as a source expression the session re-evaluates on top of it. No test
+    covers a sugar template together with a populated resolvedSymbolTable, so
+    whether the two channels can disagree (a binding that re-evaluates to a
+    different value, or fails to re-evaluate against the per-action table) is
+    currently unverified rather than known-safe.
     """
     script = step_template.script
     if script is not None:
