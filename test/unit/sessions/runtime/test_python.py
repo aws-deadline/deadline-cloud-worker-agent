@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from datetime import timedelta
 from pathlib import Path
 from typing import Generator
@@ -528,6 +529,35 @@ class TestResolvedSymbolTableForwarding:
         mock_session_instance.enter_environment.assert_not_called()
         mock_session_instance.run_task.assert_not_called()
         mock_session_instance.exit_environment.assert_called_once()
+
+    def test_extension_load_failure_becomes_resolved_symbol_table_error(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """An unloadable native extension must not escape as a raw ImportError.
+
+        The openjd.expr import is lazy (function-local, to keep the extension off
+        the import path for sessions that never receive a table). That moved where
+        an unloadable extension is discovered: it no longer fails at adapter
+        construction, where _factory.create_session_runtime converts ImportError
+        into NotImplementedError. Left uncaught it would surface mid-session as a
+        raw ImportError reported as the task's fail message.
+        """
+        real_import = builtins.__import__
+
+        def fail_openjd_expr(name: str, *args: object, **kwargs: object) -> object:
+            if name == "openjd.expr":
+                raise ImportError("native extension unavailable on this platform")
+            return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+        with patch.object(builtins, "__import__", side_effect=fail_openjd_expr):
+            with pytest.raises(ResolvedSymbolTableError):
+                adapter.run_task(
+                    step_script=MagicMock(),
+                    task_parameter_values={},
+                    resolved_symbol_table_json='[{"name":"X","type":"string","value":"1"}]',
+                )
+
+        mock_session_instance.run_task.assert_not_called()
 
     def test_malformed_table_error_does_not_leak_payload_and_chains_cause(
         self, adapter: PythonSessionRuntime

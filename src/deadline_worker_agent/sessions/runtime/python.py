@@ -36,12 +36,14 @@ def _extract_job_name(json_str: str | None) -> str | None:
     """
     if json_str is None:
         return None
-    # Imported lazily, behind the None guard above: SerializedSymbolTable lives
-    # in openjd.expr, a facade over the native extension. A session that never
-    # receives a resolved table must not load the extension.
-    from openjd.expr import SerializedSymbolTable
-
     try:
+        # Imported lazily, behind the None guard above: SerializedSymbolTable
+        # lives in openjd.expr, a facade over the native extension. A session
+        # that never receives a resolved table must not load the extension.
+        # Inside the try so an extension-load ImportError is handled here rather
+        # than escaping raw from a lazy import.
+        from openjd.expr import SerializedSymbolTable
+
         symtab = SerializedSymbolTable.from_json_str(json_str).to_symtab()
         entry = symtab.get("Job.Name")
         if entry is None:
@@ -76,11 +78,25 @@ def _parse_resolved_symtab(json_str: str | None) -> Optional["SerializedSymbolTa
     """
     if json_str is None:
         return None
-    # Imported lazily, behind the None guard above: see _extract_job_name.
-    from openjd.expr import SerializedSymbolTable
-
     try:
+        # Imported lazily, behind the None guard above: see _extract_job_name.
+        # Deliberately inside the try. Moving this import from module scope to
+        # function scope moved where an unloadable native extension is
+        # discovered: it used to fail at adapter construction, which
+        # _factory.create_session_runtime turns into a clean NotImplementedError
+        # ("adapter is not available"). Left outside the try it would instead
+        # surface mid-session as a raw ImportError reported as the task's fail
+        # message. Catching it here gives it the same handling as any other
+        # reason the table cannot be turned into a symbol table.
+        from openjd.expr import SerializedSymbolTable
+
         return SerializedSymbolTable.from_json_str(json_str)
+    # Broad on purpose. Empirically the decoder only raises ValueError, and only
+    # for malformed JSON: openjd-model 0.11.6 accepts a well-formed table with an
+    # unknown symbol type, an unknown extra field, or a missing required field,
+    # so an additive service-side change does not land here. The breadth is to
+    # cover the ImportError above and anything the native extension surprises us
+    # with, not to paper over version skew.
     except Exception as e:
         # Full detail to the agent log; the raised message reaches the service
         # as the action's fail message, so it must not echo payload contents.
