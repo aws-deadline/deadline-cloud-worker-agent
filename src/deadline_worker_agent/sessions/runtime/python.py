@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from openjd.model import RevisionExtensions, SpecificationRevision
 from openjd.sessions import Session as OpenJDSession
 
-from . import SessionRuntime, SessionRuntimeConfig
+from . import ResolvedSymbolTableError, SessionRuntime, SessionRuntimeConfig
 
 if TYPE_CHECKING:
     from openjd.expr import SerializedSymbolTable
@@ -56,9 +56,19 @@ def _extract_job_name(json_str: str | None) -> str | None:
 def _parse_resolved_symtab(json_str: str | None) -> Optional["SerializedSymbolTable"]:
     """Parse a resolved symbol table JSON string into a SerializedSymbolTable.
 
-    Returns None when the input is None or when parsing fails (graceful
-    degradation — the session proceeds without the pre-resolved table).
-    Mirrors _parse_resolved_symtab in the Rust adapter.
+    Returns None only when the input is None -- the common, benign case of the
+    service serving no table. A table that is present but unparseable raises
+    ResolvedSymbolTableError instead of degrading to None, because the table is
+    the only channel for step-scope `let` values: proceeding without it would
+    run the action with those symbols undefined and report a downstream
+    "undefined symbol" error naming the symbol rather than the real cause. It
+    would also make a partially-serviceable table (schema skew, truncation)
+    indistinguishable from "no table served".
+
+    Mirrors _parse_resolved_symtab in the Rust adapter. Note the deliberate
+    asymmetry with _extract_job_name above, which still degrades: it runs during
+    session construction rather than action start, and the job name it recovers
+    only labels log output.
     """
     if json_str is None:
         return None
@@ -68,8 +78,13 @@ def _parse_resolved_symtab(json_str: str | None) -> Optional["SerializedSymbolTa
     try:
         return SerializedSymbolTable.from_json_str(json_str)
     except Exception as e:
-        logger.warning("Failed to parse resolvedSymbolTable; proceeding without it: %s", e)
-        return None
+        # Full detail to the agent log; the raised message reaches the service
+        # as the action's fail message, so it must not echo payload contents.
+        logger.error("Failed to parse resolvedSymbolTable: %s", e)
+        raise ResolvedSymbolTableError(
+            "The service served a resolvedSymbolTable this worker could not parse "
+            f"({type(e).__name__}); step-scope `let` values cannot be resolved"
+        ) from e
 
 
 class PythonSessionRuntime(SessionRuntime):
