@@ -419,7 +419,16 @@ class RustSessionRuntime(SessionRuntime):
         keep_session_running: bool = False,
         resolved_symbol_table_json: str | None = None,
     ) -> None:
-        resolved_symtab = _parse_resolved_symtab(resolved_symbol_table_json)
+        # An unparseable table must not fail the exit: raising would leave the
+        # environment on Session._active_envs and Session._cleanup would retry
+        # with the same stored table and swallow the same failure, so onExit
+        # would never run. See the Python adapter's copy for the full reasoning;
+        # the two are kept in lockstep on purpose.
+        try:
+            resolved_symtab = _parse_resolved_symtab(resolved_symbol_table_json)
+        except ResolvedSymbolTableError:
+            resolved_symtab = None
+
         self._session.exit_environment(
             identifier=identifier,
             os_env_vars=os_env_vars,

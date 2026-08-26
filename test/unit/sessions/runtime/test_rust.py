@@ -1481,10 +1481,15 @@ class TestResolvedSymbolTableForwarding:
         call_kwargs = mock_session_instance.exit_environment.call_args.kwargs
         assert call_kwargs["resolved_symtab"] is None
 
-    def test_exit_environment_raises_on_malformed_json(
+    def test_exit_environment_degrades_on_malformed_json_so_teardown_runs(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
-        """An unparseable table fails the exit action, matching the Python adapter."""
+        """Exit degrades rather than raising, matching the Python adapter.
+
+        Raising here would leave the environment on Session._active_envs and
+        Session._cleanup would retry with the same stored table and swallow the
+        same failure, so onExit would never run.
+        """
         with (
             patch.object(
                 rust_module.SerializedSymbolTable,
@@ -1493,12 +1498,12 @@ class TestResolvedSymbolTableForwarding:
             ),
             patch.object(rust_module, "logger") as mock_logger,
         ):
-            with pytest.raises(ResolvedSymbolTableError):
-                adapter.exit_environment(
-                    identifier="env-1",
-                    resolved_symbol_table_json="{not json",
-                )
+            adapter.exit_environment(
+                identifier="env-1",
+                resolved_symbol_table_json="{not json",
+            )
 
-        mock_session_instance.exit_environment.assert_not_called()
+        mock_session_instance.exit_environment.assert_called_once()
+        assert mock_session_instance.exit_environment.call_args.kwargs["resolved_symtab"] is None
         mock_logger.error.assert_called_once()
         assert "resolvedSymbolTable" in mock_logger.error.call_args[0][0]

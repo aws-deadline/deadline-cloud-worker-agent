@@ -65,8 +65,12 @@ def _parse_resolved_symtab(json_str: str | None) -> Optional["SerializedSymbolTa
     would also make a partially-serviceable table (schema skew, truncation)
     indistinguishable from "no table served".
 
+    Callers on the enter and run paths let that propagate. exit_environment
+    deliberately catches it and degrades to None so teardown is unconditional --
+    see the comment there.
+
     Mirrors _parse_resolved_symtab in the Rust adapter. Note the deliberate
-    asymmetry with _extract_job_name above, which still degrades: it runs during
+    asymmetry with _extract_job_name above, which also degrades: it runs during
     session construction rather than action start, and the job name it recovers
     only labels log output.
     """
@@ -141,11 +145,34 @@ class PythonSessionRuntime(SessionRuntime):
         resolved_symbol_table_json: str | None = None,
     ) -> None:
         # Parse the pre-resolved symbol table if the service provided one.
+        #
+        # Unlike enter_environment and run_task, an unparseable table must NOT
+        # fail this call. Session.exit_environment pops the environment off
+        # _active_envs only after this returns, so raising would leave it active
+        # and Session._cleanup would retry the exit with the same stored table
+        # inside a `except Exception: warning` -- same payload, same failure,
+        # swallowed. onExit would never run: no license released, no daemon
+        # stopped, no teardown of whatever the environment set up, and only a
+        # warning line to show for it.
+        #
+        # The trade differs from the enter/run paths. There, degrading means an
+        # action runs with step-scope symbols undefined and reports a confusing
+        # downstream error instead of the real cause. Here it means onExit runs
+        # with some symbols possibly undefined -- recoverable, and visible in the
+        # session log -- rather than not running at all and leaking state the
+        # worker cannot reclaim later. Teardown stays unconditional.
+        #
+        # _parse_resolved_symtab has already logged the cause at error level.
+        try:
+            resolved_symtab = _parse_resolved_symtab(resolved_symbol_table_json)
+        except ResolvedSymbolTableError:
+            resolved_symtab = None
+
         self._session.exit_environment(
             identifier=identifier,
             os_env_vars=os_env_vars,
             keep_session_running=keep_session_running,
-            resolved_symtab=_parse_resolved_symtab(resolved_symbol_table_json),
+            resolved_symtab=resolved_symtab,
         )
 
     def run_task(

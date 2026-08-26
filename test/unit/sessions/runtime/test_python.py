@@ -482,25 +482,52 @@ class TestResolvedSymbolTableForwarding:
         mock_logger.error.assert_called_once()
         assert "resolvedSymbolTable" in mock_logger.error.call_args[0][0]
 
-    def test_exit_environment_raises_on_malformed_json(
+    def test_exit_environment_degrades_on_malformed_json_so_teardown_runs(
         self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
-        """An unparseable table fails the exit action.
+        """Exit must not be blocked by an unparseable table -- onExit still runs.
 
-        Session.exit_environment pops _active_envs only after the runtime call
-        returns, so the environment stays active and Session._cleanup retries the
-        exit with the enter-time table.
+        Deliberately the opposite of the enter and run paths. Session.exit_environment
+        pops _active_envs only after this returns, so raising would leave the
+        environment active and Session._cleanup would retry with the same stored
+        table and swallow the same failure -- onExit would never run, leaking
+        whatever the environment set up (licenses, daemons).
         """
         with patch.object(python_module, "logger") as mock_logger:
-            with pytest.raises(ResolvedSymbolTableError):
-                adapter.exit_environment(
-                    identifier="env-1",
-                    resolved_symbol_table_json="{not json",
-                )
+            adapter.exit_environment(
+                identifier="env-1",
+                resolved_symbol_table_json="{not json",
+            )
 
-        mock_session_instance.exit_environment.assert_not_called()
+        # Teardown proceeded, with the table dropped rather than the exit skipped.
+        mock_session_instance.exit_environment.assert_called_once()
+        assert mock_session_instance.exit_environment.call_args.kwargs["resolved_symtab"] is None
+        # Still loud in the agent log, just not fatal.
         mock_logger.error.assert_called_once()
         assert "resolvedSymbolTable" in mock_logger.error.call_args[0][0]
+
+    def test_enter_and_run_still_raise_while_exit_degrades(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """Negative control for the exit carve-out: it must not soften enter/run.
+
+        A single flag or a misplaced try/except that degraded everywhere would
+        pass the exit test above; this pins that the carve-out is exit-only.
+        """
+        bad = "{not json"
+
+        with pytest.raises(ResolvedSymbolTableError):
+            adapter.enter_environment(environment=MagicMock(), resolved_symbol_table_json=bad)
+        with pytest.raises(ResolvedSymbolTableError):
+            adapter.run_task(
+                step_script=MagicMock(), task_parameter_values={}, resolved_symbol_table_json=bad
+            )
+
+        adapter.exit_environment(identifier="env-1", resolved_symbol_table_json=bad)
+
+        mock_session_instance.enter_environment.assert_not_called()
+        mock_session_instance.run_task.assert_not_called()
+        mock_session_instance.exit_environment.assert_called_once()
 
     def test_malformed_table_error_does_not_leak_payload_and_chains_cause(
         self, adapter: PythonSessionRuntime
