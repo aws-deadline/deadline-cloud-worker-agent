@@ -1,3 +1,10 @@
+## 0.33.1 (2026-08-26)
+
+### Features
+* The resolved symbol table is now forwarded to v0 sessions, enabling downstream session actions to access resolved symbols. (#1077)
+
+### Bug Fixes
+* Fixed incorrect host CPU and disk utilization metrics. CPU and disk usage values are now reported correctly. Additionally, host metrics collection is now non-fatal — if the metrics thread cannot be started, the agent will log a warning instead of crashing. (#1036)
 ## 0.33.0 (2026-08-21)
 
 ### BREAKING CHANGES
