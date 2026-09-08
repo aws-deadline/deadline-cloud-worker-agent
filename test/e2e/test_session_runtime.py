@@ -48,7 +48,7 @@ Worker openjd package location (for making the Rust adapter unloadable):
     fault-injection step in TestRustUnavailableAndRecovery)
 """
 
-from typing import Generator, Type
+from typing import Generator, Union
 
 import backoff
 import dataclasses
@@ -63,6 +63,7 @@ from deadline_test_fixtures import (
     DeadlineWorker,
     DeadlineWorkerConfiguration,
     EC2InstanceWorker,
+    LocalMacWorker,
     TaskStatus,
 )
 
@@ -76,6 +77,11 @@ from e2e.utils import (
 LOG = logging.getLogger(__name__)
 
 # Agent log paths per OS
+# This module drives the agent's service directly, which the DeadlineWorker base
+# class does not declare. Both concrete workers that can host a macOS or Linux
+# agent expose it, so accept either rather than requiring the EC2 one.
+ServiceControllableWorker = Union[EC2InstanceWorker, LocalMacWorker]
+
 _LINUX_AGENT_LOG = "/var/log/amazon/deadline/worker-agent.log"
 _WINDOWS_AGENT_LOG = r"C:\ProgramData\Amazon\Deadline\Logs\worker-agent.log"
 
@@ -111,13 +117,13 @@ def _running_on_windows() -> bool:
     return os.environ["OPERATING_SYSTEM"].lower() == "windows"
 
 
-def _agent_log_path(worker: EC2InstanceWorker) -> str:
+def _agent_log_path(worker: ServiceControllableWorker) -> str:
     """Return the agent log path appropriate for the worker's OS."""
     return _WINDOWS_AGENT_LOG if _running_on_windows() else _LINUX_AGENT_LOG
 
 
 def _assert_log_contains(
-    worker: EC2InstanceWorker,
+    worker: ServiceControllableWorker,
     pattern: str,
     description: str,
 ) -> None:
@@ -171,8 +177,7 @@ def _assert_log_contains(
 def explicit_runtime_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
-) -> Generator[tuple[EC2InstanceWorker, str], None, None]:
+) -> Generator[tuple[ServiceControllableWorker, str], None, None]:
     """Create a worker with session_runtime set to the parametrized value.
 
     Two values: python and rust. Both run unconditionally; the Rust
@@ -184,10 +189,9 @@ def explicit_runtime_worker(
     runtime: str = request.param
     with create_worker(
         dataclasses.replace(worker_config, session_runtime=runtime),
-        ec2_worker_type,
         request,
     ) as worker:
-        assert isinstance(worker, EC2InstanceWorker)
+        assert isinstance(worker, (EC2InstanceWorker, LocalMacWorker))
         yield worker, runtime
     stop_worker(request, worker)
 
@@ -206,7 +210,7 @@ class TestExplicitModeRouting:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        explicit_runtime_worker: tuple[EC2InstanceWorker, str],
+        explicit_runtime_worker: tuple[ServiceControllableWorker, str],
     ) -> None:
         worker, runtime = explicit_runtime_worker
         job = submit_sleep_job(
@@ -231,14 +235,12 @@ class TestExplicitModeRouting:
 def service_selected_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(
         dataclasses.replace(worker_config, session_runtime="service-selected"),
-        ec2_worker_type,
         request,
     ) as worker:
-        assert isinstance(worker, EC2InstanceWorker)
+        assert isinstance(worker, (EC2InstanceWorker, LocalMacWorker))
         yield worker
     stop_worker(request, worker)
 
@@ -259,7 +261,7 @@ class TestServiceSelectedDefaultsToPython:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        service_selected_worker: EC2InstanceWorker,
+        service_selected_worker: ServiceControllableWorker,
     ) -> None:
         job = submit_sleep_job(
             "session_runtime=service-selected (no hint) routing test",
@@ -297,7 +299,7 @@ class TestServiceSelectedWithRustHint:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        service_selected_worker: EC2InstanceWorker,
+        service_selected_worker: ServiceControllableWorker,
     ) -> None:
         job = submit_sleep_job(
             "session_runtime=service-selected (hint=rust) routing test",
@@ -340,7 +342,7 @@ class TestServiceSelectedWithPythonexprHint:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        service_selected_worker: EC2InstanceWorker,
+        service_selected_worker: ServiceControllableWorker,
     ) -> None:
         job = submit_sleep_job(
             "session_runtime=service-selected (hint=pythonexpr) routing test",
@@ -364,14 +366,12 @@ class TestServiceSelectedWithPythonexprHint:
 def rust_unavailable_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(
         dataclasses.replace(worker_config, session_runtime="rust"),
-        ec2_worker_type,
         request,
     ) as worker:
-        assert isinstance(worker, EC2InstanceWorker)
+        assert isinstance(worker, (EC2InstanceWorker, LocalMacWorker))
         yield worker
     stop_worker(request, worker)
 
@@ -390,7 +390,7 @@ class TestRustUnavailableAndRecovery:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        rust_unavailable_worker: EC2InstanceWorker,
+        rust_unavailable_worker: ServiceControllableWorker,
     ) -> None:
         """Rust mode fails visibly when the adapter cannot load, then recovers after
         switching to python via worker.toml edit + service restart."""
@@ -484,8 +484,12 @@ class TestRustUnavailableAndRecovery:
                 f"-Pattern '^session_runtime = .python.$' -Quiet)) {{ exit 1 }}"
             )
         else:
+            # -i.bak rather than a bare -i: BSD sed, which macOS ships, requires an
+            # argument to -i and would otherwise take the script as the backup suffix.
+            # The suffixed form is accepted by both BSD and GNU sed.
             switch_cmd = (
-                f"sed -i 's/^session_runtime = .*/session_runtime = \"python\"/' {toml_path}"
+                f"sed -i.bak 's/^session_runtime = .*/session_runtime = \"python\"/' {toml_path}"
+                f" && rm -f {toml_path}.bak"
                 f" && grep -q '^session_runtime = .python.$' {toml_path}"
             )
 
@@ -495,36 +499,13 @@ class TestRustUnavailableAndRecovery:
         )
 
         # Restart the worker service to pick up the new config
+        # No stop confirmation here on purpose. The Windows and Linux checks that used to
+        # live at this point named their own service manager, so on macOS the POSIX branch
+        # ran `systemctl is-active`, exited 127, and satisfied both assertions on the first
+        # attempt -- a gate that contributed no settle time at all on the one platform
+        # where the restart below actually raced. Confirming the service really stopped is
+        # the worker implementation's job, so it belongs behind stop_worker_service().
         worker.stop_worker_service()
-
-        if is_win:
-
-            @backoff.on_exception(
-                backoff.constant,
-                Exception,
-                max_time=45,
-                interval=5,
-            )
-            def check_worker_service_stopped_win() -> None:
-                status_result = worker.send_command("(Get-Service DeadlineWorker).Status")
-                assert status_result.stdout.strip() != "Running"
-
-            check_worker_service_stopped_win()
-        else:
-
-            @backoff.on_exception(
-                backoff.constant,
-                Exception,
-                max_time=45,
-                interval=5,
-            )
-            def check_worker_service_stopped() -> None:
-                status_result = worker.send_command("systemctl is-active deadline-worker")
-                assert status_result.exit_code != 0
-                assert status_result.stdout.strip() != "active"
-
-            check_worker_service_stopped()
-
         worker.start_worker_service()
 
         # Wait for the worker to come back online
