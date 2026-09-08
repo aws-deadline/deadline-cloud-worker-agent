@@ -66,6 +66,32 @@ jobs:
       - name: Install Hatch
         run: pip install --upgrade hatch 'virtualenv<21'
 
+      # DIAGNOSTIC, remove once read: establishes how this runner treats the EC2
+      # metadata address. The worker agent probes it at startup to decide whether to
+      # monitor for spot interruption, on the same thread the shutdown path returns
+      # through. A host with no route fails immediately and the agent carries on; a
+      # host that routes the address but drops the packets blocks instead, which
+      # stalls shutdown. Which of those this runner does determines whether the
+      # agent needs a timeout or the runner needs a reject route.
+      - name: Probe the EC2 metadata address
+        continue-on-error: true
+        run: |
+          echo "--- route ---"
+          route -n get 169.254.169.254 2>&1 | head -8 || true
+          echo "--- connect, 20s ceiling ---"
+          python3 - <<'PY'
+          import socket, time
+          t0 = time.monotonic()
+          try:
+              socket.create_connection(("169.254.169.254", 80), timeout=20).close()
+              print(f"connected in {time.monotonic()-t0:.3f}s -- IMDS answers here")
+          except Exception as e:
+              print(f"{type(e).__name__} after {time.monotonic()-t0:.3f}s -> {e}")
+              print("fast failure (<1s) means a reject/no route: the agent's existing")
+              print("ConnectionError handler copes and shutdown is unaffected.")
+              print("Slow failure means the address is black-holed and the probe blocks.")
+          PY
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
