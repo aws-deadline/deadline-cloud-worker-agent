@@ -1,0 +1,97 @@
+name: macOS E2E Test
+
+# Runs the E2E suite against a worker agent installed on the runner itself
+# (LocalMacWorker), rather than on a provisioned instance the way the Linux and
+# Windows E2E jobs do.
+#
+# Why this diverges from reusable_e2e_test.yml: those jobs start a CodeBuild build,
+# which then launches an EC2 worker. Mac hardware is only available on EC2 dedicated
+# hosts (24-hour minimum billing per allocation) and CodeBuild offers macOS only via
+# reserved-capacity fleets, which hold — and bill for — a Mac host continuously.
+# A GitHub-hosted macOS runner is free for public repositories and gives a fresh VM
+# per run, which matters here because the installer mutates system state: it creates
+# users and groups, writes a sudoers rule, and bootstraps a LaunchDaemon.
+#
+# The run creates and deletes its own farm, queues, fleets, and storage profiles
+# (BYO_DEADLINE=false), so it needs no access to the shared CI farm resources.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'mainline'
+
+jobs:
+  MacOSE2ETest:
+    name: macOS E2E Test
+    runs-on: macos-latest
+    # The suite provisions a worker, waits on scaling, and runs jobs end to end.
+    # Matches the timeout the Linux and Windows E2E builds use.
+    timeout-minutes: 180
+    permissions:
+      id-token: write
+      contents: read
+    # Each run has its own farm, so overlapping runs cannot corrupt each other's
+    # resources. Serialized anyway to keep concurrent farm and fleet counts inside
+    # the account's service quotas.
+    concurrency:
+      group: macose2e
+    environment: mainline
+    env:
+      OPERATING_SYSTEM: macos
+      # Ask the fixtures for a run-scoped farm rather than reading FARM_ID and the
+      # queue and fleet ids from the environment.
+      BYO_DEADLINE: "false"
+      # The IAM roles and buckets are long-lived and supplied below, so the fixtures
+      # must not try to deploy the bootstrap CloudFormation stack.
+      BYO_BOOTSTRAP: "true"
+      REGION: ${{ vars.E2E_REGION }}
+      BOOTSTRAP_BUCKET_NAME: ${{ vars.E2E_BOOTSTRAP_BUCKET_NAME }}
+      JOB_ATTACHMENTS_BUCKET_NAME: ${{ vars.E2E_JOB_ATTACHMENTS_BUCKET_NAME }}
+      JOB_ATTACHMENTS_ROOT_PREFIX: root
+      WORKER_ROLE_ARN: ${{ vars.E2E_WORKER_ROLE_ARN }}
+      SESSION_ROLE_ARN: ${{ vars.E2E_SESSION_ROLE_ARN }}
+      TEST_CATEGORY: macOSMainline
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # A single version rather than a matrix: the E2E suite takes tens of minutes
+          # and installs a system service, so a matrix would multiply runtime without
+          # covering meaningfully different agent behaviour. code_quality.yml and
+          # macos_installer_test.yml cover the supported interpreter range.
+          python-version: '3.11'
+
+      - name: Install Hatch
+        run: pip install --upgrade hatch 'virtualenv<21'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.E2E_MACOS_ROLE_ARN }}
+          aws-region: ${{ vars.E2E_REGION }}
+          role-session-name: macos-e2e-${{ github.run_id }}
+          # LocalMacWorker copies this process's credentials into the agent user's
+          # credentials file as static keys, and the agent re-reads that file on every
+          # refresh. So the session has to outlive the whole run, not just the setup
+          # steps: the default hour would strand the worker mid-suite. Requires the
+          # role's MaxSessionDuration to be at least this value.
+          role-duration-seconds: 21600
+
+      - name: Build the worker agent wheel
+        # The suite installs the agent from a wheel built out of this checkout, which is
+        # what makes the run test the current commit rather than the published package.
+        run: |
+          set -euxo pipefail
+          hatch build
+          # Read the name off disk rather than composing it from `hatch run metadata name`
+          # and `hatch run version`: the first `hatch run` in a job also creates the
+          # environment and prints the install log to stdout, which ends up inside the
+          # command substitution and corrupts the value.
+          count=$(find dist -maxdepth 1 -name '*.whl' | wc -l | tr -d ' ')
+          test "$count" -eq 1 || { echo "expected exactly one wheel in dist/, found $count"; exit 1; }
+          echo "WORKER_AGENT_WHL_PATH=$PWD/$(find dist -maxdepth 1 -name '*.whl')" >> "$GITHUB_ENV"
+
+      - name: Run E2E tests
+        run: hatch run e2e:test
