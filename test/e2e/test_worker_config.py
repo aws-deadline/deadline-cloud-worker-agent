@@ -11,6 +11,7 @@ import boto3
 import dataclasses
 import logging
 import os
+import pytest
 
 from deadline_test_fixtures import (
     DeadlineClient,
@@ -146,6 +147,14 @@ class TestWorkerConfiguration:
                     f"Checking that local session logs do not exist returned unexpected response: {check_log_exists_result}"
                 )
 
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "macos",
+        reason=(
+            "Needs a host that can be scaled out and powered off. The macOS worker runs on "
+            "the test host itself, so it has no instance_id, and shutting it down would take "
+            "the rest of the suite with it."
+        ),
+    )
     def test_worker_shuts_down_host_machine_if_configured(
         self,
         deadline_resources: DeadlineResources,
@@ -216,9 +225,15 @@ class TestWorkerConfiguration:
         session_root_dir: str
         run_script: str
 
-        if operating_system.is_amazon_linux():
-            session_root_dir = "/mysessionroot"
-            run_script = f"""#!/usr/bin/bash
+        if operating_system.is_amazon_linux() or operating_system.is_macos():
+            # macOS cannot take the Linux path: the system volume is sealed and read-only,
+            # so a root-level /mysessionroot cannot be created. /private/tmp rather than
+            # /tmp because /tmp is a symlink to it, and the agent reports the resolved
+            # path, which would not match a prefix check written against the symlink.
+            session_root_dir = (
+                "/private/tmp/mysessionroot" if operating_system.is_macos() else "/mysessionroot"
+            )
+            run_script = f"""#!/usr/bin/env bash
 set -euo pipefail
 echo "=== Session Root Dir Test ==="
 echo "Expected: working dir under {session_root_dir}/"
