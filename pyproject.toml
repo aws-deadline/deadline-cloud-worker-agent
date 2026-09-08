@@ -29,11 +29,26 @@ dependencies = [
     # StepTemplate.resolve_syntax_sugar() (run_step_task.py, for FEATURE_BUNDLE_1
     # simple-action steps) and openjd.expr.SerializedSymbolTable (the runtime
     # adapters). resolve_syntax_sugar() first shipped in openjd-model 0.9.0, well
-    # below the floor here, so no floor change is needed for it to exist. It is
-    # recorded because the fold order it produces,
-    # [*step lets, *simple-action lets], is model behaviour this package's tests
-    # assert rather than behaviour this package controls.
-    "openjd-model >= 0.11.4, < 0.12",
+    # below the floor here, so no floor change is needed for it to exist.
+    #
+    # Floored at 0.11.9 (openjd-model#341), where a step's template-scope `let`
+    # stopped being folded into the script's `let` because it is now resolved once
+    # at job creation instead, its values travelling in
+    # `create_job_with_symbol_tables().step_symbol_tables`. That matches how this
+    # package already receives those bindings -- via the service-resolved symtab
+    # passed to openjd-sessions, per the note above -- so only the simple-action
+    # scope is folded on the worker.
+    #
+    # The floor is not a test-shape preference. 0.11.8 and earlier fold both
+    # scopes, which re-declares every step-scope binding in `script.let` and has
+    # the session re-evaluate it in host scope on top of the value the service
+    # already resolved -- re-rendering PATH values over the correctly formatted
+    # seeded one. The pinned openjd-sessions 0.12.0 evaluates exactly one `let`
+    # scope, a script's own, in `apply_let_bindings`; it has no template-scope
+    # pass for the fold's output to feed. So this floor cannot be relaxed to
+    # widen resolution; below it, sugar steps with a step-scope `let` resolve
+    # those names twice, from two sources that can disagree.
+    "openjd-model >= 0.11.9, < 0.12",
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",
     "tomlkit >= 0.13,< 0.16",

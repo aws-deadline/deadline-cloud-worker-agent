@@ -406,22 +406,35 @@ class TestSimpleActionSugarEndToEnd:
         assert state == ActionState.SUCCESS
         assert any("BASH:hello from bash" in m for m in caplog.messages)
 
-    def test_step_and_sugar_scope_let_both_resolve_through_the_fold(
+    def test_step_and_sugar_scope_let_both_resolve(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Both scopes of a sugar template resolve, via the fold alone.
+        """A sugar-scope binding resolves against a step-scope name.
 
-        ``resolve_syntax_sugar()`` folds the step's ``let`` into the script's own
-        as ``[*step lets, *simple-action lets]``, so the de-sugared script
-        carries both scopes in RFC 0005 order and a sugar-scope binding can
-        reference a step-scope one. This is the only thing that resolves the
-        step's scope on this path -- nothing else re-applies it.
+        Step scope arrives through the served ``resolvedSymbolTable``, which this
+        module's header describes as the single authoritative channel for it, and
+        the sugar's own ``let`` is folded into the script that
+        ``resolve_syntax_sugar()`` produces. The two together are what let
+        ``out`` reference ``base``.
+
+        Seeded through the table rather than left to the fold, and the seeded
+        value is not an assumption about the service: as of openjd-model 0.11.9
+        the model resolves template scope once at job creation into
+        ``create_job_with_symbol_tables().step_symbol_tables[step name]`` -- job
+        scope plus ``Step.Name`` plus the step's evaluated ``let`` -- and that is
+        what the service serves as ``resolvedSymbolTable``. The table is built
+        from the step's name, its ``let`` and the job-scope table alone, so a
+        sugar step gets the same one a ``script:`` step does; the sugar changes
+        the script's shape, not the table's contents.
+
+        Which is why relying on the fold tested a path production does not take.
         """
         caplog.set_level(logging.INFO)
         details = _bash_sugar_step_details(
             step_let=["base = 'from step'"],
             sugar_let=["out = base + '|sugar'"],
             script_body='echo "OUT:{{ out }}"',
+            resolved_symbol_table=[{"name": "base", "type": "string", "value": "from step"}],
         )
         assert details.step_template.script is None
 

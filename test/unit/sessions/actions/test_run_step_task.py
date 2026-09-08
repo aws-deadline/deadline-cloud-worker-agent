@@ -1,5 +1,8 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+from __future__ import annotations
+
+import json
 from typing import Any
 from unittest.mock import Mock
 import pytest
@@ -96,7 +99,11 @@ class TestRunStepTaskAction:
         assert "DEADLINE_TASK_ID" not in env_vars
 
 
-def _step_details_from_template(template: dict[str, Any], extensions: list[str]) -> StepDetails:
+def _step_details_from_template(
+    template: dict[str, Any],
+    extensions: list[str],
+    resolved_symbol_table: str | None = None,
+) -> StepDetails:
     """Parse a served step template the way BatchGetJobEntity delivers it."""
     payload: Any = {
         "jobId": "job-123",
@@ -106,7 +113,115 @@ def _step_details_from_template(template: dict[str, Any], extensions: list[str])
         "extensions": extensions,
         "template": template,
     }
+    if resolved_symbol_table is not None:
+        payload["resolvedSymbolTable"] = resolved_symbol_table
     return StepDetails.from_boto(payload)
+
+
+def _warned(mock_session: Mock) -> bool:
+    """Whether the action warned on the *session* logger.
+
+    Asserted through `session.logger` rather than caplog on purpose: routing this
+    to the session log is the point -- the agent log is on the host, and a job owner
+    on a service-managed fleet cannot read it. A caplog assertion would pass just as
+    happily against the module logger and so would not pin that.
+    """
+    return any(
+        "served no resolved symbol table" in str(call.args[0])
+        for call in mock_session.logger.warning.call_args_list
+    )
+
+
+class TestStepLetWithoutAServedTable:
+    """A step declaring template-scope ``let`` with no table served is reported.
+
+    The table is the only channel for those names -- the worker does not evaluate
+    the step's ``let`` itself -- so this combination leaves them undefined. The
+    service can produce it: it drops a table over a size cap, and gates serving
+    one on a minimum worker version.
+
+    The action warns rather than raising. A step may declare bindings its script
+    never references, and such a step runs correctly with no table; failing it
+    would turn a dropped table into a job failure for work that would otherwise
+    succeed. The warning exists so the log names the missing channel instead of
+    leaving an undefined-symbol error to point at a binding that is plainly
+    declared in the template.
+    """
+
+    def test_warns_when_a_step_let_has_no_table(self, mock_session, mock_executor) -> None:
+        details = _step_details_from_template(
+            {
+                "name": "MyStep",
+                "let": ["base = 'from step'"],
+                "script": {"actions": {"onRun": {"command": "echo", "args": ["hi"]}}},
+            },
+            ["EXPR"],
+        )
+        assert details.resolved_symbol_table_json is None
+        action = RunStepTaskAction(id="action-123", details=details, task_parameter_values={})
+
+        action.start(session=mock_session, executor=mock_executor)
+
+        assert _warned(mock_session)
+        # Warned, not raised: the task still goes out.
+        mock_session.run_task.assert_called_once()
+
+    def test_warns_for_a_sugar_step_too(self, mock_session, mock_executor) -> None:
+        """The sugar path reaches the same check.
+
+        Worth pinning separately: before openjd-model 0.11.9 a sugar step in this
+        state still resolved, because ``resolve_syntax_sugar()`` re-declared the
+        step's ``let`` in ``script.let`` and the session re-evaluated it. That
+        fold is gone, so the sugar path now depends on the table exactly as the
+        ``script:`` path does.
+        """
+        details = _step_details_from_template(
+            {
+                "name": "MyStep",
+                "let": ["base = 'from step'"],
+                "bash": {"let": ["msg = base"], "script": "echo hi"},
+            },
+            ["FEATURE_BUNDLE_1", "EXPR"],
+        )
+        action = RunStepTaskAction(id="action-123", details=details, task_parameter_values={})
+
+        action.start(session=mock_session, executor=mock_executor)
+
+        assert _warned(mock_session)
+
+    def test_is_silent_when_a_table_is_served(self, mock_session, mock_executor) -> None:
+        """Control: the normal case must not warn."""
+        details = _step_details_from_template(
+            {
+                "name": "MyStep",
+                "let": ["base = 'from step'"],
+                "script": {"actions": {"onRun": {"command": "echo", "args": ["hi"]}}},
+            },
+            ["EXPR"],
+            resolved_symbol_table=json.dumps(
+                [{"name": "base", "type": "string", "value": "from step"}]
+            ),
+        )
+        action = RunStepTaskAction(id="action-123", details=details, task_parameter_values={})
+
+        action.start(session=mock_session, executor=mock_executor)
+
+        assert not _warned(mock_session)
+
+    def test_is_silent_for_a_step_with_no_let(self, mock_session, mock_executor) -> None:
+        """Control: no ``let`` and no table is the common case, and is fine."""
+        details = _step_details_from_template(
+            {
+                "name": "MyStep",
+                "script": {"actions": {"onRun": {"command": "echo", "args": ["hi"]}}},
+            },
+            ["EXPR"],
+        )
+        action = RunStepTaskAction(id="action-123", details=details, task_parameter_values={})
+
+        action.start(session=mock_session, executor=mock_executor)
+
+        assert not _warned(mock_session)
 
 
 class TestRunStepTaskActionSimpleActionSugar:
@@ -122,11 +237,18 @@ class TestRunStepTaskActionSimpleActionSugar:
     """
 
     def test_start_de_sugars_a_bash_step(self, mock_session, mock_executor):
-        """The folded script goes out, carrying both `let` scopes in order.
+        """The folded script goes out, carrying the simple action's own `let`.
 
-        ``resolve_syntax_sugar()`` folds step-scope ``let`` into the script's own
-        ``let`` as ``[*step lets, *simple-action lets]``. Without that fold the
-        action would have no script at all to send.
+        ``resolve_syntax_sugar()`` folds the simple action's ``let`` into the script
+        it produces. Without that fold the action would have no script at all to
+        send.
+
+        The step's template-scope ``let`` is deliberately absent from that list. As
+        of openjd-model 0.11.9 the model resolves template scope once at job
+        creation rather than folding it here, and this package receives those
+        bindings by a different route anyway: the service-resolved symtab it passes
+        to ``openjd-sessions``. Asserting them here would test a shape no worker
+        sees, since the worker de-sugars a template the service already created.
         """
         details = _step_details_from_template(
             {
@@ -149,8 +271,8 @@ class TestRunStepTaskActionSimpleActionSugar:
         call_kwargs = mock_session.run_task.call_args.kwargs
         step_script = call_kwargs["step_script"]
         assert step_script is not None
-        # Both scopes present exactly once, step bindings first.
-        assert step_script.let == ["base = 'from step'", "msg = base"]
+        # Simple-action scope only; template scope arrives via the resolved symtab.
+        assert step_script.let == ["msg = base"]
         assert step_script.actions.onRun.command == "bash"
 
     def test_start_does_not_mutate_the_served_template(self, mock_session, mock_executor):
@@ -178,9 +300,11 @@ class TestRunStepTaskActionSimpleActionSugar:
     def test_start_forwards_a_plain_script_unchanged(self, mock_session, mock_executor):
         """Control: a ``script:`` template sends its own script object untouched.
 
-        Guards the other direction -- de-sugaring unconditionally would fold
-        the step's ``let`` into ``script.let`` and send a rebuilt script, so a
-        plain step's script must come through by identity.
+        Guards the other direction -- de-sugaring unconditionally would send a
+        rebuilt script in place of the served one, so a plain step's script must
+        come through by identity. The step's own ``let`` stays out of
+        ``script.let`` on this path as it does on the sugar path, since neither
+        re-declares template scope.
         """
         details = _step_details_from_template(
             {
