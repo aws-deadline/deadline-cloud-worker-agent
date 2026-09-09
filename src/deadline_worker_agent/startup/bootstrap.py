@@ -60,6 +60,24 @@ IMDS_RETRY_INITIAL_BACKOFF_SECONDS = 1.0
 IMDS_RETRY_BACKOFF_FACTOR = 2.0
 IMDS_RETRY_MAX_BACKOFF_SECONDS = 16.0
 
+# (connect, read) pairs, since `requests` applies a scalar per phase. The connect half is what
+# needed bounding: the address is link-local, so where nothing answers it the connect waits on
+# ARP rather than being refused, parking the caller.
+#
+# The read halves differ because every failure here is reported as `None`, and a false `None` is
+# expensive: _enforce_no_instance_profile reads it as unreachable and stops the worker, while
+# _get_instance_id has no retry and its `None` silently skips the AMI-staleness check in
+# _load_or_create_worker, adopting the worker_id baked into the AMI.
+IMDS_TOKEN_REQUEST_TIMEOUT = (0.5, 0.5)
+"""Read stays bounded here because it already was -- this hop shipped `timeout=0.5`, which
+`requests` expands to both phases. Dropping it would be a regression, and a hang is worse than
+a false `None`: it never reaches the IMDS_RETRY_* budget, which only runs once this returns."""
+
+IMDS_METADATA_REQUEST_TIMEOUT = (0.5, None)
+"""Read stays unbounded here because it never was bounded; a ceiling would be a new `None`
+path. A half-open connection can still park this hop -- pre-existing, and fixing it needs the
+callers to tell "slow" from "unreachable" rather than conflating both into `None`."""
+
 
 class WorkerDeregisteredError(Exception):
     """Exception raised when Worker is deregistered"""
@@ -727,12 +745,18 @@ def _get_metadata(metadata_type: str) -> requests.Response | None:
         response = requests.put(
             "http://169.254.169.254/latest/api/token",
             headers={"X-aws-ec2-metadata-token-ttl-seconds": "30"},
-            timeout=0.5,  # Non-aws worker hosts will time-out, but the default timeout can be > 20s
+            timeout=IMDS_TOKEN_REQUEST_TIMEOUT,
         )
+        # Neither status is inspected, deliberately: both are the caller's to read, and mapping
+        # them to None would cost more than it buys. 404 on /iam/info is
+        # _enforce_no_instance_profile's success case, and a transient 429/5xx is tolerated by
+        # its ~120s outer loop, which recovers -- where None caps that at the 31s IMDS_RETRY_*
+        # budget and then stops the worker.
         token = response.text
         response = requests.get(
             f"http://169.254.169.254/latest/meta-data/{metadata_type}",
             headers={"X-aws-ec2-metadata-token": token},
+            timeout=IMDS_METADATA_REQUEST_TIMEOUT,
         )
     except Exception:
         _logger.info("Not running on EC2 or the metadata service was unable to be found!")
