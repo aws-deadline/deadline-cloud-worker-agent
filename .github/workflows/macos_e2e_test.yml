@@ -119,11 +119,10 @@ jobs:
           test "$count" -eq 1 || { echo "expected exactly one wheel in dist/, found $count"; exit 1; }
           echo "WORKER_AGENT_WHL_PATH=$PWD/$(find dist -maxdepth 1 -name '*.whl')" >> "$GITHUB_ENV"
 
-      # DIAGNOSTIC, remove with the rest. Says where the shutdown is parked rather than
-      # leaving it to elimination. py-spy rather than the agent's own SIGUSR1 handler:
-      # that handler prints to stderr, and the LaunchDaemon plist points stderr at
-      # /dev/null, so those stacks are discarded. py-spy reads the frames out of the
-      # live process instead.
+      # DIAGNOSTIC, remove with the rest. py-spy could not read the hardened process, so
+      # record launchd's own view across the stall instead: pid, state, last exit status
+      # and run count. KeepAlive is { SuccessfulExit = false }, so a non-zero exit is
+      # what makes launchd relaunch the agent, and the exit status names the cause.
       #
       # Armed as a watchdog because it has to fire while the agent is still stalled:
       # stop_worker_service waits for launchd to release the label, so by the time the
@@ -131,9 +130,6 @@ jobs:
       # agent writes.
       - name: Arm a thread-stack watchdog
         run: |
-          pip install --quiet py-spy
-          PY_SPY=$(command -v py-spy)
-          echo "py-spy at $PY_SPY"
           sudo nohup bash -c '
             log=/var/log/amazon/deadline/worker-agent.log
             out=/tmp/agent-stacks.txt
@@ -141,15 +137,16 @@ jobs:
               if grep -q "Draining any remaining Sessions" "$log" 2>/dev/null; then
                 pid=$(launchctl print system/com.amazon.deadline.worker-agent 2>/dev/null \
                       | awk "/[^a-z]pid = /{print \$3}" | head -1)
-                if [ -n "$pid" ]; then
-                  for attempt in 1 2 3; do
-                    echo "=== dump $attempt, pid $pid, $(date -u +%H:%M:%S) ===" >> "$out"
-                    '"$PY_SPY"' dump --pid "$pid" >> "$out" 2>&1 || echo "py-spy failed" >> "$out"
-                    sleep 3
-                  done
-                else
-                  echo "agent already gone when watchdog fired" >> "$out"
-                fi
+                echo "=== drain seen at $(date -u +%H:%M:%S), pid=${pid:-none} ===" >> "$out"
+                for attempt in $(seq 1 12); do
+                  {
+                    echo "--- t+$attempt ($(date -u +%H:%M:%S)) ---"
+                    launchctl print system/com.amazon.deadline.worker-agent 2>&1 \
+                      | grep -E "state|pid|last exit|runs =" | head -6 \
+                      || echo "label gone"
+                  } >> "$out"
+                  sleep 1
+                done
                 exit 0
               fi
               sleep 1
@@ -176,7 +173,11 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          echo "--- thread stacks captured mid-stall ---"
+          echo "--- agent stderr (plist redirected for this run) ---"
+          sudo tail -60 /var/log/amazon/deadline/worker-agent-stderr.log 2>&1 || echo "(absent)"
+          echo "--- agent stdout ---"
+          sudo tail -30 /var/log/amazon/deadline/worker-agent-stdout.log 2>&1 || echo "(absent)"
+          echo "--- launchd snapshots across the stall ---"
           sudo cat /tmp/agent-stacks.txt 2>&1 || echo "(no stacks captured)"
           echo "--- launchd state ---"
           sudo launchctl print system/com.amazon.deadline.worker-agent 2>&1 | head -5 || echo "(label not loaded)"

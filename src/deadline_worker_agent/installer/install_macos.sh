@@ -809,9 +809,9 @@ ${prog_args_xml}    </array>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/dev/null</string>
+    <string>/var/log/amazon/deadline/worker-agent-stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/dev/null</string>
+    <string>/var/log/amazon/deadline/worker-agent-stderr.log</string>
 </dict>
 </plist>
 EOF
