@@ -185,7 +185,7 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         field_name="session_runtime",
         expected_type=SessionRuntimeKind,
         expected_required=False,
-        expected_default=SessionRuntimeKind.PYTHON,
+        expected_default=SessionRuntimeKind.SERVICE_SELECTED,
         expected_default_factory_return_value=None,
     ),
     FieldTestCaseParams(
