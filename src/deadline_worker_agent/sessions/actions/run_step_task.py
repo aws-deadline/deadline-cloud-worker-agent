@@ -27,21 +27,21 @@ def _resolve_step_script(step_template: StepTemplate) -> StepScript:
     A FEATURE_BUNDLE_1 simple-action template (`bash:`, `cmd:`, `node:`,
     `powershell:`, `python:`) has no `script` at all. The service serves the
     sugar as authored and the worker never instantiates a job, so nothing
-    de-sugars it. `resolve_syntax_sugar()` does that here, returning a new
-    template whose script carries `[*step lets, *simple-action lets]`.
+    de-sugars it. `resolve_syntax_sugar()` does that here, synthesizing a
+    runnable `script` from the sugar. Under openjd-model >=0.11.9 the produced
+    `script.let` carries only the simple-action's own `let`; step-scope `let` is
+    no longer folded in.
 
     Step-scope `let` values reach the session through the resolved symbol table
     the service serves. For a `script:` template that is the only channel, and
     the source expressions are never re-evaluated here.
 
-    That is not true of the sugar path: the fold above re-declares every
-    step-scope binding in the produced `script.let`, so on a sugar template
-    those names arrive twice -- once resolved by the service in the table, and
-    once as a source expression the session re-evaluates on top of it. No test
-    covers a sugar template together with a populated resolvedSymbolTable, so
-    whether the two channels can disagree (a binding that re-evaluates to a
-    different value, or fails to re-evaluate against the per-action table) is
-    currently unverified rather than known-safe.
+    The same is now true of the sugar path: step-scope bindings travel
+    exclusively through the service-served `resolvedSymbolTable`, not through
+    the fold, so those names no longer arrive twice. The fold synthesizes the
+    script structure and carries only the simple-action `let`, which leaves the
+    resolved symbol table as the single channel for step-scope bindings on both
+    paths.
     """
     script = step_template.script
     if script is not None:
