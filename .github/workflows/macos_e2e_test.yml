@@ -140,11 +140,6 @@ jobs:
                 pid=$(launchctl print system/com.amazon.deadline.worker-agent 2>/dev/null \
                       | awk "/[^a-z]pid = /{print \$3}" | head -1)
                 echo "=== drain seen at $(date -u +%H:%M:%S), pid=${pid:-none} ===" >> "$out"
-                # The agent stays alive in SIGTERMed state for about five seconds before
-                # bootout escalates to SIGKILL. Its own SIGUSR1 handler prints every
-                # thread's stack, and stderr now goes to a file rather than /dev/null, so
-                # signal it inside that window. Twice, in case the first lands before the
-                # thread that matters has parked.
                 for attempt in 1 2; do
                   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
                     echo "--- SIGUSR1 $attempt to $pid at $(date -u +%H:%M:%S) ---" >> "$out"
