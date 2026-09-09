@@ -132,8 +132,6 @@ def install() -> None:
             args.fleet_id,
             "--region",
             args.region,
-            "--user",
-            args.user,
             "--scripts-path",
             str(scripts_path),
             "--python-interpreter-path",
@@ -143,6 +141,8 @@ def install() -> None:
         ]
         if args.vfs_install_path:
             cmd += ["--vfs-install-path", args.vfs_install_path]
+        if args.user:
+            cmd += ["--user", args.user]
         if args.group:
             cmd += ["--group", args.group]
         if args.confirmed:
@@ -173,7 +173,7 @@ class ParsedCommandLineArguments(Namespace):
     farm_id: str
     fleet_id: str
     region: Optional[str] = None
-    user: str
+    user: Optional[str] = None
     password: Optional[str] = None
     group: Optional[str] = None
     confirmed: bool
@@ -214,12 +214,9 @@ def get_argument_parser() -> ArgumentParser:  # pragma: no cover
         default=None,
     )
 
-    # Windows local usernames are restricted to 20 characters in length.
-    default_username = "deadline-worker-agent" if sys.platform != "win32" else "deadline-worker"
     parser.add_argument(
         "--user",
-        help=f'The username of the AWS Deadline Cloud Worker Agent user. Defaults to "{default_username}".',
-        default=default_username,
+        help='The username of the AWS Deadline Cloud Worker Agent user. Defaults to "deadline-worker".',
     )
 
     parser.add_argument(
