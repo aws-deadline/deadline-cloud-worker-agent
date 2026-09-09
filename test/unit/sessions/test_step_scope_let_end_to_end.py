@@ -406,22 +406,24 @@ class TestSimpleActionSugarEndToEnd:
         assert state == ActionState.SUCCESS
         assert any("BASH:hello from bash" in m for m in caplog.messages)
 
-    def test_step_and_sugar_scope_let_both_resolve_through_the_fold(
+    def test_step_and_sugar_scope_let_both_resolve(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Both scopes of a sugar template resolve, via the fold alone.
+        """Both scopes of a sugar template resolve, via two channels.
 
-        ``resolve_syntax_sugar()`` folds the step's ``let`` into the script's own
-        as ``[*step lets, *simple-action lets]``, so the de-sugared script
-        carries both scopes in RFC 0005 order and a sugar-scope binding can
-        reference a step-scope one. This is the only thing that resolves the
-        step's scope on this path -- nothing else re-applies it.
+        Under openjd-model >=0.11.9 the step's ``let`` no longer folds into the
+        de-sugared ``script.let``; it travels via ``resolvedSymbolTable``
+        instead. ``resolve_syntax_sugar()`` still synthesizes the script
+        structure and folds in the sugar-scope ``let``, so a sugar-scope binding
+        (``out``) can reference a step-scope one (``base``) once ``base`` is
+        served in the resolved table.
         """
         caplog.set_level(logging.INFO)
         details = _bash_sugar_step_details(
             step_let=["base = 'from step'"],
             sugar_let=["out = base + '|sugar'"],
             script_body='echo "OUT:{{ out }}"',
+            resolved_symbol_table=[{"name": "base", "type": "string", "value": "from step"}],
         )
         assert details.step_template.script is None
 

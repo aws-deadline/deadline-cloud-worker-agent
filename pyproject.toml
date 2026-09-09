@@ -29,10 +29,11 @@ dependencies = [
     # StepTemplate.resolve_syntax_sugar() (run_step_task.py, for FEATURE_BUNDLE_1
     # simple-action steps) and openjd.expr.SerializedSymbolTable (the runtime
     # adapters). resolve_syntax_sugar() first shipped in openjd-model 0.9.0, well
-    # below the floor here, so no floor change is needed for it to exist. It is
-    # recorded because the fold order it produces,
-    # [*step lets, *simple-action lets], is model behaviour this package's tests
-    # assert rather than behaviour this package controls.
+    # below the floor here, so no floor change is needed for it to exist. Its
+    # fold behaviour changed in openjd-model 0.11.9: the produced `script.let` no
+    # longer includes step-scope `let`, which now travels exclusively through the
+    # service-served resolvedSymbolTable. This package's tests have been adapted
+    # to that contract.
     "openjd-model >= 0.11.4, < 0.12",
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",

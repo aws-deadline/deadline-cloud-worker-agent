@@ -122,11 +122,13 @@ class TestRunStepTaskActionSimpleActionSugar:
     """
 
     def test_start_de_sugars_a_bash_step(self, mock_session, mock_executor):
-        """The folded script goes out, carrying both `let` scopes in order.
+        """The folded script goes out, carrying the simple-action ``let``.
 
-        ``resolve_syntax_sugar()`` folds step-scope ``let`` into the script's own
-        ``let`` as ``[*step lets, *simple-action lets]``. Without that fold the
-        action would have no script at all to send.
+        ``resolve_syntax_sugar()`` still synthesizes a runnable script from the
+        sugar, but under openjd-model >=0.11.9 it no longer folds step-scope
+        ``let`` into the produced ``script.let`` -- only the simple-action's own
+        ``let`` remains. Step-scope bindings travel via ``resolvedSymbolTable``
+        instead. Without the fold the action would have no script at all to send.
         """
         details = _step_details_from_template(
             {
@@ -149,8 +151,9 @@ class TestRunStepTaskActionSimpleActionSugar:
         call_kwargs = mock_session.run_task.call_args.kwargs
         step_script = call_kwargs["step_script"]
         assert step_script is not None
-        # Both scopes present exactly once, step bindings first.
-        assert step_script.let == ["base = 'from step'", "msg = base"]
+        # Only the simple-action `let` folds into the script now; the
+        # step-scope `let` travels via resolvedSymbolTable.
+        assert step_script.let == ["msg = base"]
         assert step_script.actions.onRun.command == "bash"
 
     def test_start_does_not_mutate_the_served_template(self, mock_session, mock_executor):
