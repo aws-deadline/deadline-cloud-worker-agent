@@ -139,7 +139,7 @@ The `install-deadline-worker` program:
 
 -   **Agent User**:
     -   Dedicated system user that the worker agent process runs as
-    -   Defaults to `deadline-worker-agent` on Linux and `deadline-worker` on Windows
+    -   Defaults to `deadline-worker`
     -   Limited privileges following the principle of least privilege
     -   No login shell access for security
 
