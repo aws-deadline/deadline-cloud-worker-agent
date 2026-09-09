@@ -119,10 +119,12 @@ jobs:
           test "$count" -eq 1 || { echo "expected exactly one wheel in dist/, found $count"; exit 1; }
           echo "WORKER_AGENT_WHL_PATH=$PWD/$(find dist -maxdepth 1 -name '*.whl')" >> "$GITHUB_ENV"
 
-      # DIAGNOSTIC, remove with the rest. py-spy could not read the hardened process, so
-      # record launchd's own view across the stall instead: pid, state, last exit status
-      # and run count. KeepAlive is { SuccessfulExit = false }, so a non-zero exit is
-      # what makes launchd relaunch the agent, and the exit status names the cause.
+      # DIAGNOSTIC, remove with the rest. launchd reports the agent alive in SIGTERMed
+      # state with `last exit code = (never exited)` for about five seconds after the
+      # drain line, and `runs = 1`, so it is stuck rather than crashing or being
+      # relaunched. This signals its own SIGUSR1 thread-stack dumper inside that window
+      # to say which frame is parked; that output goes to stderr, which this branch
+      # redirects to a file instead of /dev/null.
       #
       # Armed as a watchdog because it has to fire while the agent is still stalled:
       # stop_worker_service waits for launchd to release the label, so by the time the
@@ -138,15 +140,25 @@ jobs:
                 pid=$(launchctl print system/com.amazon.deadline.worker-agent 2>/dev/null \
                       | awk "/[^a-z]pid = /{print \$3}" | head -1)
                 echo "=== drain seen at $(date -u +%H:%M:%S), pid=${pid:-none} ===" >> "$out"
-                for attempt in $(seq 1 12); do
-                  {
-                    echo "--- t+$attempt ($(date -u +%H:%M:%S)) ---"
-                    launchctl print system/com.amazon.deadline.worker-agent 2>&1 \
-                      | grep -E "state|pid|last exit|runs =" | head -6 \
-                      || echo "label gone"
-                  } >> "$out"
-                  sleep 1
+                # The agent stays alive in SIGTERMed state for about five seconds before
+                # bootout escalates to SIGKILL. Its own SIGUSR1 handler prints every
+                # thread's stack, and stderr now goes to a file rather than /dev/null, so
+                # signal it inside that window. Twice, in case the first lands before the
+                # thread that matters has parked.
+                for attempt in 1 2; do
+                  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                    echo "--- SIGUSR1 $attempt to $pid at $(date -u +%H:%M:%S) ---" >> "$out"
+                    kill -USR1 "$pid" 2>/dev/null || echo "signal failed" >> "$out"
+                  else
+                    echo "--- pid gone before signal $attempt ---" >> "$out"
+                  fi
+                  sleep 2
                 done
+                {
+                  echo "--- launchd view after signalling ---"
+                  launchctl print system/com.amazon.deadline.worker-agent 2>&1 \
+                    | grep -E "state|pid|last exit|runs =" | head -6 || echo "label gone"
+                } >> "$out"
                 exit 0
               fi
               sleep 1
@@ -174,7 +186,7 @@ jobs:
         continue-on-error: true
         run: |
           echo "--- agent stderr (plist redirected for this run) ---"
-          sudo tail -60 /var/log/amazon/deadline/worker-agent-stderr.log 2>&1 || echo "(absent)"
+          sudo tail -300 /var/log/amazon/deadline/worker-agent-stderr.log 2>&1 || echo "(absent)"
           echo "--- agent stdout ---"
           sudo tail -30 /var/log/amazon/deadline/worker-agent-stdout.log 2>&1 || echo "(absent)"
           echo "--- launchd snapshots across the stall ---"
