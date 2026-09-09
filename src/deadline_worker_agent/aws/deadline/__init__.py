@@ -9,7 +9,12 @@ from functools import wraps
 import random
 
 from botocore.retries.standard import RetryContext
-from botocore.exceptions import ClientError
+from botocore.exceptions import (
+    ClientError,
+    # Aliased to avoid shadowing the Python builtin ConnectionError.
+    ConnectionError as BotocoreConnectionError,
+    HTTPClientError,
+)
 
 from deadline.job_attachments import version as deadline_job_attachments_version
 from deadline.job_attachments.progress_tracker import SummaryStatistics
@@ -36,11 +41,25 @@ from ...api_models import (
 )
 from ...log_sync.log_constants import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,
-    LOG_CONFIG_OPTION_REGION_KEY,
     LOG_CONFIG_OPTION_STREAM_NAME_KEY,
 )
 
 _logger = logging.getLogger(__name__)
+
+# Transport-level errors that indicate transient connectivity issues and should be retried.
+# We catch botocore's two transport base classes rather than enumerating leaf types, which
+# mirrors how botocore itself classifies retryable connection errors and covers cases like
+# ConnectionClosedError, ReadTimeoutError, ResponseStreamingError (HTTPClientError) and
+# EndpointConnectionError, ConnectTimeoutError, ProxyConnectionError, SSLError (ConnectionError).
+# These are distinct from ClientError (service responses), so they don't overlap with the
+# error-code handling above.
+_TRANSIENT_NETWORK_EXCEPTIONS = (BotocoreConnectionError, HTTPClientError)
+
+# Maximum retries for transient network errors before treating as unrecoverable.
+# Uses the same exponential backoff as throttle retries (base 2, per-retry delay
+# randomized up to ~0.5s, 1s, 2s, 4s, 8s and capped at 30s), so 5 retries gives
+# roughly 15s of worst-case tolerance before giving up.
+_MAX_TRANSIENT_NETWORK_RETRIES = 5
 
 # Generic function return type.
 F = TypeVar("F", bound=Callable[..., Any])
@@ -133,11 +152,6 @@ class WorkerLogConfig:
     cloudwatch_log_stream: str
     """The name of the CloudWatch Log Stream that the Agent log should be streamed to"""
 
-    cloudwatch_region: Optional[str] = None
-    """The AWS region where the CloudWatch Log Group resides. If None, the agent's local region
-    is used. This enables satellite workers in multi-region fleets to write logs to the home
-    region's log groups."""
-
 
 def _get_error_code_from_header(response: dict[str, Any]) -> Optional[str]:
     return response.get("Error", {}).get("Code", None)
@@ -165,6 +179,44 @@ def _get_resource_id_and_status_from_conflictexception_header(
     context = response.get("context", {})
     resourceId = response.get("resourceId")
     return resourceId, context.get("status")
+
+
+def _handle_transient_network_error(
+    e: Exception,
+    transient_retries: int,
+    backoff: Backoff,
+    interrupt_event: Optional[Event],
+    api_name: str,
+) -> None:
+    """Handles a transient network error raised during a Deadline Cloud API call by logging
+    and performing an interruptible backoff wait before the caller retries.
+
+    Transient network errors (connection reset, timeout, etc.) commonly occur due to VPN
+    reconnection, load balancer rotation, or brief network blips, and should be retried
+    rather than treated as fatal.
+
+    Note: The caller owns the ``transient_retries`` counter and is responsible for
+    incrementing it after this function returns.
+
+    Raises:
+        DeadlineRequestUnrecoverableError -- When ``transient_retries`` has reached
+            ``_MAX_TRANSIENT_NETWORK_RETRIES``, i.e. the error has persisted past the retry limit.
+    """
+    if transient_retries >= _MAX_TRANSIENT_NETWORK_RETRIES:
+        _logger.error(
+            f"Transient network error persisted after {_MAX_TRANSIENT_NETWORK_RETRIES} "
+            f"retries ({type(e).__name__}: {e}). Giving up."
+        )
+        raise DeadlineRequestUnrecoverableError(e)
+    delay = backoff.delay_amount(RetryContext(transient_retries))
+    _logger.warning(
+        f"Transient network error during {api_name} ({type(e).__name__}: {e}). "
+        f"Retrying in {delay} seconds..."
+    )
+    if interrupt_event:
+        interrupt_event.wait(delay)
+    else:
+        sleep(delay)
 
 
 def assume_fleet_role_for_worker(
@@ -702,7 +754,6 @@ def construct_worker_log_config(log_config: LogConfiguration) -> Optional[Worker
         return WorkerLogConfig(
             cloudwatch_log_group=log_group_name,
             cloudwatch_log_stream=log_stream_name,
-            cloudwatch_region=log_config_options.get(LOG_CONFIG_OPTION_REGION_KEY),
         )
     else:
         _logger.warning(
@@ -747,6 +798,7 @@ def update_worker_schedule(
     # Retry API call when being throttled
     backoff = Backoff(max_backoff=30)
     retry = 0
+    transient_retries = 0
     while True:
         if interrupt_event is not None and interrupt_event.is_set():
             raise DeadlineRequestInterrupted("UpdateWorkerSchedule interrupted")
@@ -796,6 +848,11 @@ def update_worker_schedule(
             else:
                 sleep(delay)
             retry += 1
+        except _TRANSIENT_NETWORK_EXCEPTIONS as e:
+            _handle_transient_network_error(
+                e, transient_retries, backoff, interrupt_event, "UpdateWorkerSchedule"
+            )
+            transient_retries += 1
         except Exception as e:
             # General catch-all for the unexpected, so that the agent can try to handle it gracefully.
             _logger.critical(
@@ -808,6 +865,11 @@ def update_worker_schedule(
 
 
 _telemetry_client: Optional[TelemetryClient] = None
+
+# Exception messages can be arbitrarily long (e.g. validation errors); RUM
+# rejects oversized events, which would silently drop the failure report.
+# The head of an exception message carries the diagnostic essence.
+_FAILURE_REASON_MAX_LEN = 200
 
 
 def _get_deadline_telemetry_client() -> TelemetryClient:
@@ -845,6 +907,74 @@ def record_uncaught_exception_telemetry_event(exception_type: str) -> None:
     _get_deadline_telemetry_client().record_error(
         event_details={"exception_scope": "uncaught"}, exception_type=exception_type
     )
+
+
+def record_runtime_selection_telemetry_event(
+    *,
+    runtime_kind: str,
+    selection_reason: str,
+    session_runtime_config: str,
+    runtime_hint: Optional[str],
+    session_id: str,
+    queue_id: str,
+    farm_id: str,
+    region: Optional[str],
+) -> None:
+    """Records a com.amazon.rum.deadline.worker_agent.runtime_selection telemetry event
+    capturing which session runtime was selected and why.
+
+    Telemetry failures are reduced to a log warning and never propagate.
+    """
+    try:
+        _get_deadline_telemetry_client().record_event(
+            event_type="com.amazon.rum.deadline.worker_agent.runtime_selection",
+            event_details={
+                "runtime_kind": runtime_kind,
+                "selection_reason": selection_reason,
+                "session_runtime_config": session_runtime_config,
+                "runtime_hint": runtime_hint,
+                "session_id": session_id,
+                "queue_id": queue_id,
+                "farm_id": farm_id,
+                "region": region,
+            },
+        )
+    except Exception as e:
+        _logger.warning("Failed to record runtime selection telemetry event: %s", e)
+
+
+def record_runtime_failure_telemetry_event(
+    *,
+    runtime_kind: str,
+    failure_reason: str,
+    exception_type: str,
+    runtime_hint: Optional[str],
+    session_id: str,
+    queue_id: str,
+    farm_id: str,
+    region: Optional[str],
+) -> None:
+    """Records a com.amazon.rum.deadline.worker_agent.runtime_failure telemetry event
+    for a session failure caused by a runtime issue.
+
+    Telemetry failures are reduced to a log warning and never propagate.
+    """
+    try:
+        _get_deadline_telemetry_client().record_event(
+            event_type="com.amazon.rum.deadline.worker_agent.runtime_failure",
+            event_details={
+                "runtime_kind": runtime_kind,
+                "failure_reason": failure_reason[:_FAILURE_REASON_MAX_LEN],
+                "exception_type": exception_type,
+                "runtime_hint": runtime_hint,
+                "session_id": session_id,
+                "queue_id": queue_id,
+                "farm_id": farm_id,
+                "region": region,
+            },
+        )
+    except Exception as e:
+        _logger.warning("Failed to record runtime failure telemetry event: %s", e)
 
 
 def _record_attachment_download_filesystem_event(queue_id: str, file_system: str) -> None:

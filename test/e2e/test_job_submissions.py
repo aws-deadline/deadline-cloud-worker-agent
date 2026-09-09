@@ -34,6 +34,9 @@ from e2e.utils import (
 
 LOG = logging.getLogger(__name__)
 
+# launchd service label installed by installer/install_macos.sh on macOS workers.
+MACOS_LAUNCHD_LABEL = "com.amazon.deadline.worker-agent"
+
 
 class TestJobSubmission:
     JOB_OUTPUT_PATH = os.path.join(os.getcwd(), "job_output")
@@ -347,7 +350,7 @@ class TestJobSubmission:
                 {
                     "onEnter": (
                         {"command": "echo", "args": ["PASS: Environment entered"]}
-                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        if os.environ["OPERATING_SYSTEM"] != "windows"
                         else {
                             "command": "powershell",
                             "args": ["Write-Output 'PASS: Environment entered'"],
@@ -360,7 +363,7 @@ class TestJobSubmission:
                 {
                     "onRun": (
                         {"command": "echo", "args": ["PASS: Task ran"]}
-                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        if os.environ["OPERATING_SYSTEM"] != "windows"
                         else {"command": "powershell", "args": ["Write-Output 'PASS: Task ran'"]}
                     ),
                 },
@@ -375,14 +378,14 @@ class TestJobSubmission:
                 {
                     "onRun": (
                         {"command": "echo", "args": ["PASS: Task ran"]}
-                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        if os.environ["OPERATING_SYSTEM"] != "windows"
                         else {"command": "powershell", "args": ["Write-Output 'PASS: Task ran'"]}
                     ),
                 },
                 {
                     "onEnter": (
                         {"command": "echo", "args": ["PASS: Environment entered"]}
-                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        if os.environ["OPERATING_SYSTEM"] != "windows"
                         else {
                             "command": "powershell",
                             "args": ["Write-Output 'PASS: Environment entered'"],
@@ -501,12 +504,12 @@ class TestJobSubmission:
                                 "onRun": {
                                     "command": (
                                         "/bin/sleep"
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        if os.environ["OPERATING_SYSTEM"] != "windows"
                                         else "powershell"
                                     ),
                                     "args": (
                                         ["40"]
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        if os.environ["OPERATING_SYSTEM"] != "windows"
                                         else ["ping", "localhost", "-n", "40"]
                                     ),
                                     "timeout": 1,  # Times out in 1 second
@@ -571,12 +574,12 @@ class TestJobSubmission:
                     "onRun": {
                         "command": (
                             "/bin/sleep"
-                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            if os.environ["OPERATING_SYSTEM"] != "windows"
                             else "powershell"
                         ),
                         "args": (
                             ["300"]
-                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            if os.environ["OPERATING_SYSTEM"] != "windows"
                             else ["ping", "localhost", "-n", "300"]
                         ),
                         "cancelation": {
@@ -588,7 +591,7 @@ class TestJobSubmission:
                 {
                     "onEnter": (
                         {"command": "echo", "args": ["PASS: Environment entered"]}
-                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        if os.environ["OPERATING_SYSTEM"] != "windows"
                         else {
                             "command": "powershell",
                             "args": ["Write-Output 'PASS: Environment entered'"],
@@ -601,7 +604,7 @@ class TestJobSubmission:
                 {
                     "onRun": (
                         {"command": "echo", "args": ["PASS: Task ran"]}
-                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                        if os.environ["OPERATING_SYSTEM"] != "windows"
                         else {"command": "powershell", "args": ["Write-Output 'PASS: Task ran'"]}
                     ),
                 },
@@ -609,12 +612,12 @@ class TestJobSubmission:
                     "onEnter": {
                         "command": (
                             "/bin/sleep"
-                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            if os.environ["OPERATING_SYSTEM"] != "windows"
                             else "powershell"
                         ),
                         "args": (
                             ["300"]
-                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                            if os.environ["OPERATING_SYSTEM"] != "windows"
                             else ["ping", "localhost", "-n", "300"]
                         ),
                         "cancelation": {
@@ -763,7 +766,7 @@ class TestJobSubmission:
             "bash\n\nsleep 300\n"
             "echo 'FAIL: Sleep completed without cancellation'\n"
             "exit 1\n"
-            if os.environ["OPERATING_SYSTEM"] == "linux"
+            if os.environ["OPERATING_SYSTEM"] != "windows"
             else """Write-Output '--- STEP: Long sleep with cancel trap ---'
                 Write-Output 'Sleeping 300s, waiting for cancellation'
                 try
@@ -804,7 +807,7 @@ class TestJobSubmission:
                             "actions": {
                                 "onRun": (
                                     {"command": "{{ Task.File.runScript }}"}
-                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    if os.environ["OPERATING_SYSTEM"] != "windows"
                                     else {
                                         "command": "powershell",
                                         "args": ["{{ Task.File.runScript }}"],  # type: ignore[dict-item]
@@ -821,7 +824,7 @@ class TestJobSubmission:
                                         if expected_canceled_action == "taskRun"
                                         else (
                                             "#!/usr/bin/env bash\necho 'PASS: Task ran'\n"
-                                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                                            if os.environ["OPERATING_SYSTEM"] != "windows"
                                             else "Write-Output 'PASS: Task ran'\n"
                                         )
                                     ),
@@ -843,7 +846,7 @@ class TestJobSubmission:
                                 "onEnter": (
                                     (
                                         {"command": "{{ Env.File.runScript }}"}
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        if os.environ["OPERATING_SYSTEM"] != "windows"
                                         else {
                                             "command": "powershell",
                                             "args": ["{{ Env.File.runScript }}"],  # type: ignore[dict-item]
@@ -852,7 +855,7 @@ class TestJobSubmission:
                                     if expected_canceled_action == "envEnter"
                                     else (
                                         {"command": "echo", "args": ["PASS: Environment entered"]}
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        if os.environ["OPERATING_SYSTEM"] != "windows"
                                         else {
                                             "command": "powershell",
                                             "args": ["Write-Output 'PASS: Environment entered'"],
@@ -864,7 +867,7 @@ class TestJobSubmission:
                                         "command": "echo",
                                         "args": ["Environment exit ran successfully"],
                                     }
-                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    if os.environ["OPERATING_SYSTEM"] != "windows"
                                     else {
                                         "command": "powershell",
                                         "args": [
@@ -883,7 +886,7 @@ class TestJobSubmission:
                                         if expected_canceled_action == "envEnter"
                                         else (
                                             "#!/usr/bin/env bash\necho 'PASS: Environment entered'\n"
-                                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                                            if os.environ["OPERATING_SYSTEM"] != "windows"
                                             else "Write-Output 'PASS: Environment entered'\n"
                                         )
                                     ),
@@ -1251,12 +1254,12 @@ class TestJobSubmission:
                                 "onRun": {
                                     "command": (
                                         "/bin/sleep"
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        if os.environ["OPERATING_SYSTEM"] != "windows"
                                         else "powershell"
                                     ),
                                     "args": (
                                         ["1"]
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        if os.environ["OPERATING_SYSTEM"] != "windows"
                                         else ["ping", "localhost", "-n", "1"]
                                     ),
                                 },
@@ -1279,12 +1282,12 @@ class TestJobSubmission:
                                 "onRun": {
                                     "command": (
                                         "/bin/sleep"
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        if os.environ["OPERATING_SYSTEM"] != "windows"
                                         else "powershell"
                                     ),
                                     "args": (
                                         ["120"]
-                                        if os.environ["OPERATING_SYSTEM"] == "linux"
+                                        if os.environ["OPERATING_SYSTEM"] != "windows"
                                         else ["ping", "localhost", "-n", "120"]
                                     ),
                                     "cancelation": {
@@ -1549,7 +1552,7 @@ class TestJobSubmission:
                                             "--- STEP: Env 1 enter --- Entering environment_1 PASS: environment_1 entered"
                                         ],
                                     }
-                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    if os.environ["OPERATING_SYSTEM"] != "windows"
                                     else {
                                         "command": "powershell",
                                         "args": [
@@ -1575,7 +1578,7 @@ class TestJobSubmission:
                                             "--- STEP: Env 1 enter --- Entering environment_1 PASS: environment_1 entered"
                                         ],
                                     }
-                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    if os.environ["OPERATING_SYSTEM"] != "windows"
                                     else {
                                         "command": "powershell",
                                         "args": [
@@ -1597,7 +1600,7 @@ class TestJobSubmission:
                                             "--- STEP: Env 2 enter --- Entering environment_2 PASS: environment_2 entered"
                                         ],
                                     }
-                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    if os.environ["OPERATING_SYSTEM"] != "windows"
                                     else {
                                         "command": "powershell",
                                         "args": [
@@ -1619,7 +1622,7 @@ class TestJobSubmission:
                                             "--- STEP: Env 3 enter --- Entering environment_3 PASS: environment_3 entered"
                                         ],
                                     }
-                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    if os.environ["OPERATING_SYSTEM"] != "windows"
                                     else {
                                         "command": "powershell",
                                         "args": [
@@ -1665,7 +1668,7 @@ class TestJobSubmission:
                                         "--- STEP: Task run --- Running task PASS: Task completed"
                                     ],
                                 }
-                                if os.environ["OPERATING_SYSTEM"] == "linux"
+                                if os.environ["OPERATING_SYSTEM"] != "windows"
                                 else {
                                     "command": "powershell",
                                     "args": [
@@ -1726,7 +1729,7 @@ class TestJobSubmission:
                             "actions": {
                                 "onRun": (
                                     {"command": "echo", "args": ["HelloWorld"]}
-                                    if os.environ["OPERATING_SYSTEM"] == "linux"
+                                    if os.environ["OPERATING_SYSTEM"] != "windows"
                                     else {
                                         "command": "powershell",
                                         "args": ['"Hello"', "+", '"World"'],
@@ -1801,7 +1804,7 @@ class TestJobSubmission:
                 sleep 6
             done
             """
-            if os.environ["OPERATING_SYSTEM"] == "linux"
+            if os.environ["OPERATING_SYSTEM"] != "windows"
             else f"""
             $percent = 0
             while ($percent -le 100) {{
@@ -1910,7 +1913,7 @@ class TestJobSubmission:
             #!/usr/bin/env bash
             sleep 600
             """
-            if os.environ["OPERATING_SYSTEM"] == "linux"
+            if os.environ["OPERATING_SYSTEM"] != "windows"
             else """
             Start-Sleep -Seconds 600
             """
@@ -1924,8 +1927,15 @@ class TestJobSubmission:
             run_script=sleep_script,
         )
 
+        # Stopping the service sends the agent a SIGTERM (or the Windows service stop
+        # equivalent), which is what triggers the drain. The command differs by service
+        # manager: systemd on Linux, launchd on macOS, and the Windows service manager.
         if os.environ["OPERATING_SYSTEM"] == "linux":
             cmd_result = function_worker.send_command("sudo systemctl stop deadline-worker")
+        elif os.environ["OPERATING_SYSTEM"] == "macos":
+            cmd_result = function_worker.send_command(
+                f"sudo launchctl bootout system/{MACOS_LAUNCHD_LABEL}"
+            )
         else:
             cmd_result = function_worker.send_command("sc.exe stop DeadlineWorker")
 

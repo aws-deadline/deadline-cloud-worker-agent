@@ -95,10 +95,10 @@ class TestJobAttachments:
         assert worker_os is not None, (
             "OPERATING_SYSTEM environment variable is required but was not provided"
         )
-        if worker_os == "linux":
-            fleet_storage_profile_id = deadline_resources.fleet_storage_profile_id
-        else:
+        if worker_os == "windows":
             fleet_storage_profile_id = deadline_resources.windows_fleet_storage_profile_id
+        else:
+            fleet_storage_profile_id = deadline_resources.fleet_storage_profile_id
 
         queue_storage_profile_res = deadline_client.get_storage_profile(
             farmId=deadline_resources.farm.id,
@@ -197,7 +197,7 @@ class TestJobAttachments:
                     "script": {
                         "actions": {
                             "onRun": {
-                                "command": "python3" if worker_os == "linux" else "python",
+                                "command": "python" if worker_os == "windows" else "python3",
                                 "args": ["{{ Task.File.runScript }}"],
                             },
                         },
@@ -358,7 +358,7 @@ if __name__ == "__main__":
                                                     "Small files download test completed successfully"
                                                 ],
                                             }
-                                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                                            if os.environ["OPERATING_SYSTEM"] != "windows"
                                             else {
                                                 "command": "powershell",
                                                 "args": [
@@ -484,7 +484,7 @@ if __name__ == "__main__":
         [
             (
                 "#!/usr/bin/env bash\n\n  echo -n $(cat {{Param.DataDir}}/files/test_input_file){{Param.StringToAppend}} > {{Param.DataDir}}/output_file\n"
-                if os.environ["OPERATING_SYSTEM"] == "linux"
+                if os.environ["OPERATING_SYSTEM"] != "windows"
                 else '''set /p input=<"{{Param.DataDir}}\\files\\test_input_file"\n powershell -Command "echo ($env:input+\'{{Param.StringToAppend}}\') | Out-File -encoding utf8 {{Param.DataDir}}\\output_file -NoNewLine"'''
             )
         ],
@@ -793,7 +793,7 @@ if __name__ == "__main__":
         )
 
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "linux",
+        os.environ["OPERATING_SYSTEM"] != "windows",
         reason="Windows specific job bundle to test job attachments dependency data flow",
     )
     def test_worker_job_attachments_dep_data_flow_windows(
@@ -877,7 +877,7 @@ if __name__ == "__main__":
         ]
         append_string_script = (
             "#!/usr/bin/env bash\n\n  echo -n $(cat {{Param.DataDir}}/files/test_input_file)hi > {{Param.DataDir}}/output_file\n"
-            if os.environ["OPERATING_SYSTEM"] == "linux"
+            if os.environ["OPERATING_SYSTEM"] != "windows"
             else '''set /p input=<"{{Param.DataDir}}\\files\\test_input_file"\n powershell -Command "echo ($env:input+\'hi\') | Out-File -encoding utf8 {{Param.DataDir}}\\output_file -NoNewLine"'''
         )
 
@@ -1003,9 +1003,15 @@ if __name__ == "__main__":
                 '   combined_contents+="$(cat "$file" | tr -d \'\\n\')"\n'
                 "   fi\n"
                 "done\n"
-                "sha256_hash=$(echo -n \"$combined_contents\" | sha256sum | awk '{ print $1 }')\n"
+                # sha256sum is GNU coreutils and is not present on macOS, which ships shasum
+                # instead. Both emit "<hex digest>  -", so awk extracts the digest either way.
+                "if command -v sha256sum > /dev/null 2>&1; then\n"
+                "   sha256_hash=$(echo -n \"$combined_contents\" | sha256sum | awk '{ print $1 }')\n"
+                "else\n"
+                "   sha256_hash=$(echo -n \"$combined_contents\" | shasum -a 256 | awk '{ print $1 }')\n"
+                "fi\n"
                 'echo -n "$sha256_hash" > {{Param.DataDir}}/output_file.txt'
-                if os.environ["OPERATING_SYSTEM"] == "linux"
+                if os.environ["OPERATING_SYSTEM"] != "windows"
                 else '$InputFolder = "{{Param.DataDir}}\\files"\n'
                 '$OutputFile = "{{Param.DataDir}}\\output_file.txt"\n'
                 '$combinedContent = ""\n'
@@ -1094,7 +1100,7 @@ if __name__ == "__main__":
                                     "actions": {
                                         "onRun": (
                                             {"command": "{{ Task.File.runScript }}"}
-                                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                                            if os.environ["OPERATING_SYSTEM"] != "windows"
                                             else {
                                                 "command": "powershell",
                                                 "args": ["{{ Task.File.runScript }}"],
@@ -1234,13 +1240,13 @@ if __name__ == "__main__":
 
         append_string_script_step_one = (
             "#!/usr/bin/env bash\n\n  echo -n $(cat {{Param.DataDir}}/files/test_input_file)Hello > {{Param.DataDir}}/files/step_one_output\n"
-            if os.environ["OPERATING_SYSTEM"] == "linux"
+            if os.environ["OPERATING_SYSTEM"] != "windows"
             else '''set /p input=<"{{Param.DataDir}}\\files\\test_input_file"\n powershell -Command "echo ($env:input+\'Hello\') | Out-File -encoding utf8 {{Param.DataDir}}\\files\\step_one_output -NoNewLine"'''
         )
 
         append_string_script_step_two = (
             "#!/usr/bin/env bash\n\n  echo -n $(cat {{Param.DataDir}}/files/step_one_output)Hello > {{Param.DataDir}}/files/output_file\n"
-            if os.environ["OPERATING_SYSTEM"] == "linux"
+            if os.environ["OPERATING_SYSTEM"] != "windows"
             else '''set /p input=<"{{Param.DataDir}}\\files\\step_one_output"\n powershell -Command "echo ($env:input+\'Hello\') | Out-File -encoding utf8 {{Param.DataDir}}\\files\\output_file -NoNewLine"'''
         )
 
@@ -1668,7 +1674,7 @@ with open(output_path, "w") as f:
                                                     "python3 {{ Task.File.upload }} && python3 {{ Task.File.download }}",
                                                 ],
                                             }
-                                            if os.environ["OPERATING_SYSTEM"] == "linux"
+                                            if os.environ["OPERATING_SYSTEM"] != "windows"
                                             else {
                                                 "command": "powershell",
                                                 "args": [
@@ -1871,7 +1877,7 @@ with open(output_path, "w") as f:
         )
 
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "linux",
+        os.environ["OPERATING_SYSTEM"] != "windows",
         reason="Windows specific job bundle to test create job API call",
     )
     def test_worker_create_job_API_call_windows(
@@ -2035,7 +2041,7 @@ with open(output_path, "w") as f:
                                         ),
                                     ],
                                 }
-                                if os.environ["OPERATING_SYSTEM"] == "linux"
+                                if os.environ["OPERATING_SYSTEM"] != "windows"
                                 else {
                                     "command": "cmd",
                                     "args": [

@@ -13,10 +13,27 @@ license = "Apache-2.0"
 dependencies = [
     "requests >= 2.32,< 2.35",
     "boto3 >= 1.34.75",
-    "deadline-job-attachments == 0.1.2",
+    "deadline-job-attachments == 0.1.3",
     # Pinned to patch version due to Host Config Script runner usage of private OpenJD Sessions API.
-    "openjd-sessions == 0.10.10",
-    "openjd-model >= 0.8.1, < 0.11",
+    # 0.12.0 is required in both directions, so this pin and the code change in
+    # this PR must ship together:
+    #   - it adds `resolved_symtab` to the v0 Session's enter_environment,
+    #     exit_environment and run_task, which this package now passes to
+    #     deliver step-scope `let` and the rest of the service-resolved table;
+    #     against 0.11.0 those calls raise TypeError.
+    #   - it removes `extra_let_bindings` from the same three methods, which
+    #     this package no longer passes. Code still passing it would raise
+    #     TypeError against 0.12.0.
+    "openjd-sessions == 0.12.0",
+    # This package also depends on two openjd-model APIs directly:
+    # StepTemplate.resolve_syntax_sugar() (run_step_task.py, for FEATURE_BUNDLE_1
+    # simple-action steps) and openjd.expr.SerializedSymbolTable (the runtime
+    # adapters). resolve_syntax_sugar() first shipped in openjd-model 0.9.0, well
+    # below the floor here, so no floor change is needed for it to exist. It is
+    # recorded because the fold order it produces,
+    # [*step lets, *simple-action lets], is model behaviour this package's tests
+    # assert rather than behaviour this package controls.
+    "openjd-model >= 0.11.4, < 0.12",
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",
     "tomlkit >= 0.13,< 0.16",
@@ -124,6 +141,17 @@ module = [
     "botocore.*"
 ]
 
+# numpy is not used by this package; it arrives transitively (via
+# deadline-cloud-test-fixtures >= 0.18.16) and mypy reaches its stubs through
+# pytest's `approx` implementation. numpy 2.5+ type stubs use PEP 695 `type`
+# statements, which mypy rejects while python_version is pinned below 3.12, so
+# do not follow imports into it. follow_imports_for_stubs is required for
+# follow_imports to apply to .pyi files like numpy/__init__.pyi.
+[[tool.mypy.overrides]]
+module = [ "numpy", "numpy.*" ]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+
 [tool.ruff]
 line-length = 100
 
@@ -140,6 +168,7 @@ ignore = [
 # This causes imports to come after regular Python statements causing flake8 rule E402 to be flagged
 "src/deadline_worker_agent/**/*win*.py" = ["E402"]
 "test/**/*windows*.py" = ["E402"]
+"test/integ/macos/*.py" = ["E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = [

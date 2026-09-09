@@ -258,17 +258,19 @@ def test_worker_only_has_cap_kill(
                                 "name": "CheckCaps",
                                 "type": "TEXT",
                                 "runnable": True,
-                                # The worker process is the parent of the parent of the current process.
-                                # We get its PID and verify it only has cap_kill=ep (effective+permitted, not inheritable).
+                                # Resolve the worker agent PID via systemd rather than walking the
+                                # process tree. This is runtime-agnostic: the Rust session runtime's
+                                # persistent helper binary adds an extra process layer that changes
+                                # the tree depth, making grandparent-based resolution unreliable.
                                 "data": "\n".join(
                                     [
                                         "#!/bin/bash",
                                         "set -euo pipefail",
                                         'echo "=== Testing: verifying worker process only has cap_kill=ep ==="',
-                                        "export CURRENT_PPID=$PPID",
-                                        "export PPPID=$(ps -o ppid= $CURRENT_PPID)",
-                                        'echo "Worker PID: $PPPID"',
-                                        "OUTPUT=$(getpcaps $PPPID)",
+                                        "WORKER_PID=$(systemctl show --property=MainPID --value deadline-worker)",
+                                        '[ -n "$WORKER_PID" ] && [ "$WORKER_PID" -gt 0 ] || { echo "FAIL: could not resolve worker agent PID from systemd"; exit 1; }',
+                                        'echo "Worker PID: $WORKER_PID"',
+                                        "OUTPUT=$(getpcaps $WORKER_PID)",
                                         'echo "Capabilities output: $OUTPUT"',
                                         'echo "$OUTPUT" | grep -Pq "\\d+: cap_kill=ep$" || { echo "FAIL: expected only cap_kill=ep, got: $OUTPUT"; exit 1; }',
                                         'echo "PASS: worker only has cap_kill=ep"',

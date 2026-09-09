@@ -374,3 +374,206 @@ class TestRefreshCredentials:
 
             # THEN
             assert exc_context.value.inner_exc is exception
+
+    def test_retries_with_bootstrap_on_hibernate_expired_credentials(
+        self,
+        bootstrap_session: MagicMock,
+        config: Configuration,
+        worker_id: str,
+        file_cache_cls_mock: MagicMock,
+        temporary_credentials_cls_mock: MagicMock,
+    ) -> None:
+        # Test that if credentials appear valid before the API call but expire during the call
+        # (e.g. machine hibernated/slept), then the retry uses bootstrap credentials.
+
+        # GIVEN
+        with (
+            patch.object(WorkerBoto3Session, "get_credentials", MagicMock()) as mock_get_creds,
+            patch.object(WorkerBoto3Session, "client", MagicMock()),
+            patch.object(
+                worker_boto3_session_mod, "assume_fleet_role_for_worker"
+            ) as assume_role_mock,
+        ):
+            # Mocks to get through WorkerBoto3Session.__init__
+            mock_creds_object = MagicMock()
+            mock_creds_object.are_expired.return_value = False
+            mock_get_creds.return_value = mock_creds_object
+            temporary_credentials_cls_mock.from_cache.return_value = None
+
+            session = WorkerBoto3Session(
+                bootstrap_session=bootstrap_session, config=config, worker_id=worker_id
+            )
+
+            # First call fails (simulates 403 after hibernate), second call succeeds
+            assume_role_mock.side_effect = [
+                DeadlineRequestUnrecoverableError(Exception("AccessDeniedException")),
+                SAMPLE_ASSUME_ROLE_RESPONSE,
+            ]
+            mock_temporary_credentials = MagicMock()
+            temporary_credentials_cls_mock.from_deadline_assume_role_response.return_value = (
+                mock_temporary_credentials
+            )
+
+            # After the first failure, are_expired() returns True (time jumped during sleep)
+            mock_creds_object.are_expired.side_effect = [False, True]
+
+            # WHEN
+            session.refresh_credentials()
+
+            # THEN
+            # Bootstrap session was used for the retry
+            bootstrap_session.client.assert_called_once_with(
+                "deadline", config=DEADLINE_BOTOCORE_CONFIG
+            )
+            # assume_fleet_role_for_worker was called twice (first with self, then with bootstrap)
+            assert assume_role_mock.call_count == 2
+            # Credentials were updated with the successful response
+            mock_creds_object.set_credentials.assert_called_once_with(
+                mock_temporary_credentials.to_deadline.return_value
+            )
+
+    def test_reraises_when_not_expired_after_failure(
+        self,
+        bootstrap_session: MagicMock,
+        config: Configuration,
+        worker_id: str,
+        file_cache_cls_mock: MagicMock,
+        temporary_credentials_cls_mock: MagicMock,
+    ) -> None:
+        # Test that if the API call fails but credentials are NOT expired (not a hibernate case),
+        # the error is re-raised without retrying.
+
+        # GIVEN
+        with (
+            patch.object(WorkerBoto3Session, "get_credentials", MagicMock()) as mock_get_creds,
+            patch.object(WorkerBoto3Session, "client", MagicMock()),
+            patch.object(
+                worker_boto3_session_mod, "assume_fleet_role_for_worker"
+            ) as assume_role_mock,
+        ):
+            # Mocks to get through WorkerBoto3Session.__init__
+            mock_creds_object = MagicMock()
+            mock_creds_object.are_expired.return_value = False
+            mock_get_creds.return_value = mock_creds_object
+            temporary_credentials_cls_mock.from_cache.return_value = None
+
+            # Mocks to get to where we want in refresh_credentials()
+            error = DeadlineRequestUnrecoverableError(Exception("AccessDeniedException"))
+            assume_role_mock.side_effect = error
+
+            session = WorkerBoto3Session(
+                bootstrap_session=bootstrap_session, config=config, worker_id=worker_id
+            )
+
+            # Credentials are NOT expired after the failure (not a hibernate scenario)
+            mock_creds_object.are_expired.return_value = False
+
+            # WHEN
+            with pytest.raises(DeadlineRequestUnrecoverableError) as exc_context:
+                session.refresh_credentials()
+
+            # THEN
+            assert exc_context.value is error
+            # Bootstrap was never used for a retry
+            bootstrap_session.client.assert_not_called()
+            # Only one call attempt was made
+            assert assume_role_mock.call_count == 1
+
+    def test_reraises_when_already_using_bootstrap(
+        self,
+        bootstrap_session: MagicMock,
+        config: Configuration,
+        worker_id: str,
+        file_cache_cls_mock: MagicMock,
+        temporary_credentials_cls_mock: MagicMock,
+    ) -> None:
+        # Test that if we're already using bootstrap credentials and the call fails,
+        # we don't retry (avoid infinite loop).
+
+        # GIVEN
+        with (
+            patch.object(WorkerBoto3Session, "get_credentials", MagicMock()) as mock_get_creds,
+            patch.object(WorkerBoto3Session, "client", MagicMock()),
+            patch.object(
+                worker_boto3_session_mod, "assume_fleet_role_for_worker"
+            ) as assume_role_mock,
+        ):
+            # Mocks to get through WorkerBoto3Session.__init__
+            mock_creds_object = MagicMock()
+            mock_creds_object.are_expired.return_value = False
+            mock_get_creds.return_value = mock_creds_object
+            temporary_credentials_cls_mock.from_cache.return_value = None
+
+            session = WorkerBoto3Session(
+                bootstrap_session=bootstrap_session, config=config, worker_id=worker_id
+            )
+
+            # Credentials are expired (so bootstrap is chosen initially)
+            mock_creds_object.are_expired.return_value = True
+
+            # Bootstrap call also fails
+            error = DeadlineRequestUnrecoverableError(Exception("AccessDeniedException"))
+            assume_role_mock.side_effect = error
+
+            # WHEN
+            with pytest.raises(DeadlineRequestUnrecoverableError) as exc_context:
+                session.refresh_credentials()
+
+            # THEN
+            assert exc_context.value is error
+            # Only one call attempt (no retry since already using bootstrap)
+            assert assume_role_mock.call_count == 1
+
+    def test_reraises_when_bootstrap_retry_also_fails(
+        self,
+        bootstrap_session: MagicMock,
+        config: Configuration,
+        worker_id: str,
+        file_cache_cls_mock: MagicMock,
+        temporary_credentials_cls_mock: MagicMock,
+    ) -> None:
+        # Test that if creds expire mid-call (hibernate) AND the bootstrap retry also fails
+        # (e.g. static bootstrap creds were revoked, or bootstrap is otherwise unrecoverable),
+        # then the error from the retry is propagated rather than swallowed.
+
+        # GIVEN
+        with (
+            patch.object(WorkerBoto3Session, "get_credentials", MagicMock()) as mock_get_creds,
+            patch.object(WorkerBoto3Session, "client", MagicMock()),
+            patch.object(
+                worker_boto3_session_mod, "assume_fleet_role_for_worker"
+            ) as assume_role_mock,
+        ):
+            # Mocks to get through WorkerBoto3Session.__init__
+            mock_creds_object = MagicMock()
+            mock_creds_object.are_expired.return_value = False
+            mock_get_creds.return_value = mock_creds_object
+            temporary_credentials_cls_mock.from_cache.return_value = None
+
+            session = WorkerBoto3Session(
+                bootstrap_session=bootstrap_session, config=config, worker_id=worker_id
+            )
+
+            # Creds appear valid at the initial check (use self), then expire during the call.
+            mock_creds_object.are_expired.side_effect = [False, True]
+
+            # First call fails (hibernate), bootstrap retry also fails.
+            first_error = DeadlineRequestUnrecoverableError(Exception("AccessDeniedException"))
+            bootstrap_error = DeadlineRequestUnrecoverableError(Exception("ExpiredTokenException"))
+            assume_role_mock.side_effect = [first_error, bootstrap_error]
+
+            # WHEN
+            with pytest.raises(DeadlineRequestUnrecoverableError) as exc_context:
+                session.refresh_credentials()
+
+            # THEN
+            # The bootstrap retry's error is what propagates.
+            assert exc_context.value is bootstrap_error
+            # Bootstrap was used for the retry.
+            bootstrap_session.client.assert_called_once_with(
+                "deadline", config=DEADLINE_BOTOCORE_CONFIG
+            )
+            # Two attempts were made (self, then bootstrap).
+            assert assume_role_mock.call_count == 2
+            # Credentials were never updated since both attempts failed.
+            mock_creds_object.set_credentials.assert_not_called()

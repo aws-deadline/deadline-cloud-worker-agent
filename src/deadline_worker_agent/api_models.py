@@ -35,6 +35,14 @@ __all__ = [
     "StepDetailsError",
     "StepDetailsIdentifier",
     "StringParameter",
+    "BoolParameter",
+    "BoolListParameter",
+    "FloatListParameter",
+    "IntListParameter",
+    "IntListListParameter",
+    "PathListParameter",
+    "RangeExprParameter",
+    "StringListParameter",
     "TaskRunAction",
     "UpdatedSessionActionInfo",
     "UpdatedSessionActionInfo",
@@ -76,6 +84,38 @@ class ChunkIntParameter(TypedDict):
     chunkInt: str
 
 
+class BoolParameter(TypedDict):
+    bool: bool
+
+
+class RangeExprParameter(TypedDict):
+    rangeExpr: str
+
+
+class StringListParameter(TypedDict):
+    stringList: list[str]
+
+
+class PathListParameter(TypedDict):
+    pathList: list[str]
+
+
+class IntListParameter(TypedDict):
+    intList: list[str]
+
+
+class FloatListParameter(TypedDict):
+    floatList: list[str]
+
+
+class BoolListParameter(TypedDict):
+    boolList: list[bool]
+
+
+class IntListListParameter(TypedDict):
+    intListList: list[list[str]]
+
+
 class TaskRunAction(TypedDict):
     sessionActionId: str
     actionType: StepActionType
@@ -83,7 +123,20 @@ class TaskRunAction(TypedDict):
     stepId: str
     parameters: NotRequired[
         dict[
-            str, StringParameter | PathParameter | IntParameter | FloatParameter | ChunkIntParameter
+            str,
+            StringParameter
+            | PathParameter
+            | IntParameter
+            | FloatParameter
+            | ChunkIntParameter
+            | BoolParameter
+            | RangeExprParameter
+            | StringListParameter
+            | PathListParameter
+            | IntListParameter
+            | FloatListParameter
+            | BoolListParameter
+            | IntListListParameter,
         ]
     ]
 
@@ -123,6 +176,7 @@ class AssignedSession(TypedDict):
     jobId: str
     sessionActions: list[EnvironmentAction | TaskRunAction | AttachmentDownloadAction]
     logConfiguration: NotRequired[LogConfiguration]
+    metadata: NotRequired[dict[str, str]]
 
 
 class UpdateWorkerScheduleResponse(TypedDict):
@@ -163,6 +217,12 @@ class StepDetailsData(StepDetailsIdentifierFields):
 
     dependencies: NotRequired[list[str]]
     """A list of step identifiers that this step depends on"""
+
+    resolvedSymbolTable: NotRequired[str]
+    """Pre-resolved symbol table as a JSON string, forwarded to the Rust session runtime."""
+
+    extensions: NotRequired[list[str]]
+    """The extensions enabled for the job, as supplied by the service"""
 
 
 class StepDetails(TypedDict):
@@ -301,6 +361,14 @@ class JobDetailsData(JobDetailsIdentifierFields):
             | IntParameter
             | FloatParameter
             | ChunkIntParameter
+            | BoolParameter
+            | RangeExprParameter
+            | StringListParameter
+            | PathListParameter
+            | IntListParameter
+            | FloatListParameter
+            | BoolListParameter
+            | IntListListParameter
             | str,
         ]
     ]
@@ -311,6 +379,9 @@ class JobDetailsData(JobDetailsIdentifierFields):
 
     queueRoleArn: NotRequired[str]
     """An optional IAM role ARN corresponding used for worker sessions on the job's queue"""
+
+    extensions: NotRequired[list[str]]
+    """The extensions enabled for the job, as supplied by the service"""
 
 
 class JobDetails(TypedDict):
@@ -333,6 +404,10 @@ class EnvironmentDetailsData(EnvironmentDetailsIdentifierFields):
     """The Open Job Description schema version"""
     template: dict[str, Any]
     """The template of the environment."""
+    resolvedSymbolTable: NotRequired[str]
+    """Pre-resolved symbol table as a JSON string, forwarded to the Rust session runtime."""
+    extensions: NotRequired[list[str]]
+    """The extensions enabled for the job, as supplied by the service"""
 
 
 class EnvironmentDetails(TypedDict):

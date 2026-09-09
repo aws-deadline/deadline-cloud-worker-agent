@@ -9,6 +9,7 @@ from openjd.model.v2023_09 import Environment as Environment_2023_09
 from openjd.sessions import EnvironmentModel
 
 from ...api_models import EnvironmentDetailsData
+from .._extensions import resolve_supported_extensions
 from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
 
@@ -22,6 +23,9 @@ class EnvironmentDetails:
 
     environment: EnvironmentModel
     """The environment"""
+
+    resolved_symbol_table_json: str | None = None
+    """Pre-resolved symbol table JSON from the service, forwarded to the Rust session runtime."""
 
     @classmethod
     def from_boto(cls, environment_details_data: EnvironmentDetailsData) -> EnvironmentDetails:
@@ -51,12 +55,17 @@ class EnvironmentDetails:
             TemplateSpecificationVersion.ENVIRONMENT_v2023_09,
         ):
             environment = parse_model(
-                model=Environment_2023_09, obj=environment_details_data["template"]
+                model=Environment_2023_09,
+                obj=environment_details_data["template"],
+                supported_extensions=resolve_supported_extensions(environment_details_data),
             )
         else:
             raise UnsupportedSchema(schema_version.value)
 
-        return EnvironmentDetails(environment=environment)
+        return EnvironmentDetails(
+            environment=environment,
+            resolved_symbol_table_json=environment_details_data.get("resolvedSymbolTable", None),
+        )
 
     @classmethod
     def validate_entity_data(cls, entity_data: dict[str, Any]) -> EnvironmentDetailsData:
@@ -87,6 +96,8 @@ class EnvironmentDetails:
                 Field(key="environmentId", expected_type=str, required=True),
                 Field(key="jobId", expected_type=str, required=True),
                 Field(key="schemaVersion", expected_type=str, required=True),
+                Field(key="resolvedSymbolTable", expected_type=str, required=False),
+                Field(key="extensions", expected_type=list, required=False),
             ),
         )
 

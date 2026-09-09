@@ -12,6 +12,8 @@ from deadline_worker_agent.aws.deadline import (
     record_sync_inputs_telemetry_event,
     record_sync_outputs_telemetry_event,
     record_uncaught_exception_telemetry_event,
+    record_runtime_selection_telemetry_event,
+    record_runtime_failure_telemetry_event,
     _get_deadline_telemetry_client,
 )
 from deadline_worker_agent.capabilities import Capabilities
@@ -286,3 +288,144 @@ def test_get_deadline_telemetry_client_sets_service_name():
             package_name="deadline-cloud-worker-agent",
             package_ver=".".join(deadline_mod.version.split(".")[:3]),
         )
+
+
+def test_record_runtime_selection_telemetry_event():
+    """
+    Tests that when record_runtime_selection_telemetry_event() is called, the correct
+    event type and details are passed to the telemetry client's record_event() method.
+    """
+
+    mock_telemetry_client = MagicMock()
+
+    with patch.object(deadline_mod, "_get_deadline_telemetry_client") as mock_get_telemetry_client:
+        mock_get_telemetry_client.return_value = mock_telemetry_client
+
+        # WHEN
+        record_runtime_selection_telemetry_event(
+            runtime_kind="RUST",
+            selection_reason="hint",
+            session_runtime_config="SERVICE_SELECTED",
+            runtime_hint="rust",
+            session_id="session-abc123",
+            queue_id="queue-xyz789",
+            farm_id="farm-abc123",
+            region="us-west-2",
+        )
+
+    # THEN
+    mock_telemetry_client.record_event.assert_called_with(
+        event_type="com.amazon.rum.deadline.worker_agent.runtime_selection",
+        event_details={
+            "runtime_kind": "RUST",
+            "selection_reason": "hint",
+            "session_runtime_config": "SERVICE_SELECTED",
+            "runtime_hint": "rust",
+            "session_id": "session-abc123",
+            "queue_id": "queue-xyz789",
+            "farm_id": "farm-abc123",
+            "region": "us-west-2",
+        },
+    )
+
+
+def test_record_runtime_failure_telemetry_event():
+    """
+    Tests that when record_runtime_failure_telemetry_event() is called, the correct
+    event type and details are passed to the telemetry client's record_event() method.
+    """
+
+    mock_telemetry_client = MagicMock()
+
+    with patch.object(deadline_mod, "_get_deadline_telemetry_client") as mock_get_telemetry_client:
+        mock_get_telemetry_client.return_value = mock_telemetry_client
+
+        # WHEN
+        record_runtime_failure_telemetry_event(
+            runtime_kind="unknown",
+            failure_reason="No runtime named 'bogus'",
+            exception_type="ValueError",
+            runtime_hint="bogus",
+            session_id="session-abc123",
+            queue_id="queue-xyz789",
+            farm_id="farm-abc123",
+            region="us-west-2",
+        )
+
+    # THEN
+    mock_telemetry_client.record_event.assert_called_with(
+        event_type="com.amazon.rum.deadline.worker_agent.runtime_failure",
+        event_details={
+            "runtime_kind": "unknown",
+            "failure_reason": "No runtime named 'bogus'",
+            "exception_type": "ValueError",
+            "runtime_hint": "bogus",
+            "session_id": "session-abc123",
+            "queue_id": "queue-xyz789",
+            "farm_id": "farm-abc123",
+            "region": "us-west-2",
+        },
+    )
+
+
+def test_record_runtime_failure_telemetry_event_truncates_long_failure_reason():
+    """Tests that failure_reason is truncated to _FAILURE_REASON_MAX_LEN (200) characters."""
+
+    mock_telemetry_client = MagicMock()
+    long_reason = "x" * 1000
+
+    with patch.object(deadline_mod, "_get_deadline_telemetry_client") as mock_get_telemetry_client:
+        mock_get_telemetry_client.return_value = mock_telemetry_client
+
+        record_runtime_failure_telemetry_event(
+            runtime_kind="RUST",
+            failure_reason=long_reason,
+            exception_type="OSError",
+            runtime_hint=None,
+            session_id="session-123",
+            queue_id="queue-456",
+            farm_id="farm-abc123",
+            region="us-west-2",
+        )
+
+    call_details = mock_telemetry_client.record_event.call_args[1]["event_details"]
+    assert len(call_details["failure_reason"]) == 200
+    assert call_details["failure_reason"] == "x" * 200
+
+
+def test_record_runtime_selection_telemetry_event_swallows_client_exception(caplog):
+    """The helper must not propagate exceptions from the telemetry client getter."""
+    with patch.object(
+        deadline_mod, "_get_deadline_telemetry_client", side_effect=RuntimeError("boom")
+    ):
+        record_runtime_selection_telemetry_event(
+            runtime_kind="RUST",
+            selection_reason="hint_signal",
+            session_runtime_config="default",
+            runtime_hint="rust",
+            session_id="session-001",
+            queue_id="queue-001",
+            farm_id="farm-001",
+            region="us-west-2",
+        )
+
+    assert "boom" in caplog.text
+
+
+def test_record_runtime_failure_telemetry_event_swallows_client_exception(caplog):
+    """The helper must not propagate exceptions from the telemetry client getter."""
+    with patch.object(
+        deadline_mod, "_get_deadline_telemetry_client", side_effect=RuntimeError("kaboom")
+    ):
+        record_runtime_failure_telemetry_event(
+            runtime_kind="RUST",
+            failure_reason="init crashed",
+            exception_type="OSError",
+            runtime_hint=None,
+            session_id="session-002",
+            queue_id="queue-002",
+            farm_id="farm-002",
+            region="us-east-1",
+        )
+
+    assert "kaboom" in caplog.text

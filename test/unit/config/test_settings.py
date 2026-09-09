@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, Mock, patch
 from typing import Any, Generator, NamedTuple, Type
 import pytest
 import os
+import sys
 from pathlib import Path
 
 from pydantic.v1 import ConstrainedStr
@@ -192,9 +193,13 @@ FIELD_TEST_CASES: list[FieldTestCaseParams] = [
         expected_type=Path,
         expected_required=False,
         expected_default=(
-            Path("/sessions")
-            if os.name == "posix"
-            else Path(os.getenv("PROGRAMDATA", "C:\\ProgramData")) / "Amazon" / "OpenJD"
+            settings_mod.DEFAULT_WINDOWS_SESSION_ROOT_DIR
+            if os.name == "nt"
+            else (
+                settings_mod.DEFAULT_MACOS_SESSION_ROOT_DIR
+                if sys.platform == "darwin"
+                else settings_mod.DEFAULT_POSIX_SESSION_ROOT_DIR
+            )
         ),
         expected_default_factory_return_value=None,
     ),

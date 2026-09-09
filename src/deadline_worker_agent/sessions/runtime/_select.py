@@ -37,10 +37,6 @@ def select_runtime(
     There is intentionally no capability check, escalation, or fallback here. If
     the selected runtime cannot support the job's required extensions, runtime
     construction fails — that is openjd's responsibility, not this function's.
-
-    This function has no callers yet; reading runtimeHint from the
-    UpdateWorkerSchedule response and wiring it into session construction
-    lands in a follow-up change.
     """
     if configured_kind == SessionRuntimeKind.PYTHON:
         return SessionRuntimeKind.PYTHON

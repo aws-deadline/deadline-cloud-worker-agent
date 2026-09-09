@@ -26,8 +26,14 @@ from openjd.sessions import ActionState, ActionStatus, SessionUser
 from openjd.sessions import LOG as OPENJD_SESSION_LOG
 from deadline.job_attachments.asset_sync import AssetSync
 
-from ..aws.deadline import update_worker
+from ..aws.deadline import (
+    update_worker,
+    record_runtime_selection_telemetry_event,
+    record_runtime_failure_telemetry_event,
+)
 from ..aws_credentials import QueueBoto3Session, AwsCredentialsRefresher
+from .._session_runtime_kind import SessionRuntimeKind
+from ..sessions.runtime import select_runtime
 from ..boto import DeadlineClient, Session as BotoSession
 from ..errors import ServiceShutdown
 from ..sessions import JobEntities, Session
@@ -192,6 +198,7 @@ class WorkerScheduler:
     _worker_persistence_dir: Path
     _worker_logs_dir: Path | None
     _retain_session_dir: bool
+    _session_runtime_kind: SessionRuntimeKind
     _session_root_dir: Path
 
     # Map from queueId -> QueueAwsCredentials.
@@ -214,6 +221,7 @@ class WorkerScheduler:
         worker_logs_dir: Path | None,
         session_root_dir: Path,
         retain_session_dir: bool = False,
+        session_runtime_kind: SessionRuntimeKind = SessionRuntimeKind.PYTHON,
         stop: Event | None = None,
     ) -> None:
         """Queue of Worker Sessions and their actions
@@ -252,6 +260,7 @@ class WorkerScheduler:
         self._worker_persistence_dir = worker_persistence_dir
         self._worker_logs_dir = worker_logs_dir
         self._retain_session_dir = retain_session_dir
+        self._session_runtime_kind = session_runtime_kind
         self._windows_credentials_resolver: Optional[WindowsCredentialsResolver]
         self._session_root_dir = session_root_dir
 
@@ -1158,20 +1167,124 @@ class WorkerScheduler:
 
             logger.debug("env = \n%s", json.dumps(env, indent=2))
 
-            session = Session(
-                id=new_session_id,
-                queue=queue,
-                queue_id=queue_id,
-                job_id=job_id,
-                env=env,
-                asset_sync=asset_sync,
-                job_details=job_details,
-                os_user=os_user,
-                retain_session_dir=self._retain_session_dir,
-                action_update_callback=self._handle_session_action_update,
-                action_update_lock=self._action_update_lock,
-                session_root_dir=self._session_root_dir,
+            runtime_hint = (session_spec.get("metadata") or {}).get("runtimeHint")
+            try:
+                runtime_kind = select_runtime(self._session_runtime_kind, runtime_hint=runtime_hint)
+            except ValueError as e:
+                # An unknown runtimeHint indicates version skew or a
+                # service-side bug. Fail this session's actions visibly and
+                # continue; it must not take down the scheduler.
+                message = f"Failed to select session runtime: {e}"
+                self._fail_all_actions(session_spec, message)
+                logger.error(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.FAILED,
+                        queue_id=queue_id,
+                        job_id=job_id,
+                        session_id=new_session_id,
+                        message=message,
+                    )
+                )
+                record_runtime_failure_telemetry_event(
+                    runtime_kind="unknown",
+                    # Constant reason: the offending value is already carried
+                    # verbatim in the runtime_hint field, and free exception
+                    # text must not reach telemetry.
+                    failure_reason="invalid runtimeHint",
+                    exception_type=type(e).__name__,
+                    runtime_hint=runtime_hint,
+                    session_id=new_session_id,
+                    queue_id=queue_id,
+                    farm_id=self._farm_id,
+                    region=self._boto_session.region_name,
+                )
+                continue
+
+            logger.info(
+                SessionLogEvent(
+                    subtype=SessionLogEventSubtype.STARTING,
+                    queue_id=queue_id,
+                    job_id=job_id,
+                    session_id=new_session_id,
+                    message=(
+                        f"Selected session runtime: {runtime_kind.value} (hint={runtime_hint!r})"
+                    ),
+                )
             )
+            record_runtime_selection_telemetry_event(
+                runtime_kind=runtime_kind.value,
+                selection_reason=(
+                    "hint"
+                    if self._session_runtime_kind is SessionRuntimeKind.SERVICE_SELECTED
+                    and runtime_hint is not None
+                    else "config-default"
+                ),
+                session_runtime_config=self._session_runtime_kind.value,
+                runtime_hint=runtime_hint,
+                session_id=new_session_id,
+                queue_id=queue_id,
+                farm_id=self._farm_id,
+                region=self._boto_session.region_name,
+            )
+
+            resolved_symbol_table_json = queue.peek_resolved_symbol_table_json()
+
+            try:
+                session = Session(
+                    id=new_session_id,
+                    queue=queue,
+                    queue_id=queue_id,
+                    job_id=job_id,
+                    env=env,
+                    asset_sync=asset_sync,
+                    job_details=job_details,
+                    os_user=os_user,
+                    retain_session_dir=self._retain_session_dir,
+                    session_runtime_kind=runtime_kind,
+                    action_update_callback=self._handle_session_action_update,
+                    action_update_lock=self._action_update_lock,
+                    session_root_dir=self._session_root_dir,
+                    farm_id=self._farm_id,
+                    region=self._boto_session.region_name,
+                    resolved_symbol_table_json=resolved_symbol_table_json,
+                )
+            except (ValueError, NotImplementedError, OSError) as e:
+                # Runtime construction can fail per-session (e.g. the selected runtime's
+                # adapter is unavailable on this host). Fail this session's actions visibly
+                # and continue; do not take down the scheduler. Unexpected exception types
+                # still propagate.
+                message = f"Failed to create session: {e}"
+                self._fail_all_actions(session_spec, message)
+                logger.error(
+                    SessionLogEvent(
+                        subtype=SessionLogEventSubtype.FAILED,
+                        queue_id=queue_id,
+                        job_id=job_id,
+                        session_id=new_session_id,
+                        message=message,
+                    )
+                )
+                record_runtime_failure_telemetry_event(
+                    runtime_kind=runtime_kind.value,
+                    # Exception messages are free text and can embed filesystem paths
+                    # (potential PII) — e.g. hand-raised OSError(f"...{path}") has
+                    # strerror=None. Never forward str(e): send OS-level strerror when
+                    # present (error class, no path), otherwise a coarse constant.
+                    # exception_type carries the class; full detail remains in the
+                    # worker log, reachable via session_id.
+                    failure_reason=(
+                        e.strerror
+                        if isinstance(e, OSError) and e.strerror
+                        else "session construction failed"
+                    ),
+                    exception_type=type(e).__name__,
+                    runtime_hint=runtime_hint,
+                    session_id=new_session_id,
+                    queue_id=queue_id,
+                    farm_id=self._farm_id,
+                    region=self._boto_session.region_name,
+                )
+                continue
 
             def run_session(
                 session: Session, queue_credentials: QueueAwsCredentials | None

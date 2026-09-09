@@ -39,6 +39,8 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             environment: Any = None,
             identifier: Any = None,
             os_env_vars: Optional[dict[str, str]] = None,
+            resolved_symbol_table_json: str | None = None,
+            step_name: str | None = None,
         ) -> str:
             return "env-id"
 
@@ -48,6 +50,7 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             identifier: Any = None,
             os_env_vars: Optional[dict[str, str]] = None,
             keep_session_running: bool = False,
+            resolved_symbol_table_json: str | None = None,
         ) -> None:
             return None
 
@@ -58,6 +61,8 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             task_parameter_values: dict[str, Any] | None = None,
             os_env_vars: Optional[dict[str, str]] = None,
             log_task_banner: bool = True,
+            step_name: str | None = None,
+            resolved_symbol_table_json: str | None = None,
         ) -> None:
             return None
 
@@ -68,6 +73,7 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             task_parameter_values: dict[str, Any] | None = None,
             os_env_vars: Optional[dict[str, str]] = None,
             log_task_banner: bool = True,
+            step_name: str | None = None,
         ) -> None:
             return None
 

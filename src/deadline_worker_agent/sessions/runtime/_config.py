@@ -37,3 +37,9 @@ class SessionRuntimeConfig:
     session_root_directory: Path
     spec_revision: str = "2023-09"
     supported_extensions: tuple[str, ...] = ()
+    resolved_symbol_table_json: str | None = None
+    """Pre-resolved symbol table JSON observed on the session's first queued action.
+
+    Adapters that seed session-scoped symbols at construction (e.g. job_name for
+    the classic Python session) consume this at build time.
+    """

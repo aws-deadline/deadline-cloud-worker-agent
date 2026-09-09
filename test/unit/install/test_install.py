@@ -198,7 +198,6 @@ class TestInstallRunsCommand:
         "emscripten",
         "wasi",
         "cygwin",
-        "darwin",
     ),
 )
 def test_unsupported_platform_raises(platform: str, capsys: pytest.CaptureFixture) -> None:
@@ -328,3 +327,102 @@ class TestGetEc2Region:
             f"AWS region could not be detected, got unexpected availability zone from IMDS: {az}"
             in out
         )
+
+
+class TestMacOSInstall:
+    """Test cases for macOS (darwin) support in the installer dispatcher."""
+
+    @pytest.fixture(autouse=True)
+    def mock_darwin_platform(self) -> Generator[str, None, None]:
+        with patch.object(installer_mod.sys, "platform", new="darwin") as m:
+            yield m
+
+    def test_installer_path_has_darwin_entry(self) -> None:
+        # THEN
+        assert (
+            installer_mod.INSTALLER_PATH["darwin"]
+            == Path(installer_mod.__file__).parent / "install_macos.sh"
+        )
+
+    def test_runs_expected_subprocess_on_darwin(
+        self,
+        mock_subprocess_run: MagicMock,
+    ) -> None:
+        # GIVEN
+        parsed_args = ParsedCommandLineArguments(
+            farm_id="farm-1",
+            fleet_id="fleet-1",
+            region="us-west-2",
+            user="wa-user",
+            group="job-group",
+            service_start=False,
+            confirmed=True,
+            allow_shutdown=False,
+            install_service=True,
+            telemetry_opt_out=False,
+            vfs_install_path=None,
+            disallow_instance_profile=False,
+            session_root_dir=Path("/var/lib/deadline/sessions"),
+        )
+
+        expected_cmd = [
+            "sudo",
+            str(installer_mod.INSTALLER_PATH["darwin"]),
+            "--farm-id",
+            "farm-1",
+            "--fleet-id",
+            "fleet-1",
+            "--region",
+            "us-west-2",
+            "--user",
+            "wa-user",
+            "--scripts-path",
+            sysconfig.get_path("scripts"),
+            "--python-interpreter-path",
+            sys.executable,
+            "--session-root-dir",
+            # install() passes str(args.session_root_dir); a Path stringifies with the host
+            # separator, so build the expected value the same way rather than hard-coding it.
+            str(Path("/var/lib/deadline/sessions")),
+            "--group",
+            "job-group",
+            "-y",
+        ]
+
+        with patch.object(installer_mod, "get_argument_parser") as mock_get_arg_parser:
+            arg_parser: MagicMock = mock_get_arg_parser.return_value
+            arg_parser.parse_args.return_value = parsed_args
+
+            # WHEN
+            install()
+
+        # THEN
+        mock_subprocess_run.assert_called_once_with(expected_cmd, check=True)
+
+    def test_vfs_install_path_rejected_on_darwin(
+        self,
+        mock_subprocess_run: MagicMock,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """--vfs-install-path is unsupported on macOS and must be rejected before dispatch."""
+        # GIVEN
+        parsed_args = ParsedCommandLineArguments(
+            farm_id="farm-1",
+            fleet_id="fleet-1",
+            region="us-west-2",
+            user="wa-user",
+            vfs_install_path="/opt/deadline_vfs",
+        )
+
+        with patch.object(installer_mod, "get_argument_parser") as mock_get_arg_parser:
+            arg_parser: MagicMock = mock_get_arg_parser.return_value
+            arg_parser.parse_args.return_value = parsed_args
+
+            # WHEN / THEN
+            with pytest.raises(SystemExit) as raise_ctx:
+                install()
+
+        assert raise_ctx.value.code == 1
+        assert "--vfs-install-path is not supported on macOS." in capsys.readouterr().out
+        # AND the install script must not be invoked
+        mock_subprocess_run.assert_not_called()

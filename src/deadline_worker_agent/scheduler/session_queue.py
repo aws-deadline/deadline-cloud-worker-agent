@@ -61,6 +61,25 @@ else:
 
 logger = getLogger(__name__)
 
+_STEP_ENVIRONMENT_ID_PREFIX = "STEP:"
+
+
+def _step_id_from_environment_id(environment_id: str) -> str | None:
+    """Extract the step id from a step-scoped environment id.
+
+    Environment ids are scope-prefixed and carry their scope's id, as in
+    ``STEP:step-<uuid>:<environment name>`` or ``JOB:job-<uuid>:<name>``.
+    Returns None for anything that is not step-scoped, so job-scoped
+    environments are never given a step's context.
+    """
+    if not environment_id.startswith(_STEP_ENVIRONMENT_ID_PREFIX):
+        return None
+    remainder = environment_id[len(_STEP_ENVIRONMENT_ID_PREFIX) :]
+    step_id, separator, _ = remainder.partition(":")
+    if not separator or not step_id:
+        return None
+    return step_id
+
 
 @dataclass(frozen=True)
 class SessionActionQueueEntry(Generic[D]):
@@ -443,15 +462,35 @@ class SessionActionQueue:
                             action_id, SessionActionLogKind.ENV_EXIT, str(e)
                         ) from e
                 if action_type == "ENV_ENTER":
+                    # Step-scoped environments need the step's name so their
+                    # scripts can resolve Step.Name. The step id is carried in
+                    # the environment id itself, so this does not depend on
+                    # where the action sits in the queue. Step-scope `let`
+                    # values arrive separately, in the environment's own
+                    # resolved symbol table.
+                    step_name: str | None = None
+                    if (env_step_id := _step_id_from_environment_id(environment_id)) is not None:
+                        try:
+                            env_step_details = self._job_entities.step_details(step_id=env_step_id)
+                        except (ValueError, RuntimeError, UnsupportedSchema):
+                            # The task run for this step will surface the real
+                            # entity error; entering without step context here
+                            # matches the pre-existing behavior.
+                            pass
+                        else:
+                            step_name = env_step_details.step_template.name
+
                     next_action = EnterEnvironmentAction(
                         id=action_id,
                         job_env_id=environment_id,
                         details=environment_details,
+                        step_name=step_name,
                     )
                 elif action_type == "ENV_EXIT":
                     next_action = ExitEnvironmentAction(
                         id=action_id,
                         environment_id=environment_id,
+                        details=environment_details,
                     )
                 else:
                     raise ValueError(f'Unknown action type "{action_type}".')
@@ -557,3 +596,59 @@ class SessionActionQueue:
                     f'Unknown action type "{action_type}". Complete action = {action_definition}'
                 )
         return next_action
+
+    def peek_resolved_symbol_table_json(self) -> str | None:
+        """Scan queued actions for the first resolved symbol table without consuming.
+
+        The scan skips action types that carry no symbol table (e.g. attachment
+        sync actions) and returns the table from the first ``ENV_*`` or
+        ``TASK_RUN`` entry found.  This is necessary because the service may
+        place ``SYNC_INPUT_JOB_ATTACHMENTS`` before environment-enter actions
+        for any job with attachments — without the scan, session-scoped symbols
+        such as ``Job.Name`` would be unavailable.
+
+        This accessor is non-consuming: the queue state is not mutated, and a
+        subsequent ``dequeue`` call will still yield the same front action.
+
+        Entity resolution results are cached by ``JobEntities``, so the later
+        ``dequeue`` issues no additional service request for the same entity.
+
+        Returns
+        -------
+        str | None
+            The ``resolved_symbol_table_json`` from the first action whose type
+            carries a table, or None when the queue is empty or contains only
+            action types without a table.
+        """
+        # The service emits the same session-scoped symbols (e.g. Job.Name)
+        # into every step and environment entity's table, so it is safe to
+        # return the first match regardless of position in the queue.
+        for action_queue_entry in self._actions:
+            action_type = action_queue_entry.definition["actionType"]
+            try:
+                if action_type.startswith("ENV_"):
+                    action_queue_entry = cast(EnvironmentQueueEntry, action_queue_entry)
+                    environment_id = action_queue_entry.definition["environmentId"]
+                    environment_details = self._job_entities.environment_details(
+                        environment_id=environment_id
+                    )
+                    return environment_details.resolved_symbol_table_json
+                elif action_type == "TASK_RUN":
+                    action_queue_entry = cast(TaskRunQueueEntry, action_queue_entry)
+                    step_id = action_queue_entry.definition["stepId"]
+                    step_details = self._job_entities.step_details(step_id=step_id)
+                    return step_details.resolved_symbol_table_json
+                else:
+                    continue
+            except Exception:
+                # This accessor only seeds session-scoped symbols (e.g.
+                # Job.Name), so a failure must not break session creation.
+                # Skip to the next candidate — the subsequent dequeue surfaces
+                # the real error through the normal action-failure path.
+                logger.warning(
+                    "Failed to prefetch resolved symbol table for a queued action "
+                    "(type=%s); scanning next action.",
+                    action_type,
+                )
+                continue
+        return None

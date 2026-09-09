@@ -129,6 +129,14 @@ source .e2e_windows_infra.sh
 hatch run e2e:test
 ```
 
+To run the entire e2e suite pinned to the Rust session runtime:
+```
+hatch run e2e:test-rust
+```
+
+The `--session-runtime` pytest option (and `WORKER_AGENT_SESSION_RUNTIME` env var) also accept
+`python` and `service-selected` for other runtime configurations.
+
 You can also override the `openjd-sessions` and/or `deadline-cloud` packages installed on the worker
 by pointing to local wheel files. This is useful when testing against unreleased or locally-built versions.
 Both variables accept a path (glob patterns are supported, but must resolve to exactly one file).
