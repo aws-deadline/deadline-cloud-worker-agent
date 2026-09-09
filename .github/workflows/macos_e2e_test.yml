@@ -119,5 +119,28 @@ jobs:
           test "$count" -eq 1 || { echo "expected exactly one wheel in dist/, found $count"; exit 1; }
           echo "WORKER_AGENT_WHL_PATH=$PWD/$(find dist -maxdepth 1 -name '*.whl')" >> "$GITHUB_ENV"
 
+      # DIAGNOSTIC, revert to `hatch run e2e:test` once read. Narrowed to the one test
+      # that stops a running agent and waits for it to report STOPPED, so the loop is
+      # minutes rather than the better part of an hour. The sibling draining test is
+      # excluded on purpose: it stops the worker ~200ms after CreateJob, before the
+      # scheduler's 15s poll can give it a session, and the STOPPING transition it
+      # asserts is gated on there being one -- a separate problem from this.
       - name: Run E2E tests
-        run: hatch run e2e:test
+        run: hatch run e2e:test -k test_worker_lifecycle_status_is_expected
+
+      # DIAGNOSTIC, remove with the above. The failure is in a test body rather than a
+      # fixture, so nothing dumps the agent's own log, and the suite log only records
+      # that the status was awaited -- never what it actually was. This is the shutdown
+      # sequence for the agent the test just stopped.
+      - name: Dump the worker agent log
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "--- launchd state ---"
+          sudo launchctl print system/com.amazon.deadline.worker-agent 2>&1 | head -5 || echo "(label not loaded)"
+          echo "--- worker.json ---"
+          sudo cat /var/lib/deadline/worker.json 2>&1 || echo "(absent)"
+          echo "--- worker-agent.log, last 120 lines ---"
+          sudo tail -120 /var/log/amazon/deadline/worker-agent.log 2>&1 || echo "(absent)"
+          echo "--- bootstrap log, last 40 lines ---"
+          sudo tail -40 /var/log/amazon/deadline/worker-agent-bootstrap.log 2>&1 || echo "(absent)"
