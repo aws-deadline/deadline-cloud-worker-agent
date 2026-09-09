@@ -51,17 +51,17 @@
 # The session runtime implementation to use. This controls which backend runs OpenJD session
 # actions. Available values:
 #
-#   "python"           - Use the Python OpenJD session implementation (default)
+#   "python"           - Use the Python OpenJD session implementation
 #   "rust"             - Use the Rust OpenJD session implementation
-#   "service-selected" - Let the service determine the runtime per-session
+#   "service-selected" - Let the service determine the runtime per-session (default)
 #                       (follows the service's per-session runtimeHint; defaults to python when
 #                       no hint is provided)
 #
 # This value is overridden when the --session-runtime command-line argument is specified.
 #
-# By default, the Python runtime is used. To change the session runtime, uncomment the line below:
+# By default, the service selects the runtime. To change the session runtime, uncomment the line below:
 #
-# session_runtime = "python"
+# session_runtime = "service-selected"
 
 [aws]
 

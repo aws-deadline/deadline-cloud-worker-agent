@@ -95,7 +95,7 @@ class WorkerSettings(BaseSettings):
         If true, then the Worker Agent's logs are structured.
     session_runtime : SessionRuntimeKind
         The session runtime implementation to use. One of 'python', 'rust', or
-        'service-selected'. Defaults to 'python'.
+        'service-selected'. Defaults to 'service-selected'.
     """
 
     farm_id: str = Field(regex=r"^farm-[a-z0-9]{32}$")
@@ -130,7 +130,7 @@ class WorkerSettings(BaseSettings):
     retain_session_dir: bool = False
     structured_logs: bool = False
     # No env var mapping — runtime selection is via config file or CLI only.
-    session_runtime: SessionRuntimeKind = SessionRuntimeKind.PYTHON
+    session_runtime: SessionRuntimeKind = SessionRuntimeKind.SERVICE_SELECTED
     telemetry_opt_out: bool = False
     session_root_dir: Path = (
         DEFAULT_WINDOWS_SESSION_ROOT_DIR
