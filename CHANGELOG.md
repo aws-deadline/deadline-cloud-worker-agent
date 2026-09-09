@@ -1,3 +1,10 @@
+## 0.33.2 (2026-09-09)
+
+### Features
+* The default `session_runtime` setting is now `SERVICE_SELECTED` instead of `PYTHON`, allowing fleets to defer session-runtime selection to the service by default. Behavior is unchanged for fleets without service-side routing configured, as the service resolves to the Python runtime when no per-session runtime hint is provided. Operators can pin `session_runtime = "python"` to opt out. (#1084)
+
+### Bug Fixes
+* Fixed an issue where `Job.Name` was not correctly resolved for sessions that begin with an attachment sync action. (#1075)
 ## 0.33.1 (2026-08-26)
 
 ### Features
