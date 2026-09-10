@@ -33,6 +33,15 @@ from .sessions import Session
 logger = getLogger(__name__)
 
 
+def _is_usable_imds_status(status_code: int) -> bool:
+    """Whether an IMDS status carries an answer the caller can act on.
+
+    404 included: it is the normal reply on both monitored endpoints -- no interruption pending,
+    or host not in an auto-scaling group.
+    """
+    return status_code in (200, 404)
+
+
 class WorkerSessionCollection:
     def __init__(self, *, worker: Worker) -> None: ...
 
@@ -62,6 +71,30 @@ class Worker:
     """The amount of time to allow the Worker to gracefully shutdown after detecting an auto-scaling
     life-cycle event."""
 
+    _IMDS_REQUEST_TIMEOUT = (1.0, 1.0)
+    """(connect, read) ceiling on one IMDS request.
+
+    The address is link-local, so where nothing answers it the connect waits on ARP rather than
+    being refused, parking the caller. Written as a pair to make the per-attempt cost explicit --
+    a scalar would expand to the same thing -- and because the two halves differ elsewhere in the
+    agent. See TestImdsProbeCost."""
+
+    _IMDS_PROBE_ATTEMPTS = 3
+    """Attempts before concluding a host is not on EC2. Retried because the verdict is
+    permanent -- see _is_ec2_host."""
+
+    _IMDS_PROBE_BACKOFF_S = 0.5
+    """Delay between probe attempts. A throttled IMDS answers immediately, so back-to-back
+    retries would meet the same empty token bucket."""
+
+    _IMDS_RECOVERY_ANSWERS = 3
+    """Consecutive usable answers before a path is considered recovered -- see _imds_answered."""
+
+    _IMDS_CAUSE_SLOW_READ = "the connection was accepted but nothing came back in time"
+    _IMDS_CAUSE_NO_CONNECT = (
+        "no connection was accepted, though the token request answered moments ago"
+    )
+
     _farm_id: str
     _fleet_id: str
     _worker_id: str
@@ -75,6 +108,8 @@ class Worker:
     _worker_persistence_dir: Path
     _host_metrics_logger: HostMetricsLogger | None = None
     _retain_session_dir: bool
+    _imds_unanswered: set[str]
+    _imds_answers: dict[str, int]
 
     def __init__(
         self,
@@ -126,6 +161,12 @@ class Worker:
         self._boto_session = boto_session
         self._worker_persistence_dir = worker_persistence_dir
         self._retain_session_dir = retain_session_dir
+        # The IMDS paths whose last query did not answer, keyed individually. Gates the
+        # warning in _log_imds_unanswered to the transition, per path -- one shared flag
+        # would flap, because the monitor queries two paths per poll and either can time out
+        # while the other answers.
+        self._imds_unanswered = set()
+        self._imds_answers = {}
 
         if host_metrics_logging:
             assert host_metrics_logging_interval_seconds is not None, (
@@ -222,12 +263,15 @@ class Worker:
             futures: list[Future[Any]] = [
                 scheduler_future,
             ]
-            if self._get_ec2_metadata_imdsv2_token():
-                # Create a future for monitoring EC2 shutdown events
-                monitor_ec2_shutdown = self._executor.submit(self._monitor_ec2_shutdown)
-                futures.append(monitor_ec2_shutdown)
-
             try:
+                # Inside the try: the scheduler is already running, so anything raised here
+                # would leave the `with` and have the executor join a scheduler never asked to
+                # stop. The handler below is what prevents that.
+                if self._is_ec2_host():
+                    # Create a future for monitoring EC2 shutdown events
+                    monitor_ec2_shutdown = self._executor.submit(self._monitor_ec2_shutdown)
+                    futures.append(monitor_ec2_shutdown)
+
                 complete_futures, _ = wait(
                     fs=futures,
                     return_when="FIRST_COMPLETED",
@@ -246,21 +290,39 @@ class Worker:
                 for future in complete_futures:
                     if monitor_ec2_shutdown and future is monitor_ec2_shutdown:
                         logger.debug("monitor ec2 shutdown future complete")
-                        worker_shutdown: WorkerShutdown | None = future.result()
-                        # We only stop the other threads if we detected an imminent EC2 shutdown.
-                        # The monitoring thread returns None if the monitor thread was stopped by the OS signal handler
-                        if worker_shutdown:
+                        # This `else:` runs outside the `except BaseException` above, so an
+                        # exception from result() would otherwise leave the `with` and have
+                        # ThreadPoolExecutor.__exit__ join a scheduler never asked to stop.
+                        # Reachable: the monitor parses IMDS responses, and neither
+                        # JSONDecodeError nor ValueError is a RequestException.
+                        #
+                        # Both calls are needed, as in the handler above. self._stop only stops
+                        # the monitor: when entrypoint() is called without a stop event -- every
+                        # non-Windows-service invocation -- WorkerScheduler builds its own Event,
+                        # so self._stop is not the one its run loop waits on.
+                        try:
+                            worker_shutdown: WorkerShutdown | None = future.result()
+                            # We only stop the other threads if we detected an imminent EC2 shutdown.
+                            # The monitoring thread returns None if the monitor thread was stopped by the OS signal handler
+                            if worker_shutdown:
+                                self._scheduler.shutdown(
+                                    grace_time=worker_shutdown.grace_time,
+                                    fail_message=worker_shutdown.fail_message,
+                                )
+                            else:
+                                # If we are here, it's because self._stop.set() was set causing the monitor_ec2_shutdown thread to join.
+                                # The scheduler thread has a longer wait, so let's wake it up so it can join as well.
+                                self._scheduler.shutdown(
+                                    fail_message="The Worker received a shutdown event locally from the host machine."
+                                )
+                        except BaseException as e:
+                            self._scheduler.shutdown(
+                                grace_time=timedelta(seconds=5),
+                                fail_message=f"Worker Agent encountered error: {e}",
+                            )
+                            raise
+                        finally:
                             self._stop.set()
-                            self._scheduler.shutdown(
-                                grace_time=worker_shutdown.grace_time,
-                                fail_message=worker_shutdown.fail_message,
-                            )
-                        else:
-                            # If we are here, it's because self._stop.set() was set causing the monitor_ec2_shutdown thread to join.
-                            # The scheduler thread has a longer wait, so let's wake it up so it can join as well.
-                            self._scheduler.shutdown(
-                                fail_message="The Worker received a shutdown event locally from the host machine."
-                            )
                     elif future is scheduler_future:
                         logger.debug("scheduler future complete")
                         try:
@@ -346,12 +408,16 @@ class Worker:
         monitor_ec2_shutdown_rate = Worker._EC2_SHUTDOWN_MONITOR_RATE.total_seconds()
         while not self._stop.wait(timeout=monitor_ec2_shutdown_rate):
             if not (imdsv2_token := self._get_ec2_metadata_imdsv2_token()):
-                # Not on EC2 or IMDSv2 is inactive.
-                logger.info(
+                # _is_ec2_host gated this thread on IMDS answering, so a token that now fails
+                # is the same condition the queries below warn about, not "not on EC2". Same
+                # suppression, since this is the first thing every failing poll logs.
+                self._log_imds_unanswered("api/token", cause="the request returned no token")
+                logger.debug(
                     "IMDS unavailable - unable to monitor for spot interruption or ASG life-cycle "
                     "changes"
                 )
                 continue
+            self._imds_answered("api/token")
 
             # Check for spot interruption or shutdown
             if (
@@ -378,6 +444,44 @@ class Worker:
 
         return None
 
+    def _is_ec2_host(self) -> bool:
+        """Whether to monitor for EC2 spot interruption and ASG lifecycle changes.
+
+        Retried because the verdict is taken once, at startup, and a negative permanently skips
+        monitoring for the life of the process -- so one slow probe during boot must not disable
+        interruption handling on a real EC2 host. Costs nothing where IMDS answers; see
+        TestImdsProbeCost for where it does not.
+
+        Making the verdict revisable would be the fuller fix -- _monitor_ec2_shutdown already
+        tolerates failure per poll -- but it changes behaviour on every fleet, so it is left out
+        of a change whose job is bounding the requests.
+        """
+        for attempt in range(1, Worker._IMDS_PROBE_ATTEMPTS + 1):
+            if self._get_ec2_metadata_imdsv2_token():
+                return True
+            if attempt < Worker._IMDS_PROBE_ATTEMPTS:
+                logger.debug(
+                    "IMDS did not answer on attempt %d of %d; retrying",
+                    attempt,
+                    Worker._IMDS_PROBE_ATTEMPTS,
+                )
+                # wait() returns the flag, so this sleeps and checks for shutdown at once.
+                # Abandoning on stop: the monitor this gates would only be asked to stop.
+                if self._stop.wait(timeout=Worker._IMDS_PROBE_BACKOFF_S):
+                    logger.debug("Stop requested while probing IMDS; abandoning the probe")
+                    return False
+        # info, not warning: a customer-managed fleet on non-EC2 hardware reaches this on every
+        # start, and it is correct behaviour there. Something is only wrong if the host *is* on
+        # EC2, which this cannot tell -- so the monitor's own warnings, which run only after a
+        # token succeeded, are where a real IMDS problem gets flagged.
+        logger.info(
+            "IMDS did not answer in %d attempts, so this host is treated as not being an "
+            "EC2 instance. Spot interruption and ASG life-cycle changes will not be "
+            "monitored for the life of this process.",
+            Worker._IMDS_PROBE_ATTEMPTS,
+        )
+        return False
+
     def _get_ec2_metadata_imdsv2_token(self) -> str | None:
         """Query the EC2 Metadata service to obtain an IMDSv2 token to use in further queries to the
         service.
@@ -394,10 +498,14 @@ class Worker:
             response = requests.put(
                 "http://169.254.169.254/latest/api/token",
                 headers={"X-aws-ec2-metadata-token-ttl-seconds": "10"},
+                timeout=Worker._IMDS_REQUEST_TIMEOUT,
             )
-        except requests.ConnectionError:
+        except requests.RequestException:
             # Could not connect to the metadata service. Either it's not enabled or we're not
             # on an EC2 instance.
+            #
+            # The whole RequestException family, not just (ConnectionError, Timeout): "not on
+            # EC2" is the right answer for every sibling, and none says anything more useful.
             return None
 
         if response.status_code == 200:
@@ -425,11 +533,32 @@ class Worker:
             response = requests.get(
                 "http://169.254.169.254/latest/meta-data/spot/instance-action",
                 headers={"X-aws-ec2-metadata-token": imdsv2_token},
+                timeout=Worker._IMDS_REQUEST_TIMEOUT,
             )
-        except requests.ConnectionError:
+        except requests.ReadTimeout:
+            # Logged because None is not "unknown" to the caller, it is "no interruption
+            # pending" -- indistinguishable from a real answer. ReadTimeout not Timeout, since
+            # ConnectTimeout subclasses both and means the opposite; see the next clause.
+            self._log_imds_unanswered("spot/instance-action", cause=Worker._IMDS_CAUSE_SLOW_READ)
+            return None
+        except requests.ConnectTimeout:
+            # Reaching this method means the token just succeeded, so a connect that now times
+            # out is anomalous rather than the ordinary not-on-EC2 case below.
+            self._log_imds_unanswered("spot/instance-action", cause=Worker._IMDS_CAUSE_NO_CONNECT)
+            return None
+        except requests.RequestException:
             # Could not connect to the metadata service. Either it's inactive or we're not
             # on an EC2 instance.
             return None
+
+        # Getting bytes back is not getting an answer: a 429 produces the same silent "no
+        # interruption pending" a timeout does.
+        if not _is_usable_imds_status(response.status_code):
+            self._log_imds_unanswered(
+                "spot/instance-action", cause=f"it returned HTTP {response.status_code}"
+            )
+            return None
+        self._imds_answered("spot/instance-action")
 
         if response.status_code == 200:
             decoded_response = json.loads(response.text)
@@ -476,10 +605,75 @@ class Worker:
             response = requests.get(
                 "http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state",
                 headers={"X-aws-ec2-metadata-token": imdsv2_token},
+                timeout=Worker._IMDS_REQUEST_TIMEOUT,
             )
-        except requests.ConnectionError:
+        except requests.ReadTimeout:
+            # As above: False means "not terminating", so an unlogged timeout is
+            # indistinguishable from an answer.
+            self._log_imds_unanswered(
+                "autoscaling/target-lifecycle-state", cause=Worker._IMDS_CAUSE_SLOW_READ
+            )
             return False
+        except requests.ConnectTimeout:
+            self._log_imds_unanswered(
+                "autoscaling/target-lifecycle-state", cause=Worker._IMDS_CAUSE_NO_CONNECT
+            )
+            return False
+        except requests.RequestException:
+            return False
+
+        # As above; 404 here is what a host outside an auto-scaling group gets.
+        if not _is_usable_imds_status(response.status_code):
+            self._log_imds_unanswered(
+                "autoscaling/target-lifecycle-state",
+                cause=f"it returned HTTP {response.status_code}",
+            )
+            return False
+        self._imds_answered("autoscaling/target-lifecycle-state")
 
         if response.status_code == 200:
             return response.text == "Terminated"
         return False
+
+    def _log_imds_unanswered(self, path: str, *, cause: str) -> None:
+        """Report an IMDS path that gave no usable answer, once per outage.
+
+        Warns on the transition only: the monitor polls once a second, so an unconditional
+        warning is 3600 lines an hour and buries itself.
+
+        Per path, not one flag. The monitor queries several paths per poll, so a shared flag
+        would be set by one and cleared by the next within an iteration -- a warning plus a
+        false recovery every second.
+        """
+        self._imds_answers.pop(path, None)
+        if path in self._imds_unanswered:
+            return
+        self._imds_unanswered.add(path)
+        logger.warning(
+            "IMDS gave no usable answer for %s: %s. Treating it as no pending shutdown, so a "
+            "spot interruption or ASG life-cycle change could be missed while this persists.",
+            path,
+            cause,
+        )
+
+    def _imds_answered(self, path: str) -> None:
+        """Count an answer, and clear the path once it has answered consistently.
+
+        Only after _IMDS_RECOVERY_ANSWERS in a row, because clearing on the first one re-arms the
+        warning immediately: an IMDS alternating between 429 and 200 -- the shape a shared token
+        bucket produces -- would then warn on every other poll, which is the volume the
+        suppression exists to avoid. Requiring a streak means an intermittent path warns once and
+        a genuinely recovered one still reports.
+
+        Per path, since another may still be unanswered and a recovery claimed on its behalf
+        would be false.
+        """
+        if path not in self._imds_unanswered:
+            return
+        answers = self._imds_answers.get(path, 0) + 1
+        if answers < Worker._IMDS_RECOVERY_ANSWERS:
+            self._imds_answers[path] = answers
+            return
+        self._imds_unanswered.discard(path)
+        self._imds_answers.pop(path, None)
+        logger.info("IMDS is answering %s again.", path)
