@@ -13,7 +13,7 @@ license = "Apache-2.0"
 dependencies = [
     "requests >= 2.32,< 2.35",
     "boto3 >= 1.34.75",
-    "deadline-job-attachments == 0.1.3",
+    "deadline-job-attachments == 0.1.4",
     # Pinned to patch version due to Host Config Script runner usage of private OpenJD Sessions API.
     # 0.12.0 is required in both directions, so this pin and the code change in
     # this PR must ship together:
@@ -24,7 +24,7 @@ dependencies = [
     #   - it removes `extra_let_bindings` from the same three methods, which
     #     this package no longer passes. Code still passing it would raise
     #     TypeError against 0.12.0.
-    "openjd-sessions == 0.12.0",
+    "openjd-sessions == 0.12.1",
     # This package also depends on two openjd-model APIs directly:
     # StepTemplate.resolve_syntax_sugar() (run_step_task.py, for FEATURE_BUNDLE_1
     # simple-action steps) and openjd.expr.SerializedSymbolTable (the runtime
