@@ -8,9 +8,9 @@ import threading
 import traceback
 from collections.abc import Generator
 from configparser import ConfigParser
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import InitVar, dataclass, field
-from typing import Callable, Optional, Type
+from typing import Callable, Optional, Type, TypeVar
 
 import backoff
 import boto3
@@ -25,6 +25,7 @@ from deadline.client.config import set_setting as set_deadline_setting
 from deadline.job_attachments.download import get_s3_client, get_s3_transfer_manager
 from deadline_test_fixtures import (
     BootstrapResources,
+    CodeArtifactRepositoryInfo,
     DeadlineWorker,
     DeadlineWorkerConfiguration,
     DockerContainerWorker,
@@ -32,10 +33,13 @@ from deadline_test_fixtures import (
     Ec2Tag,
     Farm,
     Fleet,
+    LocalMacWorker,
     OperatingSystem,
     PosixSessionUser,
     Queue,
+    QueueFleetAssociation,
 )
+
 
 LOG = logging.getLogger(__name__)
 
@@ -157,12 +161,300 @@ def _shutdown_s3_transfer_manager(
     LOG.info(f"Shut down S3 Transfer Manager: {desc} (num threads joined: {num_threads_joined})")
 
 
+def _scaffold_deadline_resources(
+    request: pytest.FixtureRequest,
+    operating_system: OperatingSystem,
+) -> Generator[DeadlineResources, None, None]:
+    """Create the Deadline resources for this run, then delete them.
+
+    Used when BYO_DEADLINE is not "true". CI passes pre-provisioned IDs instead,
+    which is cheaper per run; this path exists so a run can stand itself up on a
+    platform CI has no resources for yet, and so a developer needs only
+    credentials rather than twelve resource IDs.
+
+    Resource roles come from `bootstrap_resources`, which either deploys the
+    bootstrap CloudFormation stack or reads its own env vars when
+    BYO_BOOTSTRAP=true. CreateFleet requires a roleArn, so there is no
+    role-free variant of this path.
+    """
+    bootstrap: BootstrapResources = request.getfixturevalue("bootstrap_resources")
+    deadline_client = boto3.client("deadline")
+
+    os_family = (
+        "MACOS"
+        if operating_system.is_macos()
+        else ("WINDOWS" if operating_system.name == "WIN2022" else "LINUX")
+    )
+    cpu_architecture = "arm64" if operating_system.is_macos() else "x86_64"
+
+    def _storage_profile(display_name: str, family: str, path: str) -> str:
+        # The path mapping under test works by giving the job's profile and the fleet's
+        # profile a location with the SAME name and different paths; the agent then
+        # rewrites one to the other. A profile with no fileSystemLocations makes the
+        # test that reads them fail on a missing key, so mirror the shape the
+        # CloudFormation scaffolding in scripts/e2e_testing_infrastructure.yaml uses.
+        response = deadline_client.create_storage_profile(
+            farmId=farm.id,
+            displayName=display_name,
+            osFamily=family,
+            fileSystemLocations=[{"name": "StorageProfileTest", "path": path, "type": "LOCAL"}],
+        )
+        storage_profile_id = response["storageProfileId"]
+        # Storage profiles are not modelled by deadline-cloud-test-fixtures, so
+        # register the delete directly. Registered on the same stack as everything
+        # else, which unwinds in reverse, so these go before the farm they belong to.
+        stack.callback(
+            lambda: deadline_client.delete_storage_profile(
+                farmId=farm.id, storageProfileId=storage_profile_id
+            )
+        )
+        return storage_profile_id
+
+    def _fleet_configuration(mode: str, storage_profile_id: str | None = None) -> dict:
+        customer_managed: dict = {
+            "mode": mode,
+            "workerCapabilities": {
+                "vCpuCount": {"min": 1},
+                "memoryMiB": {"min": 1024},
+                # The API models osFamily as WINDOWS | LINUX | MACOS. botocore does
+                # not validate enums client-side, so a wrong casing fails at the
+                # service rather than locally.
+                "osFamily": os_family,
+                "cpuArchitectureType": cpu_architecture,
+            },
+        }
+        if storage_profile_id:
+            # Without this the service sends the worker no path mapping rules, so the
+            # agent remaps job attachment roots into the session directory instead of the
+            # fleet's file system location, and the path mapping tests see no outputs at
+            # all. The CloudFormation scaffolding sets it on the non-scaling fleet only.
+            customer_managed["storageProfileId"] = storage_profile_id
+        return {"customerManaged": customer_managed}
+
+    T = TypeVar("T", Farm, Fleet, Queue, QueueFleetAssociation)
+
+    @contextmanager
+    def deletable(resource: T) -> Generator[T, None, None]:
+        try:
+            yield resource
+        finally:
+            resource.delete(client=deadline_client)
+
+    _FARM_NAME = "worker-agent-e2e-farm"
+
+    def _report_leftover_farms() -> str:
+        """Name any farm this fixture appears to have leaked, for the quota error message.
+
+        A run that is killed rather than failed, such as a cancelled CI job, never unwinds
+        the ExitStack, so its farm survives. The farm quota is small enough that one
+        leftover makes every later run fail here, and CreateFarm's own message does not say
+        which farms are consuming the quota.
+        """
+        try:
+            farms = deadline_client.list_farms()["farms"]
+        except Exception:  # pragma: no cover - diagnostics only
+            return ""
+        leftovers = [f for f in farms if f.get("displayName") == _FARM_NAME]
+        if not leftovers:
+            return f" No farm named {_FARM_NAME} exists, so the quota is consumed elsewhere."
+        ids = ", ".join(f["farmId"] for f in leftovers)
+        return (
+            f" A farm named {_FARM_NAME} already exists ({ids}), which most likely leaked"
+            " from a run that was cancelled before it could clean up. Delete it and retry."
+        )
+
+    with ExitStack() as stack:
+        try:
+            created_farm = Farm.create(client=deadline_client, display_name=_FARM_NAME)
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "ServiceQuotaExceededException":
+                raise
+            raise RuntimeError(f"Could not create the e2e farm: {e}.{_report_leftover_farms()}")
+        farm = stack.enter_context(deletable(created_farm))
+
+        # Created before the queues, which must allowlist them: a queue rejects a job
+        # carrying a storage profile absent from its allowedStorageProfileIds. Four
+        # distinct profiles, a job/fleet pair for this run's platform plus a job/fleet
+        # pair for Windows, which keeps that family regardless of the run's platform
+        # because the tests reading them exercise cross-platform path mapping. The job
+        # and fleet halves must differ, or the mapping they prove is the identity.
+        # /private/tmp on macOS, where /tmp is a symlink to it: paths the agent resolves
+        # come back physical, and a location recorded under the symlink then fails to
+        # match. The same substitution is what made the session_root_dir test pass.
+        storage_profile_root = (
+            "/private/tmp/storageprofiletest"
+            if operating_system.is_macos()
+            else "/tmp/storageprofiletest"
+        )
+        run_job_storage_profile = _storage_profile(
+            f"e2e-{os_family.lower()}-job-storage-profile", os_family, storage_profile_root
+        )
+        run_fleet_storage_profile = _storage_profile(
+            f"e2e-{os_family.lower()}-fleet-storage-profile",
+            os_family,
+            f"{storage_profile_root}/dest",
+        )
+        windows_job_storage_profile = _storage_profile(
+            "e2e-windows-job-storage-profile", "WINDOWS", "C:\\Users\\Public\\submission"
+        )
+        windows_fleet_storage_profile = _storage_profile(
+            "e2e-windows-fleet-storage-profile", "WINDOWS", "C:\\Users\\Public\\worker"
+        )
+        all_storage_profile_ids = [
+            run_job_storage_profile,
+            run_fleet_storage_profile,
+            windows_job_storage_profile,
+            windows_fleet_storage_profile,
+        ]
+
+        def _queue(display_name: str, **kwargs) -> Queue:
+            return stack.enter_context(
+                deletable(
+                    Queue.create(
+                        client=deadline_client,
+                        display_name=display_name,
+                        farm=farm,
+                        job_attachments=bootstrap.job_attachments,
+                        raw_kwargs={
+                            **kwargs.pop("raw_kwargs", {}),
+                            "allowedStorageProfileIds": all_storage_profile_ids,
+                        },
+                        **kwargs,
+                    )
+                )
+            )
+
+        # CreateQueueFleetAssociation rejects a queue with no jobRunAsUser, so every queue
+        # here sets one. Sent as the API shape rather than as a JobRunAsUser dataclass:
+        # Queue.create runs that through asdict(), which emits the windows member with an
+        # empty passwordArn instead of omitting it, failing client-side validation. The
+        # windows member is unnecessary here because these queues only associate with a
+        # macOS or Linux fleet.
+        job_user: PosixSessionUser = request.getfixturevalue("posix_job_user")
+        queue_configured_user = {
+            "jobRunAsUser": {
+                "runAs": "QUEUE_CONFIGURED_USER",
+                "posix": {"user": job_user.user, "group": job_user.group},
+            }
+        }
+
+        queue_a = _queue(
+            "e2e-queue-a",
+            role_arn=bootstrap.session_role_arn,
+            raw_kwargs={
+                **queue_configured_user,
+                # Allowing the storage profiles is not enough to get path mapping: the
+                # queue has to require the file system location by name before the service
+                # emits pathMappingRules for it, and without them the agent silently
+                # remaps job attachment roots into the session directory instead. Set on
+                # this queue alone, matching MainQueue in the CloudFormation scaffolding.
+                "requiredFileSystemLocationNames": ["StorageProfileTest"],
+            },
+        )
+        queue_b = _queue(
+            "e2e-queue-b",
+            role_arn=bootstrap.session_role_arn,
+            raw_kwargs=queue_configured_user,
+        )
+        scaling_queue = _queue(
+            "e2e-scaling-queue",
+            role_arn=bootstrap.session_role_arn,
+            raw_kwargs=queue_configured_user,
+        )
+        jobs_run_as_agent_user_queue = _queue(
+            "e2e-jobs-run-as-agent-user-queue",
+            role_arn=bootstrap.session_role_arn,
+            raw_kwargs={"jobRunAsUser": {"runAs": "WORKER_AGENT_USER"}},
+        )
+        # Deliberately given the worker role rather than the session role: its trust
+        # policy does not admit queue-user credential vending, which is the failure
+        # the tests using this queue assert on.
+        non_valid_role_queue = _queue(
+            "e2e-non-valid-role-queue",
+            role_arn=bootstrap.worker_role_arn,
+            raw_kwargs=queue_configured_user,
+        )
+
+        # Matches the count the pre-provisioned CI fleets use. One worker per fleet is not
+        # enough even though a run only ever has one host: the suite creates a worker per
+        # test in places, and a worker record keeps counting against this until it is
+        # deleted, so a low cap makes CreateWorker fail for the rest of the run.
+        max_worker_count = 15
+
+        fleet = stack.enter_context(
+            deletable(
+                Fleet.create(
+                    client=deadline_client,
+                    display_name="e2e-fleet",
+                    farm=farm,
+                    configuration=_fleet_configuration("NO_SCALING", run_fleet_storage_profile),
+                    max_worker_count=max_worker_count,
+                    role_arn=bootstrap.worker_role_arn,
+                )
+            )
+        )
+        scaling_fleet = stack.enter_context(
+            deletable(
+                Fleet.create(
+                    client=deadline_client,
+                    display_name="e2e-scaling-fleet",
+                    farm=farm,
+                    configuration=_fleet_configuration("EVENT_BASED_AUTO_SCALING"),
+                    max_worker_count=max_worker_count,
+                    role_arn=bootstrap.worker_role_arn,
+                )
+            )
+        )
+
+        for queue, target_fleet in (
+            (queue_a, fleet),
+            (queue_b, fleet),
+            (jobs_run_as_agent_user_queue, fleet),
+            (non_valid_role_queue, fleet),
+            (scaling_queue, scaling_fleet),
+        ):
+            stack.enter_context(
+                deletable(
+                    QueueFleetAssociation.create(
+                        client=deadline_client, farm=farm, queue=queue, fleet=target_fleet
+                    )
+                )
+            )
+
+        LOG.info(
+            f"Created Deadline resources - Farm ID: {farm.id}, Fleet ID: {fleet.id}, "
+            f"Queue A ID: {queue_a.id}, osFamily: {os_family}, arch: {cpu_architecture}"
+        )
+
+        yield DeadlineResources(
+            farm_id=farm.id,
+            queue_a_id=queue_a.id,
+            queue_b_id=queue_b.id,
+            jobs_run_as_agent_user_queue_id=jobs_run_as_agent_user_queue.id,
+            non_valid_role_queue_id=non_valid_role_queue.id,
+            fleet_id=fleet.id,
+            scaling_queue_id=scaling_queue.id,
+            scaling_fleet_id=scaling_fleet.id,
+            job_storage_profile_id=run_job_storage_profile,
+            windows_job_storage_profile_id=windows_job_storage_profile,
+            fleet_storage_profile_id=run_fleet_storage_profile,
+            windows_fleet_storage_profile_id=windows_fleet_storage_profile,
+        )
+
+
 @pytest.fixture(scope="session")
-def deadline_resources() -> Generator[DeadlineResources, None, None]:
+def deadline_resources(
+    request: pytest.FixtureRequest,
+    operating_system: OperatingSystem,
+) -> Generator[DeadlineResources, None, None]:
     """
     Gets Deadline resources required for running tests.
 
     Environment Variables:
+        BYO_DEADLINE: Whether to use pre-provisioned resources. Defaults to "true",
+            which is what CI does. Set it to "false" to have the run create and then
+            delete its own farm, queues, fleets, and storage profiles, in which case
+            none of the ID variables below are read.
         FARM_ID: ID of the Deadline farm to use.
         QUEUE_A_ID: ID of a non scaling Deadline queue to use for tests.
         QUEUE_B_ID: ID of a non scaling Deadline queue to use for tests.
@@ -180,6 +472,10 @@ def deadline_resources() -> Generator[DeadlineResources, None, None]:
     Returns:
         DeadlineResources: The Deadline resources used for tests
     """
+    if os.environ.get("BYO_DEADLINE", "true").lower() != "true":
+        yield from _scaffold_deadline_resources(request, operating_system)
+        return
+
     farm_id = os.environ["FARM_ID"]
     queue_a_id = os.environ["QUEUE_A_ID"]
     queue_b_id = os.environ["QUEUE_B_ID"]
@@ -278,6 +574,32 @@ def test_runner_identity() -> dict[str, str]:
 
 
 @pytest.fixture(scope="session")
+def codeartifact(operating_system: OperatingSystem) -> CodeArtifactRepositoryInfo:
+    """Overrides the fixtures package's fixture, which requires four CODEARTIFACT_* vars.
+
+    `worker_config` depends on this unconditionally, so the variables are mandatory even
+    for a run that never reaches a CodeArtifact repository. EC2 and container workers do
+    need one, because they pip install the agent from a VPC with no route to PyPI. A
+    worker on a GitHub-hosted runner reaches PyPI directly and installs the agent from a
+    wheel built in the same job, so it needs no repository, and `worker_config` below
+    drops this from the install command rather than logging in to it.
+    """
+    if operating_system.is_macos() and "CODEARTIFACT_DOMAIN" not in os.environ:
+        return CodeArtifactRepositoryInfo(
+            region=os.getenv("REGION", "us-west-2"),
+            domain="unused",
+            domain_owner="unused",
+            repository="unused",
+        )
+    return CodeArtifactRepositoryInfo(
+        region=os.environ["CODEARTIFACT_REGION"],
+        domain=os.environ["CODEARTIFACT_DOMAIN"],
+        domain_owner=os.environ["CODEARTIFACT_ACCOUNT_ID"],
+        repository=os.environ["CODEARTIFACT_REPOSITORY"],
+    )
+
+
+@pytest.fixture(scope="session")
 def worker_config(
     posix_job_user: PosixSessionUser,
     posix_env_override_job_user: PosixSessionUser,
@@ -285,6 +607,7 @@ def worker_config(
     worker_config: DeadlineWorkerConfiguration,
     windows_job_users: list[str],
     session_runtime_option: Optional[str],
+    operating_system: OperatingSystem,
 ) -> DeadlineWorkerConfiguration:
     """
     Builds the configuration for a DeadlineWorker.
@@ -306,6 +629,13 @@ def worker_config(
         DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
     """
 
+    worker_agent_install = worker_config.worker_agent_install
+    if operating_system.is_macos() and "CODEARTIFACT_DOMAIN" not in os.environ:
+        # Without this the install command begins with `aws codeartifact login`, which
+        # fails against the placeholder repository the fixture above returns. The agent
+        # comes from a locally built wheel and its dependencies from PyPI.
+        worker_agent_install = dataclasses.replace(worker_agent_install, codeartifact=None)
+
     return dataclasses.replace(
         worker_config,
         job_users=[
@@ -317,6 +647,7 @@ def worker_config(
         # TODO: Temporary workaround due to AWS CLI v2 upgrade causing canary failures when copying over AWS models for deadline
         service_model_path=None,
         session_runtime=session_runtime_option,
+        worker_agent_install=worker_agent_install,
     )
 
 
@@ -324,9 +655,8 @@ def worker_config(
 def session_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -359,9 +689,8 @@ def asset_sync_worker_config(
 def asset_sync_class_worker(
     request: pytest.FixtureRequest,
     asset_sync_worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(asset_sync_worker_config, ec2_worker_type, request) as worker:
+    with create_worker(asset_sync_worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -371,9 +700,8 @@ def asset_sync_class_worker(
 def class_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -383,9 +711,8 @@ def class_worker(
 def function_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -394,14 +721,13 @@ def function_worker(
 @pytest.fixture(scope="function")
 def function_worker_factory(
     request: pytest.FixtureRequest,
-    ec2_worker_type: Type[EC2InstanceWorker],
-) -> Generator[Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker], None, None]:
+) -> Generator[Callable[[DeadlineWorkerConfiguration], DeadlineWorker], None, None]:
     created_workers = []
 
     def _create_function_worker(
         custom_worker_config: DeadlineWorkerConfiguration,
     ):
-        with create_worker(custom_worker_config, ec2_worker_type, request) as worker:
+        with create_worker(custom_worker_config, request) as worker:
             created_workers.append(worker)
             return worker
 
@@ -441,7 +767,6 @@ def _grab_bootstrap_log(worker: DeadlineWorker) -> None:
 
 def create_worker(
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
     request: pytest.FixtureRequest,
 ):
     def __init__(self):
@@ -471,14 +796,30 @@ def create_worker(
         DeadlineWorker: Instance of the DeadlineWorker class that can be used to interact with the Worker.
     """
 
+    operating_system: OperatingSystem = request.getfixturevalue("operating_system")
+
     worker: DeadlineWorker
     if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
         LOG.info("Creating Docker worker")
         worker = DockerContainerWorker(
             configuration=worker_config,
         )
+    elif operating_system.is_macos():
+        # macOS workers run on the host executing the tests rather than a provisioned
+        # instance: Mac hardware is only available on EC2 dedicated hosts, which bill a
+        # 24-hour minimum per allocation. The CI runner is itself ephemeral, so each job
+        # gets a clean host.
+        LOG.info("Creating local macOS worker")
+        worker = LocalMacWorker(
+            configuration=worker_config,
+            deadline_client=boto3.client("deadline"),
+        )
     else:
         LOG.info("Creating EC2 worker")
+        # Resolved here rather than as a fixture parameter: it raises for any non-EC2
+        # operating system, so requesting it eagerly would fail the macOS path before it
+        # is reached.
+        ec2_worker_type: Type[EC2InstanceWorker] = request.getfixturevalue("ec2_worker_type")
         ami_id = os.getenv("AMI_ID")
         subnet_id = os.getenv("SUBNET_ID")
         security_group_id = os.getenv("SECURITY_GROUP_ID")
@@ -615,13 +956,7 @@ def operating_system() -> OperatingSystem:
     elif os_env_var == "windows":
         return OperatingSystem(name="WIN2022")
     elif os_env_var == "macos":
-        # deadline-cloud-test-fixtures types this as Literal["AL2023", "WIN2022"], so mypy
-        # rejects "MACOS" until that package gains macOS support (it also needs a
-        # MacInstanceWorker: the posix worker hardcodes an AL2023 AMI and provisions with
-        # useradd/groupadd). Nothing sets OPERATING_SYSTEM=macos in CI yet, so this branch is
-        # unreachable today and kept only so the plumbing is in place; the ignore comes off
-        # with that release.
-        return OperatingSystem(name="MACOS")  # type: ignore[arg-type]
+        return OperatingSystem(name="MACOS")
     else:
         assert False, (
             f'Expected OPERATING_SYSTEM env var to be "linux", "windows", or "macos", '

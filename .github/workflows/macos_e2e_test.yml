@@ -1,0 +1,196 @@
+name: macOS E2E Test
+
+# Runs the E2E suite against a worker agent installed on the runner itself
+# (LocalMacWorker), rather than on a provisioned instance the way the Linux and
+# Windows E2E jobs do.
+#
+# Why this diverges from reusable_e2e_test.yml: those jobs start a CodeBuild build,
+# which then launches an EC2 worker. Mac hardware is only available on EC2 dedicated
+# hosts (24-hour minimum billing per allocation) and CodeBuild offers macOS only via
+# reserved-capacity fleets, which hold — and bill for — a Mac host continuously.
+# A GitHub-hosted macOS runner is free for public repositories and gives a fresh VM
+# per run, which matters here because the installer mutates system state: it creates
+# users and groups, writes a sudoers rule, and bootstraps a LaunchDaemon.
+#
+# The run creates and deletes its own farm, queues, fleets, and storage profiles
+# (BYO_DEADLINE=false), so it needs no access to the shared CI farm resources.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'mainline'
+
+jobs:
+  MacOSE2ETest:
+    name: macOS E2E Test
+    runs-on: macos-latest
+    # The suite provisions a worker, waits on scaling, and runs jobs end to end.
+    # Matches the timeout the Linux and Windows E2E builds use.
+    timeout-minutes: 180
+    permissions:
+      id-token: write
+      contents: read
+    # Each run has its own farm, so overlapping runs cannot corrupt each other's
+    # resources. Serialized anyway to keep concurrent farm and fleet counts inside
+    # the account's service quotas.
+    concurrency:
+      group: macose2e
+    environment: mainline
+    env:
+      OPERATING_SYSTEM: macos
+      # Ask the fixtures for a run-scoped farm rather than reading FARM_ID and the
+      # queue and fleet ids from the environment.
+      BYO_DEADLINE: "false"
+      # The IAM roles and buckets are long-lived and supplied below, so the fixtures
+      # must not try to deploy the bootstrap CloudFormation stack.
+      BYO_BOOTSTRAP: "true"
+      REGION: ${{ vars.E2E_REGION }}
+      BOOTSTRAP_BUCKET_NAME: ${{ vars.E2E_BOOTSTRAP_BUCKET_NAME }}
+      JOB_ATTACHMENTS_BUCKET_NAME: ${{ vars.E2E_JOB_ATTACHMENTS_BUCKET_NAME }}
+      JOB_ATTACHMENTS_ROOT_PREFIX: root
+      WORKER_ROLE_ARN: ${{ vars.E2E_WORKER_ROLE_ARN }}
+      SESSION_ROLE_ARN: ${{ vars.E2E_SESSION_ROLE_ARN }}
+      TEST_CATEGORY: macOSMainline
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # A single version rather than a matrix: the E2E suite takes tens of minutes
+          # and installs a system service, so a matrix would multiply runtime without
+          # covering meaningfully different agent behaviour. code_quality.yml and
+          # macos_installer_test.yml cover the supported interpreter range.
+          python-version: '3.11'
+
+      - name: Install Hatch
+        run: pip install --upgrade hatch 'virtualenv<21'
+
+      # DIAGNOSTIC, remove once read: establishes how this runner treats the EC2
+      # metadata address. The worker agent probes it at startup to decide whether to
+      # monitor for spot interruption, on the same thread the shutdown path returns
+      # through. A host with no route fails immediately and the agent carries on; a
+      # host that routes the address but drops the packets blocks instead, which
+      # stalls shutdown. Which of those this runner does determines whether the
+      # agent needs a timeout or the runner needs a reject route.
+      - name: Probe the EC2 metadata address
+        continue-on-error: true
+        run: |
+          echo "--- route ---"
+          route -n get 169.254.169.254 2>&1 | head -8 || true
+          echo "--- connect, 20s ceiling ---"
+          python3 - <<'PY'
+          import socket, time
+          t0 = time.monotonic()
+          try:
+              socket.create_connection(("169.254.169.254", 80), timeout=20).close()
+              print(f"connected in {time.monotonic()-t0:.3f}s -- IMDS answers here")
+          except Exception as e:
+              print(f"{type(e).__name__} after {time.monotonic()-t0:.3f}s -> {e}")
+              print("fast failure (<1s) means a reject/no route: the agent's existing")
+              print("ConnectionError handler copes and shutdown is unaffected.")
+              print("Slow failure means the address is black-holed and the probe blocks.")
+          PY
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.E2E_MACOS_ROLE_ARN }}
+          aws-region: ${{ vars.E2E_REGION }}
+          role-session-name: macos-e2e-${{ github.run_id }}
+          # LocalMacWorker copies this process's credentials into the agent user's
+          # credentials file as static keys, and the agent re-reads that file on every
+          # refresh. So the session has to outlive the whole run, not just the setup
+          # steps: the default hour would strand the worker mid-suite. Requires the
+          # role's MaxSessionDuration to be at least this value.
+          role-duration-seconds: 21600
+
+      - name: Build the worker agent wheel
+        # The suite installs the agent from a wheel built out of this checkout, which is
+        # what makes the run test the current commit rather than the published package.
+        run: |
+          set -euxo pipefail
+          hatch build
+          # Read the name off disk rather than composing it from `hatch run metadata name`
+          # and `hatch run version`: the first `hatch run` in a job also creates the
+          # environment and prints the install log to stdout, which ends up inside the
+          # command substitution and corrupts the value.
+          count=$(find dist -maxdepth 1 -name '*.whl' | wc -l | tr -d ' ')
+          test "$count" -eq 1 || { echo "expected exactly one wheel in dist/, found $count"; exit 1; }
+          echo "WORKER_AGENT_WHL_PATH=$PWD/$(find dist -maxdepth 1 -name '*.whl')" >> "$GITHUB_ENV"
+
+      # DIAGNOSTIC, remove with the rest. launchd reports the agent alive in SIGTERMed
+      # state with `last exit code = (never exited)` for about five seconds after the
+      # drain line, and `runs = 1`, so it is stuck rather than crashing or being
+      # relaunched. This signals its own SIGUSR1 thread-stack dumper inside that window
+      # to say which frame is parked; that output goes to stderr, which this branch
+      # redirects to a file instead of /dev/null.
+      #
+      # Armed as a watchdog because it has to fire while the agent is still stalled:
+      # stop_worker_service waits for launchd to release the label, so by the time the
+      # suite reports failure the process is gone. Triggers on the last line the stalled
+      # agent writes.
+      - name: Arm a thread-stack watchdog
+        run: |
+          sudo nohup bash -c '
+            log=/var/log/amazon/deadline/worker-agent.log
+            out=/tmp/agent-stacks.txt
+            for _ in $(seq 1 900); do
+              if grep -q "Draining any remaining Sessions" "$log" 2>/dev/null; then
+                pid=$(launchctl print system/com.amazon.deadline.worker-agent 2>/dev/null \
+                      | awk "/[^a-z]pid = /{print \$3}" | head -1)
+                echo "=== drain seen at $(date -u +%H:%M:%S), pid=${pid:-none} ===" >> "$out"
+                for attempt in 1 2; do
+                  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                    echo "--- SIGUSR1 $attempt to $pid at $(date -u +%H:%M:%S) ---" >> "$out"
+                    kill -USR1 "$pid" 2>/dev/null || echo "signal failed" >> "$out"
+                  else
+                    echo "--- pid gone before signal $attempt ---" >> "$out"
+                  fi
+                  sleep 2
+                done
+                {
+                  echo "--- launchd view after signalling ---"
+                  launchctl print system/com.amazon.deadline.worker-agent 2>&1 \
+                    | grep -E "state|pid|last exit|runs =" | head -6 || echo "label gone"
+                } >> "$out"
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "watchdog timed out without seeing the drain line" >> "$out"
+          ' >/dev/null 2>&1 &
+          echo "watchdog armed"
+
+      # DIAGNOSTIC, revert to `hatch run e2e:test` once read. Narrowed to the one test
+      # that stops a running agent and waits for it to report STOPPED, so the loop is
+      # minutes rather than the better part of an hour. The sibling draining test is
+      # excluded on purpose: it stops the worker ~200ms after CreateJob, before the
+      # scheduler's 15s poll can give it a session, and the STOPPING transition it
+      # asserts is gated on there being one -- a separate problem from this.
+      - name: Run E2E tests
+        run: hatch run e2e:test -k test_worker_lifecycle_status_is_expected
+
+
+      # DIAGNOSTIC, remove with the above. The failure is in a test body rather than a
+      # fixture, so nothing dumps the agent's own log, and the suite log only records
+      # that the status was awaited -- never what it actually was. This is the shutdown
+      # sequence for the agent the test just stopped.
+      - name: Dump the worker agent log
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "--- agent stderr (plist redirected for this run) ---"
+          sudo tail -300 /var/log/amazon/deadline/worker-agent-stderr.log 2>&1 || echo "(absent)"
+          echo "--- agent stdout ---"
+          sudo tail -30 /var/log/amazon/deadline/worker-agent-stdout.log 2>&1 || echo "(absent)"
+          echo "--- launchd snapshots across the stall ---"
+          sudo cat /tmp/agent-stacks.txt 2>&1 || echo "(no stacks captured)"
+          echo "--- launchd state ---"
+          sudo launchctl print system/com.amazon.deadline.worker-agent 2>&1 | head -5 || echo "(label not loaded)"
+          echo "--- worker.json ---"
+          sudo cat /var/lib/deadline/worker.json 2>&1 || echo "(absent)"
+          echo "--- worker-agent.log, last 120 lines ---"
+          sudo tail -120 /var/log/amazon/deadline/worker-agent.log 2>&1 || echo "(absent)"
+          echo "--- bootstrap log, last 40 lines ---"
+          sudo tail -40 /var/log/amazon/deadline/worker-agent-bootstrap.log 2>&1 || echo "(absent)"

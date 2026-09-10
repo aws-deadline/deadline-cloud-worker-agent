@@ -35,7 +35,11 @@ set -e
 echo "=== identity ==="
 whoami
 echo "=== GPU inventory ==="
-system_profiler SPDisplaysDataType | grep -E "Chipset Model|Metal Support"
+# Informational, and deliberately not allowed to fail the probe. A headless CI VM
+# reports no displays, so grep matches nothing and exits 1, which under `set -e`
+# aborted this script before it reached the Metal check it exists to perform.
+system_profiler SPDisplaysDataType 2>&1 | grep -E "Chipset Model|Metal Support|Device Type" \
+    || echo "(no display information available)"
 echo "=== Metal compute ==="
 cat > ./metalprobe.swift <<'SWIFT'
 import Metal
@@ -61,7 +65,10 @@ print("compute result[8] =", p[8], "(expect 16.0)")
 guard p[8] == 16.0 else { print("FAIL: wrong compute result"); exit(3) }
 print("PASS: GPU compute works from session")
 SWIFT
-/usr/bin/swift ./metalprobe.swift
+# Redirected so a Metal or toolchain error reaches the session log: only stdout is
+# captured there, and a bare failure here would otherwise be indistinguishable from
+# the compute simply not running.
+/usr/bin/swift ./metalprobe.swift 2>&1
 """
 
 

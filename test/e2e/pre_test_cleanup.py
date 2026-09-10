@@ -244,6 +244,14 @@ def get_farm() -> str:
 def cleanup_test_environment() -> None:
     config = Config(retries={"mode": "adaptive"})
 
+    if os.getenv("BYO_DEADLINE", "true").lower() != "true":
+        # Everything this would clean belongs to a shared environment. A run that creates
+        # its own farm, queues, and worker has no leftovers from a previous run to cancel
+        # jobs on, and the queue id variables read below are unset. Returning here also
+        # keeps EC2 permissions off the credentials such a run needs.
+        LOG.info("BYO_DEADLINE is false, nothing to clean up before the run")
+        return
+
     if os.getenv("KEEP_WORKER_AFTER_FAILURE", "").lower() != "true":
         ec2_client = boto3.client("ec2", config=config)
         cleanup_ec2_instances(ec2_client)
