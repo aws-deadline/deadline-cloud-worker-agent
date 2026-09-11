@@ -1,0 +1,45 @@
+name: macOS E2E Test
+
+# Runs the E2E suite against a macOS worker, on the same CodeBuild path the Linux and
+# Windows jobs use. The project is deadline-cloud-worker-agent-mainline-macos-e2e, on a
+# MAC_ARM reserved-capacity fleet.
+#
+# READ THE RESULT IN CLOUDWATCH, NOT HERE. While pipeline/e2e-macos.sh is a capability probe
+# its entire output is the answer, and the reusable workflow below passes
+# hide-cloudwatch-logs: true with no input to override it -- so this run shows only a red X
+# for every outcome (exit 1 = denied or unproven, exit 2 = all present but no tests ran,
+# exit 3 = stale records from an earlier run, so nothing was probed).
+# Open the CodeBuild project's build log for the OK/DENIED lines. One reserved host and
+# concurrency: macose2e mean a re-run to see the log costs a full build.
+#
+# Dispatch-only, deliberately. The Linux and Windows jobs also run on push to mainline;
+# this one does not yet, because nothing has confirmed that a CodeBuild macOS build can do
+# what the agent installer needs -- create users and groups, write a sudoers rule, and
+# bootstrap a LaunchDaemon. A dispatch-only workflow cannot turn mainline red or block
+# anyone's PR, so it is safe to land unproven and is the only way to exercise the project
+# at all: branch creation is blocked on this repository, and a fork PR gets no secrets, so
+# `mainline` is the only ref that can reach the CodeBuild role.
+#
+# Once a run confirms the installer works here, add the push trigger the other two have:
+#
+#   push:
+#     branches:
+#       - 'mainline'
+
+on:
+  workflow_dispatch:
+
+jobs:
+  MainlineMacOSE2ETest:
+    name: macOS E2E Test
+    permissions:
+      id-token: write
+      contents: read
+    uses: aws-deadline/.github/.github/workflows/reusable_e2e_test.yml@mainline
+    secrets: inherit
+    with:
+      repository: ${{ github.event.repository.name }}
+      environment: mainline
+      os: macos
+    concurrency:
+      group: macose2e
