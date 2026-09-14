@@ -144,6 +144,30 @@ class TestPythonSessionRuntimeDelegation:
         )
         assert result is mock_session_instance.enter_environment.return_value
 
+    def test_enter_environment_accepts_and_ignores_step_let_declarations(
+        self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """step_let_declarations exists for a uniform runtime interface. The v0
+        session never lifts/re-decodes the environment, so it must NOT be
+        forwarded to the wrapped session -- those values arrive via
+        resolved_symtab instead."""
+        env = MagicMock()
+
+        result = adapter.enter_environment(
+            environment=env,
+            identifier="env-1",
+            step_let_declarations=["label = 'vstudio'"],
+        )
+
+        mock_session_instance.enter_environment.assert_called_once_with(
+            environment=env,
+            identifier="env-1",
+            os_env_vars=None,
+            step_name=None,
+            resolved_symtab=None,
+        )
+        assert result is mock_session_instance.enter_environment.return_value
+
     def test_exit_environment_when_called_delegates_to_wrapped_session(
         self, adapter: PythonSessionRuntime, mock_session_instance: MagicMock
     ) -> None:

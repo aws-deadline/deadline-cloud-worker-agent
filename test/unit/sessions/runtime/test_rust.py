@@ -13,10 +13,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from openjd.model._v1.errors import ModelValidationError
 from openjd.model._types import ParameterValue, ParameterValueType
 from openjd.model._v1.types import ModelProfile, SpecificationRevision
 
 from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
+from deadline_worker_agent.sessions.job_entities.environment_details import EnvironmentDetails
 from deadline_worker_agent.sessions.runtime import SessionRuntime, SessionRuntimeConfig
 from deadline_worker_agent.sessions.runtime._abc import (
     ResolvedSymbolTableError,
@@ -1507,3 +1509,243 @@ class TestResolvedSymbolTableForwarding:
         assert mock_session_instance.exit_environment.call_args.kwargs["resolved_symtab"] is None
         mock_logger.error.assert_called_once()
         assert "resolvedSymbolTable" in mock_logger.error.call_args[0][0]
+
+
+def _build_environment(template: dict[str, Any]) -> Any:
+    """Build a real v2023_09 EnvironmentModel from the shape the service serves.
+
+    Uses the worker's own parse path (EnvironmentDetails.from_boto) so the
+    resulting model dumps to the exact wire shape enter_environment lifts. The
+    EXPR extension is declared so an environment carrying script-scope ``let``
+    parses; note that references to undefined names (e.g. a step-scope ``let``)
+    still parse here -- they are only rejected later, at the Rust decode the bug
+    is about.
+    """
+    return EnvironmentDetails.from_boto(
+        {
+            "schemaVersion": "environment-2023-09",
+            "template": template,
+            "environmentId": "env-1",
+            "jobId": "job-1",
+            "extensions": ["EXPR"],
+        }
+    ).environment
+
+
+class TestEnterEnvironmentStepLetInjection:
+    """Threading the declaring step's template-scope ``let`` into the lifted
+    environment so the Rust decode can resolve references to those names.
+
+    These exercise the *real* decode_environment_template (create_environment is
+    mocked to isolate the injected template): the whole point of the defect is a
+    decode-time reference check, so a mocked decode would prove nothing.
+    """
+
+    @pytest.fixture()
+    def adapter(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
+    ) -> RustSessionRuntime:
+        return RustSessionRuntime(runtime_config)
+
+    @pytest.fixture()
+    def mock_session_instance(self, mock_rust_session: MagicMock) -> MagicMock:
+        return mock_rust_session.return_value
+
+    def _spy_decode(self, captured: dict[str, Any]) -> Any:
+        """A decode_environment_template stand-in that records the template it
+        was handed and then calls the real decoder, so a decode failure still
+        surfaces exactly as in production."""
+        real_decode = rust_module.decode_environment_template
+
+        def spy(template: dict[str, Any], *, supported_extensions: Any = None) -> Any:
+            captured["template"] = template
+            return real_decode(template, supported_extensions=supported_extensions)
+
+        return spy
+
+    def test_step_let_injected_first_lets_env_references_resolve(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """An env whose variables AND script args reference step-scope names
+        decodes once the step's ``let`` is injected first into script.let."""
+        environment = _build_environment(
+            {
+                "name": "E",
+                "variables": {"V": "{{ label }}"},
+                "script": {"actions": {"onEnter": {"command": "echo", "args": ["{{ tag }}"]}}},
+            }
+        )
+        captured: dict[str, Any] = {}
+        with (
+            patch.object(
+                rust_module, "decode_environment_template", side_effect=self._spy_decode(captured)
+            ),
+            patch.object(rust_module, "create_environment") as mock_create,
+        ):
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                step_let_declarations=["label = 'vstudio'", "tag = 'v2'"],
+            )
+
+        # Injected verbatim, in declaration order, ahead of any env-own let.
+        assert captured["template"]["environment"]["script"]["let"] == [
+            "label = 'vstudio'",
+            "tag = 'v2'",
+        ]
+        mock_session_instance.enter_environment.assert_called_once_with(
+            environment=mock_create.return_value,
+            identifier="env-1",
+            os_env_vars=None,
+            resolved_symtab=None,
+        )
+
+    def test_missing_step_let_reproduces_decode_failure(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """Without the step's ``let`` (the un-threaded caller), the same env
+        fails the real decode -- pinning the bug this fix removes."""
+        environment = _build_environment(
+            {
+                "name": "E",
+                "variables": {"V": "{{ label }}"},
+                "script": {"actions": {"onEnter": {"command": "echo", "args": ["{{ tag }}"]}}},
+            }
+        )
+        with pytest.raises(ModelValidationError, match="Failed to parse"):
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                step_let_declarations=None,
+            )
+        mock_session_instance.enter_environment.assert_not_called()
+
+    def test_step_let_merges_before_env_own_let(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When the env already declares its own script.let, step declarations
+        are placed ahead of it (template scope precedes the environment's own).
+
+        Distinct names are used here so both lists survive the merge; the
+        same-name collision case (env shadows step, step declaration dropped) is
+        covered by test_step_let_env_own_declaration_shadows_step_collision.
+        An env-own name is referenced to prove the merged list still decodes."""
+        environment = _build_environment(
+            {
+                "name": "E",
+                "variables": {"V": "{{ env_v }}"},
+                "script": {
+                    "let": ["env_v = 'from env'"],
+                    "actions": {"onEnter": {"command": "echo"}},
+                },
+            }
+        )
+        captured: dict[str, Any] = {}
+        with (
+            patch.object(
+                rust_module, "decode_environment_template", side_effect=self._spy_decode(captured)
+            ),
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                step_let_declarations=["step_v = 'from step'", "base = 'b'"],
+            )
+
+        assert captured["template"]["environment"]["script"]["let"] == [
+            "step_v = 'from step'",
+            "base = 'b'",
+            "env_v = 'from env'",
+        ]
+        mock_session_instance.enter_environment.assert_called_once()
+
+    def test_step_let_env_own_declaration_shadows_step_collision(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """When a step declaration's name is also declared by the env's own
+        script.let, the colliding step declaration is dropped (the env's own is
+        the inner scope) while non-colliding step declarations are still
+        injected first. Without the drop, decode rejects the duplicate name."""
+        environment = _build_environment(
+            {
+                "name": "E",
+                "variables": {"V": "{{ shared }}", "W": "{{ base }}"},
+                "script": {
+                    "let": ["shared = 'from env'"],
+                    "actions": {"onEnter": {"command": "echo"}},
+                },
+            }
+        )
+        captured: dict[str, Any] = {}
+        with (
+            patch.object(
+                rust_module, "decode_environment_template", side_effect=self._spy_decode(captured)
+            ),
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                step_let_declarations=["base = 'b'", "shared = 'from step'"],
+            )
+
+        # The env's own `shared` survives; the step's `shared` is omitted; the
+        # non-colliding `base` is still injected ahead of the env's own let.
+        assert captured["template"]["environment"]["script"]["let"] == [
+            "base = 'b'",
+            "shared = 'from env'",
+        ]
+        mock_session_instance.enter_environment.assert_called_once()
+
+    def test_step_name_referencing_declaration_is_dropped(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """A declaration referencing Step.Name is illegal in an environment
+        script's let scope, so it is dropped; the remaining declarations are
+        still injected and decode succeeds when nothing references the dropped
+        name."""
+        environment = _build_environment(
+            {
+                "name": "E",
+                "variables": {"V": "{{ label }}"},
+                "script": {"actions": {"onEnter": {"command": "echo"}}},
+            }
+        )
+        captured: dict[str, Any] = {}
+        with (
+            patch.object(
+                rust_module, "decode_environment_template", side_effect=self._spy_decode(captured)
+            ),
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                step_let_declarations=["label = 'vstudio'", "sn = Step.Name"],
+            )
+
+        assert captured["template"]["environment"]["script"]["let"] == ["label = 'vstudio'"]
+
+    def test_scriptless_environment_receives_no_injection(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """A script-less environment cannot legally carry ``let`` (decode
+        rejects a script without actions), so declarations are never injected
+        and behavior is identical to today."""
+        environment = _build_environment({"name": "E", "variables": {"V": "plain"}})
+        captured: dict[str, Any] = {}
+        with (
+            patch.object(
+                rust_module, "decode_environment_template", side_effect=self._spy_decode(captured)
+            ),
+            patch.object(rust_module, "create_environment"),
+        ):
+            adapter.enter_environment(
+                environment=environment,
+                identifier="env-1",
+                step_let_declarations=["label = 'vstudio'"],
+            )
+
+        assert "script" not in captured["template"]["environment"]
+        mock_session_instance.enter_environment.assert_called_once()

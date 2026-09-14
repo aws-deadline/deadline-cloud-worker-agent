@@ -2812,6 +2812,25 @@ class TestResolvedSymbolTableForwarding:
         assert len(session._active_envs) == 1
         assert session._active_envs[0].resolved_symbol_table_json == table
 
+    def test_enter_environment_forwards_step_let_declarations_to_runtime(
+        self,
+        session: Session,
+        mock_runtime: MagicMock,
+    ) -> None:
+        """Session.enter_environment forwards step-scope let declarations to the
+        runtime so the Rust adapter can restore them on the lifted environment."""
+        mock_runtime.enter_environment.return_value = "session-env-1"
+
+        session.enter_environment(
+            job_env_id="env-1",
+            environment=MagicMock(),
+            step_let_declarations=["label = 'vstudio'"],
+        )
+
+        assert mock_runtime.enter_environment.call_args.kwargs["step_let_declarations"] == [
+            "label = 'vstudio'"
+        ]
+
     def test_cleanup_forwards_stored_tables_in_reverse_order(
         self,
         session: Session,

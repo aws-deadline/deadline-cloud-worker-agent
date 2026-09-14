@@ -269,6 +269,17 @@ def _to_rust_model_extensions(
     return extensions, converted_names
 
 
+def _let_binding_name(declaration: str) -> str:
+    """Return the binding name of an openjd ``let`` declaration string.
+
+    The name is the left-hand side of the first ``=`` (assignment separator),
+    stripped of surrounding whitespace. Comparison/equality operators inside the
+    expression sit to the right of that first ``=`` and so never affect the
+    parsed name.
+    """
+    return declaration.split("=", 1)[0].strip()
+
+
 def _parse_resolved_symtab(json_str: str | None) -> Any:
     """Parse a resolved symbol table JSON string into a SerializedSymbolTable.
 
@@ -370,6 +381,7 @@ class RustSessionRuntime(SessionRuntime):
         os_env_vars: Optional[dict[str, str]] = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
+        step_let_declarations: list[str] | None = None,
     ) -> EnvironmentIdentifier:
         # The shared action layer hands a pydantic v2023_09 environment, but the
         # Rust session needs a native _v1 environment. Serialize to the OpenJD
@@ -387,6 +399,50 @@ class RustSessionRuntime(SessionRuntime):
             template["parameterDefinitions"] = self._environment_parameter_definitions
         if self._decode_extensions:
             template["extensions"] = list(self._decode_extensions)
+        # A step-scoped environment can reference its declaring step's
+        # template-scope `let` names in its own variables/script. Lifting the
+        # environment into this standalone document strips that enclosing scope,
+        # so the decode below would reject those references. Restore the
+        # declarations onto the environment's script `let` so they resolve.
+        if step_let_declarations:
+            env_dict = template["environment"]
+            script = env_dict.get("script")
+            # Only a script that has `actions` can legally carry `let`; decode
+            # rejects a script without actions ("missing field actions"), so a
+            # script-less environment must be left untouched -- injecting would
+            # turn a currently-decodable document into a failing one. Such an
+            # environment that references step-scope `let` remains a known
+            # upstream decode limitation.
+            if isinstance(script, dict) and script.get("actions"):
+                # Skip any declaration whose expression references Step.Name: it
+                # is illegal in an environment script's `let` scope and decode
+                # rejects the whole binding ("Invalid expression in let
+                # binding"). A substring check suffices -- a false positive
+                # merely omits that binding, which reproduces today's
+                # unresolved-reference failure for it, no worse than the current
+                # behavior.
+                safe_declarations = [
+                    declaration
+                    for declaration in step_let_declarations
+                    if "Step.Name" not in declaration
+                ]
+                existing_let = script.get("let") or []
+                # The environment's own `let` names take precedence over the
+                # step's: decode rejects two bindings sharing a name in one list
+                # ("duplicate name"), and the environment's declaration is the
+                # inner scope, so any step declaration whose name the
+                # environment already declares is dropped rather than merged.
+                env_let_names = {_let_binding_name(declaration) for declaration in existing_let}
+                # Step declarations are prepended so template-scope names
+                # precede the environment's own bindings; those the environment
+                # shadows are skipped in the comprehension below to avoid a
+                # duplicate-name decode
+                # failure, leaving the environment's own declaration in effect.
+                script["let"] = [
+                    declaration
+                    for declaration in safe_declarations
+                    if _let_binding_name(declaration) not in env_let_names
+                ] + existing_let
         # The environment was already validated against its own entity-level
         # extension declaration; this decode only reconstructs the native
         # representation. Job-level narrowing applies to runtime capability
