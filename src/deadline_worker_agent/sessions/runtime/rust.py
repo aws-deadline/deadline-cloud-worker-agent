@@ -12,9 +12,8 @@ from pathlib import Path
 from shutil import chown
 from typing import TYPE_CHECKING, Any, Optional
 
-from openjd._openjd_rs import create_environment, deserialize_step
+from openjd._openjd_rs import deserialize_step
 from openjd.expr import PathFormat, PathMappingRule as RustPathMappingRule, SerializedSymbolTable
-from openjd.model._v1 import decode_environment_template
 from openjd.model._v1.types import (
     JobParameterType,
     JobParameterValue,
@@ -45,7 +44,6 @@ from deadline_worker_agent.file_system_operations import (
 )
 
 from . import SessionRuntime, SessionRuntimeConfig
-from .._extensions import RUNTIME_CAPABILITY_EXTENSIONS
 from ._abc import ResolvedSymbolTableError, convert_runtime_crashes
 
 if TYPE_CHECKING:
@@ -166,41 +164,6 @@ def _to_rust_task_parameter_values(values: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _to_environment_parameter_definitions(values: dict[str, Any]) -> list[dict[str, str]]:
-    """Synthesize parameterDefinitions entries from job parameter values.
-
-    The environment template is decoded standalone (lifted out of its job
-    context), so the job's parameter declarations must be re-supplied here for
-    ``{{Param.X}}`` references to resolve. Every ``JobParameterType`` member is a
-    valid environment-template parameter type — only task-parameter-space types
-    like ``CHUNK[INT]`` are rejected, and those cannot reach here:
-    ``JobDetails._validate_job_parameters`` restricts jobDetails parameters to
-    the job-parameter-type subset (string/path/int/float), and raw dicts
-    originate from the wire which only carries job parameter types.
-
-    No type filter is applied. All values are declared unconditionally.
-
-    Known limitation: only parameters that have *values* are declared. A job
-    parameter with no value supplied would still fail validation at decode time.
-    In practice everything reaching the worker has a default or submitted value.
-    """
-    definitions: list[dict[str, str]] = []
-    for name, value in values.items():
-        if isinstance(value, dict):
-            type_str = value.get("type")
-            if type_str is None:
-                # Skip malformed entries rather than raising — the same raw dict
-                # is passed to _to_rust_job_parameter_values moments later, so a
-                # genuinely invalid value still fails at Rust session construction
-                # with the session's own clear error. This matches the sibling
-                # helper's convention of deferring dict validation to the Rust session.
-                continue
-        else:
-            type_str = value.type.value
-        definitions.append({"name": name, "type": type_str})
-    return definitions
-
-
 def _to_rust_path_mapping_rule(rule: PathMappingRule) -> RustPathMappingRule:
     """Convert one worker (v0) PathMappingRule into the _v1 (openjd.expr) type.
 
@@ -269,17 +232,6 @@ def _to_rust_model_extensions(
     return extensions, converted_names
 
 
-def _let_binding_name(declaration: str) -> str:
-    """Return the binding name of an openjd ``let`` declaration string.
-
-    The name is the left-hand side of the first ``=`` (assignment separator),
-    stripped of surrounding whitespace. Comparison/equality operators inside the
-    expression sit to the right of that first ``=`` and so never affect the
-    parsed name.
-    """
-    return declaration.split("=", 1)[0].strip()
-
-
 def _parse_resolved_symtab(json_str: str | None) -> Any:
     """Parse a resolved symbol table JSON string into a SerializedSymbolTable.
 
@@ -308,9 +260,7 @@ class RustSessionRuntime(SessionRuntime):
 
     _session: OpenJDRustSession
     _user: Optional[SessionUser]
-    _environment_parameter_definitions: list[dict[str, str]]
     _supported_extensions: tuple[str, ...]
-    _decode_extensions: tuple[str, ...]
 
     def __init__(self, config: SessionRuntimeConfig) -> None:
         try:
@@ -334,24 +284,10 @@ class RustSessionRuntime(SessionRuntime):
         )
         self._supported_extensions: tuple[str, ...] = tuple(supported_extension_names)
 
-        # The decode-scoped extensions are the Rust-convertible subset of the
-        # full runtime capability ceiling. These drive template re-decode only;
-        # job-level narrowing applies to ModelProfile (above), not decode
-        # acceptance.
-        _, decode_names = _to_rust_model_extensions(list(RUNTIME_CAPABILITY_EXTENSIONS))
-        self._decode_extensions: tuple[str, ...] = tuple(decode_names)
-
         # Kept for the attachment-sync path: on POSIX it grants the files it
         # writes group-read access for the session user's group, so the job
         # (which runs as that user) can read them.
         self._user = config.user
-
-        # Job parameter values are fixed for the session's lifetime, so the
-        # declarations are synthesized once here. See
-        # _to_environment_parameter_definitions for why they are needed at all.
-        self._environment_parameter_definitions = _to_environment_parameter_definitions(
-            config.job_parameter_values
-        )
 
         # The _v1 session reports status with _v1 ActionStatus/ActionState, but
         # the worker's callback expects the v0 types, so translate on the way out.
@@ -383,76 +319,33 @@ class RustSessionRuntime(SessionRuntime):
         step_name: str | None = None,
         step_let_declarations: list[str] | None = None,
     ) -> EnvironmentIdentifier:
+        # step_let_declarations is intentionally accepted-and-ignored: the
+        # job-side deserializer below does not perform template-scope reference
+        # validation, so an environment referencing its declaring step's
+        # template-scope `let` names deserializes without the declarations being
+        # re-injected. Step-scope `let` values reach the session through
+        # resolved_symtab instead. The parameter exists only to keep the runtime
+        # interface uniform with the Python adapter.
+        #
         # The shared action layer hands a pydantic v2023_09 environment, but the
-        # Rust session needs a native _v1 environment. Serialize to the OpenJD
-        # wire shape and rebuild it natively. exclude_none=True is required, not
-        # cosmetic: the Rust decoder rejects explicit nulls (OpenJD treats
-        # absent and null as equivalent).
-        template: dict[str, Any] = {
-            "specificationVersion": "environment-2023-09",
-            "environment": environment.model_dump(mode="json", by_alias=True, exclude_none=True),
-        }
-        # The job's parameter declarations must accompany the environment or its
-        # {{Param.X}} references cannot resolve. The key is omitted entirely when
-        # empty, because the schema rejects "parameterDefinitions": [].
-        if self._environment_parameter_definitions:
-            template["parameterDefinitions"] = self._environment_parameter_definitions
-        if self._decode_extensions:
-            template["extensions"] = list(self._decode_extensions)
-        # A step-scoped environment can reference its declaring step's
-        # template-scope `let` names in its own variables/script. Lifting the
-        # environment into this standalone document strips that enclosing scope,
-        # so the decode below would reject those references. Restore the
-        # declarations onto the environment's script `let` so they resolve.
-        if step_let_declarations:
-            env_dict = template["environment"]
-            script = env_dict.get("script")
-            # Only a script that has `actions` can legally carry `let`; decode
-            # rejects a script without actions ("missing field actions"), so a
-            # script-less environment must be left untouched -- injecting would
-            # turn a currently-decodable document into a failing one. Such an
-            # environment that references step-scope `let` remains a known
-            # upstream decode limitation.
-            if isinstance(script, dict) and script.get("actions"):
-                # Skip any declaration whose expression references Step.Name: it
-                # is illegal in an environment script's `let` scope and decode
-                # rejects the whole binding ("Invalid expression in let
-                # binding"). A substring check suffices -- a false positive
-                # merely omits that binding, which reproduces today's
-                # unresolved-reference failure for it, no worse than the current
-                # behavior.
-                safe_declarations = [
-                    declaration
-                    for declaration in step_let_declarations
-                    if "Step.Name" not in declaration
-                ]
-                existing_let = script.get("let") or []
-                # The environment's own `let` names take precedence over the
-                # step's: decode rejects two bindings sharing a name in one list
-                # ("duplicate name"), and the environment's declaration is the
-                # inner scope, so any step declaration whose name the
-                # environment already declares is dropped rather than merged.
-                env_let_names = {_let_binding_name(declaration) for declaration in existing_let}
-                # Step declarations are prepended so template-scope names
-                # precede the environment's own bindings; those the environment
-                # shadows are skipped in the comprehension below to avoid a
-                # duplicate-name decode
-                # failure, leaving the environment's own declaration in effect.
-                script["let"] = [
-                    declaration
-                    for declaration in safe_declarations
-                    if _let_binding_name(declaration) not in env_let_names
-                ] + existing_let
-        # The environment was already validated against its own entity-level
-        # extension declaration; this decode only reconstructs the native
-        # representation. Job-level narrowing applies to runtime capability
-        # (ModelProfile), not to decode acceptance.
-        native_environment = create_environment(
-            decode_environment_template(
-                template,
-                supported_extensions=list(self._decode_extensions) or None,
-            )
-        )
+        # Rust session needs a native _v1 environment. Wrap the dumped
+        # environment as the sole entry of a synthetic step's stepEnvironments
+        # and take the deserialized Environment back. deserialize_step is the
+        # job-side deserializer (the same one run_task uses with a "Placeholder"
+        # wrapper); unlike decode_environment_template it does not reject
+        # references to names that are resolved later from resolved_symtab, which
+        # is what lets a variables-only environment referencing step-scope `let`
+        # enter. exclude_none=True is required, not cosmetic: the Rust decoder
+        # rejects explicit nulls (OpenJD treats absent and null as equivalent).
+        native_environment = deserialize_step(
+            {
+                "name": "Placeholder",
+                "script": {"actions": {"onRun": {"command": "true"}}},
+                "stepEnvironments": [
+                    environment.model_dump(mode="json", by_alias=True, exclude_none=True)
+                ],
+            }
+        ).step_environments[0]
 
         # Parse the pre-resolved symbol table if the service provided one.
         resolved_symtab = _parse_resolved_symtab(resolved_symbol_table_json)
