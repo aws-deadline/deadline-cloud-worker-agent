@@ -14,18 +14,17 @@
 # "the wrong script ran" is visible in the first line of the log rather than inferred.
 #
 # WHERE TO READ THE RESULT: not the GitHub Actions log. The reusable workflow passes
-# hide-cloudwatch-logs: true (aws-deadline/.github reusable_e2e_test.yml:54), and it takes no input
-# to override it, so GitHub shows only a red X for both outcomes. The OK/DENIED lines and the stderr
-# that names the reason are in CloudWatch for CodeBuild project
-# deadline-cloud-worker-agent-mainline-macos-e2e. Exit 1 = denied or unproven, exit 2 = all present
-# but no tests ran, exit 3 = stale records from an earlier run so nothing was probed; the exit status
-# is in the failed phase's context there too.
+# hide-cloudwatch-logs: true (aws-deadline/.github reusable_e2e_test.yml:54) and takes no input to
+# override it, so GitHub shows only pass or fail. Test output, including which tests failed and the
+# agent's own logs, is in CloudWatch for CodeBuild project
+# deadline-cloud-worker-agent-mainline-macos-e2e.
 #
-# The agent installs onto this same host via LocalMacWorker, from deadline-cloud-test-fixtures
-# 0.18.21 -- it configures the agent on the host running the tests instead of provisioning one,
-# which is why this script needs no SSM and no second instance. That fixture's own requirements
-# are what this probe checks: passwordless sudo for creating accounts, writing /etc/sudoers.d,
-# and bootstrapping a LaunchDaemon.
+# The agent installs onto this same host via LocalMacWorker, from deadline-cloud-test-fixtures --
+# it configures the agent on the host running the tests instead of provisioning one, which is why
+# this needs no SSM and no second instance. A capability probe on this fleet confirmed everything
+# that worker requires is permitted here: passwordless sudo, a hidden sub-500 account via dscl,
+# dseditgroup GID allocation, an /etc/sudoers.d rule, and a LaunchDaemon bootstrapped and running
+# as that account.
 set -euo pipefail
 
 # This script creates a local account and group, writes a file in /etc/sudoers.d, and
@@ -38,667 +37,78 @@ if [ -z "${CODEBUILD_BUILD_ID:-}" ] && [ -z "${E2E_MACOS_ALLOW_LOCAL:-}" ]; then
     exit 1
 fi
 
-PROBE_USER=e2eprobeuser
-PROBE_GROUP=e2eprobegroup
-# Second group: the installer's job group is created by `dseditgroup -o create`, and `-o create`
-# on a record that already exists is a different result, so it cannot reuse PROBE_GROUP.
-PROBE_JOB_GROUP=e2eprobejobgroup
-PROBE_LABEL=com.amazon.deadline.e2eprobe
-# Probe-named directories under the system parents the installer provisions into. NOT the
-# installer's own paths: creating /var/lib/deadline here would plant state the leftovers survey
-# reports as residue, and those paths belong to the real install.
-PROBE_DIR_NAME=e2eprobe.d
-# /opt included: LocalMacWorker installs the agent venv into /opt/deadline/worker, and creating
-# a directory under /opt is a different permission surface from writing under an existing system
-# directory -- on a stock image /opt may not exist at all, making it a write under /.
-PROBE_SYSTEM_PARENTS="/var/log /var/lib /etc /opt"
-PROBE_SUDOERS=/etc/sudoers.d/deadline-e2eprobe
+# The real agent's state, not a probe's. LocalMacWorker installs onto this host and its
+# _reset_host_state only removes worker.toml and worker.json inside a run, so on reserved capacity
+# every other artefact outlives the build.
+AGENT_LAUNCHD_LABEL=com.amazon.deadline.worker-agent
+AGENT_WORKER_JSON=/var/lib/deadline/worker.json
+AGENT_WORKER_TOML=/etc/amazon/deadline/worker.toml
 
-# Removes everything this script creates. Idempotent -- every step tolerates absence -- so it
-# is safe to run at startup as well as on exit.
+# Reset only what poisons the next build: a daemon still loaded from a previous run, and the
+# config and worker id it registered with. The account, group and /opt/deadline venv are
+# deliberately left -- the installer is idempotent over them and reusing them saves minutes.
 #
-# The fleet is reserved capacity, so one Mac host serves every build and state survives between
-# runs. A leaked account, group or sudoers file is permanent rather than a per-build annoyance,
-# and a stray file in /etc/sudoers.d can break sudo host-wide, taking the fleet out for every
-# later build.
-cleanup() {
-    sudo -n rm -f "${PROBE_SUDOERS}" >/dev/null 2>&1 || true
-    sudo -n launchctl bootout "system/${PROBE_LABEL}" >/dev/null 2>&1 || true
-    # No `launchctl disable` here. enable/disable write opposite entries into the same persistent
-    # override database and there is no verb that removes an entry, so disabling would leave a
-    # permanent "disabled" record -- more residue than the "enabled" one the probe's own `enable`
-    # leaves, which is already equivalent to the no-entry default. It would also be actively
-    # harmful if the probe order ever changed: a startup `disable` ahead of a `bootstrap` with no
-    # intervening `enable` would make bootstrap fail and be reported as blocking the suite.
-    sudo -n rm -f "/Library/LaunchDaemons/${PROBE_LABEL}.plist" >/dev/null 2>&1 || true
-    # dscl, not sysadminctl -deleteUser: the records below are created with dscl, and
-    # sysadminctl will not reliably remove a dscl-created record.
-    sudo -n dscl . -delete "/Users/${PROBE_USER}" >/dev/null 2>&1 || true
-    sudo -n dscl . -delete "/Groups/${PROBE_GROUP}" >/dev/null 2>&1 || true
-    # dscl -delete rather than `dseditgroup -o delete` for the same reason as above, even though
-    # this record is created by dseditgroup.
-    sudo -n dscl . -delete "/Groups/${PROBE_JOB_GROUP}" >/dev/null 2>&1 || true
-    for parent in ${PROBE_SYSTEM_PARENTS}; do
-        sudo -n rm -rf "${parent}/${PROBE_DIR_NAME}" >/dev/null 2>&1 || true
-    done
-    # Parents this run created, and only while still empty. rmdir rather than rm -rf deliberately:
-    # if anything else populated one in the meantime it is no longer ours to remove.
-    for parent in ${PROBE_CREATED_PARENTS:-}; do
-        sudo -n rmdir "${parent}" >/dev/null 2>&1 || true
-    done
-    # :- because cleanup runs once before PROBE_DIR is assigned, and set -u would abort there.
-    rm -rf "${PROBE_DIR:-}" >/dev/null 2>&1 || true
+# Best effort throughout. A host with none of this present is the normal case, and a refusal here
+# must not fail a build before the suite has had a chance to report anything.
+reset_agent_state() {
+    sudo -n launchctl bootout "system/${AGENT_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+    sudo -n rm -f "${AGENT_WORKER_JSON}" >/dev/null 2>&1 || true
+    sudo -n rm -f "${AGENT_WORKER_TOML}" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
 
-# Run once up front so each build is self-healing. bash does run the EXIT trap when it takes a
-# SIGTERM, so an ordinary cancel or timeout is covered, but a SIGKILL is not -- and on a host
-# that persists, one killed build would otherwise leave its artefacts for every later run.
-cleanup
-
-# After the startup cleanup, not before: cleanup removes PROBE_DIR, so creating it first left
-# every run with no directory to write the plist into, aborting the script before the launchctl
-# probes -- with the same exit 1 a completed run gives, so it looked like it had tested them.
-PROBE_DIR="$(mktemp -d)"
-
-echo "=== pipeline/e2e-macos.sh: capability probe, NO TESTS ==="
+echo "=== pipeline/e2e-macos.sh: macOS E2E suite ==="
 echo "=== host ==="
 sw_vers
 uname -m
 id
 
-# Ahead of the stale-record check below, because exit 3 is the outcome that asks the reader to go
-# diagnose the host -- and it would otherwise be the only one with no OS version, no architecture
-# and no `id`, which is what shows whether the build is even running as root.
-# Every step in cleanup is `|| true` and a `sudo -n` refusal there is silent, so a predecessor's
-# records can survive it. The probes then run against pre-existing state -- `dseditgroup -o create`
-# on an existing group in particular reports a different result -- so report it rather than assume
-# a clean slate. dscl records only: /etc/sudoers.d is not readable unprivileged, and the launchd
-# plist is covered by the survey below.
-STALE=""
-for record in "/Users/${PROBE_USER}" "/Groups/${PROBE_GROUP}" "/Groups/${PROBE_JOB_GROUP}"; do
-    # Polled for absence, like the launchd check below. opendirectoryd publishes a deletion
-    # asynchronously for the same reason it publishes a creation asynchronously -- which is why the
-    # `user resolves` probe polls 10 times for a record to appear -- and the startup cleanup issued
-    # `dscl . -delete` moments ago. Reading once would report a delete that worked but has not yet
-    # landed, and send the maintainer to run by hand the command that had already run.
-    for _ in $(seq 1 10); do
-        dscl . -read "${record}" >/dev/null 2>&1 || break
-        sleep 1
-    done
-    if dscl . -read "${record}" >/dev/null 2>&1; then
-        STALE="${STALE} ${record}"
-    fi
-done
-# The launchd job too, which the dscl loop cannot see. A job that survived the startup bootout makes
-# every bootstrap attempt fail with "service already loaded", and the probe would report that as
-# DENIED -- blaming launchd policy on a host where the install works, since install_macos.sh:869
-# treats exactly this case as the already-loaded race and kickstarts through it. Unlike the
-# installer, a probe cannot carry on: bootstrap would never have been tested from a clean slate, so
-# the honest answer is that nothing was probed. A sudo refusal here just yields no match, which the
-# first required check reports properly.
-# Polled, because the bootout the startup cleanup just issued is asynchronous -- the same fact this
-# file cites below to justify retrying bootstrap ten times. Observing the job once, a fraction of a
-# second after asking for the unload, would report the pre-cleanup world as permanent host state and
-# tell the maintainer by hand to run the very command that had already run and was working. Only a
-# job still loaded after the unload has had time to complete is the wedged instance this catches.
+# Before the suite, not after: a build killed mid-run cannot clean up after itself, so the next
+# build has to assume it inherited a loaded daemon and a stale worker id.
+echo "=== resetting agent state left by any previous build ==="
+reset_agent_state
+
+# bootout is asynchronous, so give it time to land rather than racing the install below. Only a job
+# still loaded after that is wedged, and the installer's own bootstrap retry handles the rest.
 for _ in $(seq 1 10); do
-    sudo -n launchctl print "system/${PROBE_LABEL}" >/dev/null 2>&1 || break
+    sudo -n launchctl print "system/${AGENT_LAUNCHD_LABEL}" >/dev/null 2>&1 || break
     sleep 1
 done
-if sudo -n launchctl print "system/${PROBE_LABEL}" >/dev/null 2>&1; then
-    STALE="${STALE} system/${PROBE_LABEL}(loaded)"
-fi
-# Terminal, not a warning. A suspect run would otherwise exit 2 ("all capabilities available") on
-# stderr nobody sees, and stale state actively inverts a required probe: `dseditgroup -o create`
-# against a surviving PROBE_JOB_GROUP fails on the existing record, so the build would exit 1
-# blaming host policy for a capability that was never refused. Its own code keeps the three
-# outcomes distinguishable by status alone.
-if [ -n "${STALE}" ]; then
-    echo "exit 3: startup cleanup left:${STALE}" >&2
-    echo "        Probes would run against pre-existing records and could report a capability as" >&2
-    echo "        denied that was never refused, so nothing is probed. Remove the dscl records with" >&2
-    echo "        \`dscl . -delete\`, unload a loaded job with \`launchctl bootout\`, or find out why" >&2
-    echo "        sudo -n is refused on this host, then dispatch again." >&2
-    exit 3
+if sudo -n launchctl print "system/${AGENT_LAUNCHD_LABEL}" >/dev/null 2>&1; then
+    echo "WARNING: ${AGENT_LAUNCHD_LABEL} is still loaded after bootout. The install will try to" >&2
+    echo "         reload it and may fail; if it does, that is host state, not this commit." >&2
 fi
 
-# ---------------------------------------------------------------------------------------
-# Capability probe.
+# The suite, replacing the capability probe that used to live here. A build on this fleet
+# confirmed everything LocalMacWorker's docstring requires is permitted: passwordless sudo, a
+# hidden sub-500 account via dscl, dseditgroup GID allocation, an /etc/sudoers.d rule, and a
+# LaunchDaemon bootstrapped and running as that account.
 #
-# This is the whole script for now, and it runs no tests. The installer creates a hidden
-# system account and group, writes a sudoers rule, and enables and bootstraps a LaunchDaemon;
-# whether a CodeBuild macOS build is permitted to do those is unverified, and it decides
-# whether the suite can run here at all. Answering it in two minutes beats inferring it from a
-# 180-minute failure whose cause is ambiguous.
-#
-# Every check mirrors what install_macos.sh actually does, not an equivalent-looking
-# alternative -- a probe that passes on a mechanism the installer does not use has cost a build
-# and answered nothing.
-#
-# Scope of an exit 2: the installer's privileged operations -- the account and groups, the sudoers
-# rule, the LaunchDaemon, and directory provisioning. Deliberately NOT covered are the things the
-# installer's own OPERATOR NOTES (install_macos.sh:910) call environment-dependent and not verifiable
-# from a build: TCC/Full Disk Access and Gatekeeper quarantine. Those can still block a real agent on
-# this fleet, so exit 2 means "the install's privileged steps are permitted", not "the suite will
-# pass".
-#
-# TO RUN THE REAL SUITE: delete from BEGIN PROBE to END PROBE below -- both markers inclusive,
-# and END PROBE is past the exit-status block, not above it -- then replace with the bootstrap
-# e2e.sh uses, adapted for a native macOS host. Mirror its TEST_TYPE block, do not shorten it to
-# the pip/hatch lines: the reusable workflow sets TEST_TYPE=WHEEL, and with WORKER_AGENT_WHL_PATH
-# unset the harness installs the *published* worker agent instead of this commit -- a green run
-# that exercised nothing, and one a probe-only build cannot detect:
-#
-#   cd "$(dirname "$0")/.."     # hatch build and the relative dist/ path both need the checkout
-#   pip3 install --upgrade pip
-#   pip3 install --upgrade hatch "virtualenv<21"
-#   if [ "${TEST_TYPE:-}" = WHEEL ]; then
-#       hatch build
-#       hatch env create
-#       export WORKER_AGENT_WHL_PATH=dist/$(hatch run metadata name | sed 's/-/_/g')-$(hatch run version)-py3-none-any.whl
-#   fi
-#   hatch run e2e:test
-#
-# Cutting at the "PROBE COMPLETE" banner instead would keep the trailing `if` while deleting the
-# REQUIRED_FAILURES it reads: under set -u that aborts *after* the suite has run, turning a green
-# 180-minute suite into a failed build.
-# ------------------------------- BEGIN PROBE -------------------------------------------
+# The cleanup and stale-state machinery above is kept, not probe leftovers. LocalMacWorker installs
+# onto this host and its _reset_host_state only removes worker.toml and worker.json, so on reserved
+# capacity every artefact it leaves outlives the build.
+cd "$(dirname "$0")/.."
 
-REQUIRED_FAILURES=0
-# Counted separately from denials: a section that never ran is not evidence the host refuses it, but
-# it is equally not the "all required capabilities available" that exit 2 asserts. Reporting them
-# apart keeps "denied" and "unproven" from being conflated in the one number a maintainer reads.
-UNPROVEN=0
-skip_required() {
-    echo "SKIPPED: ${1} -- not probed because ${2}."
-    UNPROVEN=$((UNPROVEN + 1))
-}
+pip3 install --upgrade pip
+pip3 install --upgrade hatch "virtualenv<21"
 
-# Reports a check and records whether a required one failed, so the build's exit status carries
-# the answer rather than leaving it to a human reading the log. Prints stderr on failure: for
-# the sudo checks the reason *is* the answer -- "no tty present and no askpass program", "a
-# password is required" and an SIP/TCC denial are different problems with different fixes, and
-# on a single reserved host re-running to get the detail costs another build.
-#
-# Always returns 0. As an `if`/`&&` tail its status would become the function's, and under
-# `set -e` a check failing with no stderr would abort before the later probes -- which are the
-# ones that answer whether the suite can work at all.
-# PROBE_LAST_OK carries the most recent check's outcome, so a later decision can be driven by the
-# recorded verdict instead of re-running its own lookup and drifting from it.
-PROBE_LAST_OK=0
-probe() {
-    local required="$1" label="$2" out
-    shift 2
-    printf '%-48s' "${label}"
-    if out="$("$@" 2>&1 >/dev/null)"; then
-        PROBE_LAST_OK=1
-        echo "OK"
-    else
-        PROBE_LAST_OK=0
-        if [ "${required}" = required ]; then
-            echo "DENIED  <-- blocks the suite"
-            REQUIRED_FAILURES=$((REQUIRED_FAILURES + 1))
-        else
-            echo "denied (informational)"
-        fi
-        if [ -n "${out}" ]; then
-            printf '%s\n' "${out}" | head -3 | sed 's/^/    /'
-        fi
+# Mirrors e2e.sh rather than shortening to `hatch run e2e:test`. The reusable workflow sets
+# TEST_TYPE=WHEEL, and with WORKER_AGENT_WHL_PATH unset conftest installs the PUBLISHED agent
+# instead of this commit -- a green run that exercised nothing.
+if [ "${TEST_TYPE:-}" = WHEEL ]; then
+    hatch build
+    hatch env create
+    WHL_NAME="$(hatch run metadata name | sed 's/-/_/g')"
+    WHL_VERSION="$(hatch run version)"
+    export WORKER_AGENT_WHL_PATH="dist/${WHL_NAME}-${WHL_VERSION}-py3-none-any.whl"
+    echo "WORKER_AGENT_WHL_PATH=${WORKER_AGENT_WHL_PATH}"
+    # Asserted, because the fallback is silent: a glob that resolves to nothing leaves conftest
+    # installing the release and the run proves nothing about this commit.
+    if [ ! -f "${WORKER_AGENT_WHL_PATH}" ]; then
+        echo "built wheel not found at ${WORKER_AGENT_WHL_PATH}; refusing to test the published" >&2
+        echo "agent instead of this commit. dist/ holds:" >&2
+        ls -1 dist/ >&2 || true
+        exit 1
     fi
-    return 0
-}
-
-echo "=== sudo and the tools the installer calls ==="
-# The tool checks first, because they need no sudo and stay meaningful even if sudo is refused.
-probe required "dscl present"                   command -v dscl
-probe required "dseditgroup present"            command -v dseditgroup
-probe required "visudo present"                 command -v visudo
-
-# Everything past this point runs under `sudo -n`, so a refusal here is not one denial among many:
-# it is the reason every later check would fail. Reporting them all would put ~15 DENIED lines and
-# "15 required check(s) DENIED" in front of a maintainer whose actual fix is one line of sudoers
-# config, and would spend ~45s of this script's retry loops polling for state a refused sudo
-# guarantees never appears. The startup cleanup was silently a no-op for the same reason, so the
-# self-healing property is gone on this path too.
-probe required "sudo, non-interactive"          sudo -n true
-if [ "${PROBE_LAST_OK}" -ne 1 ]; then
-    echo "exit 1: passwordless sudo is refused, so nothing below it could be probed." >&2
-    echo "        Every remaining check runs under \`sudo -n\`: creating the account and groups," >&2
-    echo "        writing /etc/sudoers.d, provisioning directories, and bootstrapping the" >&2
-    echo "        LaunchDaemon. Grant the build passwordless sudo and dispatch again. The reason" >&2
-    echo "        sudo gave is on the DENIED line above." >&2
-    exit 1
 fi
 
-probe required "read /Library/LaunchDaemons"    sudo -n ls /Library/LaunchDaemons
-probe required "launchctl print system"         sudo -n launchctl print system
-
-# install_macos.sh:480 records a DESIGN CHOICE to use dscl rather than `sysadminctl -addUser`,
-# because sysadminctl auto-assigns a UID >= 501 and cannot force a hidden sub-500 system UID.
-# So the permission surface that matters is writing attributes into the local Directory
-# Services node -- especially UniqueID below 500 -- and not sysadminctl at all.
-#
-# Mirrors find_unused_system_id (install_macos.sh:192): the union of both namespaces, searched
-# downward from 499, once per principal so the group and the user get distinct ids. A hardcoded
-# number would be a shared id the installer goes out of its way not to create, and could already
-# be taken on the CodeBuild image -- dscl does not enforce uniqueness, so `id` could then resolve
-# to the other record and report DENIED on a host that is actually fine. On a one-host reserved
-# fleet each answer costs a build, so a false negative is expensive. Exercising the search also
-# means a host with [200,500) exhausted shows up now rather than mid-install.
-find_unused_system_id() {
-    local used candidate exclude="${1:-}"
-    used=$( { dscl . -list /Users UniqueID; dscl . -list /Groups PrimaryGroupID; } 2>/dev/null \
-        | awk 'NF>1 {print $NF}' | sort -n -u)
-    for candidate in $(seq 499 -1 200); do
-        [ "${candidate}" = "${exclude}" ] && continue
-        if ! grep -qx "${candidate}" <<< "${used}"; then
-            echo "${candidate}"
-            return 0
-        fi
-    done
-    return 1
-}
-
-echo "=== create the hidden system account the way the installer does (dscl) ==="
-# Explicit exclude rather than relying on the group write landing first: if that probe is denied
-# the second search would otherwise hand back the same id.
-PROBE_GID=""
-PROBE_UID=""
-# Initialised here, not only inside the block below: on the skip path it is never assigned there, and
-# `set -u` would abort at the launchd guard rather than reporting the section as unproven.
-ACCOUNT_READY=0
-printf '%-48s' "find two unused system ids < 500"
-if PROBE_GID="$(find_unused_system_id)" && PROBE_UID="$(find_unused_system_id "${PROBE_GID}")"; then
-    echo "OK (gid=${PROBE_GID} uid=${PROBE_UID})"
-else
-    echo "DENIED  <-- blocks the suite"
-    echo "    no free id in [200,500); the installer's own search would fail here too"
-    REQUIRED_FAILURES=$((REQUIRED_FAILURES + 1))
-fi
-
-if [ -n "${PROBE_GID}" ] && [ -n "${PROBE_UID}" ]; then
-probe required "dscl create group"              sudo -n dscl . -create "/Groups/${PROBE_GROUP}"
-probe required "dscl set group PrimaryGroupID"  sudo -n dscl . -create "/Groups/${PROBE_GROUP}" PrimaryGroupID "${PROBE_GID}"
-probe required "dscl create user"               sudo -n dscl . -create "/Users/${PROBE_USER}"
-probe required "dscl set UniqueID below 500"    sudo -n dscl . -create "/Users/${PROBE_USER}" UniqueID "${PROBE_UID}"
-probe required "dscl set PrimaryGroupID"        sudo -n dscl . -create "/Users/${PROBE_USER}" PrimaryGroupID "${PROBE_GID}"
-probe required "dscl set NFSHomeDirectory"      sudo -n dscl . -create "/Users/${PROBE_USER}" NFSHomeDirectory /var/empty
-probe required "dscl set UserShell"             sudo -n dscl . -create "/Users/${PROBE_USER}" UserShell /usr/bin/false
-probe required "dscl set IsHidden"              sudo -n dscl . -create "/Users/${PROBE_USER}" IsHidden 1
-probe required "dscl set Password '*'"          sudo -n dscl . -create "/Users/${PROBE_USER}" Password '*'
-# Polled, not read once. opendirectoryd publishes a dscl-created record asynchronously, and a
-# transient miss here is the one failure that cascades: ACCOUNT_READY=0 skips job-group
-# membership, directory provisioning, the sudoers rule and the whole LaunchDaemon sequence, so a
-# healthy host would report one denial and four unproven sections. Same shape as the bootstrap
-# retry below, ending in an unguarded call so the real error reaches probe's stderr.
-probe required "user resolves" bash -c '
-    for _ in $(seq 1 10); do
-        id "$1" >/dev/null 2>&1 && exit 0
-        sleep 1
-    done
-    id "$1"' _ "${PROBE_USER}"
-# From the recorded verdict rather than a lookup of its own, so the gate cannot disagree with the
-# check that was reported -- including its retries, and if that check is ever narrowed (asserting
-# the UID is below 500, say, which is the property the installer depends on).
-ACCOUNT_READY="${PROBE_LAST_OK}"
-# Informational, not required: the installer never runs `dseditgroup -o edit -a` against the user's
-# dedicated primary group -- membership there is implicit via PrimaryGroupID (install_macos.sh:510).
-# Kept because this record is a bare `dscl . -create` and so lacks the GeneratedUID that
-# dseditgroup writes on create, making it the harder case; but a refusal here must not block the
-# suite, since nothing in the install depends on it.
-probe optional "dseditgroup add to primary group" sudo -n dseditgroup -o edit -a "${PROBE_USER}" -t user "${PROBE_GROUP}"
-else
-    # Counted, not silent: skipping the block would otherwise leave the id-search failure as the
-    # only increment, so the log would read "1 denied" for a host where a dozen capabilities were
-    # never exercised, and the skip messages below would point at a DENIED line never printed.
-    skip_required "the dscl account sequence" "no free system id was available"
-fi
-
-# The job group is the one group the installer does NOT create with dscl: install_macos.sh:577
-# uses `dseditgroup -o create`, and line 574 notes it "allocates a system GID and creates the
-# group record". Allocating a GID goes through the Directory Services allocation path rather than
-# writing a caller-chosen attribute, so it can be permitted or refused independently of the dscl
-# writes above -- and `-o edit -a` only proves membership can be added to a group that exists.
-# A false OK here fails the install at job-group creation 100+ minutes into a build.
-probe required "dseditgroup -o create group"    sudo -n dseditgroup -o create "${PROBE_JOB_GROUP}"
-JOB_GROUP_READY="${PROBE_LAST_OK}"
-
-# The installer's only `-o edit -a` is at install_macos.sh:596 and targets the JOB group, guarded by
-# the `-o checkmember` at :594. That is the pairing to mirror: adding a member to a GID-allocated
-# dseditgroup record is not the same operation as adding one to a hand-written dscl record, and it
-# is the step immediately after the group creation above -- so an OK there followed by a membership
-# failure is exactly the 100+ minute install failure this section exists to rule out. checkmember
-# is probed too because it is the installer's idempotence guard, and because it is the only thing
-# that confirms the add actually took rather than merely exiting zero.
-#
-# Gated on the create above as well as the account: adding a member to a group that was never
-# created fails because the group is missing, not because member addition is refused, and counting
-# that as two more denials would read as a Directory Services policy against membership when the
-# host refused exactly one thing.
-if [ "${ACCOUNT_READY}" -eq 1 ] && [ "${JOB_GROUP_READY}" -eq 1 ]; then
-probe required "dseditgroup add user to job group" \
-    sudo -n dseditgroup -o edit -a "${PROBE_USER}" -t user "${PROBE_JOB_GROUP}"
-probe required "dseditgroup -o checkmember" \
-    sudo -n dseditgroup -o checkmember -m "${PROBE_USER}" "${PROBE_JOB_GROUP}"
-elif [ "${ACCOUNT_READY}" -eq 1 ]; then
-    skip_required "job group membership" "the job group could not be created"
-else
-    skip_required "job group membership" "the probe account does not exist"
-fi
-
-# install_macos.sh:630-679 provisions /var/log/amazon/deadline, /var/lib/deadline/{queues,
-# credentials}, the session root and /etc/amazon/deadline. Each is a `mkdir -p` plus a `chown` to the
-# sub-500 account under a top-level system directory, and none of it was probed -- so a host that
-# permits the Directory Services and launchd writes but refuses a chown under /var/log would exit 2
-# as "all required capabilities available" and then fail the real install at log provisioning, which
-# is the ambiguous 100+ minute failure this file exists to pre-empt.
-#
-# Gated on ACCOUNT_READY because the chown target is the probe account: without it this would report
-# a DENIED whose cause is the probe's own missing user.
-echo "=== provision directories under the parents the installer writes to ==="
-# Recorded before anything is created, because `mkdir -p` below creates the parent too when it is
-# absent -- and /var/lib is not a stock macOS directory (the installer is what brings it into
-# existence), nor necessarily is /opt. Leaving a parent behind would both break cleanup's contract
-# and silently weaken the probe: the first build would answer "can this host create a directory
-# under /?" and every build after it the strictly easier "can it write inside an existing parent?",
-# with nothing in the log to say so.
-PROBE_CREATED_PARENTS=""
-for parent in ${PROBE_SYSTEM_PARENTS}; do
-    [ -d "${parent}" ] || PROBE_CREATED_PARENTS="${PROBE_CREATED_PARENTS} ${parent}"
-done
-if [ -n "${PROBE_CREATED_PARENTS}" ]; then
-    echo "    absent before this run, so cleanup will remove them if still empty:${PROBE_CREATED_PARENTS}"
-fi
-if [ "${ACCOUNT_READY}" -eq 1 ]; then
-    for parent in ${PROBE_SYSTEM_PARENTS}; do
-        probe required "mkdir+chown+chmod under ${parent}" sudo -n bash -c '
-            set -e
-            d="'"${parent}"'/'"${PROBE_DIR_NAME}"'"
-            mkdir -p "${d}/nested"
-            chown -R "'"${PROBE_USER}"':'"${PROBE_GROUP}"'" "${d}"
-            chmod -R 750 "${d}"
-            chmod 700 "${d}/nested"'
-    done
-else
-    skip_required "directory provisioning" "the probe account does not exist, so the chown cannot be exercised"
-fi
-
-# install_macos.sh writes /etc/sudoers.d/deadline-worker-shutdown through install_sudoers_file
-# (:228): mktemp, chmod 440, `visudo -cf` to validate, then an atomic mv, chown root:wheel, chmod
-# 440. Mirrored here so a refusal shows up now rather than mid-install. Named for the probe, and
-# removed by cleanup, so it can never be confused with the real rule.
-#
-# The rule names PROBE_USER, not root, because the installer's rule names the agent account
-# (install_macos.sh:614). root is the one user guaranteed to resolve, so validating it would skip the
-# property that can actually differ here: whether `visudo -cf` accepts a rule naming a freshly
-# created hidden sub-500 account, which depends on the sudo build and on how quickly Directory
-# Services publishes a dscl-created record. That makes the check depend on the account, hence the
-# ACCOUNT_READY gate.
-#
-# `mkdir -p /etc/sudoers.d` first, as the installer does at :612: without it a host lacking the
-# directory would report DENIED for a reason that is the probe's own rather than a host refusal.
-echo "=== write and validate a file in /etc/sudoers.d ==="
-if [ "${ACCOUNT_READY}" -eq 1 ]; then
-probe required "mkdir + visudo -cf + atomic mv" sudo -n bash -c '
-    set -e
-    mkdir -p /etc/sudoers.d
-    t="$(mktemp)"
-    printf "%s\n%s\n" "# Allow '"${PROBE_USER}"' user to shutdown the system" \
-        "'"${PROBE_USER}"' ALL=(root) NOPASSWD: /sbin/shutdown -h now" > "$t"
-    chmod 440 "$t"
-    visudo -cf "$t" >/dev/null
-    mv "$t" '"${PROBE_SUDOERS}"'
-    chown root:wheel '"${PROBE_SUDOERS}"'
-    chmod 440 '"${PROBE_SUDOERS}"
-else
-    skip_required "the sudoers rule" "the probe account does not exist, and the rule names it"
-fi
-
-# The plist is written inside mktemp -d: 0700 and unpredictable. A fixed path under /tmp would
-# be a root-escalation primitive here, because /tmp is world-writable and the host persists
-# between builds -- any local process could pre-plant a symlink or rewrite the file between the
-# write and the `sudo cp`, and the content would then be bootstrapped as root.
-#
-# `launchctl enable` is probed separately: install_macos.sh:848 runs it unconditionally on every
-# install, ahead of the bootstrap that is gated on --start, and it mutates the persistent
-# launchd override database, so it can be refused independently.
-#
-# UserName and WorkingDirectory are set because the installer sets both (install_macos.sh:790,792)
-# and their absence makes this a strictly easier check than the real one. With UserName, launchd
-# must resolve and adopt a hidden sub-500 uid; without it the job just runs as root, and a host
-# policy can permit the second while refusing the first. WorkingDirectory covers the chdir the
-# installer's own comment (line 742) calls fatal rather than cosmetic when the value is unusable.
-# RunAtLoad means bootstrap actually spawns the job, so a uid launchd will not adopt surfaces here
-# rather than 100+ minutes into an install.
-echo "=== enable and bootstrap a LaunchDaemon ==="
-# Explicit failure: a bare redirection aborts under set -e with the same exit 1 a completed run
-# gives, so a breakage here would masquerade as a finished probe.
-if ! cat >"${PROBE_DIR}/probe.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>${PROBE_LABEL}</string>
-  <key>UserName</key><string>${PROBE_USER}</string>
-  <key>WorkingDirectory</key><string>/var/empty</string>
-  <!-- Asserts the uid rather than just running: /bin/sleep exits 0 whether launchd adopted
-       UserName or ran the job as root, so without this the check below proves nothing about
-       the property this plist exists to test. A wrong uid exits 1 and is reported DENIED.
-       The \$ is escaped because this heredoc is unquoted: unescaped, bash would substitute the
-       build user's own uid while writing the file, leaving a comparison of two constants that is
-       false on every healthy host: a guaranteed DENIED blaming launchd for the quoting.
-       Exit 78 on a mismatch rather than a bare failure, so the poll below can tell "launchd did
-       not adopt the uid" from any other nonzero exit without inferring it.
-       (No double hyphens in here; XML forbids them inside a comment.) -->
-  <key>ProgramArguments</key><array>
-    <string>/bin/sh</string><string>-c</string>
-    <string>test "\$(/usr/bin/id -u)" = "${PROBE_UID}" || exit 78; exec /bin/sleep 10</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-</dict></plist>
-PLIST
-then
-    echo "could not write the probe plist into ${PROBE_DIR}" >&2
-    exit 1
-fi
-# The plist is never printed, so a substitution that happened at write time would be invisible.
-# The uid lookup has to reach the daemon as a literal; if it does not, every run reports a false
-# DENIED on the capability this section exists to confirm.
-if ! grep -q 'test "\$(/usr/bin/id -u)"' "${PROBE_DIR}/probe.plist"; then
-    echo "probe plist lost the uid lookup to shell expansion; it would compare two constants:" >&2
-    grep -F '/bin/sleep 10' "${PROBE_DIR}/probe.plist" >&2 || true
-    exit 1
-fi
-# install, not cp: launchd REJECTS a group- or other-writable plist (install_macos.sh:819), and
-# `cat >` gives 0666 & ~umask -- 666 under a umask of 000, which CI environments do set. cp
-# without -p derives the destination mode from that source, so bootstrap would refuse the file and
-# the probe would report DENIED for a reason that is the probe's own, not the host's. install also
-# does the copy, chown and chmod in one privileged step, leaving no window at the real path.
-# A strict chain, so each step is gated on its predecessor's recorded verdict. Ungated, one refusal
-# reports as three: a denied `install` leaves no plist, `enable` still succeeds because it only
-# writes the override database, and bootstrap and the spawn check then both fail on a missing job --
-# reading as launchd refusing bootstrap and uid adoption when neither was exercised.
-if [ "${ACCOUNT_READY}" -eq 1 ]; then
-probe required "install plist root:wheel 0644" \
-    sudo -n install -o root -g wheel -m 644 "${PROBE_DIR}/probe.plist" "/Library/LaunchDaemons/${PROBE_LABEL}.plist"
-if [ "${PROBE_LAST_OK}" -eq 1 ]; then
-probe required "launchctl enable" \
-    sudo -n launchctl enable "system/${PROBE_LABEL}"
-# Ten attempts, then one unguarded call, mirroring install_macos.sh:860-885. The startup cleanup
-# runs `launchctl bootout`, which is asynchronous, and the installer's own comment says bootstrapping
-# while the old instance is still unloading fails transiently ("service already loaded" / EIO). A
-# one-shot probe would report that race as DENIED and read as a clean "launchd refuses this" -- and
-# a host where bootstrap succeeds on the third attempt is a host where the install works. The final
-# unguarded call is what leaves the real launchd error on stderr for probe to print, which is why
-# the installer re-runs it unguarded too.
-probe required "launchctl bootstrap system" sudo -n bash -c '
-    plist="/Library/LaunchDaemons/'"${PROBE_LABEL}"'.plist"
-    for _ in $(seq 1 10); do
-        launchctl bootstrap system "${plist}" 2>/dev/null && exit 0
-        sleep 1
-    done
-    # Say which of the installer'"'"'s two cases this is before failing. install_macos.sh:869 splits
-    # them the same way: a job that is loaded means the old instance won the race, not that launchd
-    # refuses to bootstrap. The stale gate should have caught that earlier, so reaching it here
-    # means the job appeared during this run.
-    if launchctl print "system/'"${PROBE_LABEL}"'" >/dev/null 2>&1; then
-        echo "the job is already loaded, so this is the unload race, not a launchd refusal" >&2
-        echo "run: launchctl bootout system/'"${PROBE_LABEL}"'" >&2
-    fi
-    launchctl bootstrap system "${plist}"'
-BOOTSTRAP_OK="${PROBE_LAST_OK}"
-
-# bootstrap returning 0 only means the job is LOADED; RunAtLoad spawns it asynchronously, so a uid
-# launchd will not adopt surfaces a moment later as a spawn failure. That is the capability the
-# plist's UserName exists to test, so it feeds REQUIRED_FAILURES rather than being printed as free
-# text -- with hide-cloudwatch-logs: true the exit status is the only signal a maintainer sees, and
-# an uncounted spawn failure would exit 2 ("all required capabilities available").
-#
-# Field names are launchctl's own: `state = running`, `last exit code = N`, and `(never exited)`
-# before the first run. /bin/sleep 10 gives a 10s window where a healthy job reads running; polling
-# rather than reading once avoids calling a healthy host DENIED because print raced the spawn.
-if [ "${BOOTSTRAP_OK}" -eq 1 ]; then
-probe required "daemon spawned as the probe user" sudo -n bash -c '
-    label="system/'"${PROBE_LABEL}"'"
-    for _ in $(seq 1 15); do
-        if ! out="$(launchctl print "${label}" 2>&1)"; then
-            # print failing outright is itself the answer: a hard spawn failure can leave no job.
-            printf "%s\n" "${out}" >&2
-            exit 1
-        fi
-        if printf "%s" "${out}" | grep -q "state = running"; then
-            # Not sufficient on its own. launchd sets state = running when it spawns /bin/sh,
-            # before the uid test inside has forked id and compared -- so a poll landing in that
-            # window sees "running" for a job that is about to exit 78. Only the passing path
-            # survives the assert, so re-read once it has had time to resolve; /bin/sleep 10
-            # leaves ample margin.
-            sleep 2
-            if ! out="$(launchctl print "${label}" 2>&1)"; then
-                printf "%s\n" "${out}" >&2
-                exit 1
-            fi
-            printf "%s" "${out}" | grep -q "state = running" && exit 0
-            code="$(printf "%s" "${out}" | sed -n "s/.*last exit code = \([0-9][0-9]*\).*/\1/p" | head -1)"
-            if [ "${code}" = 78 ]; then
-                echo "the daemon started but exited 78: launchd did not run it as uid '"${PROBE_UID}"'" >&2
-            else
-                echo "the daemon started but exited ${code:-?} before the uid assert completed" >&2
-            fi
-            printf "%s" "${out}" | grep -E "state|last exit code|runs" >&2
-            exit 1
-        fi
-        code="$(printf "%s" "${out}" | sed -n "s/.*last exit code = \([0-9][0-9]*\).*/\1/p" | head -1)"
-        if [ -n "${code}" ]; then
-            [ "${code}" = 0 ] && exit 0
-            if [ "${code}" = 78 ]; then
-                echo "the daemon ran but exited 78: launchd did not run it as uid '"${PROBE_UID}"'" >&2
-            else
-                echo "the daemon ran but exited ${code}, so it never reached the uid assert" >&2
-            fi
-            printf "%s" "${out}" | grep -E "state|last exit code|runs" >&2
-            exit 1
-        fi
-        sleep 1
-    done
-    echo "job never left waiting after 15s" >&2
-    printf "%s" "${out}" | grep -E "state|last exit code|runs" >&2
-    exit 1'
-# Informational dump kept alongside the verdict: on a DENIED the full state is what a human needs.
-# Inside this branch, because with nothing bootstrapped it prints nothing and the `|| true` hides
-# that it had nothing to say.
-sudo -n launchctl print "system/${PROBE_LABEL}" 2>&1 \
-    | grep -E 'state = |last exit code|runs = |pid = ' | head -5 || true
-else
-    skip_required "the daemon spawn check" "the job was never bootstrapped"
-fi
-else
-    skip_required "enable, bootstrap and the spawn check" "the plist could not be installed"
-fi
-else
-    skip_required "the LaunchDaemon sequence" "the probe account does not exist, so bootstrapping as it would prove nothing"
-fi
-
-# Anything here that is not this build's own probe artefacts came from an earlier run, and is a
-# leftover the suite would have to reset. LocalMacWorker._reset_host_state handles the
-# within-a-run case and would need to cover each of these too. Includes the probe's own
-# names so a leak that survived a refused startup cleanup is still visible -- but tags them, since
-# the startup cleanup means a matching name is otherwise always this build's own and an untagged
-# list would make every clean run look like it had leftovers.
-echo "=== leftovers on this host ==="
-PATTERN='deadline|job|worker|e2eprobe'
-# The names this run creates itself. Tagged in the output so "is this host clean?" does not require
-# knowing them by heart, and so a real leftover from a previous installer run stands out.
-SELF_NAMES="${PROBE_USER}|${PROBE_GROUP}|${PROBE_JOB_GROUP}|${PROBE_LABEL}|${PROBE_SUDOERS##*/}"
-
-# Separates the producer's status from the match. `cmd | grep || echo none` cannot tell them
-# apart -- grep exits 1 both when the host is clean and when the command was refused, so a
-# denied `sudo -n ls /etc/sudoers.d` would print the all-clear for the one artefact that can
-# break sudo host-wide. A false all-clear also propagates: this survey is the input to what
-# LocalMacWorker._reset_host_state has to cover.
-survey() {
-    local label="$1" out matches
-    shift
-    if ! out="$("$@" 2>&1)"; then
-        printf '    %-22s COULD NOT CHECK -- %s\n' "${label}:" "$(printf '%s' "${out}" | head -1)"
-    elif matches="$(printf '%s\n' "${out}" | grep -iE "${PATTERN}")"; then
-        printf '    %s\n' "${label}:"
-        printf '%s\n' "${matches}" \
-            | sed -E "s|^|        |; /${SELF_NAMES}/ s|\$|   <- this build, not a leftover|"
-    else
-        printf '    %-22s none\n' "${label}:"
-    fi
-}
-survey "LaunchDaemons" ls /Library/LaunchDaemons/
-survey "sudoers files" sudo -n ls /etc/sudoers.d/
-survey "users"         dscl . -list /Users
-survey "groups"        dscl . -list /Groups
-
-# Per path, not `ls -d a b c`: that exits non-zero when any one is absent, so the survey helper
-# would report COULD NOT CHECK on the normal case of a clean host.
-STATE_DIRS_FOUND=0
-# /opt/deadline is LocalMacWorker's venv tree. _reset_host_state removes only worker.toml and
-# worker.json, and stop() leaves the venv, so on a host that persists it accumulates permanently.
-for d in /var/lib/deadline /var/lib/deadline-worker /etc/amazon/deadline /var/log/amazon/deadline \
-         /opt/deadline \
-         /var/log/"${PROBE_DIR_NAME}" /var/lib/"${PROBE_DIR_NAME}" /etc/"${PROBE_DIR_NAME}" \
-         /opt/"${PROBE_DIR_NAME}"; do
-    if [ -e "${d}" ]; then
-        if [ "${STATE_DIRS_FOUND}" -eq 0 ]; then
-            printf '    %s\n' "state dirs:"
-        fi
-        # Tagged like survey()'s matches: cleanup runs on EXIT, so this build's own probe
-        # directories still exist here and an untagged list reads as three leftovers on a
-        # host that is clean.
-        case "${d}" in
-            */"${PROBE_DIR_NAME}") echo "        ${d}   <- this build, not a leftover" ;;
-            *) echo "        ${d}" ;;
-        esac
-        STATE_DIRS_FOUND=1
-    fi
-done
-if [ "${STATE_DIRS_FOUND}" -eq 0 ]; then
-    printf '    %-22s none\n' "state dirs:"
-fi
-
-echo "=== toolchain baseline ==="
-probe optional "python3 present"                command -v python3
-python3 --version 2>&1 || true
-probe optional "pip3 present"                   command -v pip3
-probe optional "brew present"                   command -v brew
-
-echo ""
-echo "=== PROBE COMPLETE ==="
-# Every outcome is non-zero -- a green "macOS E2E Test" that ran no tests asserts nothing, and would
-# be actively misleading once the push trigger is added -- but the codes are distinct so the exit
-# status carries the answer without anyone reading the log: 1 denied or unproven, 2 all present and
-# no tests run, 3 stale host state so nothing was probed.
-if [ "${REQUIRED_FAILURES}" -gt 0 ] || [ "${UNPROVEN}" -gt 0 ]; then
-    echo "exit 1: ${REQUIRED_FAILURES} required check(s) DENIED, ${UNPROVEN} section(s) unproven." >&2
-    echo "        Denied means the host refused it; unproven means a prerequisite failed so it was" >&2
-    echo "        never exercised. Either way the suite cannot run here as written." >&2
-    exit 1
-fi
-echo "exit 2: all required capabilities available, and this build ran NO TESTS -- it is a probe."
-echo "Replace the probe block in pipeline/e2e-macos.sh with the suite; see the comment there."
-exit 2
-# -------------------------------- END PROBE --------------------------------------------
+hatch run e2e:test

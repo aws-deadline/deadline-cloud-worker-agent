@@ -10,7 +10,7 @@ from collections.abc import Generator
 from configparser import ConfigParser
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
-from typing import Callable, Optional, Type
+from typing import Callable, Optional, Type, cast
 
 import backoff
 import boto3
@@ -32,6 +32,7 @@ from deadline_test_fixtures import (
     Ec2Tag,
     Farm,
     Fleet,
+    LocalMacWorker,
     OperatingSystem,
     PosixSessionUser,
     Queue,
@@ -326,7 +327,7 @@ def session_worker(
     worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -361,7 +362,7 @@ def asset_sync_class_worker(
     asset_sync_worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(asset_sync_worker_config, ec2_worker_type, request) as worker:
+    with create_worker(asset_sync_worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -373,7 +374,7 @@ def class_worker(
     worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -385,7 +386,7 @@ def function_worker(
     worker_config: DeadlineWorkerConfiguration,
     ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -401,7 +402,7 @@ def function_worker_factory(
     def _create_function_worker(
         custom_worker_config: DeadlineWorkerConfiguration,
     ):
-        with create_worker(custom_worker_config, ec2_worker_type, request) as worker:
+        with create_worker(custom_worker_config, request) as worker:
             created_workers.append(worker)
             return worker
 
@@ -441,7 +442,6 @@ def _grab_bootstrap_log(worker: DeadlineWorker) -> None:
 
 def create_worker(
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
     request: pytest.FixtureRequest,
 ):
     def __init__(self):
@@ -471,11 +471,26 @@ def create_worker(
         DeadlineWorker: Instance of the DeadlineWorker class that can be used to interact with the Worker.
     """
 
+    # Resolved here rather than taken as a parameter: every call site passed the same fixture
+    # value, and the macOS branch below needs the operating system anyway.
+    operating_system: OperatingSystem = request.getfixturevalue("operating_system")
+    worker_type = request.getfixturevalue("ec2_worker_type")
+
     worker: DeadlineWorker
     if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
         LOG.info("Creating Docker worker")
         worker = DockerContainerWorker(
             configuration=worker_config,
+        )
+    elif operating_system.is_macos():
+        # Ahead of the EC2 branch, because none of what it needs exists here: LocalMacWorker
+        # installs the agent onto this host, so there is no instance to place in a subnet or a
+        # security group and no instance profile to attach. The asserts below would fail on a
+        # host that is otherwise able to run the suite.
+        LOG.info("Creating local macOS worker")
+        worker = cast(Type[LocalMacWorker], worker_type)(
+            configuration=worker_config,
+            deadline_client=boto3.client("deadline"),
         )
     else:
         LOG.info("Creating EC2 worker")
@@ -499,7 +514,7 @@ def create_worker(
         ssm_client = boto3.client("ssm")
         deadline_client = boto3.client("deadline")
 
-        worker = ec2_worker_type(
+        worker = cast(Type[EC2InstanceWorker], worker_type)(
             ec2_client=ec2_client,
             s3_client=s3_client,
             deadline_client=deadline_client,
