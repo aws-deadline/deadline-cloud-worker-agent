@@ -880,6 +880,7 @@ class Session:
         os_env_vars: Optional[dict[str, str]] = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
+        step_let_declarations: list[str] | None = None,
     ) -> None:
         session_env_id = self._runtime.enter_environment(
             environment=environment,
@@ -887,6 +888,7 @@ class Session:
             os_env_vars=os_env_vars,
             resolved_symbol_table_json=resolved_symbol_table_json,
             step_name=step_name,
+            step_let_declarations=step_let_declarations,
         )
         self._active_envs.append(
             ActiveEnvironment(
