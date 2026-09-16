@@ -1,3 +1,7 @@
+## 0.33.3 (2026-09-16)
+
+### Bug Fixes
+* Fixed an issue where entering a step-scoped environment whose template references the declaring step's `let` bindings would fail on the Rust session runtime. The environment template now correctly carries step `let` declarations, preventing undefined variable errors during decoding. (#1092)
 ## 0.33.2 (2026-09-09)
 
 ### Features
