@@ -337,6 +337,7 @@ def _session_worker_impl(
 
 @pytest.fixture
 def session_worker(
+    request: pytest.FixtureRequest,
     _session_worker_impl: DeadlineWorker,
 ) -> DeadlineWorker:
     """The session-scoped worker, reinstalled first if a per-test worker displaced it.
@@ -346,7 +347,7 @@ def session_worker(
     stay stale and every later assertion would run against a host with no agent. A no-op on Linux
     and Windows, where workers are separate instances.
     """
-    reinstate_session_worker(_session_worker_impl)
+    reinstate_session_worker(request, _session_worker_impl)
     return _session_worker_impl
 
 
@@ -377,7 +378,6 @@ def asset_sync_worker_config(
 def asset_sync_class_worker(
     request: pytest.FixtureRequest,
     asset_sync_worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(asset_sync_worker_config, request) as worker:
         yield worker
@@ -389,7 +389,6 @@ def asset_sync_class_worker(
 def class_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(worker_config, request) as worker:
         yield worker
@@ -401,7 +400,6 @@ def class_worker(
 def function_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(worker_config, request) as worker:
         yield worker
@@ -412,7 +410,6 @@ def function_worker(
 @pytest.fixture(scope="function")
 def function_worker_factory(
     request: pytest.FixtureRequest,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker], None, None]:
     created_workers = []
 
@@ -495,14 +492,41 @@ _installed_worker: Optional[DeadlineWorker] = None
 _displaced_session_worker: Optional[DeadlineWorker] = None
 
 
-def _claim_host(worker: DeadlineWorker, session_worker: Optional[DeadlineWorker]) -> None:
+def _keeping_workers_after_failure(request: pytest.FixtureRequest) -> bool:
+    return (
+        request.session.testsfailed > 0
+        and os.getenv("KEEP_WORKER_AFTER_FAILURE", "false").lower() == "true"
+    )
+
+
+def _claim_host(
+    request: pytest.FixtureRequest,
+    worker: DeadlineWorker,
+    session_worker: Optional[DeadlineWorker],
+) -> None:
     """Stop whatever currently holds the host so `worker` can install onto it."""
     global _installed_worker, _displaced_session_worker
     current = _installed_worker
     if current is not None and current is not worker:
+        # Refused rather than resolved. KEEP_WORKER_AFTER_FAILURE asks for the failed worker's host
+        # state to be left for inspection, and only one agent fits on a macOS host, so installing
+        # over it would destroy exactly what the flag was set to preserve -- and leave this worker
+        # running against a LaunchDaemon and worker id it did not create. Neither silent option is
+        # right, so say so and stop.
+        if _keeping_workers_after_failure(request):
+            raise RuntimeError(
+                "KEEP_WORKER_AFTER_FAILURE is set and a test has failed, so the agent installed on "
+                "this host is being kept for inspection. Only one agent fits on a macOS host, so "
+                "the worker this test needs cannot be installed without destroying it. Rerun "
+                "without KEEP_WORKER_AFTER_FAILURE, or deselect the tests that need a second worker."
+            )
         LOG.info("Stopping the worker currently installed on this host before installing another")
         try:
-            current.stop()
+            # Through stop_worker, not current.stop(). A displaced worker was running jobs moments
+            # ago, which is when DeleteWorker returns ConflictException, and stop_worker is where the
+            # retry for that lives. A bare stop() here would swallow a transient conflict, and
+            # nothing retries afterwards: the record would stay registered for the rest of the run.
+            stop_worker(request, current)
         except Exception:  # pragma: no cover
             LOG.exception("Failed to stop the incumbent worker; the next install may fail")
         if session_worker is not None and current is session_worker:
@@ -512,19 +536,30 @@ def _claim_host(worker: DeadlineWorker, session_worker: Optional[DeadlineWorker]
     _installed_worker = worker
 
 
-def reinstate_session_worker(worker: DeadlineWorker) -> None:
+def reinstate_session_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
     """Reinstall the session worker if a per-test worker displaced it.
 
     Called from the `session_worker` fixture on every use, so the cost is one reinstall per
     transition back rather than one per test.
+
+    Note that the collection order in pytest_collection_modifyitems puts every session_worker test
+    at the end of the run, so in a full run the session worker is created after the last per-test
+    worker has been torn down and nothing displaces it: this is a no-op. It earns its keep under
+    -k, deselection, or a reordering plugin, where the interleaving the ordering hook prevents
+    becomes possible again.
     """
-    global _installed_worker, _displaced_session_worker
+    global _displaced_session_worker
     if not _MACOS or _displaced_session_worker is not worker:
         return
     LOG.info("Reinstating the session worker, displaced by a per-test worker")
-    _displaced_session_worker = None
+    # Through _claim_host, so this path honours the same invariant as any other install. Reinstating
+    # while a class-scoped per-test worker is still alive would otherwise overwrite its config in
+    # place and leave its teardown with nothing to stop, leaking its worker record.
+    _claim_host(request, worker, worker)
     worker.start()
-    _installed_worker = worker
+    # Cleared only after a successful start. If the reinstall raises, the worker is still displaced,
+    # and the next use has to try again rather than be handed a host with no agent on it.
+    _displaced_session_worker = None
 
 
 def create_worker(
@@ -634,7 +669,7 @@ def create_worker(
                 # Before start(), so the incumbent is stopped rather than overwritten. The session
                 # worker is looked up rather than requested, because requesting it here would
                 # create it for tests that never wanted one.
-                _claim_host(worker, request.session.stash.get(_SESSION_WORKER_KEY, None))
+                _claim_host(request, worker, request.session.stash.get(_SESSION_WORKER_KEY, None))
             worker.start()
         except Exception as e:
             LOG.error(f"Failed to start worker: {e}")
@@ -652,16 +687,20 @@ def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
     # deletes the worker record, and the second DeleteWorker on the same id fails. Only the worker
     # that still holds the host has anything left to tear down.
     global _installed_worker
-    if _MACOS:
-        if _installed_worker is not worker:
-            LOG.info("Worker was already displaced from this host; nothing to stop")
-            return
-        _installed_worker = None
+    if _MACOS and _installed_worker is not worker:
+        LOG.info("Worker was already displaced from this host; nothing to stop")
+        return
 
-    if request.session.testsfailed > 0:
-        if os.getenv("KEEP_WORKER_AFTER_FAILURE", "false").lower() == "true":
-            LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
-            return
+    if _keeping_workers_after_failure(request):
+        LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
+        # _installed_worker deliberately still points at this worker: the agent is installed and
+        # running, so the host is not free. Clearing it here would let the next _claim_host install
+        # straight over the state the flag exists to preserve, silently; instead that call refuses.
+        return
+
+    # Cleared only once this worker is genuinely being torn down, for the reason above.
+    if _MACOS:
+        _installed_worker = None
 
     def _giveup_unless_conflict(e: ClientError) -> bool:
         return e.response["Error"]["Code"] != "ConflictException"
