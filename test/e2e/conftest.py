@@ -322,15 +322,32 @@ def worker_config(
 
 
 @pytest.fixture(scope="session")
-def session_worker(
+def _session_worker_impl(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(worker_config, request) as worker:
+        # Recorded so create_worker can tell "the incumbent is the session worker" from "the
+        # incumbent is another per-test worker" without requesting this fixture and creating it.
+        request.session.stash[_SESSION_WORKER_KEY] = worker
         yield worker
 
     stop_worker(request, worker)
+
+
+@pytest.fixture
+def session_worker(
+    _session_worker_impl: DeadlineWorker,
+) -> DeadlineWorker:
+    """The session-scoped worker, reinstalled first if a per-test worker displaced it.
+
+    A thin function-scoped wrapper over the cached fixture: pytest hands back the same object for
+    the whole session, so without a per-use hook a worker stopped by a macOS per-test install would
+    stay stale and every later assertion would run against a host with no agent. A no-op on Linux
+    and Windows, where workers are separate instances.
+    """
+    reinstate_session_worker(_session_worker_impl)
+    return _session_worker_impl
 
 
 @pytest.fixture(scope="class")
@@ -440,6 +457,56 @@ def _grab_bootstrap_log(worker: DeadlineWorker) -> None:
         LOG.warning(f"Could not retrieve bootstrap log: {log_err}")
 
 
+# One host, one agent. LocalMacWorker installs onto the machine running the tests, so two workers
+# cannot coexist: the second start() overwrites the first's worker.toml, worker.json and
+# LaunchDaemon, and whichever configuration landed last is the one under test.
+#
+# Rather than skip every test that wants a differently-configured worker, macOS installs them one at
+# a time. A worker created here displaces whatever is installed, and the session worker is
+# reinstated on next use if it was the one displaced -- lazily, so a run that never returns to it
+# pays nothing. stop() leaves the venv and the account, so reinstalling is the installer plus a
+# launchd bootstrap rather than a full provision.
+#
+# Not a mechanism on Linux or Windows: there each worker is its own instance and they are genuinely
+# concurrent, so nothing here changes for them.
+_MACOS = os.environ.get("OPERATING_SYSTEM") == "macos"
+_SESSION_WORKER_KEY: pytest.StashKey[DeadlineWorker] = pytest.StashKey()
+_installed_worker: Optional[DeadlineWorker] = None
+_displaced_session_worker: Optional[DeadlineWorker] = None
+
+
+def _claim_host(worker: DeadlineWorker, session_worker: Optional[DeadlineWorker]) -> None:
+    """Stop whatever currently holds the host so `worker` can install onto it."""
+    global _installed_worker, _displaced_session_worker
+    current = _installed_worker
+    if current is not None and current is not worker:
+        LOG.info("Stopping the worker currently installed on this host before installing another")
+        try:
+            current.stop()
+        except Exception:  # pragma: no cover
+            LOG.exception("Failed to stop the incumbent worker; the next install may fail")
+        if session_worker is not None and current is session_worker:
+            _displaced_session_worker = current
+    # Set after the stop above, so a stop_worker racing in between sees the incumbent rather than
+    # the newcomer and does not skip a teardown that was still owed.
+    _installed_worker = worker
+
+
+def reinstate_session_worker(worker: DeadlineWorker) -> None:
+    """Reinstall the session worker if a per-test worker displaced it.
+
+    Called from the `session_worker` fixture on every use, so the cost is one reinstall per
+    transition back rather than one per test.
+    """
+    global _installed_worker, _displaced_session_worker
+    if not _MACOS or _displaced_session_worker is not worker:
+        return
+    LOG.info("Reinstating the session worker, displaced by a per-test worker")
+    _displaced_session_worker = None
+    worker.start()
+    _installed_worker = worker
+
+
 def create_worker(
     worker_config: DeadlineWorkerConfiguration,
     request: pytest.FixtureRequest,
@@ -533,6 +600,11 @@ def create_worker(
     @contextmanager
     def _context_for_fixture():
         try:
+            if _MACOS:
+                # Before start(), so the incumbent is stopped rather than overwritten. The session
+                # worker is looked up rather than requested, because requesting it here would
+                # create it for tests that never wanted one.
+                _claim_host(worker, request.session.stash.get(_SESSION_WORKER_KEY, None))
             worker.start()
         except Exception as e:
             LOG.error(f"Failed to start worker: {e}")
@@ -546,6 +618,16 @@ def create_worker(
 
 
 def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
+    # A displaced macOS worker has already been stopped, and stopping it again raises: stop()
+    # deletes the worker record, and the second DeleteWorker on the same id fails. Only the worker
+    # that still holds the host has anything left to tear down.
+    global _installed_worker
+    if _MACOS:
+        if _installed_worker is not worker:
+            LOG.info("Worker was already displaced from this host; nothing to stop")
+            return
+        _installed_worker = None
+
     if request.session.testsfailed > 0:
         if os.getenv("KEEP_WORKER_AFTER_FAILURE", "false").lower() == "true":
             LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
