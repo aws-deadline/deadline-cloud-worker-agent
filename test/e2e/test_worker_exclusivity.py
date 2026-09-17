@@ -1,3 +1,4 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 """Exercises the macOS single-worker exclusivity state machine in conftest.
 
 Runs on every platform, not only macOS. The state machine is inert on Linux and Windows because
