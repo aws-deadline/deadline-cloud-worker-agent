@@ -226,12 +226,14 @@ class TestWorkerConfiguration:
         run_script: str
 
         if operating_system.is_amazon_linux() or operating_system.is_macos():
-            # macOS cannot take the Linux path: the system volume is sealed and read-only,
-            # so a root-level /mysessionroot cannot be created. /private/tmp rather than
-            # /tmp because /tmp is a symlink to it, and the agent reports the resolved
-            # path, which would not match a prefix check written against the symlink.
+            # macOS cannot take the Linux path: the system volume is sealed and read-only, so a
+            # root-level /mysessionroot cannot be created. Under /opt rather than /tmp or
+            # /Users/Shared, both of which are mode 1777: an unprivileged process on the host could
+            # pre-create the directory there and the agent would adopt one it does not own, or fail
+            # to set the ownership it intends. /opt is root:wheel 0755, is on the writable data
+            # volume, and already holds the agent's own venv.
             session_root_dir = (
-                "/private/tmp/mysessionroot" if operating_system.is_macos() else "/mysessionroot"
+                "/opt/mysessionroot" if operating_system.is_macos() else "/mysessionroot"
             )
             run_script = f"""#!/usr/bin/env bash
 set -euo pipefail

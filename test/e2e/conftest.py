@@ -430,6 +430,26 @@ def function_worker_factory(
 
 def _grab_bootstrap_log(worker: DeadlineWorker) -> None:
     """Best-effort grab of the worker bootstrap log after a start failure."""
+    if isinstance(worker, LocalMacWorker):
+        # macOS bootstrap is the part most likely to fail -- account creation, the sudoers rule, the
+        # LaunchDaemon -- and the reusable workflow hides the CodeBuild log from GitHub, so without
+        # this the only record of a start failure is the exception string.
+        #
+        # One send_command per file rather than the EC2 branch's single chained command:
+        # LocalMacWorker runs commands under `set -euo pipefail`, so the first missing path would
+        # abort the rest -- and after a bootstrap failure a missing file is the likely case. No sudo
+        # prefix, because send_command is already root.
+        for log_path in (
+            "/var/log/amazon/deadline/worker-agent-bootstrap.log",
+            "/var/log/amazon/deadline/worker-agent.log",
+            "/etc/amazon/deadline/worker.toml",
+        ):
+            try:
+                result = worker.send_command(f"tail -n 100 {log_path}", quiet=True)
+                LOG.error(f"--- {log_path} (exit {result.exit_code}) ---\n{result.stdout}")
+            except Exception as log_err:
+                LOG.warning(f"Could not read {log_path}: {log_err}")
+        return
     if not isinstance(worker, EC2InstanceWorker):
         return
     try:
@@ -541,7 +561,6 @@ def create_worker(
     # Resolved here rather than taken as a parameter: every call site passed the same fixture
     # value, and the macOS branch below needs the operating system anyway.
     operating_system: OperatingSystem = request.getfixturevalue("operating_system")
-    worker_type = request.getfixturevalue("ec2_worker_type")
 
     worker: DeadlineWorker
     if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
@@ -554,12 +573,23 @@ def create_worker(
         # installs the agent onto this host, so there is no instance to place in a subnet or a
         # security group and no instance profile to attach. The asserts below would fail on a
         # host that is otherwise able to run the suite.
+        #
+        # Named directly rather than resolved through ec2_worker_type. That fixture is the override
+        # point for swapping in an EC2 subclass, so the value it yields carries no guarantee of
+        # being a macOS worker: a cast would silence mypy and then fail at runtime on the missing
+        # ec2_client and subnet_id keywords. Naming the class also keeps this branch working against
+        # any fixtures version that ships LocalMacWorker, rather than only those whose
+        # ec2_worker_type knows about MACOS.
         LOG.info("Creating local macOS worker")
-        worker = cast(Type[LocalMacWorker], worker_type)(
+        worker = LocalMacWorker(
             configuration=worker_config,
             deadline_client=boto3.client("deadline"),
         )
     else:
+        # Resolved inside this branch, not above it. ec2_worker_type raises ValueError for an
+        # operating system it does not recognise, so resolving it unconditionally would fail the
+        # macOS run at fixture setup with an unsupported-OS error before the branch above could run.
+        worker_type = cast(Type[EC2InstanceWorker], request.getfixturevalue("ec2_worker_type"))
         LOG.info("Creating EC2 worker")
         ami_id = os.getenv("AMI_ID")
         subnet_id = os.getenv("SUBNET_ID")
@@ -581,7 +611,7 @@ def create_worker(
         ssm_client = boto3.client("ssm")
         deadline_client = boto3.client("deadline")
 
-        worker = cast(Type[EC2InstanceWorker], worker_type)(
+        worker = worker_type(
             ec2_client=ec2_client,
             s3_client=s3_client,
             deadline_client=deadline_client,
@@ -712,11 +742,10 @@ def operating_system() -> OperatingSystem:
     elif os_env_var == "windows":
         return OperatingSystem(name="WIN2022")
     elif os_env_var == "macos":
-        # deadline-cloud-test-fixtures accepts MACOS from 0.18.21 and ships LocalMacWorker, but
-        # nothing selects it: its ec2_worker_type raises ValueError for anything but AL2023 and
-        # WIN2022, and create_worker asserts a subnet and security group a native Mac host has
-        # not got. Wiring MACOS to LocalMacWorker is still to do; until then this branch reaches
-        # a worker fixture that rejects it.
+        # MACOS reaches create_worker's LocalMacWorker branch, which installs the agent onto the
+        # machine running the tests rather than provisioning one. That is why the suite must not be
+        # pointed at a developer's Mac: pipeline/e2e-macos.sh refuses to run outside CodeBuild for
+        # this reason.
         return OperatingSystem(name="MACOS")
     else:
         assert False, (

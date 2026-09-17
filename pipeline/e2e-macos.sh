@@ -43,6 +43,37 @@ fi
 AGENT_LAUNCHD_LABEL=com.amazon.deadline.worker-agent
 AGENT_WORKER_JSON=/var/lib/deadline/worker.json
 AGENT_WORKER_TOML=/etc/amazon/deadline/worker.toml
+AGENT_VENV=/opt/deadline/worker
+
+# Suffix used by test_session_runtime.py's rust_unavailable_worker fixture when it moves
+# openjd/model/_v1 aside to make the Rust adapter unloadable. Kept in sync with
+# _V1_MOVED_ASIDE_SUFFIX there.
+V1_MOVED_ASIDE_SUFFIX=.e2e-moved-aside
+
+# Move back an openjd/model/_v1 that a previous build moved aside and never restored.
+#
+# The fixture restores it in its own teardown, so this only matters when a build died in between --
+# CodeBuild timing it out, or the host being reclaimed mid-test. On EC2 that cannot bite, because the
+# instance goes away with the class; here the venv is deliberately preserved across builds, so a tree
+# left aside would fail every later rust assertion on this machine, starting with
+# TestExplicitModeRouting[rust], which runs before the class that moved it.
+#
+# find rather than asking python for the package location: with _v1 missing, `import openjd.model`
+# is exactly the import that no longer works.
+restore_moved_aside_openjd_v1() {
+    [ -d "${AGENT_VENV}" ] || return 0
+    local moved target
+    moved="$(sudo -n find "${AGENT_VENV}" -type d -name "_v1${V1_MOVED_ASIDE_SUFFIX}" 2>/dev/null | head -1)"
+    [ -n "${moved}" ] || return 0
+    target="${moved%${V1_MOVED_ASIDE_SUFFIX}}"
+    echo "WARNING: a previous build left ${target} moved aside; restoring it." >&2
+    sudo -n rm -rf "${target}" >/dev/null 2>&1 || true
+    sudo -n mv "${moved}" "${target}" >/dev/null 2>&1 || true
+    if [ ! -d "${target}" ]; then
+        echo "WARNING: failed to restore ${target}. Tests asserting the rust session runtime will" >&2
+        echo "         fail on this host until it is put back." >&2
+    fi
+}
 
 # Reset only what poisons the next build: a daemon still loaded from a previous run, and the
 # config and worker id it registered with. The account, group and /opt/deadline venv are
@@ -54,6 +85,7 @@ reset_agent_state() {
     sudo -n launchctl bootout "system/${AGENT_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
     sudo -n rm -f "${AGENT_WORKER_JSON}" >/dev/null 2>&1 || true
     sudo -n rm -f "${AGENT_WORKER_TOML}" >/dev/null 2>&1 || true
+    restore_moved_aside_openjd_v1
 }
 
 echo "=== pipeline/e2e-macos.sh: macOS E2E suite ==="
