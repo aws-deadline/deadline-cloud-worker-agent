@@ -597,6 +597,16 @@ def create_worker(
     # value, and the macOS branch below needs the operating system anyway.
     operating_system: OperatingSystem = request.getfixturevalue("operating_system")
 
+    # Mutually exclusive rather than ordered, mirroring the fixtures package's own worker fixture.
+    # Taking the Docker branch for OPERATING_SYSTEM=macos would hand back a Linux container while
+    # the run reports macOS results -- and engage the macOS exclusivity registry for containers it
+    # was never written for.
+    if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true" and operating_system.is_macos():
+        raise RuntimeError(
+            "USE_DOCKER_WORKER is not compatible with OPERATING_SYSTEM=macos; the container does "
+            "not run macOS. Change OPERATING_SYSTEM or unset USE_DOCKER_WORKER."
+        )
+
     worker: DeadlineWorker
     if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
         LOG.info("Creating Docker worker")
