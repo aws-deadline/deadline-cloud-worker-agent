@@ -108,6 +108,26 @@ def job_details_only_run_as_worker_agent_user() -> JobDetails:
                 "jobId": "job-0000",
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
+                "parameters": {
+                    # Transitional string-typed booleans; the native forms above
+                    # remain valid as back-compat regression coverage. Covers the
+                    # Open Job Description specification's case-insensitive
+                    # boolean vocabulary and its true/false-valued tokens.
+                    "boolParam": {"bool": "yes"},
+                    "boolParamUpper": {"bool": "TRUE"},
+                    "boolParamOn": {"bool": "on"},
+                    "boolParamOne": {"bool": "1"},
+                    "boolParamOneFloat": {"bool": "1.0"},
+                    "boolListParam": {"boolList": ["true", "no", "OFF", "0.0"]},
+                },
+            },
+            id="valid expr parameters - string booleans",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
                 "pathMappingRules": [],
             },
             id="valid pathMappingRules - empty list",
@@ -415,24 +435,6 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
                 "parameters": {
-                    "param1": {"bool": "true"},
-                },
-                "jobRunAsUser": {
-                    "posix": {
-                        "user": "abc",
-                        "group": "abc",
-                    },
-                    "runAs": "QUEUE_CONFIGURED_USER",
-                },
-            },
-            id="nonvalid parameters - bool value is a string, not a boolean.",
-        ),
-        pytest.param(
-            {
-                "jobId": "job-0000",
-                "logGroupName": "/aws/deadline/queue-0000",
-                "schemaVersion": "jobtemplate-0000-00",
-                "parameters": {
                     "param1": {"stringList": "not-a-list"},
                 },
                 "jobRunAsUser": {
@@ -469,7 +471,7 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
                 "logGroupName": "/aws/deadline/queue-0000",
                 "schemaVersion": "jobtemplate-0000-00",
                 "parameters": {
-                    "param1": {"boolList": ["true", "false"]},
+                    "param1": {"bool": "maybe"},
                 },
                 "jobRunAsUser": {
                     "posix": {
@@ -479,7 +481,25 @@ def test_convert_job_user_from_boto(data: JobDetailsData, expected: JobDetails, 
                     "runAs": "QUEUE_CONFIGURED_USER",
                 },
             },
-            id="nonvalid parameters - boolList elements are strings, not booleans.",
+            id="nonvalid parameters - bool string not in boolean vocabulary.",
+        ),
+        pytest.param(
+            {
+                "jobId": "job-0000",
+                "logGroupName": "/aws/deadline/queue-0000",
+                "schemaVersion": "jobtemplate-0000-00",
+                "parameters": {
+                    "param1": {"boolList": ["true", "maybe"]},
+                },
+                "jobRunAsUser": {
+                    "posix": {
+                        "user": "abc",
+                        "group": "abc",
+                    },
+                    "runAs": "QUEUE_CONFIGURED_USER",
+                },
+            },
+            id="nonvalid parameters - boolList element not in boolean vocabulary.",
         ),
         pytest.param(
             {

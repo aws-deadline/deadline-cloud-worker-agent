@@ -45,6 +45,48 @@ from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
 
 
+# The case-insensitive boolean vocabulary defined by the Open Job Description
+# specification. Wire values are lowercased and membership-tested against these
+# sets; keeping them as explicit sets (rather than a regex) makes the accepted
+# tokens greppable and self-documenting.
+_TRUE_STRINGS = frozenset({"true", "yes", "on", "1", "1.0"})
+_FALSE_STRINGS = frozenset({"false", "no", "off", "0", "0.0"})
+
+
+def _bool_from_api_response(value: str | bool) -> bool:
+    """Coerces a wire-format boolean parameter value into a native Python bool.
+
+    The service is migrating boolean parameters from native JSON booleans to
+    string-typed booleans, but jobs created before the flip still carry native
+    booleans in persisted parameters that are returned verbatim, so both forms
+    may arrive during and after rollout. Open Job Description's expression
+    evaluation requires a native bool, so all boolean parameter values are
+    coerced here at the single wire-decode choke point.
+
+    A native bool is accepted and passed through unchanged. String values are
+    matched case-insensitively against the Open Job Description specification's
+    boolean vocabulary: "true", "yes", "on", "1", and "1.0" are True; "false",
+    "no", "off", "0", and "0.0" are False. Any other value -- including "maybe",
+    "", a string with surrounding whitespace, or a non-str, non-bool type such
+    as a native int 0 or 1 -- raises ValueError.
+    """
+    # bool is a subclass of int, so match a native bool first and pass it
+    # through unchanged; the string membership tests below reject ints such as
+    # 0/1 because the vocabulary sets contain only str tokens.
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.lower()
+        if lowered in _TRUE_STRINGS:
+            return True
+        if lowered in _FALSE_STRINGS:
+            return False
+    raise ValueError(
+        f"Expected a boolean parameter value of True, False, or one of the "
+        f"case-insensitive strings {sorted(_TRUE_STRINGS | _FALSE_STRINGS)} but got {value!r}"
+    )
+
+
 def parameters_from_api_response(
     params: dict[
         str,
@@ -83,7 +125,9 @@ def parameters_from_api_response(
             param_value = ParameterValue(type=ParameterValueType.CHUNK_INT, value=value["chunkInt"])
         elif "bool" in value:
             value = cast(BoolParameter, value)
-            param_value = ParameterValue(type=ParameterValueType.BOOL, value=value["bool"])
+            param_value = ParameterValue(
+                type=ParameterValueType.BOOL, value=_bool_from_api_response(value["bool"])
+            )
         elif "rangeExpr" in value:
             value = cast(RangeExprParameter, value)
             param_value = ParameterValue(
@@ -107,7 +151,10 @@ def parameters_from_api_response(
             )
         elif "boolList" in value:
             value = cast(BoolListParameter, value)
-            param_value = ParameterValue(type=ParameterValueType.LIST_BOOL, value=value["boolList"])
+            param_value = ParameterValue(
+                type=ParameterValueType.LIST_BOOL,
+                value=[_bool_from_api_response(item) for item in value["boolList"]],
+            )
         elif "intListList" in value:
             value = cast(IntListListParameter, value)
             param_value = ParameterValue(
@@ -499,19 +546,28 @@ class JobDetails:
         def _is_str_list(value: Any) -> bool:
             return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
+        def _is_bool(value: Any) -> bool:
+            # Transitional: accept native JSON booleans (persisted before the
+            # flip) and the string form defined by the Open Job Description
+            # specification's case-insensitive boolean vocabulary. Matches what
+            # _bool_from_api_response coerces at wire-decode time.
+            if isinstance(value, bool):
+                return True
+            return isinstance(value, str) and value.lower() in _TRUE_STRINGS | _FALSE_STRINGS
+
         value_shape_checks: dict[str, Callable[[Any], bool]] = {
             "string": lambda v: isinstance(v, str),
             "path": lambda v: isinstance(v, str),
             "int": lambda v: isinstance(v, str),
             "float": lambda v: isinstance(v, str),
             "chunkInt": lambda v: isinstance(v, str),
-            "bool": lambda v: isinstance(v, bool),
+            "bool": _is_bool,
             "rangeExpr": lambda v: isinstance(v, str),
             "stringList": _is_str_list,
             "pathList": _is_str_list,
             "intList": _is_str_list,
             "floatList": _is_str_list,
-            "boolList": lambda v: isinstance(v, list) and all(isinstance(item, bool) for item in v),
+            "boolList": lambda v: isinstance(v, list) and all(_is_bool(item) for item in v),
             "intListList": lambda v: isinstance(v, list) and all(_is_str_list(item) for item in v),
         }
 

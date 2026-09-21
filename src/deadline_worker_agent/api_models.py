@@ -85,7 +85,13 @@ class ChunkIntParameter(TypedDict):
 
 
 class BoolParameter(TypedDict):
-    bool: bool
+    # Transitional union: the service now sends string-typed booleans drawn from
+    # the Open Job Description specification's case-insensitive boolean
+    # vocabulary (e.g. "true"/"false", "yes"/"no", "on"/"off", "1"/"0"), but
+    # jobs created before the flip still carry native booleans in persisted
+    # parameters that are returned verbatim, so either form may arrive during
+    # and after rollout.
+    bool: str | bool
 
 
 class RangeExprParameter(TypedDict):
@@ -109,7 +115,9 @@ class FloatListParameter(TypedDict):
 
 
 class BoolListParameter(TypedDict):
-    boolList: list[bool]
+    # Transitional union: see BoolParameter. Elements may be string-typed
+    # booleans or native booleans during and after the rollout.
+    boolList: list[str | bool]
 
 
 class IntListListParameter(TypedDict):
