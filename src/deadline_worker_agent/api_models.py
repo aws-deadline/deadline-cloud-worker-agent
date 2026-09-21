@@ -85,7 +85,9 @@ class ChunkIntParameter(TypedDict):
 
 
 class BoolParameter(TypedDict):
-    bool: bool
+    # The service transmits booleans as constrained strings; native booleans
+    # may still be seen for jobs created before that change.
+    bool: str | bool
 
 
 class RangeExprParameter(TypedDict):
@@ -109,7 +111,9 @@ class FloatListParameter(TypedDict):
 
 
 class BoolListParameter(TypedDict):
-    boolList: list[bool]
+    # The service transmits booleans as constrained strings; native booleans
+    # may still be seen for jobs created before that change.
+    boolList: list[str | bool]
 
 
 class IntListListParameter(TypedDict):
