@@ -45,6 +45,47 @@ from .job_entity_type import JobEntityType
 from .validation import Field, validate_object
 
 
+# The case-insensitive boolean vocabulary the service uses for string-typed
+# boolean parameters, per the Open Job Description specification. Kept as
+# explicit frozensets (rather than a regex) so the accepted tokens stay
+# greppable and self-documenting.
+_TRUE_STRINGS = frozenset({"true", "yes", "on", "1", "1.0"})
+_FALSE_STRINGS = frozenset({"false", "no", "off", "0", "0.0"})
+
+
+def _bool_from_api_response(name: str, value: object) -> bool:
+    """Coerce a wire-format boolean parameter value into a native Python bool.
+
+    The service transmits boolean job parameters as constrained strings drawn
+    from Open Job Description's case-insensitive boolean vocabulary, but jobs
+    created before that change are persisted with -- and echoed back as --
+    native JSON booleans, so either form may arrive. Open Job Description's
+    typed parameter handling expects a native Python bool at this boundary, so
+    both forms are normalized here.
+
+    A native bool passes through unchanged. A string is matched
+    case-insensitively against the accepted vocabulary. Any other value --
+    including an unrecognized string, a string with surrounding whitespace, or
+    a non-str, non-bool type such as the native int 0 or 1 -- raises ValueError.
+    """
+    # bool is a subclass of int, so match a native bool first and pass it
+    # through unchanged. The string membership tests below then reject ints
+    # such as 0/1 because the vocabulary frozensets hold only str tokens.
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.lower()
+        if lowered in _TRUE_STRINGS:
+            return True
+        if lowered in _FALSE_STRINGS:
+            return False
+    raise ValueError(
+        f"Job parameter {name!r} has an invalid boolean value {value!r}; expected "
+        f"True, False, or one of the case-insensitive strings "
+        f"{sorted(_TRUE_STRINGS | _FALSE_STRINGS)}."
+    )
+
+
 def parameters_from_api_response(
     params: dict[
         str,
@@ -83,7 +124,10 @@ def parameters_from_api_response(
             param_value = ParameterValue(type=ParameterValueType.CHUNK_INT, value=value["chunkInt"])
         elif "bool" in value:
             value = cast(BoolParameter, value)
-            param_value = ParameterValue(type=ParameterValueType.BOOL, value=value["bool"])
+            param_value = ParameterValue(
+                type=ParameterValueType.BOOL,
+                value=_bool_from_api_response(name, value["bool"]),
+            )
         elif "rangeExpr" in value:
             value = cast(RangeExprParameter, value)
             param_value = ParameterValue(
@@ -107,7 +151,16 @@ def parameters_from_api_response(
             )
         elif "boolList" in value:
             value = cast(BoolListParameter, value)
-            param_value = ParameterValue(type=ParameterValueType.LIST_BOOL, value=value["boolList"])
+            bool_list = value["boolList"]
+            if not isinstance(bool_list, list):
+                raise ValueError(
+                    f"Job parameter {name!r} has an invalid boolList value {bool_list!r}; "
+                    f"expected a list."
+                )
+            param_value = ParameterValue(
+                type=ParameterValueType.LIST_BOOL,
+                value=[_bool_from_api_response(name, item) for item in bool_list],
+            )
         elif "intListList" in value:
             value = cast(IntListListParameter, value)
             param_value = ParameterValue(
@@ -505,13 +558,19 @@ class JobDetails:
             "int": lambda v: isinstance(v, str),
             "float": lambda v: isinstance(v, str),
             "chunkInt": lambda v: isinstance(v, str),
-            "bool": lambda v: isinstance(v, bool),
+            # The shape layer accepts both the string wire form (the service's
+            # constrained boolean vocabulary) and a native bool (pre-change
+            # jobs); the value vocabulary itself is enforced at decode time by
+            # _bool_from_api_response.
+            "bool": lambda v: isinstance(v, (str, bool)),
             "rangeExpr": lambda v: isinstance(v, str),
             "stringList": _is_str_list,
             "pathList": _is_str_list,
             "intList": _is_str_list,
             "floatList": _is_str_list,
-            "boolList": lambda v: isinstance(v, list) and all(isinstance(item, bool) for item in v),
+            "boolList": lambda v: (
+                isinstance(v, list) and all(isinstance(item, (str, bool)) for item in v)
+            ),
             "intListList": lambda v: isinstance(v, list) and all(_is_str_list(item) for item in v),
         }
 

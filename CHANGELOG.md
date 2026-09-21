@@ -1,3 +1,7 @@
+## 0.33.4 (2026-09-21)
+
+### Features
+* The worker agent now accepts string-encoded boolean job parameters (e.g., "true", "false", "yes", "no", "on", "off", "1", "0") in addition to native JSON booleans. This ensures compatibility with both older jobs that use native booleans and newer jobs that use the OpenJD case-insensitive boolean string vocabulary. (#1098)
 ## 0.33.3 (2026-09-16)
 
 ### Bug Fixes
