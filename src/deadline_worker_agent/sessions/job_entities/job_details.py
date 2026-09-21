@@ -59,9 +59,12 @@ def _bool_from_api_response(value: str | bool) -> bool:
     The service is migrating boolean parameters from native JSON booleans to
     string-typed booleans, but jobs created before the flip still carry native
     booleans in persisted parameters that are returned verbatim, so both forms
-    may arrive during and after rollout. Open Job Description's expression
-    evaluation requires a native bool, so all boolean parameter values are
-    coerced here at the single wire-decode choke point.
+    may arrive during and after rollout. Coercing at the single wire-decode
+    choke point produces the native Python type that Open Job Description's
+    model documents expression-extension parameters to carry, and normalizes
+    both wire forms to one representation. It also validates the value, so an
+    out-of-vocabulary string fails fast here rather than reaching a consumer
+    that would render it verbatim.
 
     A native bool is accepted and passed through unchanged. String values are
     matched case-insensitively against the Open Job Description specification's

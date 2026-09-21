@@ -13,6 +13,9 @@ import pytest
 from openjd.model import decode_environment_template, decode_job_template
 from openjd.sessions import ActionStatus
 
+from deadline_worker_agent.sessions.job_entities.job_details import (
+    parameters_from_api_response,
+)
 from deadline_worker_agent.sessions.runtime import (
     SessionRuntime,
     SessionRuntimeConfig,
@@ -21,7 +24,10 @@ from deadline_worker_agent.sessions.runtime import (
 )
 
 if TYPE_CHECKING:
+    from openjd.model import ParameterValue
     from openjd.sessions import EnvironmentModel, StepScriptModel
+
+    from deadline_worker_agent.api_models import BoolParameter
 
 # These tests run the SAME scenarios through BOTH the Python (v0) and Rust (v1)
 # SessionRuntime adapters against real openjd sessions executing real local
@@ -205,6 +211,92 @@ def _wait_for_terminal(runtime: SessionRuntime, timeout: float = 30.0) -> Option
             return name
         time.sleep(0.05)
     return _state_name(runtime)
+
+
+def _resolve_job_param_reference(
+    runtime_kind: SessionRuntimeKind,
+    *,
+    job_parameter_values: dict[str, ParameterValue],
+    param_name: str,
+    param_type: str,
+    root: Path,
+) -> str:
+    """Resolve a single ``{{Param.<param_name>}}`` reference through a real session.
+
+    Builds a runtime of the requested kind with the EXPR extension enabled --
+    the boolean parameter types (BOOL, LIST[BOOL]) are EXPR-extension types and
+    the decoder rejects them without it -- then enters an environment whose
+    onEnter writes the resolved reference to a file and returns the captured
+    text. The reference is spliced into the ``-c`` body as a single-quoted
+    Python string literal, so a LIST[BOOL] value is observed as one rendered
+    string (e.g. ``[true, false]``) rather than expanded into separate process
+    arguments the way a bare list reference in ``args`` would be.
+
+    The environment template both declares ``extensions: ["EXPR"]`` and is
+    decoded with ``supported_extensions=["EXPR"]``; both are required -- the
+    template field opts the template in, and the decode argument is the
+    implementation allowlist the field is intersected against.
+    """
+    output = root / "resolved_param.txt"
+    reference = f"{{{{Param.{param_name}}}}}"
+    recorder = _StatusRecorder()
+    config = SessionRuntimeConfig(
+        session_id=f"session-boolparam-{runtime_kind.name.lower()}",
+        job_parameter_values=job_parameter_values,
+        path_mapping_rules=None,
+        retain_working_dir=False,
+        user=None,
+        action_callback=recorder,
+        os_env_vars=None,
+        session_root_directory=root,
+        supported_extensions=("EXPR",),
+    )
+    runtime = create_session_runtime(runtime_kind, config)
+    try:
+        env_template = decode_environment_template(
+            template={
+                "specificationVersion": "environment-2023-09",
+                "extensions": ["EXPR"],
+                "environment": {
+                    "name": "BoolParamEnv",
+                    "script": {
+                        "actions": {
+                            "onEnter": {
+                                "command": sys.executable,
+                                "args": [
+                                    "-c",
+                                    f"import sys; open(sys.argv[1], 'w').write('{reference}')",
+                                    str(output),
+                                ],
+                            }
+                        }
+                    },
+                },
+                "parameterDefinitions": [{"name": param_name, "type": param_type}],
+            },
+            supported_extensions=["EXPR"],
+        )
+
+        prev = len(recorder.statuses)
+        identifier = runtime.enter_environment(environment=env_template.environment)
+        assert _wait_for_new_action(recorder, prev)
+        terminal = _wait_for_terminal(runtime)
+        assert terminal == "SUCCESS", (
+            f"{runtime_kind.name}: expected SUCCESS resolving Param.{param_name} "
+            f"but got {terminal}; statuses={recorder.state_names}"
+        )
+        resolved = output.read_text()
+
+        prev = len(recorder.statuses)
+        runtime.exit_environment(identifier=identifier)
+        assert _wait_for_new_action(recorder, prev)
+        assert _wait_for_terminal(runtime) == "SUCCESS"
+        return resolved
+    finally:
+        try:
+            runtime.cleanup()
+        except Exception:
+            pass
 
 
 class TestDifferentialSessionRuntime:
@@ -452,3 +544,112 @@ class TestDifferentialSessionRuntime:
                 runtime.cleanup()
             except Exception:
                 pass
+
+    # ------------------------------------------------------------------
+    # Boolean wire-format parameter resolution.
+    #
+    # The worker decodes boolean task/job parameters at a single wire-decode
+    # choke point (``parameters_from_api_response``), coercing the two wire
+    # forms the service may send -- the native JSON boolean ``{"bool": true}``
+    # (sent today) and the string ``{"bool": "true"}`` (sent after the model
+    # change) -- into a native Python bool. These tests exercise that decode
+    # path end to end: a WIRE-FORMAT dict goes through
+    # ``parameters_from_api_response`` and the decoded value is fed to a real
+    # session that references it via ``{{Param.X}}``, so the resolved value is
+    # observed in output rather than merely type-checked at the decode boundary.
+    #
+    # Both wire forms, and every non-canonical-but-legal token, must resolve to
+    # the canonical lowercase ``true``/``false`` OpenJD renders for a bool, and
+    # must do so identically on the Python (v0) and Rust (v1) runtimes. The
+    # expected strings below are spec-derived literals, not values recomputed
+    # from the decoder, and each parametrized runtime asserts against the same
+    # literal -- so a runtime that rendered a bool differently (e.g. ``True`` or
+    # ``1``) would fail its own case rather than be averaged away.
+
+    @pytest.mark.timeout(60)
+    @pytest.mark.parametrize("runtime_kind", _RUNTIME_KINDS)
+    @pytest.mark.parametrize(
+        "wire_value, expected",
+        [
+            pytest.param({"bool": True}, "true", id="native-true"),
+            pytest.param({"bool": "true"}, "true", id="string-true"),
+            pytest.param({"bool": "yes"}, "true", id="string-yes"),
+            pytest.param({"bool": "1"}, "true", id="string-1"),
+            pytest.param({"bool": False}, "false", id="native-false"),
+            pytest.param({"bool": "0"}, "false", id="string-0"),
+        ],
+    )
+    def test_bool_job_param_wire_form_resolves_to_canonical_string(
+        self,
+        runtime_kind: SessionRuntimeKind,
+        wire_value: BoolParameter,
+        expected: str,
+        tmp_path: Path,
+    ) -> None:
+        root = tmp_path / f"boolparam-{runtime_kind.name.lower()}"
+        root.mkdir(parents=True, exist_ok=True)
+
+        # The API-shaped dict is decoded through the real wire path -- the same
+        # code the worker runs on a BatchGetJobEntity response -- not by
+        # hand-building a ParameterValue.
+        job_parameter_values = parameters_from_api_response({"MyBool": wire_value})
+
+        resolved = _resolve_job_param_reference(
+            runtime_kind,
+            job_parameter_values=job_parameter_values,
+            param_name="MyBool",
+            param_type="BOOL",
+            root=root,
+        )
+
+        assert resolved == expected
+
+    @pytest.mark.timeout(60)
+    @pytest.mark.parametrize("runtime_kind", _RUNTIME_KINDS)
+    def test_bool_list_job_param_wire_form_resolves_to_canonical_strings(
+        self, runtime_kind: SessionRuntimeKind, tmp_path: Path
+    ) -> None:
+        root = tmp_path / f"boollist-{runtime_kind.name.lower()}"
+        root.mkdir(parents=True, exist_ok=True)
+
+        # A LIST[BOOL] mixing the native form with non-canonical legal tokens;
+        # every element must decode and resolve to its canonical rendering.
+        job_parameter_values = parameters_from_api_response(
+            {"MyBools": {"boolList": [True, "false", "yes", "0"]}}
+        )
+
+        resolved = _resolve_job_param_reference(
+            runtime_kind,
+            job_parameter_values=job_parameter_values,
+            param_name="MyBools",
+            param_type="LIST[BOOL]",
+            root=root,
+        )
+
+        assert resolved == "[true, false, true, false]"
+
+    @pytest.mark.timeout(90)
+    def test_bool_param_resolution_is_identical_across_runtimes(self, tmp_path: Path) -> None:
+        """The same wire-form bool must resolve to the same concrete text on both
+        runtimes. This compares them directly rather than relying on each
+        asserting a shared literal, so a silent divergence -- one runtime
+        rendering ``True`` or ``1`` while the other renders ``true`` -- fails
+        here. A non-canonical token (``"yes"``) is used so the assertion also
+        pins that the decoder's vocabulary is applied consistently on both."""
+        wire_value: BoolParameter = {"bool": "yes"}
+        outputs: dict[str, str] = {}
+        for runtime_kind in (SessionRuntimeKind.PYTHON, SessionRuntimeKind.RUST):
+            root = tmp_path / f"cross-{runtime_kind.name.lower()}"
+            root.mkdir(parents=True, exist_ok=True)
+            job_parameter_values = parameters_from_api_response({"MyBool": wire_value})
+            outputs[runtime_kind.name] = _resolve_job_param_reference(
+                runtime_kind,
+                job_parameter_values=job_parameter_values,
+                param_name="MyBool",
+                param_type="BOOL",
+                root=root,
+            )
+
+        assert outputs["PYTHON"] == outputs["RUST"]
+        # And the shared value is the canonical rendering, not merely equal-but-wrong.
+        assert outputs["PYTHON"] == "true"
