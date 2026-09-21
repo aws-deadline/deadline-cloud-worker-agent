@@ -64,7 +64,7 @@ Log events may also contain a `type`, `subtype`, icon (`ti`), and additional fie
 | Session | User | 🔷 | queue_id; job_id; session_id; user | The user that a Session is running Actions as. |
 | Session | Runtime | 🔷 | queue_id; job_id; session_id | Information related to the running Session. This includes information about the host, process control, and encountered Exceptions which could contain information like filepaths. |
 | Worker | Create/Load/ID/Status/Delete | 💻 | farm_id; fleet_id; worker_id (optional); message | A notification related to a Worker resource within AWS Deadline Cloud. |
-| Worker | HostConfiguration | 📜 | farm_id; fleet_id; worker_id (optional); message; status; exit_code (optional); success (optional) | Worker Host configuration event. |
+| Worker | HostConfiguration | 📜 | farm_id; fleet_id; worker_id (optional); message; status (optional); exit_code (optional); success (optional) | A Worker Host configuration event. Events reporting a status transition carry `status`; those without it are a single line of output from the Host configuration script or from the runner that invokes it, where stdout and stderr are merged so the originating stream is not reported. |
 
 If you prefer structured logs to be emited on your host, then you can configure your Worker Agent to emit structured logs instead. Please see the
 `structured_logs` option in the [`worker.toml.example`](../src/deadline_worker_agent/installer/worker.toml.example)
