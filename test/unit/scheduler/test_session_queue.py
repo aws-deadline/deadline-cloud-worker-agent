@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 from collections import OrderedDict
 
@@ -376,6 +377,52 @@ class TestSessionActionQueueDequeue:
         action_id = queue_entry.definition["sessionActionId"]
         assert session_queue._actions == []
         assert action_id not in session_queue._actions_by_id
+
+    def test_bad_task_parameter_degrades_to_step_details_error(
+        self,
+        session_queue: SessionActionQueue,
+    ) -> None:
+        # A malformed TASK_RUN boolean parameter is decoded outside the
+        # step_details fetch. Its decode failure must be converted into a
+        # StepDetailsError -- the same graceful per-action failure the
+        # step_details fetch uses -- rather than escaping dequeue() as a bare
+        # ValueError, which would tear down the whole session.
+
+        # GIVEN
+        # A non-list boolList models malformed wire data the service could send;
+        # typed as untrusted JSON since it deliberately violates the schema.
+        bad_parameters: dict[str, Any] = {"badBool": {"boolList": None}}
+        queue_entry = TaskRunQueueEntry(
+            Mock(),  # cancel event
+            TaskRunAction(
+                sessionActionId="id",
+                actionType="TASK_RUN",
+                taskId="taskId",
+                stepId="stepId",
+                # A non-list boolList is a decode error, not a step_details error.
+                parameters=bad_parameters,
+            ),
+        )
+        session_queue._actions = [queue_entry]
+        session_queue._actions_by_id[queue_entry.definition["sessionActionId"]] = queue_entry
+        # step_details resolves fine; the failure is purely in parameter decode.
+        job_entity_mock = MagicMock()
+        job_entity_mock.step_details.return_value = StepDetails(
+            step_template=_TEST_STEP_TEMPLATE, step_id="stepId"
+        )
+        session_queue._job_entities = job_entity_mock
+
+        # WHEN
+        with pytest.raises(StepDetailsError, match=r"to be a list but got None") as excinfo:
+            session_queue.dequeue()
+
+        # THEN
+        assert excinfo.value.step_id == "stepId"
+        assert excinfo.value.task_id == "taskId"
+        # The failed action must be removed from the queue so cancel_all() does
+        # not later re-report it as NEVER_ATTEMPTED and clobber the FAILED status.
+        assert session_queue._actions == []
+        assert "id" not in session_queue._actions_by_id
 
     @pytest.mark.parametrize(
         argnames=("queue_entry"),

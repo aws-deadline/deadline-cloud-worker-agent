@@ -171,6 +171,17 @@ class TestParametersFromApiResponse:
             pytest.param(
                 {"boolList": ["true", "maybe"]}, r"got 'maybe'", id="boollist-bad-element-rejected"
             ),
+            # A non-list boolList value must be rejected with a ValueError, not
+            # a TypeError from attempting to iterate a non-iterable. The decode
+            # path shape-checks before iterating so callers only ever have to
+            # catch ValueError for a malformed boolean parameter.
+            pytest.param(
+                {"boolList": None}, r"to be a list but got None", id="boollist-none-rejected"
+            ),
+            pytest.param(
+                {"boolList": "true"}, r"to be a list but got 'true'", id="boollist-string-rejected"
+            ),
+            pytest.param({"boolList": 5}, r"to be a list but got 5", id="boollist-int-rejected"),
         ],
     )
     def test_bool_parameters_reject_invalid_values(self, param_dict, match) -> None:

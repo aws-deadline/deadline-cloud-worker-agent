@@ -532,7 +532,21 @@ class SessionActionQueue:
                         task_id=task_id,
                     ) from e
                 task_parameters_data: dict = action_definition.get("parameters", {})
-                task_parameters = parameters_from_api_response(task_parameters_data)
+                # Task parameters are decoded here, outside the step_details
+                # fetch above. A decode failure (e.g. a malformed boolean) must
+                # fail this one action gracefully, matching how step_details
+                # errors are handled, rather than escaping as a bare ValueError
+                # that would tear down the whole session.
+                try:
+                    task_parameters = parameters_from_api_response(task_parameters_data)
+                except (ValueError, RuntimeError) as e:
+                    raise StepDetailsError(
+                        action_id,
+                        SessionActionLogKind.TASK_RUN,
+                        str(e),
+                        step_id=step_id,
+                        task_id=task_id,
+                    ) from e
 
                 next_action = RunStepTaskAction(
                     id=action_id,

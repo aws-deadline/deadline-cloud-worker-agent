@@ -151,9 +151,17 @@ def parameters_from_api_response(
             )
         elif "boolList" in value:
             value = cast(BoolListParameter, value)
+            bool_list = value["boolList"]
+            # Shape-check before iterating so a non-list (e.g. None) raises the
+            # same ValueError vocabulary the rest of this function uses rather
+            # than a TypeError that callers catching only ValueError would miss.
+            if not isinstance(bool_list, list):
+                raise ValueError(
+                    f"Expected a boolList parameter value to be a list but got {bool_list!r}"
+                )
             param_value = ParameterValue(
                 type=ParameterValueType.LIST_BOOL,
-                value=[_bool_from_api_response(item) for item in value["boolList"]],
+                value=[_bool_from_api_response(item) for item in bool_list],
             )
         elif "intListList" in value:
             value = cast(IntListListParameter, value)
