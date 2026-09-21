@@ -708,10 +708,6 @@ def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
         # straight over the state the flag exists to preserve, silently; instead that call refuses.
         return
 
-    # Cleared only once this worker is genuinely being torn down, for the reason above.
-    if _MACOS:
-        _installed_worker = None
-
     def _giveup_unless_conflict(e: ClientError) -> bool:
         return e.response["Error"]["Code"] != "ConflictException"
 
@@ -733,6 +729,15 @@ def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
             "Failed to stop worker. Resources may be left over that need to be cleaned up manually."
         )
         raise
+    else:
+        # Released only on a successful stop, so the registry says the host is free exactly when
+        # it is. Clearing before the stop would let a first-attempt failure -- a throttle, an
+        # expired credential, a bootout error, none of which the ConflictException backoff retries
+        # -- leave a live agent on a host recorded as empty, and the next _claim_host would then
+        # install straight over it. Keeping the worker recorded means the next claim sees it and
+        # tries the stop again instead.
+        if _MACOS and _installed_worker is worker:
+            _installed_worker = None
 
 
 @pytest.fixture(scope="session")

@@ -105,6 +105,25 @@ def test_stop_worker_skips_an_already_displaced_worker() -> None:
     a.stop.assert_not_called()  # would have raised on double DeleteWorker
 
 
+def test_a_failed_stop_keeps_the_worker_recorded() -> None:
+    # The slot is released only on a successful stop. Clearing it first would let a first-attempt
+    # failure -- which the ConflictException backoff does not retry -- leave a live agent on a host
+    # the registry calls free, and the next claim would install straight over it. Kept recorded,
+    # the next claim sees the incumbent and tries the stop again.
+    a, b = MagicMock(name="a"), MagicMock(name="b")
+    a.stop.side_effect = RuntimeError("bootout failed")
+    conftest._claim_host(_req(), a, None)
+
+    with pytest.raises(RuntimeError, match="bootout failed"):
+        conftest.stop_worker(_req(), a)
+    assert conftest._installed_worker is a
+
+    a.stop.side_effect = None
+    conftest._claim_host(_req(), b, None)  # retries the stop rather than overwriting a live agent
+    assert a.stop.call_count == 2
+    assert conftest._installed_worker is b
+
+
 def test_stop_worker_stops_the_holder_and_releases() -> None:
     a = MagicMock(name="a")
     conftest._claim_host(_req(), a, None)
