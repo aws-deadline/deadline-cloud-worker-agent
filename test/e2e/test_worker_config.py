@@ -11,6 +11,7 @@ import boto3
 import dataclasses
 import logging
 import os
+import pytest
 
 from deadline_test_fixtures import (
     DeadlineClient,
@@ -146,6 +147,14 @@ class TestWorkerConfiguration:
                     f"Checking that local session logs do not exist returned unexpected response: {check_log_exists_result}"
                 )
 
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "macos",
+        reason=(
+            "Needs a host that can be scaled out and powered off. The macOS worker runs on "
+            "the test host itself, so it has no instance_id, and shutting it down would take "
+            "the rest of the suite with it."
+        ),
+    )
     def test_worker_shuts_down_host_machine_if_configured(
         self,
         deadline_resources: DeadlineResources,
@@ -216,9 +225,17 @@ class TestWorkerConfiguration:
         session_root_dir: str
         run_script: str
 
-        if operating_system.is_amazon_linux():
-            session_root_dir = "/mysessionroot"
-            run_script = f"""#!/usr/bin/bash
+        if operating_system.is_amazon_linux() or operating_system.is_macos():
+            # macOS cannot take the Linux path: the system volume is sealed and read-only, so a
+            # root-level /mysessionroot cannot be created. Under /opt rather than /tmp or
+            # /Users/Shared, both of which are mode 1777: an unprivileged process on the host could
+            # pre-create the directory there and the agent would adopt one it does not own, or fail
+            # to set the ownership it intends. /opt is root:wheel 0755, is on the writable data
+            # volume, and already holds the agent's own venv.
+            session_root_dir = (
+                "/opt/mysessionroot" if operating_system.is_macos() else "/mysessionroot"
+            )
+            run_script = f"""#!/usr/bin/env bash
 set -euo pipefail
 echo "=== Session Root Dir Test ==="
 echo "Expected: working dir under {session_root_dir}/"

@@ -263,6 +263,12 @@ if __name__ == "__main__":
             },
         )
         job.wait_until_complete(client=deadline_client)
+        # Asserted before the output check below: wait_until_complete treats FAILED as
+        # complete, so a job that failed yields an empty mapping and the test reports
+        # "expected exactly one output root, but got {}" with nothing about the cause.
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
 
         output_root_to_file_mappings: dict[str, list[str]] = wait_for_job_output(
             job=job,
@@ -720,7 +726,7 @@ if __name__ == "__main__":
         )
 
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "windows",
+        os.environ["OPERATING_SYSTEM"] != "linux",
         reason="Linux specific job bundle to test job attachments dependency data flow",
     )
     @pytest.mark.parametrize(
@@ -1813,7 +1819,7 @@ with open(output_path, "w") as f:
         )
 
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "windows",
+        os.environ["OPERATING_SYSTEM"] != "linux",
         reason="Linux specific job bundle to test create job API call",
     )
     def test_worker_create_job_API_call_linux(

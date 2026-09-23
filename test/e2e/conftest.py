@@ -10,7 +10,7 @@ from collections.abc import Generator
 from configparser import ConfigParser
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
-from typing import Callable, Optional, Type
+from typing import Callable, Optional, Type, cast
 
 import backoff
 import boto3
@@ -32,6 +32,7 @@ from deadline_test_fixtures import (
     Ec2Tag,
     Farm,
     Fleet,
+    LocalMacWorker,
     OperatingSystem,
     PosixSessionUser,
     Queue,
@@ -321,15 +322,33 @@ def worker_config(
 
 
 @pytest.fixture(scope="session")
-def session_worker(
+def _session_worker_impl(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config, request) as worker:
+        # Recorded so create_worker can tell "the incumbent is the session worker" from "the
+        # incumbent is another per-test worker" without requesting this fixture and creating it.
+        request.session.stash[_SESSION_WORKER_KEY] = worker
         yield worker
 
     stop_worker(request, worker)
+
+
+@pytest.fixture
+def session_worker(
+    request: pytest.FixtureRequest,
+    _session_worker_impl: DeadlineWorker,
+) -> DeadlineWorker:
+    """The session-scoped worker, reinstalled first if a per-test worker displaced it.
+
+    A thin function-scoped wrapper over the cached fixture: pytest hands back the same object for
+    the whole session, so without a per-use hook a worker stopped by a macOS per-test install would
+    stay stale and every later assertion would run against a host with no agent. A no-op on Linux
+    and Windows, where workers are separate instances.
+    """
+    reinstate_session_worker(request, _session_worker_impl)
+    return _session_worker_impl
 
 
 @pytest.fixture(scope="class")
@@ -359,9 +378,8 @@ def asset_sync_worker_config(
 def asset_sync_class_worker(
     request: pytest.FixtureRequest,
     asset_sync_worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(asset_sync_worker_config, ec2_worker_type, request) as worker:
+    with create_worker(asset_sync_worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -371,9 +389,8 @@ def asset_sync_class_worker(
 def class_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -383,9 +400,8 @@ def class_worker(
 def function_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
-    with create_worker(worker_config, ec2_worker_type, request) as worker:
+    with create_worker(worker_config, request) as worker:
         yield worker
 
     stop_worker(request, worker)
@@ -394,14 +410,13 @@ def function_worker(
 @pytest.fixture(scope="function")
 def function_worker_factory(
     request: pytest.FixtureRequest,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[Callable[[DeadlineWorkerConfiguration], EC2InstanceWorker], None, None]:
     created_workers = []
 
     def _create_function_worker(
         custom_worker_config: DeadlineWorkerConfiguration,
     ):
-        with create_worker(custom_worker_config, ec2_worker_type, request) as worker:
+        with create_worker(custom_worker_config, request) as worker:
             created_workers.append(worker)
             return worker
 
@@ -412,6 +427,26 @@ def function_worker_factory(
 
 def _grab_bootstrap_log(worker: DeadlineWorker) -> None:
     """Best-effort grab of the worker bootstrap log after a start failure."""
+    if isinstance(worker, LocalMacWorker):
+        # macOS bootstrap is the part most likely to fail -- account creation, the sudoers rule, the
+        # LaunchDaemon -- and the reusable workflow hides the CodeBuild log from GitHub, so without
+        # this the only record of a start failure is the exception string.
+        #
+        # One send_command per file rather than the EC2 branch's single chained command:
+        # LocalMacWorker runs commands under `set -euo pipefail`, so the first missing path would
+        # abort the rest -- and after a bootstrap failure a missing file is the likely case. No sudo
+        # prefix, because send_command is already root.
+        for log_path in (
+            "/var/log/amazon/deadline/worker-agent-bootstrap.log",
+            "/var/log/amazon/deadline/worker-agent.log",
+            "/etc/amazon/deadline/worker.toml",
+        ):
+            try:
+                result = worker.send_command(f"tail -n 100 {log_path}", quiet=True)
+                LOG.error(f"--- {log_path} (exit {result.exit_code}) ---\n{result.stdout}")
+            except Exception as log_err:
+                LOG.warning(f"Could not read {log_path}: {log_err}")
+        return
     if not isinstance(worker, EC2InstanceWorker):
         return
     try:
@@ -439,9 +474,96 @@ def _grab_bootstrap_log(worker: DeadlineWorker) -> None:
         LOG.warning(f"Could not retrieve bootstrap log: {log_err}")
 
 
+# One host, one agent. LocalMacWorker installs onto the machine running the tests, so two workers
+# cannot coexist: the second start() overwrites the first's worker.toml, worker.json and
+# LaunchDaemon, and whichever configuration landed last is the one under test.
+#
+# Rather than skip every test that wants a differently-configured worker, macOS installs them one at
+# a time. A worker created here displaces whatever is installed, and the session worker is
+# reinstated on next use if it was the one displaced -- lazily, so a run that never returns to it
+# pays nothing. stop() leaves the venv and the account, so reinstalling is the installer plus a
+# launchd bootstrap rather than a full provision.
+#
+# Not a mechanism on Linux or Windows: there each worker is its own instance and they are genuinely
+# concurrent, so nothing here changes for them.
+_MACOS = os.environ.get("OPERATING_SYSTEM") == "macos"
+_SESSION_WORKER_KEY: pytest.StashKey[DeadlineWorker] = pytest.StashKey()
+_installed_worker: Optional[DeadlineWorker] = None
+_displaced_session_worker: Optional[DeadlineWorker] = None
+
+
+def _keeping_workers_after_failure(request: pytest.FixtureRequest) -> bool:
+    return (
+        request.session.testsfailed > 0
+        and os.getenv("KEEP_WORKER_AFTER_FAILURE", "false").lower() == "true"
+    )
+
+
+def _claim_host(
+    request: pytest.FixtureRequest,
+    worker: DeadlineWorker,
+    session_worker: Optional[DeadlineWorker],
+) -> None:
+    """Stop whatever currently holds the host so `worker` can install onto it."""
+    global _installed_worker, _displaced_session_worker
+    current = _installed_worker
+    if current is not None and current is not worker:
+        # Refused rather than resolved. KEEP_WORKER_AFTER_FAILURE asks for the failed worker's host
+        # state to be left for inspection, and only one agent fits on a macOS host, so installing
+        # over it would destroy exactly what the flag was set to preserve -- and leave this worker
+        # running against a LaunchDaemon and worker id it did not create. Neither silent option is
+        # right, so say so and stop.
+        if _keeping_workers_after_failure(request):
+            raise RuntimeError(
+                "KEEP_WORKER_AFTER_FAILURE is set and a test has failed, so the agent installed on "
+                "this host is being kept for inspection. Only one agent fits on a macOS host, so "
+                "the worker this test needs cannot be installed without destroying it. Rerun "
+                "without KEEP_WORKER_AFTER_FAILURE, or deselect the tests that need a second worker."
+            )
+        LOG.info("Stopping the worker currently installed on this host before installing another")
+        try:
+            # Through stop_worker, not current.stop(). A displaced worker was running jobs moments
+            # ago, which is when DeleteWorker returns ConflictException, and stop_worker is where the
+            # retry for that lives. A bare stop() here would swallow a transient conflict, and
+            # nothing retries afterwards: the record would stay registered for the rest of the run.
+            stop_worker(request, current)
+        except Exception:  # pragma: no cover
+            LOG.exception("Failed to stop the incumbent worker; the next install may fail")
+        if session_worker is not None and current is session_worker:
+            _displaced_session_worker = current
+    # Set after the stop above, so a stop_worker racing in between sees the incumbent rather than
+    # the newcomer and does not skip a teardown that was still owed.
+    _installed_worker = worker
+
+
+def reinstate_session_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
+    """Reinstall the session worker if a per-test worker displaced it.
+
+    Called from the `session_worker` fixture on every use, so the cost is one reinstall per
+    transition back rather than one per test.
+
+    Note that the collection order in pytest_collection_modifyitems puts every session_worker test
+    at the end of the run, so in a full run the session worker is created after the last per-test
+    worker has been torn down and nothing displaces it: this is a no-op. It earns its keep under
+    -k, deselection, or a reordering plugin, where the interleaving the ordering hook prevents
+    becomes possible again.
+    """
+    global _displaced_session_worker
+    if not _MACOS or _displaced_session_worker is not worker:
+        return
+    LOG.info("Reinstating the session worker, displaced by a per-test worker")
+    # Through _claim_host, so this path honours the same invariant as any other install. Reinstating
+    # while a class-scoped per-test worker is still alive would otherwise overwrite its config in
+    # place and leave its teardown with nothing to stop, leaking its worker record.
+    _claim_host(request, worker, worker)
+    worker.start()
+    # Cleared only after a successful start. If the reinstall raises, the worker is still displaced,
+    # and the next use has to try again rather than be handed a host with no agent on it.
+    _displaced_session_worker = None
+
+
 def create_worker(
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
     request: pytest.FixtureRequest,
 ):
     def __init__(self):
@@ -471,13 +593,48 @@ def create_worker(
         DeadlineWorker: Instance of the DeadlineWorker class that can be used to interact with the Worker.
     """
 
+    # Resolved here rather than taken as a parameter: every call site passed the same fixture
+    # value, and the macOS branch below needs the operating system anyway.
+    operating_system: OperatingSystem = request.getfixturevalue("operating_system")
+
+    # Mutually exclusive rather than ordered, mirroring the fixtures package's own worker fixture.
+    # Taking the Docker branch for OPERATING_SYSTEM=macos would hand back a Linux container while
+    # the run reports macOS results -- and engage the macOS exclusivity registry for containers it
+    # was never written for.
+    if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true" and operating_system.is_macos():
+        raise RuntimeError(
+            "USE_DOCKER_WORKER is not compatible with OPERATING_SYSTEM=macos; the container does "
+            "not run macOS. Change OPERATING_SYSTEM or unset USE_DOCKER_WORKER."
+        )
+
     worker: DeadlineWorker
     if os.environ.get("USE_DOCKER_WORKER", "").lower() == "true":
         LOG.info("Creating Docker worker")
         worker = DockerContainerWorker(
             configuration=worker_config,
         )
+    elif operating_system.is_macos():
+        # Ahead of the EC2 branch, because none of what it needs exists here: LocalMacWorker
+        # installs the agent onto this host, so there is no instance to place in a subnet or a
+        # security group and no instance profile to attach. The asserts below would fail on a
+        # host that is otherwise able to run the suite.
+        #
+        # Named directly rather than resolved through ec2_worker_type. That fixture is the override
+        # point for swapping in an EC2 subclass, so the value it yields carries no guarantee of
+        # being a macOS worker: a cast would silence mypy and then fail at runtime on the missing
+        # ec2_client and subnet_id keywords. Naming the class also keeps this branch working against
+        # any fixtures version that ships LocalMacWorker, rather than only those whose
+        # ec2_worker_type knows about MACOS.
+        LOG.info("Creating local macOS worker")
+        worker = LocalMacWorker(
+            configuration=worker_config,
+            deadline_client=boto3.client("deadline"),
+        )
     else:
+        # Resolved inside this branch, not above it. ec2_worker_type raises ValueError for an
+        # operating system it does not recognise, so resolving it unconditionally would fail the
+        # macOS run at fixture setup with an unsupported-OS error before the branch above could run.
+        worker_type = cast(Type[EC2InstanceWorker], request.getfixturevalue("ec2_worker_type"))
         LOG.info("Creating EC2 worker")
         ami_id = os.getenv("AMI_ID")
         subnet_id = os.getenv("SUBNET_ID")
@@ -499,7 +656,7 @@ def create_worker(
         ssm_client = boto3.client("ssm")
         deadline_client = boto3.client("deadline")
 
-        worker = ec2_worker_type(
+        worker = worker_type(
             ec2_client=ec2_client,
             s3_client=s3_client,
             deadline_client=deadline_client,
@@ -518,6 +675,11 @@ def create_worker(
     @contextmanager
     def _context_for_fixture():
         try:
+            if _MACOS:
+                # Before start(), so the incumbent is stopped rather than overwritten. The session
+                # worker is looked up rather than requested, because requesting it here would
+                # create it for tests that never wanted one.
+                _claim_host(request, worker, request.session.stash.get(_SESSION_WORKER_KEY, None))
             worker.start()
         except Exception as e:
             LOG.error(f"Failed to start worker: {e}")
@@ -531,10 +693,20 @@ def create_worker(
 
 
 def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
-    if request.session.testsfailed > 0:
-        if os.getenv("KEEP_WORKER_AFTER_FAILURE", "false").lower() == "true":
-            LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
-            return
+    # A displaced macOS worker has already been stopped, and stopping it again raises: stop()
+    # deletes the worker record, and the second DeleteWorker on the same id fails. Only the worker
+    # that still holds the host has anything left to tear down.
+    global _installed_worker
+    if _MACOS and _installed_worker is not worker:
+        LOG.info("Worker was already displaced from this host; nothing to stop")
+        return
+
+    if _keeping_workers_after_failure(request):
+        LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
+        # _installed_worker deliberately still points at this worker: the agent is installed and
+        # running, so the host is not free. Clearing it here would let the next _claim_host install
+        # straight over the state the flag exists to preserve, silently; instead that call refuses.
+        return
 
     def _giveup_unless_conflict(e: ClientError) -> bool:
         return e.response["Error"]["Code"] != "ConflictException"
@@ -557,6 +729,15 @@ def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
             "Failed to stop worker. Resources may be left over that need to be cleaned up manually."
         )
         raise
+    else:
+        # Released only on a successful stop, so the registry says the host is free exactly when
+        # it is. Clearing before the stop would let a first-attempt failure -- a throttle, an
+        # expired credential, a bootout error, none of which the ConflictException backoff retries
+        # -- leave a live agent on a host recorded as empty, and the next _claim_host would then
+        # install straight over it. Keeping the worker recorded means the next claim sees it and
+        # tries the stop again instead.
+        if _MACOS and _installed_worker is worker:
+            _installed_worker = None
 
 
 @pytest.fixture(scope="session")
@@ -615,11 +796,10 @@ def operating_system() -> OperatingSystem:
     elif os_env_var == "windows":
         return OperatingSystem(name="WIN2022")
     elif os_env_var == "macos":
-        # deadline-cloud-test-fixtures accepts MACOS from 0.18.21 and ships LocalMacWorker, but
-        # nothing selects it: its ec2_worker_type raises ValueError for anything but AL2023 and
-        # WIN2022, and create_worker asserts a subnet and security group a native Mac host has
-        # not got. Wiring MACOS to LocalMacWorker is still to do; until then this branch reaches
-        # a worker fixture that rejects it.
+        # MACOS reaches create_worker's LocalMacWorker branch, which installs the agent onto the
+        # machine running the tests rather than provisioning one. That is why the suite must not be
+        # pointed at a developer's Mac: pipeline/e2e-macos.sh refuses to run outside CodeBuild for
+        # this reason.
         return OperatingSystem(name="MACOS")
     else:
         assert False, (
