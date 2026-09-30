@@ -725,9 +725,12 @@ if __name__ == "__main__":
             job, deadline_client, deadline_resources.queue_a, deadline_resources
         )
 
+    # POSIX, not Linux: the bundle's scripts are bash and its steps accept both linux and macos
+    # workers, so a macOS worker runs it unchanged. The bundle directory keeps its name because
+    # the Windows suite has its own; only the OS families it admits have widened.
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] != "linux",
-        reason="Linux specific job bundle to test job attachments dependency data flow",
+        os.environ["OPERATING_SYSTEM"] not in ("linux", "macos"),
+        reason="POSIX-specific job bundle to test job attachments dependency data flow",
     )
     @pytest.mark.parametrize(
         "file_system",
@@ -737,7 +740,7 @@ if __name__ == "__main__":
             "VIRTUAL",
         ],
     )
-    def test_worker_job_attachments_dep_data_flow_linux(
+    def test_worker_job_attachments_dep_data_flow_posix(
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
@@ -782,7 +785,7 @@ if __name__ == "__main__":
         # Get job output path
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
         output_root_path = tempfile.mkdtemp(
-            dir=self.JOB_OUTPUT_PATH, prefix=f"dep_data_flow_linux-{file_system}"
+            dir=self.JOB_OUTPUT_PATH, prefix=f"dep_data_flow_posix-{file_system}"
         )
         output_path: dict[str, list[str]] = wait_for_job_output(
             job=job,
@@ -1818,11 +1821,12 @@ with open(output_path, "w") as f:
             output_dir_path=output_root_path + "/output",
         )
 
+    # POSIX, for the same reason as the dependency-data-flow test above.
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] != "linux",
-        reason="Linux specific job bundle to test create job API call",
+        os.environ["OPERATING_SYSTEM"] not in ("linux", "macos"),
+        reason="POSIX-specific job bundle to test create job API call",
     )
-    def test_worker_create_job_API_call_linux(
+    def test_worker_create_job_API_call_posix(
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,

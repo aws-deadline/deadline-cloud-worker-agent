@@ -38,6 +38,7 @@ steps:
     - name: attr.worker.os.family
       anyOf:
       - linux
+      - macos
   script:
     actions:
       onRun:
@@ -115,6 +116,7 @@ steps:
     - name: attr.worker.os.family
       anyOf:
       - linux
+      - macos
   dependencies:
   - dependsOn: Step1
   parameterSpace:
@@ -208,6 +210,7 @@ steps:
     - name: attr.worker.os.family
       anyOf:
       - linux
+      - macos
   dependencies:
   - dependsOn: Step1-2
   script:
@@ -285,6 +288,7 @@ steps:
     - name: attr.worker.os.family
       anyOf:
       - linux
+      - macos
   dependencies:
   - dependsOn: Step1-2
   script:
@@ -362,6 +366,7 @@ steps:
     - name: attr.worker.os.family
       anyOf:
       - linux
+      - macos
   dependencies:
   - dependsOn: Step1-2-3
   - dependsOn: Step1-2-4
