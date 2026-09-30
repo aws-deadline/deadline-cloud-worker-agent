@@ -57,7 +57,7 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          #!/bin/env bash
+          #!/usr/bin/env bash
 
           set -euo pipefail
 
@@ -142,7 +142,7 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          #!/bin/env bash
+          #!/usr/bin/env bash
 
           set -euo pipefail
 
@@ -234,7 +234,7 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          #!/bin/env bash
+          #!/usr/bin/env bash
 
           set -euo pipefail
 
@@ -312,7 +312,7 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          #!/bin/env bash
+          #!/usr/bin/env bash
 
           set -euo pipefail
 
@@ -391,7 +391,7 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          #!/bin/env bash
+          #!/usr/bin/env bash
 
           set -euo pipefail
 

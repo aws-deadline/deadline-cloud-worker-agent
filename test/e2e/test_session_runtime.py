@@ -512,10 +512,19 @@ class TestRustUnavailableAndRecovery:
                 # stop_worker_service does on macOS. While it is still loaded the output carries
                 # `state = running` until the process is gone, so both are checked: a job that is
                 # loaded but stopped is also an acceptable stop.
+                #
+                # Anchored to a single leading tab, as in the other two launchctl checks in this
+                # suite: `launchctl print` repeats `state` for nested endpoints and services at
+                # deeper indentation, and an unanchored match is too permissive for a negation --
+                # any nested endpoint still reporting running would keep this retrying until the
+                # backoff expired, failing a restart that had in fact worked.
                 status_result = worker.send_command(
                     f"launchctl print system/{_MACOS_LAUNCHD_LABEL}"
                 )
-                assert status_result.exit_code != 0 or "state = running" not in status_result.stdout
+                assert (
+                    status_result.exit_code != 0
+                    or "\n\tstate = running" not in status_result.stdout
+                )
             else:
                 status_result = worker.send_command("systemctl is-active deadline-worker")
                 assert status_result.exit_code != 0

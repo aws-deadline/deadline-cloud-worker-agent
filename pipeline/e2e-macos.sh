@@ -45,6 +45,19 @@ AGENT_WORKER_JSON=/var/lib/deadline/worker.json
 AGENT_WORKER_TOML=/etc/amazon/deadline/worker.toml
 AGENT_VENV=/opt/deadline/worker
 
+# Per-build accumulations. Each build creates a fresh set of these for worker and queue ids that
+# no longer exist afterwards, and on reserved capacity nothing else removes them, so the host
+# grows without bound until the volume fills -- which would surface as an unrelated test failing
+# in some later build rather than as a disk problem.
+#
+# /opt/mysessionroot is the session root test_worker_config.py configures on macOS; the rest are
+# the agent's own per-queue state and logs.
+BUILD_RESIDUE=(
+    /opt/mysessionroot
+    /var/lib/deadline/credentials
+    /var/lib/deadline/queues
+)
+
 # Suffix used by test_session_runtime.py's rust_unavailable_worker fixture when it moves
 # openjd/model/_v1 aside to make the Rust adapter unloadable. Kept in sync with
 # _V1_MOVED_ASIDE_SUFFIX there.
@@ -75,9 +88,10 @@ restore_moved_aside_openjd_v1() {
     fi
 }
 
-# Reset only what poisons the next build: a daemon still loaded from a previous run, and the
-# config and worker id it registered with. The account, group and /opt/deadline venv are
-# deliberately left -- the installer is idempotent over them and reusing them saves minutes.
+# Reset what poisons the next build -- a daemon still loaded from a previous run and the config
+# and worker id it registered with -- and the per-build residue that would otherwise accumulate
+# forever on a host that outlives every build. The account, group and /opt/deadline venv are
+# deliberately left: the installer is idempotent over them and reusing them saves minutes.
 #
 # Best effort throughout. A host with none of this present is the normal case, and a refusal here
 # must not fail a build before the suite has had a chance to report anything.
@@ -85,6 +99,9 @@ reset_agent_state() {
     sudo -n launchctl bootout "system/${AGENT_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
     sudo -n rm -f "${AGENT_WORKER_JSON}" >/dev/null 2>&1 || true
     sudo -n rm -f "${AGENT_WORKER_TOML}" >/dev/null 2>&1 || true
+    for path in "${BUILD_RESIDUE[@]}"; do
+        sudo -n rm -rf "${path}" >/dev/null 2>&1 || true
+    done
     restore_moved_aside_openjd_v1
 }
 
