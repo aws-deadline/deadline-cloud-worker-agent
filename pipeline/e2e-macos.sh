@@ -76,11 +76,23 @@ V1_MOVED_ASIDE_SUFFIX=.e2e-moved-aside
 restore_moved_aside_openjd_v1() {
     [ -d "${AGENT_VENV}" ] || return 0
     local moved target
-    moved="$(sudo -n find "${AGENT_VENV}" -type d -name "_v1${V1_MOVED_ASIDE_SUFFIX}" 2>/dev/null | head -1)"
+    # -print -quit rather than `| head -1`, and `|| true` on the whole thing. Under the script's
+    # `set -euo pipefail` a pipeline here can abort the build before the suite starts, with nothing
+    # on stderr: `head` exits at the first line, so `find` can take SIGPIPE and return 141, which
+    # pipefail propagates. That only happens when a moved-aside tree is present, which is the one
+    # case this function exists for. -print -quit also stops find at the first hit.
+    moved="$(sudo -n find "${AGENT_VENV}" -type d -name "_v1${V1_MOVED_ASIDE_SUFFIX}" -print -quit 2>/dev/null || true)"
     [ -n "${moved}" ] || return 0
     target="${moved%${V1_MOVED_ASIDE_SUFFIX}}"
+    # A present target means the fixture already restored it and this copy is stale, so keep the
+    # good tree and drop the leftover. Removing the target first would delete the working tree and
+    # move the stale one into its place.
+    if [ -d "${target}" ]; then
+        echo "NOTE: ${target} is present, so ${moved} is a stale leftover; removing it." >&2
+        sudo -n rm -rf "${moved}" >/dev/null 2>&1 || true
+        return 0
+    fi
     echo "WARNING: a previous build left ${target} moved aside; restoring it." >&2
-    sudo -n rm -rf "${target}" >/dev/null 2>&1 || true
     sudo -n mv "${moved}" "${target}" >/dev/null 2>&1 || true
     if [ ! -d "${target}" ]; then
         echo "WARNING: failed to restore ${target}. Tests asserting the rust session runtime will" >&2

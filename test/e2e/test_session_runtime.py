@@ -375,10 +375,13 @@ def rust_unavailable_worker(
                 f"if (Test-Path '{v1}') {{ Write-Error 'failed to move {v1} aside'; exit 1 }}; "
                 "exit 0"
             )
+            # A present target means the fixture already restored it, so the suffixed copy is
+            # stale: drop it rather than deleting the good tree first. Removing the target and then
+            # failing the move would leave neither, and nothing for the pipeline recovery to find.
             restore_cmd = (
                 f"if (Test-Path '{moved}') {{ "
-                f"if (Test-Path '{v1}') {{ Remove-Item -Recurse -Force '{v1}' }}; "
-                f"Move-Item -Force '{moved}' '{v1}' }}; "
+                f"if (Test-Path '{v1}') {{ Remove-Item -Recurse -Force '{moved}' }} "
+                f"else {{ Move-Item -Force '{moved}' '{v1}' }} }}; "
                 f"if (-not (Test-Path '{v1}')) {{ Write-Error 'failed to restore {v1}'; exit 1 }}; "
                 "exit 0"
             )
@@ -388,21 +391,34 @@ def rust_unavailable_worker(
                 f'mv "{v1}" "{moved}"; '
                 f'if [ -d "{v1}" ]; then echo "failed to move {v1} aside" >&2; exit 1; fi'
             )
+            # Same guard as the Windows branch: a present target means the suffixed copy is
+            # stale, so remove that rather than the tree that is already in place.
             restore_cmd = (
-                f'set -e; if [ -d "{moved}" ]; then rm -rf "{v1}"; mv "{moved}" "{v1}"; fi; '
+                f'set -e; if [ -d "{moved}" ]; then '
+                f'if [ -d "{v1}" ]; then rm -rf "{moved}"; else mv "{moved}" "{v1}"; fi; fi; '
                 f'if [ ! -d "{v1}" ]; then echo "failed to restore {v1}" >&2; exit 1; fi'
             )
 
-        move_result = worker.send_command(move_cmd)
-        assert move_result.exit_code == 0, f"Failed to move {v1} aside: {move_result}"
-
+        # The try covers the move itself, not just the yield. move_cmd is a pre-condition check,
+        # then mv, then a post-condition check, so a failure of that last check -- or a transport
+        # failure after the shell ran mv -- returns non-zero with the tree already moved. Asserting
+        # outside the try would skip the restore in exactly that case, which is the one the
+        # move-aside-rather-than-delete design exists for. The restore is a no-op when the suffixed
+        # path is absent, so covering the move costs nothing when it failed before moving anything.
         try:
+            move_result = worker.send_command(move_cmd)
+            assert move_result.exit_code == 0, f"Failed to move {v1} aside: {move_result}"
+
             yield worker
         finally:
             # Asserted, not best-effort. On macOS a failed restore leaves the host's venv unable to
             # load the Rust adapter for every subsequent build, so it has to be loud even though
-            # raising in teardown reports as an error on a test that may have passed.
+            # raising in teardown reports as an error on a test that may have passed. Logged first,
+            # because an assertion raised here replaces whatever was already propagating and the
+            # original failure is usually the more informative of the two.
             restore_result = worker.send_command(restore_cmd)
+            if restore_result.exit_code != 0:
+                LOG.error(f"Failed to restore {v1}: {restore_result}")
             assert restore_result.exit_code == 0, (
                 f"Failed to restore {v1}; a macOS host is now poisoned for later builds and needs "
                 f"the tree moved back by hand: {restore_result}"
@@ -519,12 +535,17 @@ class TestRustUnavailableAndRecovery:
                 # any nested endpoint still reporting running would keep this retrying until the
                 # backoff expired, failing a restart that had in fact worked.
                 status_result = worker.send_command(
-                    f"launchctl print system/{_MACOS_LAUNCHD_LABEL}"
+                    f"launchctl print system/{_MACOS_LAUNCHD_LABEL} 2>&1"
                 )
+                # A non-zero exit is not on its own proof of "stopped": a label typo, the wrong
+                # domain, or a privilege problem all exit non-zero too, and accepting any of them
+                # would satisfy this gate on the first attempt and contribute no settle time --
+                # the exact defect the systemd branch had on macOS. launchd names the unloaded
+                # case, so require either that message or a job that is loaded and not running.
                 assert (
-                    status_result.exit_code != 0
+                    "Could not find service" in status_result.stdout
                     or "\n\tstate = running" not in status_result.stdout
-                )
+                ), f"Cannot tell whether the agent daemon stopped: {status_result}"
             else:
                 status_result = worker.send_command("systemctl is-active deadline-worker")
                 assert status_result.exit_code != 0

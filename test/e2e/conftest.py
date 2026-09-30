@@ -329,6 +329,13 @@ def _session_worker_impl(
     with create_worker(worker_config, request) as worker:
         # Recorded so create_worker can tell "the incumbent is the session worker" from "the
         # incumbent is another per-test worker" without requesting this fixture and creating it.
+        #
+        # Written after the context is entered, so this worker's own _claim_host ran with an empty
+        # stash. That is fine and load-bearing in one direction only: _claim_host consults the
+        # argument to decide whether the worker it is *displacing* was the session worker, and by
+        # the time this one can be displaced the stash is populated. Moving the write earlier would
+        # be harmless; moving it later, or adding a _claim_host call site that needs to recognise
+        # the session worker on its first claim, would not be.
         request.session.stash[_SESSION_WORKER_KEY] = worker
         yield worker
 
@@ -521,14 +528,18 @@ def _claim_host(
                 "without KEEP_WORKER_AFTER_FAILURE, or deselect the tests that need a second worker."
             )
         LOG.info("Stopping the worker currently installed on this host before installing another")
-        try:
-            # Through stop_worker, not current.stop(). A displaced worker was running jobs moments
-            # ago, which is when DeleteWorker returns ConflictException, and stop_worker is where the
-            # retry for that lives. A bare stop() here would swallow a transient conflict, and
-            # nothing retries afterwards: the record would stay registered for the rest of the run.
-            stop_worker(request, current)
-        except Exception:  # pragma: no cover
-            LOG.exception("Failed to stop the incumbent worker; the next install may fail")
+        # Through stop_worker, not current.stop(). A displaced worker was running jobs moments ago,
+        # which is when DeleteWorker returns ConflictException, and stop_worker is where the retry
+        # for that lives.
+        #
+        # Deliberately not caught. stop_worker leaves _installed_worker pointing at the incumbent
+        # when the stop fails, precisely so the host is not recorded as free while a live agent
+        # holds it. Swallowing here and then claiming the host below would overwrite that: the new
+        # worker would install over a running agent, and the incumbent's own teardown would take
+        # the already-displaced path and never delete its worker record. Failing the test that
+        # wanted the host is the better outcome, because the alternative corrupts some later test
+        # instead of this one.
+        stop_worker(request, current)
         if session_worker is not None and current is session_worker:
             _displaced_session_worker = current
     # Set after the stop above, so a stop_worker racing in between sees the incumbent rather than
@@ -809,6 +820,11 @@ def operating_system() -> OperatingSystem:
 
 
 def pytest_collection_modifyitems(items):
+    # Keys on the fixture *name* "session_worker", which is the function-scoped wrapper rather
+    # than the session-scoped _session_worker_impl it delegates to. fixturenames contains the
+    # wrapper, so the grouping still works -- but renaming the wrapper would silently disable the
+    # "only one session worker active at a time" ordering rather than fail, and on macOS that
+    # ordering is what keeps the worker from being displaced and reinstalled repeatedly.
     sorted_list = list(items)
     session_worker_tests = []
     asset_sync_class_worker_tests = []

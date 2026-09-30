@@ -606,10 +606,16 @@ class TestMacosJobUserOverride:
             interval=5,
         )
         def check() -> None:
-            result = worker.send_command(f"launchctl print system/{LocalMacWorker.LAUNCHD_LABEL}")
-            assert result.exit_code != 0 or "\n\tstate = running" not in result.stdout, (
-                f"The worker agent daemon is still running: {result.stdout}"
+            result = worker.send_command(
+                f"launchctl print system/{LocalMacWorker.LAUNCHD_LABEL} 2>&1"
             )
+            # Keyed on launchd's unloaded message rather than any non-zero exit: a label typo or
+            # the wrong domain also exits non-zero and would satisfy this immediately, giving the
+            # restart below no settle time at all.
+            assert (
+                "Could not find service" in result.stdout
+                or "\n\tstate = running" not in result.stdout
+            ), f"Cannot tell whether the agent daemon stopped: {result}"
 
         check()
 

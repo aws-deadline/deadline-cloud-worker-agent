@@ -33,6 +33,16 @@ LOG = logging.getLogger(__name__)
 
 
 class TestWorkerConfiguration:
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] == "macos",
+        reason=(
+            "Asserts the job is never picked up, which holds on EC2 only because the instance "
+            "has an instance profile for the agent to refuse to run under. A native Mac host has "
+            "no IMDS, so _enforce_no_instance_profile exhausts its retries and raises "
+            "IMDSUnreachableError instead: the worker exits during bootstrap and the test would "
+            "either error in setup or pass without exercising the check it exists for."
+        ),
+    )
     def test_worker_requires_no_instance_profile(
         self,
         deadline_resources,

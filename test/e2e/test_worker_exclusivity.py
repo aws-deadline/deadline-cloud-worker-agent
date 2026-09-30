@@ -132,12 +132,22 @@ def test_stop_worker_stops_the_holder_and_releases() -> None:
     assert conftest._installed_worker is None
 
 
-def test_claim_survives_a_failing_incumbent_stop() -> None:
+def test_a_failing_incumbent_stop_refuses_the_claim() -> None:
+    # The claim must not proceed past a stop it could not complete. stop_worker leaves the
+    # incumbent recorded so the host is never described as free while a live agent holds it, and
+    # swallowing here would overwrite that: the newcomer would install over the running agent and
+    # the incumbent's teardown would take the already-displaced path, leaking its worker record.
+    # Failing the test that wanted the host is the better outcome, since the alternative corrupts
+    # a later test instead of this one.
     a, b = MagicMock(name="a"), MagicMock(name="b")
     a.stop.side_effect = RuntimeError("bootout failed")
     conftest._claim_host(_req(), a, None)
-    conftest._claim_host(_req(), b, None)  # must not propagate
-    assert conftest._installed_worker is b
+
+    with pytest.raises(RuntimeError, match="bootout failed"):
+        conftest._claim_host(_req(), b, None)
+
+    assert conftest._installed_worker is a
+    b.start.assert_not_called()
 
 
 def test_a_kept_worker_still_holds_the_host(monkeypatch: pytest.MonkeyPatch) -> None:
