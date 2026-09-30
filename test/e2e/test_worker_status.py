@@ -7,9 +7,10 @@ and making sure that the status of the Worker is that of what we expect.
 from datetime import datetime, timezone
 import logging
 import os
+import re
 from time import sleep
 import pytest
-from deadline_test_fixtures import DeadlineClient, EC2InstanceWorker
+from deadline_test_fixtures import DeadlineClient, EC2InstanceWorker, LocalMacWorker
 import pytest
 from e2e.utils import is_worker_started, is_worker_stopped
 import backoff
@@ -107,6 +108,84 @@ class TestWorkerStatus:
         )
 
         # Check that there are worker processes running
+        check_worker_processes_exist()
+
+    @pytest.mark.skipif(
+        os.environ["OPERATING_SYSTEM"] != "macos",
+        reason="macOS (launchd) specific test",
+    )
+    def test_macos_worker_restarts_process(
+        self,
+        deadline_resources,
+        deadline_client: DeadlineClient,
+        class_worker: LocalMacWorker,
+    ) -> None:
+        # Verifies that launchd restarts the agent process when it is killed, the macOS
+        # counterpart to the systemd and Windows-service tests above. The installer writes
+        # KeepAlive { SuccessfulExit = false }, which is the Restart=on-failure analog, so a
+        # SIGKILL is an unsuccessful exit and launchd respawns the job.
+
+        assert class_worker.worker_id is not None  # This fixes linter type mismatch
+        label = f"system/{LocalMacWorker.LAUNCHD_LABEL}"
+
+        assert is_worker_started(
+            deadline_client=deadline_client,
+            farm_id=deadline_resources.farm.id,
+            fleet_id=deadline_resources.fleet.id,
+            worker_id=class_worker.worker_id,
+        )
+
+        def running_pid() -> int:
+            """Return the pid launchd reports for the daemon, asserting it is running.
+
+            Anchored to a single leading tab: `launchctl print` repeats `state` and other keys
+            for nested endpoints and services at deeper indentation, and the first unanchored
+            match is not reliably the job's own.
+            """
+            result = class_worker.send_command(f"launchctl print {label}")
+            assert result.exit_code == 0, f"{label} is not loaded: {result}"
+            assert "\n\tstate = running" in result.stdout, (
+                f"{label} is loaded but not running: {result.stdout}"
+            )
+            pids = re.findall(r"^\tpid = (\d+)$", result.stdout, re.MULTILINE)
+            assert pids, f"launchctl print reported no pid for {label}: {result.stdout}"
+            return int(pids[0])
+
+        def check_worker_processes_exist() -> None:
+            # BSD pgrep, so no --count/--full: macOS rejects the long options the Linux test
+            # uses. -f matches the full command line, -u selects by effective uid, and a
+            # zero exit means at least one match, which is all this needs to assert.
+            process_check_result = class_worker.send_command(
+                f"pgrep -f -u {class_worker.configuration.agent_user} deadline-worker-agent"
+            )
+            assert process_check_result.exit_code == 0, (
+                f"deadline-worker-agent process is not running: {process_check_result}"
+            )
+
+        pid_before = running_pid()
+        check_worker_processes_exist()
+
+        kill_result = class_worker.send_command(f"kill -9 {pid_before}")
+        assert kill_result.exit_code == 0, f"Failed to kill the worker agent process: {kill_result}"
+
+        # A new pid is the evidence that launchd respawned the job rather than that it never
+        # died; the Linux test uses the service's ActiveEnterTimestamp for the same purpose.
+        #
+        # 120s, well above the 30s the other two allow. launchd throttles respawns to one per
+        # 10 seconds per job by default, and the agent then has to start and re-register, so a
+        # shorter window would make this flaky rather than failing.
+        @backoff.on_exception(
+            backoff.constant,
+            Exception,
+            max_time=120,
+            interval=5,
+        )
+        def check_restarted_with_a_new_pid() -> None:
+            assert running_pid() != pid_before, (
+                f"launchd has not respawned {label}; still pid {pid_before}"
+            )
+
+        check_restarted_with_a_new_pid()
         check_worker_processes_exist()
 
     @pytest.mark.skipif(
