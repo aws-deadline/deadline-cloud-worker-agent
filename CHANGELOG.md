@@ -1,3 +1,7 @@
+## 0.33.5 (2026-09-30)
+
+### Features
+* Host configuration script output is now logged with the type `Worker/HostConfiguration`, making it easier to filter and identify host configuration script stdout/stderr in logs. Previously, this output was emitted as untyped log events that were difficult to distinguish from other log messages. (#1096)
 ## 0.33.4 (2026-09-21)
 
 ### Features
