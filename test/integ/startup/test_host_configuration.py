@@ -5,7 +5,7 @@
 import os
 import sys
 from enum import Enum
-from logging import INFO, Logger, getLogger
+from logging import INFO, Handler, Logger, LogRecord, getLogger
 from botocore.credentials import Credentials
 from pathlib import Path
 import random
@@ -28,7 +28,9 @@ from deadline_worker_agent.startup.host_configuration_script import (
 )
 from deadline_worker_agent.log_messages import (
     LogRecordStringTranslationFilter,
+    StringLogEvent,
     WorkerHostConfigurationLogEvent,
+    WorkerHostConfigurationOutputLogEvent,
 )
 
 
@@ -81,7 +83,23 @@ def _config(
     return config
 
 
-def build_logger(handler: QueueHandler) -> Logger:
+class RecordCapturingHandler(Handler):
+    """Keeps the LogRecords themselves, rather than their rendered text.
+
+    QueueHandler cannot be used to inspect record.msg: its prepare() overwrites msg
+    with the formatted string, so the log event object is gone by the time the record
+    is read back off the queue.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[LogRecord] = []
+
+    def emit(self, record: LogRecord) -> None:
+        self.records.append(record)
+
+
+def build_logger(handler: Handler) -> Logger:
     charset = string.ascii_letters + string.digits + string.punctuation
     name_suffix = "".join(random.choices(charset, k=32))
     log = getLogger(".".join((__name__, name_suffix)))
@@ -127,7 +145,7 @@ class TestHostConfigurationScriptRunner:
         script: str,
         timeout: int,
         tmp: Path,
-        queue_handler: QueueHandler,
+        queue_handler: Handler,
     ) -> HostConfigurationScriptRunner:
         """Create a Host Configuration Script Runner"""
 
@@ -287,6 +305,61 @@ Get-ChildItem env: | ForEach-Object { "$($_.Name)=$($_.Value)" }
 
         for log in expected_logs:
             assert any(log in m for m in messages)
+
+    def test_script_output_is_typed(
+        self,
+        tmp_path: Path,
+    ):
+        """Script output must be emitted as typed Worker/HostConfiguration events.
+
+        Previously these lines reached the logger as plain strings, so
+        LogRecordStringTranslationFilter wrapped them in untyped StringLogEvents that
+        carried no type, subtype, or resource ids. The output was then impossible to
+        filter or to attribute to the worker that produced it.
+        """
+
+        # GIVEN a script whose output is unmistakable in the log
+        marker = "TYPED-OUTPUT-MARKER"
+        if sys.platform == "win32":
+            script = f"Write-Output {marker}\r\nexit 0"
+        else:
+            script = f"echo {marker}\nexit 0"
+
+        handler = RecordCapturingHandler()
+        runner = self._create_host_configuration_script_runner(
+            script=script,
+            timeout=300,
+            tmp=tmp_path,
+            queue_handler=handler,
+        )
+
+        # WHEN
+        exit_code = runner.run()
+
+        # THEN
+        assert exit_code == 0
+
+        marker_records = [r for r in handler.records if marker in r.getMessage()]
+        assert marker_records, f"no log record carried {marker}"
+
+        # Every record carrying the script's output is typed, and none fell through to
+        # an untyped StringLogEvent.
+        for record in marker_records:
+            assert isinstance(record.msg, WorkerHostConfigurationOutputLogEvent), (
+                f"expected a typed output event, got {type(record.msg).__name__}"
+            )
+            assert not isinstance(record.msg, StringLogEvent)
+
+            dd = record.msg.asdict()
+            assert dd["type"] == "Worker"
+            assert dd["subtype"] == "HostConfiguration"
+            assert dd["farm_id"] == "farm-00000000000000000000000000000000"
+            assert dd["fleet_id"] == "fleet-00000000000000000000000000000000"
+            assert dd["worker_id"] == "worker-00000000000000000000000000000000"
+
+            # The plain-text form stays the bare line, without the
+            # "[farm/fleet/worker]" suffix the lifecycle events append.
+            assert record.getMessage().strip() == marker
 
     @pytest.mark.skipif(
         sys.platform != "win32",

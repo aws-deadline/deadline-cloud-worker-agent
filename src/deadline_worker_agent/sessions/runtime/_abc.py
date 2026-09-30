@@ -78,8 +78,16 @@ class SessionRuntime(ABC):
         os_env_vars: Optional[dict[str, str]] = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
+        step_let_declarations: list[str] | None = None,
     ) -> EnvironmentIdentifier:
-        """Enter an environment; returns its identifier."""
+        """Enter an environment; returns its identifier.
+
+        ``step_let_declarations`` carries the declaring step's template-scope
+        ``let`` declarations for a step-scoped environment (None for job-scoped
+        environments). A runtime that lifts the environment into a standalone
+        document and re-decodes it uses them so references to those names
+        resolve; a runtime that never lifts ignores them.
+        """
         ...
 
     @abstractmethod

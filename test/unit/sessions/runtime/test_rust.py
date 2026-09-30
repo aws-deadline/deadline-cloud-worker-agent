@@ -17,6 +17,7 @@ from openjd.model._types import ParameterValue, ParameterValueType
 from openjd.model._v1.types import ModelProfile, SpecificationRevision
 
 from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
+from deadline_worker_agent.sessions.job_entities.environment_details import EnvironmentDetails
 from deadline_worker_agent.sessions.runtime import SessionRuntime, SessionRuntimeConfig
 from deadline_worker_agent.sessions.runtime._abc import (
     ResolvedSymbolTableError,
@@ -25,18 +26,6 @@ from deadline_worker_agent.sessions.runtime._abc import (
 from deadline_worker_agent.sessions.runtime import rust as rust_module
 from deadline_worker_agent.sessions.runtime.rust import RustSessionRuntime
 from deadline_worker_agent.sessions.runtime.rust import _to_rust_task_parameter_values
-from deadline_worker_agent.sessions.runtime.rust import _to_environment_parameter_definitions
-
-# Literal expected value: the Rust-convertible subset of RUNTIME_CAPABILITY_EXTENSIONS
-# in ExtensionName declaration order.  Determined by printing ExtensionName members and
-# verifying each converts via ModelExtension.from_str (all 5 do today).
-_EXPECTED_DECODE_EXTENSIONS: list[str] = [
-    "TASK_CHUNKING",
-    "REDACTED_ENV_VARS",
-    "FEATURE_BUNDLE_1",
-    "EXPR",
-    "WRAP_ACTIONS",
-]
 
 
 @pytest.fixture()
@@ -241,252 +230,56 @@ class TestRustSessionRuntimeDelegation:
     def mock_session_instance(self, mock_rust_session: MagicMock) -> MagicMock:
         return mock_rust_session.return_value
 
-    def test_enter_environment_when_called_converts_env_and_delegates(
+    def test_enter_environment_when_called_deserializes_env_and_delegates(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
-        environment = MagicMock()
-        identifier = "job-env-1"
-        os_env = {"KEY": "VAL"}
+        """The pydantic environment is deserialized job-side into a native _v1
+        Environment and handed to the wrapped session. deserialize_step runs for
+        real here: a mocked deserialize would not prove the wire shape the Rust
+        binding produces and the session accepts."""
+        environment = _build_environment({"name": "DelegE", "variables": {"V": "plain"}})
 
-        with (
-            patch.object(rust_module, "decode_environment_template") as mock_decode,
-            patch.object(rust_module, "create_environment") as mock_create,
-        ):
-            result = adapter.enter_environment(
-                environment=environment, identifier=identifier, os_env_vars=os_env
-            )
+        result = adapter.enter_environment(
+            environment=environment, identifier="job-env-1", os_env_vars={"KEY": "VAL"}
+        )
 
-        # The pydantic environment is serialized and rebuilt natively before
-        # being handed to the session. The fixture's job_parameter_values
-        # contains one STRING param in dict form, which must appear as a
-        # parameterDefinitions entry. Decode uses the runtime capability ceiling
-        # (all Rust-convertible extensions), regardless of the per-job narrowing.
-        mock_decode.assert_called_once_with(
-            {
-                "specificationVersion": "environment-2023-09",
-                "environment": environment.model_dump.return_value,
-                "parameterDefinitions": [{"name": "Param1", "type": "STRING"}],
-                "extensions": _EXPECTED_DECODE_EXTENSIONS,
-            },
-            supported_extensions=_EXPECTED_DECODE_EXTENSIONS,
-        )
-        environment.model_dump.assert_called_once_with(
-            mode="json", by_alias=True, exclude_none=True
-        )
-        mock_create.assert_called_once_with(mock_decode.return_value)
-        mock_session_instance.enter_environment.assert_called_once_with(
-            environment=mock_create.return_value,
-            identifier=identifier,
-            os_env_vars=os_env,
-            resolved_symtab=None,
-        )
+        mock_session_instance.enter_environment.assert_called_once()
+        call_kwargs = mock_session_instance.enter_environment.call_args.kwargs
+        native_env = call_kwargs["environment"]
+        # A real native _v1 Environment was produced (not the pydantic model),
+        # carrying the same name and variables.
+        assert type(native_env).__module__ == "openjd.model._v1.job"
+        assert type(native_env).__name__ == "Environment"
+        assert native_env.name == "DelegE"
+        assert native_env.variables == {"V": "plain"}
+        assert call_kwargs["identifier"] == "job-env-1"
+        assert call_kwargs["os_env_vars"] == {"KEY": "VAL"}
+        assert call_kwargs["resolved_symtab"] is None
         assert result is mock_session_instance.enter_environment.return_value
 
     def test_enter_environment_omits_step_context_from_rust_session(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
-        """step_name is not forwarded to the _v1 session — it receives
-        equivalent context via resolved_symtab."""
-        environment = MagicMock()
-        identifier = "env-456"
-        os_env = {"K": "V"}
+        """step_name and step_let_declarations are not forwarded to the _v1
+        session — it receives equivalent step context via resolved_symtab."""
+        environment = _build_environment({"name": "StepCtxE", "variables": {"V": "plain"}})
 
-        with (
-            patch.object(rust_module, "decode_environment_template"),
-            patch.object(rust_module, "create_environment") as mock_create,
-        ):
-            adapter.enter_environment(
-                environment=environment,
-                identifier=identifier,
-                os_env_vars=os_env,
-                step_name="MyStep",
-            )
-
-        mock_session_instance.enter_environment.assert_called_once_with(
-            environment=mock_create.return_value,
-            identifier=identifier,
-            os_env_vars=os_env,
-            resolved_symtab=None,
+        adapter.enter_environment(
+            environment=environment,
+            identifier="env-456",
+            os_env_vars={"K": "V"},
+            step_name="MyStep",
+            step_let_declarations=["label = 'vstudio'"],
         )
 
-    def test_enter_environment_includes_all_job_parameter_types(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        """All JobParameterType members are declared in parameterDefinitions."""
-        config = SessionRuntimeConfig(
-            session_id="session-env-multi",
-            job_parameter_values={
-                "A": ParameterValue(type=ParameterValueType.STRING, value="hello"),
-                "B": ParameterValue(type=ParameterValueType.INT, value="42"),
-                "C": ParameterValue(type=ParameterValueType.PATH, value="/tmp"),
-                "D": ParameterValue(type=ParameterValueType.FLOAT, value="3.14"),
-                "E": ParameterValue(type=ParameterValueType.BOOL, value="true"),
-            },
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-env-multi"),
-        )
-        adapter = RustSessionRuntime(config)
-
-        environment = MagicMock()
-        with (
-            patch.object(rust_module, "decode_environment_template") as mock_decode,
-            patch.object(rust_module, "create_environment"),
-        ):
-            adapter.enter_environment(environment=environment, identifier="env-1")
-
-        template = mock_decode.call_args.args[0]
-        assert template["parameterDefinitions"] == [
-            {"name": "A", "type": "STRING"},
-            {"name": "B", "type": "INT"},
-            {"name": "C", "type": "PATH"},
-            {"name": "D", "type": "FLOAT"},
-            {"name": "E", "type": "BOOL"},
-        ]
-
-    def test_enter_environment_when_empty_params_omits_parameter_definitions_key(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        """Empty job_parameter_values means parameterDefinitions must be absent."""
-        config = SessionRuntimeConfig(
-            session_id="session-env-empty",
-            job_parameter_values={},
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-env-empty"),
-        )
-        adapter = RustSessionRuntime(config)
-
-        environment = MagicMock()
-        with (
-            patch.object(rust_module, "decode_environment_template") as mock_decode,
-            patch.object(rust_module, "create_environment"),
-        ):
-            adapter.enter_environment(environment=environment, identifier="env-1")
-
-        template = mock_decode.call_args.args[0]
-        assert template == {
-            "specificationVersion": "environment-2023-09",
-            "environment": environment.model_dump.return_value,
-            "extensions": _EXPECTED_DECODE_EXTENSIONS,
-        }
-        assert "parameterDefinitions" not in template
-
-    def test_enter_environment_when_dict_param_type_invalid_is_still_declared(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        """A raw dict with an invalid type (e.g. CHUNK[INT]) is still declared.
-
-        ParameterValue objects cannot carry CHUNK_INT (JobParameterType has no
-        such member), but raw dicts bypass that constraint. No type filter is
-        applied — the decoder itself will reject invalid types at template
-        decode time with a clear error, which is the correct behavior.
-        """
-        config = SessionRuntimeConfig(
-            session_id="session-env-chunk",
-            job_parameter_values={
-                "Good": ParameterValue(type=ParameterValueType.STRING, value="ok"),
-                "Bad": {"type": "CHUNK[INT]", "value": "1-5"},
-            },
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-env-chunk"),
-        )
-        adapter = RustSessionRuntime(config)
-
-        environment = MagicMock()
-        with (
-            patch.object(rust_module, "decode_environment_template") as mock_decode,
-            patch.object(rust_module, "create_environment"),
-        ):
-            adapter.enter_environment(environment=environment, identifier="env-1")
-
-        template = mock_decode.call_args.args[0]
-        # Both params are declared — no type filter. The decoder rejects
-        # CHUNK[INT] at decode time with a clear error.
-        assert template["parameterDefinitions"] == [
-            {"name": "Good", "type": "STRING"},
-            {"name": "Bad", "type": "CHUNK[INT]"},
-        ]
-
-    def test_enter_environment_when_mixed_dict_and_object_params_both_appear(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        """Both ParameterValue objects and raw dicts are handled correctly."""
-        config = SessionRuntimeConfig(
-            session_id="session-env-mixed",
-            job_parameter_values={
-                "Obj": ParameterValue(type=ParameterValueType.INT, value="7"),
-                "Dict": {"type": "PATH", "value": "/out"},
-            },
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-env-mixed"),
-        )
-        adapter = RustSessionRuntime(config)
-
-        environment = MagicMock()
-        with (
-            patch.object(rust_module, "decode_environment_template") as mock_decode,
-            patch.object(rust_module, "create_environment"),
-        ):
-            adapter.enter_environment(environment=environment, identifier="env-1")
-
-        template = mock_decode.call_args.args[0]
-        assert template["parameterDefinitions"] == [
-            {"name": "Obj", "type": "INT"},
-            {"name": "Dict", "type": "PATH"},
-        ]
-
-    def test_enter_environment_when_dict_param_missing_type_key_is_skipped(
-        self, mock_rust_session: MagicMock
-    ) -> None:
-        """A dict-shaped value with no "type" key is skipped rather than raising.
-
-        The same raw dict reaches _to_rust_job_parameter_values moments later, so
-        a genuinely malformed value still fails at Rust session construction with
-        the session's own error rather than a KeyError from __init__.
-        """
-        config = SessionRuntimeConfig(
-            session_id="session-env-missing-type",
-            job_parameter_values={
-                "Good": {"type": "PATH", "value": "/tmp"},
-                "Bad": {"value": "oops"},  # no "type" key
-                "AlsoGood": ParameterValue(type=ParameterValueType.FLOAT, value="1.5"),
-            },
-            path_mapping_rules=None,
-            retain_working_dir=False,
-            user=None,
-            action_callback=lambda sid, s: None,
-            os_env_vars=None,
-            session_root_directory=Path("/tmp/sessions/session-env-missing-type"),
-        )
-        adapter = RustSessionRuntime(config)
-
-        environment = MagicMock()
-        with (
-            patch.object(rust_module, "decode_environment_template") as mock_decode,
-            patch.object(rust_module, "create_environment"),
-        ):
-            adapter.enter_environment(environment=environment, identifier="env-1")
-
-        template = mock_decode.call_args.args[0]
-        assert template["parameterDefinitions"] == [
-            {"name": "Good", "type": "PATH"},
-            {"name": "AlsoGood", "type": "FLOAT"},
-        ]
+        mock_session_instance.enter_environment.assert_called_once()
+        call_kwargs = mock_session_instance.enter_environment.call_args.kwargs
+        # Only these four kwargs reach the session: no step_name, no
+        # step_let_declarations.
+        assert set(call_kwargs) == {"environment", "identifier", "os_env_vars", "resolved_symtab"}
+        assert call_kwargs["identifier"] == "env-456"
+        assert call_kwargs["os_env_vars"] == {"K": "V"}
+        assert call_kwargs["resolved_symtab"] is None
 
     def test_exit_environment_when_called_delegates_to_wrapped_session(
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
@@ -1317,44 +1110,6 @@ class TestRuntimeCrashConversion:
         assert isinstance(exc_info.value.__cause__, _FakePanic)
 
 
-class TestToEnvironmentParameterDefinitions:
-    """Direct tests for _to_environment_parameter_definitions helper."""
-
-    def test_extracts_type_from_dict_form(self) -> None:
-        values: dict[str, Any] = {
-            "D": {"type": "STRING", "value": "hello"},
-        }
-        result = _to_environment_parameter_definitions(values)
-        assert result == [{"name": "D", "type": "STRING"}]
-
-    def test_includes_all_parameter_value_types(self) -> None:
-        """No type filter is applied — all ParameterValue types are declared."""
-        values: dict[str, Any] = {
-            "Good": ParameterValue(type=ParameterValueType.STRING, value="ok"),
-            "Also": ParameterValue(type=ParameterValueType.CHUNK_INT, value="1-5"),
-        }
-        result = _to_environment_parameter_definitions(values)
-        assert result == [
-            {"name": "Good", "type": "STRING"},
-            {"name": "Also", "type": "CHUNK[INT]"},
-        ]
-
-    def test_empty_input_returns_empty_list(self) -> None:
-        assert _to_environment_parameter_definitions({}) == []
-
-    def test_non_primitive_types_are_declared(self) -> None:
-        """Types beyond STRING/PATH/INT/FLOAT (e.g. BOOL) are declared unconditionally."""
-        values: dict[str, Any] = {
-            "Flag": ParameterValue(type=ParameterValueType.BOOL, value="true"),
-            "Expr": {"type": "RANGE_EXPR", "value": "1-10"},
-        }
-        result = _to_environment_parameter_definitions(values)
-        assert result == [
-            {"name": "Flag", "type": "BOOL"},
-            {"name": "Expr", "type": "RANGE_EXPR"},
-        ]
-
-
 class TestResolvedSymbolTableForwarding:
     """Tests for resolved_symbol_table_json parsing and forwarding to the _v1 session."""
 
@@ -1372,17 +1127,13 @@ class TestResolvedSymbolTableForwarding:
         self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
     ) -> None:
         """When resolved_symbol_table_json is provided, it's parsed and forwarded."""
-        environment = MagicMock()
+        environment = _build_environment({"name": "SymtabE", "variables": {"V": "plain"}})
         symtab_json = '[{"name":"Job.Name","type":"string","value":"TestJob"}]'
         fake_symtab = MagicMock()
 
-        with (
-            patch.object(rust_module, "decode_environment_template"),
-            patch.object(rust_module, "create_environment"),
-            patch.object(
-                rust_module.SerializedSymbolTable, "from_json_str", return_value=fake_symtab
-            ) as mock_from_json,
-        ):
+        with patch.object(
+            rust_module.SerializedSymbolTable, "from_json_str", return_value=fake_symtab
+        ) as mock_from_json:
             adapter.enter_environment(
                 environment=environment,
                 identifier="env-1",
@@ -1425,11 +1176,9 @@ class TestResolvedSymbolTableForwarding:
         The two adapters are kept in lockstep deliberately: the same malformed
         payload must fail the same way whichever runtime the worker selects.
         """
-        environment = MagicMock()
+        environment = _build_environment({"name": "SymtabE", "variables": {"V": "plain"}})
 
         with (
-            patch.object(rust_module, "decode_environment_template"),
-            patch.object(rust_module, "create_environment"),
             patch.object(
                 rust_module.SerializedSymbolTable,
                 "from_json_str",
@@ -1507,3 +1256,132 @@ class TestResolvedSymbolTableForwarding:
         assert mock_session_instance.exit_environment.call_args.kwargs["resolved_symtab"] is None
         mock_logger.error.assert_called_once()
         assert "resolvedSymbolTable" in mock_logger.error.call_args[0][0]
+
+
+def _build_environment(template: dict[str, Any]) -> Any:
+    """Build a real v2023_09 EnvironmentModel from the shape the service serves.
+
+    Uses the worker's own parse path (EnvironmentDetails.from_boto) so the
+    resulting model dumps to the exact wire shape enter_environment lifts. The
+    EXPR extension is declared so an environment carrying script-scope ``let``
+    parses; note that references to undefined names (e.g. a step-scope ``let``)
+    still parse here -- they are only rejected later, at the Rust decode the bug
+    is about.
+    """
+    return EnvironmentDetails.from_boto(
+        {
+            "schemaVersion": "environment-2023-09",
+            "template": template,
+            "environmentId": "env-1",
+            "jobId": "job-1",
+            "extensions": ["EXPR"],
+        }
+    ).environment
+
+
+class TestEnterEnvironmentStepLetInjection:
+    """The job-side deserialize path lets an environment referencing its
+    declaring step's template-scope ``let`` names enter without the step's
+    declarations being re-injected.
+
+    deserialize_step runs for real: it is the job-side deserializer and, unlike
+    the environment-template decode the adapter previously used, does not reject
+    references to names that are resolved later from resolved_symtab. The values
+    themselves resolve at enter time on the real _v1 session from
+    resolved_symtab (proven by the differential-runtime integ tests); here the
+    session is mocked, so the native Environment still carries the unresolved
+    references and we assert the deserialize succeeded and the right native
+    object reached the session.
+    """
+
+    @pytest.fixture()
+    def adapter(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
+    ) -> RustSessionRuntime:
+        return RustSessionRuntime(runtime_config)
+
+    @pytest.fixture()
+    def mock_session_instance(self, mock_rust_session: MagicMock) -> MagicMock:
+        return mock_rust_session.return_value
+
+    def test_variables_only_env_referencing_step_let_enters_successfully(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """A variables-only environment referencing step-scope ``let`` names
+        deserializes and reaches the session. This is the case the previous
+        template-decode approach could not handle: a script-less environment has
+        no legal ``let`` block to inject the step's declarations into, so its
+        ``{{ val }}`` reference was rejected at decode time."""
+        environment = _build_environment(
+            {"name": "VarOnly", "variables": {"MY_VAL": "{{ val }}", "MY_LABEL": "{{ label }}"}}
+        )
+
+        adapter.enter_environment(
+            environment=environment,
+            identifier="env-1",
+            step_let_declarations=["val = Param.Base * 3", "label = 'item_' + string(val)"],
+        )
+
+        mock_session_instance.enter_environment.assert_called_once()
+        native_env = mock_session_instance.enter_environment.call_args.kwargs["environment"]
+        # A real native _v1 Environment was produced from the job-side
+        # deserialize, carrying the unresolved references verbatim (they resolve
+        # at enter time on the real session from resolved_symtab).
+        assert type(native_env).__module__ == "openjd.model._v1.job"
+        assert type(native_env).__name__ == "Environment"
+        assert native_env.name == "VarOnly"
+        assert native_env.variables == {"MY_VAL": "{{ val }}", "MY_LABEL": "{{ label }}"}
+
+    def test_variables_only_env_referencing_param_scope_enters_successfully(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """A variables-only environment whose variables reference ``Param.X`` /
+        ``RawParam.X`` deserializes and reaches the session. Those references
+        resolve from the session's job parameter values at enter time on the
+        real session, not at build time, so the job-side deserialize accepts
+        them without the job's parameter declarations being re-supplied -- which
+        the previous standalone-template decode required."""
+        environment = _build_environment(
+            {
+                "name": "ParamOnly",
+                "variables": {"MY_PARAM": "{{ Param.Base }}", "MY_RAW": "{{ RawParam.Base }}"},
+            }
+        )
+
+        adapter.enter_environment(environment=environment, identifier="env-1")
+
+        mock_session_instance.enter_environment.assert_called_once()
+        native_env = mock_session_instance.enter_environment.call_args.kwargs["environment"]
+        assert type(native_env).__module__ == "openjd.model._v1.job"
+        assert type(native_env).__name__ == "Environment"
+        assert native_env.name == "ParamOnly"
+        assert native_env.variables == {
+            "MY_PARAM": "{{ Param.Base }}",
+            "MY_RAW": "{{ RawParam.Base }}",
+        }
+
+    def test_scripted_env_referencing_step_let_enters_successfully(
+        self, adapter: RustSessionRuntime, mock_session_instance: MagicMock
+    ) -> None:
+        """A scripted environment referencing step-scope ``let`` names also
+        deserializes and reaches the session with its script intact."""
+        environment = _build_environment(
+            {
+                "name": "Scripted",
+                "script": {"actions": {"onEnter": {"command": "echo", "args": ["{{ val }}"]}}},
+            }
+        )
+
+        adapter.enter_environment(
+            environment=environment,
+            identifier="env-1",
+            step_let_declarations=["val = Param.Base * 3"],
+        )
+
+        mock_session_instance.enter_environment.assert_called_once()
+        native_env = mock_session_instance.enter_environment.call_args.kwargs["environment"]
+        assert type(native_env).__module__ == "openjd.model._v1.job"
+        assert type(native_env).__name__ == "Environment"
+        assert native_env.name == "Scripted"
+        # The script survived the round-trip (onEnter carrying the unresolved ref).
+        assert native_env.script is not None

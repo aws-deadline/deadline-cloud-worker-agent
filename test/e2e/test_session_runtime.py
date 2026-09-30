@@ -15,21 +15,12 @@ Shell commands branch per OS: Linux workers use bash, Windows workers use
 PowerShell via SSM AWS-RunPowerShellScript.
 
 Hint-dependent scenarios:
-    Two classes below cannot run until the service stamps a runtimeHint on
-    session specs for the test account, which requires that account to be
-    allowlisted for the service-side runtime-hint feature gates. The tests
-    themselves cannot create or observe that state, so they carry an
-    unconditional skip mark with the unlock condition in the reason. Remove
-    the mark when the account reaches the corresponding state:
-
-      TestServiceSelectedWithRustHint       account allowlisted for the
-                                            per-OS runtime gate (hint=rust)
-      TestServiceSelectedWithPythonexprHint outer gate open, per-OS gate
-                                            closed (hint=pythonexpr)
-
-    Note that TestServiceSelectedDefaultsToPython asserts the absence of a
-    hint. Its premise inverts in either of those worlds, so it will start
-    failing and must be retired at the same time.
+    TestServiceSelectedFollowsServiceHint accepts either hint the service may
+    stamp (pythonexpr by default, rust for allowlisted accounts), so it needs
+    no allowlist state of its own. It does need the worker's botocore to model
+    AssignedSession.metadata: Python 3.9 caps botocore below that release and
+    the hint is dropped, which is what the xfail on that class covers for the
+    Linux and macOS workers.
 
 The Rust adapter needs no env var: openjd-model ships the Rust extension
 (openjd._openjd_rs) in its platform wheels from 0.10.0 onward, and this
@@ -50,7 +41,7 @@ Worker openjd package location (for making the Rust adapter unloadable):
     the rust_unavailable_worker fixture)
 """
 
-from typing import Generator, Union
+from typing import Generator, Sequence, Union
 
 import backoff
 import dataclasses
@@ -141,13 +132,14 @@ def _agent_log_path(worker: ServiceControllableWorker) -> str:
 
 def _assert_log_contains(
     worker: ServiceControllableWorker,
-    pattern: str,
+    pattern: Union[str, Sequence[str]],
     description: str,
 ) -> None:
     """Assert that the agent log on the remote worker contains *pattern*.
 
-    Matches *pattern* as a literal string on both platforms (grep -F on
-    Linux, Select-String -SimpleMatch on Windows), so regex metacharacters
+    *pattern* may be a sequence, in which case any one of them must match.
+    Matches as literal strings on both platforms (grep -F on Linux,
+    Select-String -SimpleMatch on Windows), so regex metacharacters
     and embedded quotes in patterns like (hint='rust') need no escaping by
     callers. Retries briefly: every
     caller greps only after awaiting the job's terminal status, and the
@@ -155,24 +147,26 @@ def _assert_log_contains(
     disk minutes before the first attempt -- the retry is defence against
     slow log flushes or a transient SSM hiccup, not an expected wait.
     """
+    patterns = [pattern] if isinstance(pattern, str) else list(pattern)
     log_path = _agent_log_path(worker)
 
     if _running_on_windows():
         # PowerShell: Select-String with -Quiet returns $true/$false.
         # Single quotes inside the pattern are doubled for PS literal strings.
-        ps_pattern = pattern.replace("'", "''")
+        ps_patterns = ",".join("'" + p.replace("'", "''") + "'" for p in patterns)
         cmd = (
-            f"if (Select-String -Path '{log_path}' -Pattern '{ps_pattern}' -SimpleMatch -Quiet) "
+            f"if (Select-String -Path '{log_path}' -Pattern {ps_patterns} -SimpleMatch -Quiet) "
             f"{{ exit 0 }} else {{ exit 1 }}"
         )
     else:
-        cmd = f"grep -qF {shlex.quote(pattern)} {log_path}"
+        grep_patterns = " ".join(f"-e {shlex.quote(p)}" for p in patterns)
+        cmd = f"grep -qF {grep_patterns} {log_path}"
 
     @backoff.on_exception(backoff.constant, AssertionError, max_time=30, interval=5)
     def _check() -> None:
         cmd_result = worker.send_command(cmd)
         assert cmd_result.exit_code == 0, (
-            f"Expected agent log to contain '{pattern}' ({description}). "
+            f"Expected agent log to contain one of {patterns} ({description}). "
             f"exit_code={cmd_result.exit_code}, stdout={cmd_result.stdout!r}"
         )
 
@@ -262,64 +256,31 @@ def service_selected_worker(
     stop_worker(request, worker)
 
 
-class TestServiceSelectedDefaultsToPython:
-    """Worker with session_runtime=service-selected defaults to python when no hint is stamped.
-
-    The service does not stamp runtimeHint today (the service-side feature
-    gates are closed). This validates the no-hint default branch on real
-    infrastructure: when session_runtime=service-selected and no runtimeHint
-    is present in the session spec, the worker falls back to the python
-    adapter. NOTE: this premise inverts once the runtime-hint feature gates
-    open for the test account. This class will then start failing and must be
-    retired, at the same time as the hint-following classes below are enabled.
-    """
-
-    def test_job_succeeds_and_log_shows_python_selected(
-        self,
-        deadline_resources: DeadlineResources,
-        deadline_client: DeadlineClient,
-        service_selected_worker: ServiceControllableWorker,
-    ) -> None:
-        job = submit_sleep_job(
-            "session_runtime=service-selected (no hint) routing test",
-            deadline_client,
-            deadline_resources.farm,
-            deadline_resources.queue_a,
-        )
-        job.wait_until_complete(client=deadline_client)
-        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
-            job, deadline_client, deadline_resources.queue_a, deadline_resources
-        )
-
-        _assert_log_contains(
-            service_selected_worker,
-            "Selected session runtime: python (hint=None)",
-            "service-selected with no hint should default to python",
-        )
-
-
-@pytest.mark.skip(
-    reason="Requires the test account to be allowlisted for the service-side "
-    "runtime-hint gates so the service stamps runtimeHint=rust. Remove this "
-    "mark once that is true; see the module docstring."
+@pytest.mark.xfail(
+    os.environ["OPERATING_SYSTEM"] in ("linux", "macos"),
+    strict=False,
+    reason="The Linux and macOS workers run Python 3.9, which caps botocore below the release "
+    "that models AssignedSession.metadata, so the runtimeHint is dropped. macOS is included "
+    "because LocalMacWorker builds its venv from /usr/bin/python3, which is 3.9.6 on current "
+    "macOS. Remove each platform from this mark once its botocore keeps the field.",
 )
-class TestServiceSelectedWithRustHint:
-    """Worker with session_runtime=service-selected routes to rust when DP stamps hint=rust.
+class TestServiceSelectedFollowsServiceHint:
+    """Worker with session_runtime=service-selected receives and follows the service's runtimeHint.
 
-    Skipped unconditionally: the account must be allowlisted for the
-    service-side runtime-hint feature gates before the hint appears in session
-    specs. The Rust extension itself always ships, so no other precondition is
-    outstanding.
+    The service decides the hint (pythonexpr by default, rust for allowlisted
+    accounts). This asserts the hint reached the worker and the agent routed on
+    it, so a hint dropped anywhere between the service and the scheduler fails
+    here rather than silently defaulting to python.
     """
 
-    def test_job_succeeds_and_log_shows_rust_selected(
+    def test_job_succeeds_and_log_shows_hinted_runtime_selected(
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         service_selected_worker: ServiceControllableWorker,
     ) -> None:
         job = submit_sleep_job(
-            "session_runtime=service-selected (hint=rust) routing test",
+            "session_runtime=service-selected routing test",
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
@@ -331,51 +292,11 @@ class TestServiceSelectedWithRustHint:
 
         _assert_log_contains(
             service_selected_worker,
-            "Selected session runtime: rust (hint='rust')",
-            "service-selected with hint=rust should route to rust",
-        )
-
-
-@pytest.mark.skip(
-    reason="Requires the test account to be in the intermediate allowlist state "
-    "(outer runtime-hint gate open, per-OS gate closed) so the service stamps "
-    "runtimeHint=pythonexpr. Remove this mark once that is true; see the "
-    "module docstring."
-)
-class TestServiceSelectedWithPythonexprHint:
-    """Worker with session_runtime=service-selected routes to python when DP stamps hint=pythonexpr.
-
-    Unlock condition: the staged-rollout intermediate state where the test
-    account is allowlisted for the outer runtime-hint feature gate but NOT
-    the per-OS runtime gate, so the service stamps hint=pythonexpr. This
-    class validates the hint-following path routes to python (distinct code
-    path from the no-hint default).
-
-    RETIREMENT: delete this class when the feature gates are fully
-    open/removed (the intermediate state no longer exists).
-    """
-
-    def test_job_succeeds_and_log_shows_python_selected_with_pythonexpr_hint(
-        self,
-        deadline_resources: DeadlineResources,
-        deadline_client: DeadlineClient,
-        service_selected_worker: ServiceControllableWorker,
-    ) -> None:
-        job = submit_sleep_job(
-            "session_runtime=service-selected (hint=pythonexpr) routing test",
-            deadline_client,
-            deadline_resources.farm,
-            deadline_resources.queue_a,
-        )
-        job.wait_until_complete(client=deadline_client)
-        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
-            job, deadline_client, deadline_resources.queue_a, deadline_resources
-        )
-
-        _assert_log_contains(
-            service_selected_worker,
-            "Selected session runtime: python (hint='pythonexpr')",
-            "service-selected with hint=pythonexpr should route to python via hint path",
+            [
+                "Selected session runtime: python (hint='pythonexpr')",
+                "Selected session runtime: rust (hint='rust')",
+            ],
+            "service-selected should route on the service's runtimeHint",
         )
 
 

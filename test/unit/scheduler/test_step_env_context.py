@@ -123,7 +123,55 @@ class TestDequeueStepContext:
 
         assert isinstance(result, EnterEnvironmentAction)
         assert result._step_name is None
+        assert result._step_let_declarations is None
         job_entities.step_details.assert_not_called()
+
+    def test_step_scoped_env_gets_step_let_declarations(
+        self, session_queue: SessionActionQueue, job_entities: MagicMock
+    ) -> None:
+        """A step-scoped env-enter carries the declaring step's template-scope
+        ``let`` declarations, taken verbatim from StepTemplate.let."""
+        job_entities.step_details.return_value.step_template.let = [
+            "label = 'vstudio'",
+            "tag = 'v2'",
+        ]
+        entry = EnvironmentQueueEntry(
+            cancel=Mock(),
+            definition=EnvironmentAction(
+                sessionActionId="sa-let",
+                actionType="ENV_ENTER",
+                environmentId="STEP:step-abc123:MyEnv",
+            ),
+        )
+        session_queue._actions = [entry]
+        session_queue._actions_by_id["sa-let"] = entry
+
+        result = session_queue.dequeue()
+
+        assert isinstance(result, EnterEnvironmentAction)
+        assert result._step_let_declarations == ["label = 'vstudio'", "tag = 'v2'"]
+
+    def test_step_scoped_env_with_no_step_let_passes_none(
+        self, session_queue: SessionActionQueue, job_entities: MagicMock
+    ) -> None:
+        """A step declaring no template-scope ``let`` (StepTemplate.let is None)
+        passes None through, not an empty list."""
+        job_entities.step_details.return_value.step_template.let = None
+        entry = EnvironmentQueueEntry(
+            cancel=Mock(),
+            definition=EnvironmentAction(
+                sessionActionId="sa-nolet",
+                actionType="ENV_ENTER",
+                environmentId="STEP:step-abc123:MyEnv",
+            ),
+        )
+        session_queue._actions = [entry]
+        session_queue._actions_by_id["sa-nolet"] = entry
+
+        result = session_queue.dequeue()
+
+        assert isinstance(result, EnterEnvironmentAction)
+        assert result._step_let_declarations is None
 
     def test_two_consecutive_step_envs_both_get_context(
         self, session_queue: SessionActionQueue, job_entities: MagicMock
@@ -177,3 +225,4 @@ class TestDequeueStepContext:
 
         assert isinstance(result, EnterEnvironmentAction)
         assert result._step_name is None
+        assert result._step_let_declarations is None

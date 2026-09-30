@@ -140,7 +140,14 @@ class PythonSessionRuntime(SessionRuntime):
         os_env_vars: Optional[dict[str, str]] = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
+        step_let_declarations: list[str] | None = None,
     ) -> EnvironmentIdentifier:
+        # step_let_declarations is intentionally ignored: the v0 session never
+        # lifts the environment into a standalone document to re-decode, so it
+        # has nothing to inject them into. Step-scope `let` values reach this
+        # session through resolved_symtab instead. The parameter exists only to
+        # keep the runtime interface uniform with the Rust adapter.
+        #
         # Parse the pre-resolved symbol table if the service provided one. The
         # v0 session seeds it as the base of its per-action symbol table, the
         # same layering the _v1 (Rust) session applies.

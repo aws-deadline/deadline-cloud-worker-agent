@@ -5,8 +5,9 @@ from datetime import timedelta
 from logging import Logger
 from pathlib import Path
 from threading import Event, Thread
+from collections.abc import Mapping
 from openjd.model import SymbolTable
-from typing import Optional
+from typing import Any, MutableMapping, Optional
 import sys
 
 from deadline_worker_agent.utils import FileContext
@@ -26,10 +27,89 @@ from openjd.model.v2023_09 import DataString as DataString_2023_09
 from ..aws_credentials.worker_boto3_session import WorkerBoto3Session
 from openjd.sessions._types import ActionState
 from openjd.sessions._logging import LoggerAdapter
-from ..log_messages import WorkerHostConfigurationLogEvent, WorkerHostConfigurationStatus
+from ..log_messages import (
+    WorkerHostConfigurationLogEvent,
+    WorkerHostConfigurationOutputLogEvent,
+    WorkerHostConfigurationStatus,
+)
 
 if sys.platform == "win32":
     from ..windows.win_admin_runner import _WindowsScriptRunner
+
+
+class _HostConfigurationOutputLogAdapter(LoggerAdapter):
+    """Wraps plain-string log messages in a WorkerHostConfigurationOutputLogEvent.
+
+    Both output paths log command output as plain strings: on POSIX, OpenJD's
+    ScriptRunnerBase/LoggingSubprocess calls logger.info(line) for each line read from
+    the subprocess, and on Windows _WindowsScriptRunner does the same while tailing the
+    script's log file. Because that logger is the Agent's rather than
+    openjd.sessions', LogRecordStringTranslationFilter does not recognise it as an
+    OpenJD record and falls through to wrapping the line in an untyped StringLogEvent.
+
+    Converting here, at the one logger both paths share, types every such line without
+    reaching into OpenJD or duplicating the conversion per platform.
+
+    Inherits OpenJD's LoggerAdapter to keep its merge-rather-than-replace handling of
+    the `extra` kwarg, which callers below rely on for `worker_id`.
+    """
+
+    def __init__(
+        self,
+        *,
+        logger: Logger,
+        farm_id: str,
+        fleet_id: str,
+        worker_id: Optional[str],
+    ) -> None:
+        super().__init__(logger=logger, extra={"worker_id": worker_id})
+        self._farm_id = farm_id
+        self._fleet_id = fleet_id
+        self._worker_id = worker_id
+
+    def log(self, level: int, msg: Any, *args: Any, **kwargs: Any) -> None:
+        # %-style arguments have to be applied before process() wraps the message.
+        # LoggerAdapter.log() forwards args to the logger separately from msg, so they
+        # never reach process(); the wrapped event would then carry the unformatted
+        # template while the args sat unused on the record. The filter's
+        # BaseLogEvent branch calls the event's own getMessage(), which does no %
+        # substitution, so the record would render literally as "Running command %s"
+        # and silently drop the command. OpenJD's LoggingSubprocess logs exactly that
+        # way (_subprocess.py: `self._logger.info("Running command %s", cmd_line)`).
+        if not self.isEnabledFor(level):
+            # Checked before formatting rather than left to super().log(), since paying
+            # the substitution cost for a suppressed level defeats the laziness that
+            # %-style logging exists to provide.
+            return
+        if args and isinstance(msg, str):
+            # Mirrors logging.LogRecord.__init__'s normalization of a single non-empty
+            # mapping argument, which is how a "%(name)s"-style call arrives. Without
+            # it, `msg % (mapping,)` raises "format requires a mapping".
+            fmt_args: Any = (
+                args[0] if len(args) == 1 and isinstance(args[0], Mapping) and args[0] else args
+            )
+            try:
+                msg = msg % fmt_args
+            except (TypeError, ValueError, KeyError):
+                # A malformed template. Leaving the args attached would drop them
+                # silently: process() below wraps any str in an event, and the filter's
+                # BaseLogEvent branch neither applies args nor reports the mismatch, so
+                # nothing would substitute them and nothing would complain. Append them
+                # instead, so the values still reach the log.
+                msg = f"{msg} {args!r}"
+            args = ()
+        super().log(level, msg, *args, **kwargs)
+
+    def process(self, msg: Any, kwargs: MutableMapping[str, Any]) -> tuple[Any, Any]:
+        msg, kwargs = super().process(msg, kwargs)
+        if isinstance(msg, str):
+            msg = WorkerHostConfigurationOutputLogEvent(
+                farm_id=self._farm_id,
+                fleet_id=self._fleet_id,
+                worker_id=self._worker_id,
+                message=msg,
+            )
+        return msg, kwargs
 
 
 class _HostConfigTimer:
@@ -160,7 +240,12 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
         self._host_configuration_script = host_configuration_script
         self._host_configuration_timeout_seconds = host_configuration_timeout_seconds
         self._log = logger
-        self._logger_adapter = LoggerAdapter(logger=logger, extra={"worker_id": self._worker_id})
+        self._logger_adapter = _HostConfigurationOutputLogAdapter(
+            logger=logger,
+            farm_id=configuration.farm_id,
+            fleet_id=configuration.fleet_id,
+            worker_id=self._worker_id,
+        )
         self._session_files_directory = session_directory
         # Internal flag to turn off Windows RunAs during unit testing.
         self._windows_run_as_admin = True
@@ -283,7 +368,9 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
             win32_runner = _WindowsScriptRunner(
                 script_path=script_file_path,
                 working_directory=self._session_files_directory,
-                logger=self._log,
+                # The adapter rather than the raw logger, so the lines it tails out of
+                # the script's log file are typed the same way the POSIX path's are.
+                logger=self._logger_adapter,
             )
             exit_code = win32_runner.run_powershell(self._host_configuration_env_vars())
             return exit_code

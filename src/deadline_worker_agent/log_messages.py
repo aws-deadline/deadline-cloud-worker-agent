@@ -241,12 +241,69 @@ class WorkerHostConfigurationLogEvent(WorkerLogEvent):
 
     def asdict(self) -> dict[str, str]:
         dd = super().asdict()
+        # WorkerLogEvent.asdict() has already appended `exception`, but the schema puts
+        # `exception` last and the fields below have to precede it. dict.update() on an
+        # existing key keeps its original position, so it is lifted out and re-added.
+        exception = dd.pop("exception", None)
         dd.update(status=self.status)
-        if self.exit_code:
+        # Compared against None rather than truth-tested: exit_code 0 is the success
+        # case and success=False is the failure case, so a truth test drops exactly
+        # the values a consumer most needs.
+        if self.exit_code is not None:
             dd.update(exit_code=self.exit_code)
-        if self.success:
+        if self.success is not None:
             dd.update(success=self.success)
-        return self.add_exception_to_dict(dd)
+        if exception is not None:
+            dd.update(exception=exception)
+        return dd
+
+
+class WorkerHostConfigurationOutputLogEvent(WorkerLogEvent):
+    """A single line of output from a host configuration script, or from the runner
+    that invokes it.
+
+    Shares the Worker/HostConfiguration subtype with the status transitions, so one
+    filter selects everything host configuration produced. A consumer that needs to
+    tell the two apart can do so by the presence of `status`, which only the
+    transitions carry.
+
+    A separate class rather than a status-less variant of
+    WorkerHostConfigurationLogEvent, so that neither has optional fields the other
+    always sets: an output line is verbatim script output and has no outcome to
+    report. stdout and stderr are merged by the time they arrive here, so the
+    originating stream is not recoverable and is not reported.
+
+    Without this, output lines reach the logger as plain strings and
+    LogRecordStringTranslationFilter turns them into untyped StringLogEvents, which
+    carry no type, subtype, or resource ids and so can be neither filtered nor
+    attributed to the worker that produced them.
+    """
+
+    ti = "📜"
+
+    def __init__(
+        self,
+        *,
+        farm_id: str,
+        fleet_id: str,
+        message: str,
+        worker_id: Optional[str] = None,
+    ) -> None:
+        super().__init__(
+            op=WorkerLogEventOp.HOST_CONFIGURATION,
+            farm_id=farm_id,
+            fleet_id=fleet_id,
+            worker_id=worker_id,
+            message=message,
+        )
+
+    def getMessage(self) -> str:
+        # Deliberately not WorkerLogEvent.getMessage(), which appends
+        # "[farm/fleet/worker]" to the message. That is reasonable for the handful of
+        # lifecycle events but would repeat the same ids on every line of script
+        # output in the plain-text log. The ids remain in asdict() for the
+        # structured log.
+        return self.add_exception_to_message(self.msg)
 
 
 class FilesystemLogEventOp(str, Enum):

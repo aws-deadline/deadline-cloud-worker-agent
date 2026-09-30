@@ -467,8 +467,11 @@ class SessionActionQueue:
                     # the environment id itself, so this does not depend on
                     # where the action sits in the queue. Step-scope `let`
                     # values arrive separately, in the environment's own
-                    # resolved symbol table.
+                    # resolved symbol table. The raw declaration strings are
+                    # additionally threaded as step_let_declarations so the
+                    # decode-time `let` name checks pass.
                     step_name: str | None = None
+                    step_let_declarations: list[str] | None = None
                     if (env_step_id := _step_id_from_environment_id(environment_id)) is not None:
                         try:
                             env_step_details = self._job_entities.step_details(step_id=env_step_id)
@@ -479,12 +482,23 @@ class SessionActionQueue:
                             pass
                         else:
                             step_name = env_step_details.step_template.name
+                            # The declaring step's template-scope `let`
+                            # declarations (distinct from the step script's own
+                            # `let`). A step-scoped environment can reference
+                            # these names in its variables/script; the Rust
+                            # runtime lifts the environment into a standalone
+                            # document and re-decodes it, so those references
+                            # need the declarations present or decode rejects
+                            # them. Threaded through for the Rust adapter to
+                            # restore. Entries are already wire-form strings.
+                            step_let_declarations = env_step_details.step_template.let
 
                     next_action = EnterEnvironmentAction(
                         id=action_id,
                         job_env_id=environment_id,
                         details=environment_details,
                         step_name=step_name,
+                        step_let_declarations=step_let_declarations,
                     )
                 elif action_type == "ENV_EXIT":
                     next_action = ExitEnvironmentAction(

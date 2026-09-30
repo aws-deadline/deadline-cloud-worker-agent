@@ -1,3 +1,15 @@
+## 0.33.5 (2026-09-30)
+
+### Features
+* Host configuration script output is now logged with the type `Worker/HostConfiguration`, making it easier to filter and identify host configuration script stdout/stderr in logs. Previously, this output was emitted as untyped log events that were difficult to distinguish from other log messages. (#1096)
+## 0.33.4 (2026-09-21)
+
+### Features
+* The worker agent now accepts string-encoded boolean job parameters (e.g., "true", "false", "yes", "no", "on", "off", "1", "0") in addition to native JSON booleans. This ensures compatibility with both older jobs that use native booleans and newer jobs that use the OpenJD case-insensitive boolean string vocabulary. (#1098)
+## 0.33.3 (2026-09-16)
+
+### Bug Fixes
+* Fixed an issue where entering a step-scoped environment whose template references the declaring step's `let` bindings would fail on the Rust session runtime. The environment template now correctly carries step `let` declarations, preventing undefined variable errors during decoding. (#1092)
 ## 0.33.2 (2026-09-09)
 
 ### Features
