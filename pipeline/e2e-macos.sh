@@ -50,8 +50,15 @@ AGENT_VENV=/opt/deadline/worker
 # grows without bound until the volume fills -- which would surface as an unrelated test failing
 # in some later build rather than as a disk problem.
 #
-# /opt/mysessionroot is the session root test_worker_config.py configures on macOS; the rest are
-# the agent's own per-queue state and logs.
+# /opt/mysessionroot is the session root test_worker_config.py configures on macOS; the other two
+# are the agent's own per-queue state.
+#
+# /var/log/amazon/deadline is deliberately absent, though it grows per queue per build the same
+# way. _grab_bootstrap_log reads the agent and bootstrap logs from there after a start failure, so
+# a build that wiped them first would destroy the only diagnostic for the failure it is about to
+# hit. Log text also grows far more slowly than job working files, so it is the less pressing of
+# the two. The LaunchDaemon plist and the /etc/sudoers.d rule are absent for a different reason:
+# every start() rewrites both wholesale, so they are self-healing rather than accumulating.
 BUILD_RESIDUE=(
     /opt/mysessionroot
     /var/lib/deadline/credentials

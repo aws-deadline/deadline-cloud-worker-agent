@@ -14,6 +14,7 @@ import logging
 
 from e2e.conftest import DeadlineResources
 from e2e.utils import (
+    macos_agent_daemon_stopped,
     is_worker_started,
     is_worker_stopped,
     job_failure_message,
@@ -606,16 +607,9 @@ class TestMacosJobUserOverride:
             interval=5,
         )
         def check() -> None:
-            result = worker.send_command(
-                f"launchctl print system/{LocalMacWorker.LAUNCHD_LABEL} 2>&1"
+            assert macos_agent_daemon_stopped(worker, LocalMacWorker.LAUNCHD_LABEL), (
+                "The worker agent daemon is still running"
             )
-            # Keyed on launchd's unloaded message rather than any non-zero exit: a label typo or
-            # the wrong domain also exits non-zero and would satisfy this immediately, giving the
-            # restart below no settle time at all.
-            assert (
-                "Could not find service" in result.stdout
-                or "\n\tstate = running" not in result.stdout
-            ), f"Cannot tell whether the agent daemon stopped: {result}"
 
         check()
 
@@ -688,12 +682,16 @@ class TestMacosJobUserOverride:
         class_worker.stop_worker_service()
         self._assert_service_stopped(class_worker)
 
-        cmd_result = class_worker.send_command(set_cmd)
-        assert cmd_result.exit_code == 0, (
-            f"Setting the job user override in worker.toml failed: {cmd_result}"
-        )
-
         try:
+            # Inside the try for the same reason as the plist write above: set_cmd seds worker.toml
+            # and then greps to verify, so a failed verification leaves the file already rewritten.
+            # e2e-macos.sh removes worker.toml on the next build, but only one agent fits on this
+            # host, so an unreverted config poisons the rest of *this* run.
+            cmd_result = class_worker.send_command(set_cmd)
+            assert cmd_result.exit_code == 0, (
+                f"Setting the job user override in worker.toml failed: {cmd_result}"
+            )
+
             class_worker.start_worker_service()
 
             job = self.submit_whoami_job(
@@ -731,9 +729,13 @@ class TestMacosJobUserOverride:
         # drop-in to append to. Reusing the worker's own helper rather than open-coding a
         # plistlib edit here keeps one implementation of that write, and it feeds the value on
         # stdin so a user or group containing a space never reaches a command line.
-        class_worker._set_plist_env({env_key: override})
-
         try:
+            # Inside the try: the write is a read-merge-write, so a failure after the plist landed
+            # would otherwise leave the override in place with the finally unreached. `launchctl
+            # bootout` does not rewrite the plist and BUILD_RESIDUE does not list it, so that
+            # survives into the next build and every job there runs as the override user.
+            class_worker._set_plist_env({env_key: override})
+
             class_worker.start_worker_service()
 
             job = self.submit_whoami_job(

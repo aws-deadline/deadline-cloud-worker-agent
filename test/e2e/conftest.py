@@ -497,6 +497,11 @@ _MACOS = os.environ.get("OPERATING_SYSTEM") == "macos"
 _SESSION_WORKER_KEY: pytest.StashKey[DeadlineWorker] = pytest.StashKey()
 _installed_worker: Optional[DeadlineWorker] = None
 _displaced_session_worker: Optional[DeadlineWorker] = None
+# The worker stop_worker deliberately left installed for KEEP_WORKER_AFTER_FAILURE, if any. Not the
+# same question as "has a test failed and is the flag set": testsfailed only ever increases, so that
+# condition stays true for the rest of the session and would refuse every later claim, including
+# ones displacing an ordinary live worker that nothing chose to keep.
+_kept_worker: Optional[DeadlineWorker] = None
 
 
 def _keeping_workers_after_failure(request: pytest.FixtureRequest) -> bool:
@@ -515,17 +520,18 @@ def _claim_host(
     global _installed_worker, _displaced_session_worker
     current = _installed_worker
     if current is not None and current is not worker:
-        # Refused rather than resolved. KEEP_WORKER_AFTER_FAILURE asks for the failed worker's host
-        # state to be left for inspection, and only one agent fits on a macOS host, so installing
-        # over it would destroy exactly what the flag was set to preserve -- and leave this worker
-        # running against a LaunchDaemon and worker id it did not create. Neither silent option is
-        # right, so say so and stop.
-        if _keeping_workers_after_failure(request):
+        # Refused rather than resolved, but only when this incumbent is one stop_worker actually
+        # kept. KEEP_WORKER_AFTER_FAILURE asks for a failed worker's host state to be left for
+        # inspection, and only one agent fits on a macOS host, so installing over it would destroy
+        # exactly what the flag preserved. Keying on "a test failed and the flag is set" instead
+        # would refuse every claim for the rest of the session, since testsfailed never decreases,
+        # turning one failure into a wall of setup errors on the run the flag exists to diagnose.
+        if current is _kept_worker:
             raise RuntimeError(
-                "KEEP_WORKER_AFTER_FAILURE is set and a test has failed, so the agent installed on "
-                "this host is being kept for inspection. Only one agent fits on a macOS host, so "
-                "the worker this test needs cannot be installed without destroying it. Rerun "
-                "without KEEP_WORKER_AFTER_FAILURE, or deselect the tests that need a second worker."
+                "KEEP_WORKER_AFTER_FAILURE kept the agent installed on this host for inspection. "
+                "Only one agent fits on a macOS host, so the worker this test needs cannot be "
+                "installed without destroying it. Rerun without KEEP_WORKER_AFTER_FAILURE, or "
+                "deselect the tests that need a different worker."
             )
         LOG.info("Stopping the worker currently installed on this host before installing another")
         # Through stop_worker, not current.stop(). A displaced worker was running jobs moments ago,
@@ -539,7 +545,12 @@ def _claim_host(
         # the already-displaced path and never delete its worker record. Failing the test that
         # wanted the host is the better outcome, because the alternative corrupts some later test
         # instead of this one.
-        stop_worker(request, current)
+        # honor_keep_after_failure=False: this path must actually stop the incumbent. The flag
+        # asks for a *failed test's* worker to be left installed at its own teardown, and letting
+        # that suppress a displacement stop would mean returning here having stopped nothing, then
+        # installing the newcomer over a live agent. A worker genuinely kept at teardown is caught
+        # by the refusal above instead.
+        stop_worker(request, current, honor_keep_after_failure=False)
         if session_worker is not None and current is session_worker:
             _displaced_session_worker = current
     # Set after the stop above, so a stop_worker racing in between sees the incumbent rather than
@@ -703,7 +714,11 @@ def create_worker(
     return _context_for_fixture()
 
 
-def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
+def stop_worker(
+    request: pytest.FixtureRequest,
+    worker: DeadlineWorker,
+    honor_keep_after_failure: bool = True,
+) -> None:
     # A displaced macOS worker has already been stopped, and stopping it again raises: stop()
     # deletes the worker record, and the second DeleteWorker on the same id fails. Only the worker
     # that still holds the host has anything left to tear down.
@@ -712,11 +727,15 @@ def stop_worker(request: pytest.FixtureRequest, worker: DeadlineWorker) -> None:
         LOG.info("Worker was already displaced from this host; nothing to stop")
         return
 
-    if _keeping_workers_after_failure(request):
+    if honor_keep_after_failure and _keeping_workers_after_failure(request):
         LOG.info("KEEP_WORKER_AFTER_FAILURE is set, not stopping worker")
         # _installed_worker deliberately still points at this worker: the agent is installed and
         # running, so the host is not free. Clearing it here would let the next _claim_host install
         # straight over the state the flag exists to preserve, silently; instead that call refuses.
+        # Recorded so that refusal can tell this worker from an ordinary live incumbent.
+        if _MACOS:
+            global _kept_worker
+            _kept_worker = worker
         return
 
     def _giveup_unless_conflict(e: ClientError) -> bool:

@@ -603,3 +603,34 @@ def job_failure_message(
         f"  worker logs: {worker_log_url}\n"
         f"  session logs:\n{session_logs}"
     )
+
+
+def macos_agent_daemon_stopped(worker: Any, label: str) -> bool:
+    """Return whether the agent's LaunchDaemon has stopped on a macOS worker.
+
+    Shared by the two suites that wait for a stop before restarting the service, because both
+    want the same predicate and it is easy to write one that cannot fail.
+
+    Three outcomes, not two. An unloaded job is stopped; `launchctl bootout` is what
+    stop_worker_service does, and launchd names that case. A loaded job is stopped only if it is
+    not running. Anything else -- an unrecognized target, launchctl missing, a domain typo -- is
+    not evidence of either, so it raises rather than being read as success.
+
+    That third case is the whole point. A plain `"state = running" not in stdout` is satisfied by
+    every error message launchctl can emit, so it turns any failure into an immediate pass and the
+    caller's restart gets no settle time. That is the defect the systemd branch had on macOS
+    (`systemctl is-active` exits 127 there with empty stdout), reappearing in a new form.
+
+    The state lines are matched with a single leading tab: launchctl repeats `state` for nested
+    endpoints and services at deeper indentation, and an unanchored match is not reliably the
+    job's own.
+    """
+    result = worker.send_command(f"launchctl print system/{label} 2>&1")
+    output = result.stdout
+    if "Could not find service" in output:
+        return True
+    assert "\n\tstate = " in output, (
+        f"Cannot tell whether {label} stopped: launchctl printed neither a state line nor its "
+        f"not-found message, so this is not evidence of a stop. {result}"
+    )
+    return "\n\tstate = running" not in output

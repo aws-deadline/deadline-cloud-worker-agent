@@ -62,6 +62,7 @@ from deadline_test_fixtures import (
 
 from e2e.conftest import DeadlineResources, create_worker, stop_worker
 from e2e.utils import (
+    macos_agent_daemon_stopped,
     is_worker_started,
     job_failure_message,
     submit_sleep_job,
@@ -534,18 +535,14 @@ class TestRustUnavailableAndRecovery:
                 # deeper indentation, and an unanchored match is too permissive for a negation --
                 # any nested endpoint still reporting running would keep this retrying until the
                 # backoff expired, failing a restart that had in fact worked.
-                status_result = worker.send_command(
-                    f"launchctl print system/{_MACOS_LAUNCHD_LABEL} 2>&1"
+                # Shared helper, because the previous form here was vacuous: an `or` between
+                # "launchd says unloaded" and "the output has no running state" is satisfied by
+                # every error message launchctl can emit, so any failure passed the gate on the
+                # first attempt with no settle time. The helper treats an unrecognized response as
+                # neither stopped nor running and raises, so the backoff keeps trying.
+                assert macos_agent_daemon_stopped(worker, _MACOS_LAUNCHD_LABEL), (
+                    "The worker agent daemon is still running"
                 )
-                # A non-zero exit is not on its own proof of "stopped": a label typo, the wrong
-                # domain, or a privilege problem all exit non-zero too, and accepting any of them
-                # would satisfy this gate on the first attempt and contribute no settle time --
-                # the exact defect the systemd branch had on macOS. launchd names the unloaded
-                # case, so require either that message or a job that is loaded and not running.
-                assert (
-                    "Could not find service" in status_result.stdout
-                    or "\n\tstate = running" not in status_result.stdout
-                ), f"Cannot tell whether the agent daemon stopped: {status_result}"
             else:
                 status_result = worker.send_command("systemctl is-active deadline-worker")
                 assert status_result.exit_code != 0

@@ -26,6 +26,7 @@ def isolated_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(conftest, "_MACOS", True)
     monkeypatch.setattr(conftest, "_installed_worker", None)
     monkeypatch.setattr(conftest, "_displaced_session_worker", None)
+    monkeypatch.setattr(conftest, "_kept_worker", None)
     # KEEP_WORKER_AFTER_FAILURE is read from the environment by the code under test, and a real run
     # may have it set. Cleared so these tests describe the default path unless they set it.
     monkeypatch.delenv("KEEP_WORKER_AFTER_FAILURE", raising=False)
@@ -174,6 +175,23 @@ def test_claim_refuses_to_displace_a_kept_worker(monkeypatch: pytest.MonkeyPatch
 
     a.stop.assert_not_called()
     assert conftest._installed_worker is a
+
+
+def test_a_failure_elsewhere_does_not_refuse_later_claims(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # testsfailed never decreases, so gating the refusal on "a test failed and the flag is set"
+    # would refuse every claim for the rest of the session once anything failed -- turning one
+    # failure into a wall of setup errors on exactly the run the flag was set to diagnose. Only a
+    # worker stop_worker actually kept may refuse.
+    monkeypatch.setenv("KEEP_WORKER_AFTER_FAILURE", "true")
+    a, b = MagicMock(name="a"), MagicMock(name="b")
+    conftest._claim_host(_req(), a, None)  # a is live, never kept
+
+    conftest._claim_host(_req(failed=1), b, None)
+
+    a.stop.assert_called_once()
+    assert conftest._installed_worker is b
 
 
 def test_the_registry_is_inert_off_macos(monkeypatch: pytest.MonkeyPatch) -> None:
