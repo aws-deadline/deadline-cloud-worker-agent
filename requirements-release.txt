@@ -4,4 +4,4 @@ python-semantic-release == 10.6.*
 # "type object 'Actor' has no attribute 'name_email_regex'" before it does any
 # git work. PSR depends on `gitpython~=3.0`, so the bad version floats in on a
 # fresh install. Unpin once PSR ships a release compatible with 3.1.60+.
-GitPython == 3.1.59
+GitPython == 3.1.62
