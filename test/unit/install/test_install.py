@@ -61,8 +61,6 @@ def expected_cmd(
         parsed_args.fleet_id,
         "--region",
         parsed_args.region,
-        "--user",
-        parsed_args.user,
         "--scripts-path",
         sysconfig.get_path("scripts"),
         "--python-interpreter-path",
@@ -72,6 +70,8 @@ def expected_cmd(
         "--vfs-install-path",
         parsed_args.vfs_install_path,
     ]
+    if parsed_args.user is not None:
+        expected_cmd.extend(("--user", parsed_args.user))
     if parsed_args.group is not None:
         expected_cmd.extend(("--group", parsed_args.group))
     if parsed_args.confirmed:
@@ -374,8 +374,6 @@ class TestMacOSInstall:
             "fleet-1",
             "--region",
             "us-west-2",
-            "--user",
-            "wa-user",
             "--scripts-path",
             sysconfig.get_path("scripts"),
             "--python-interpreter-path",
@@ -384,6 +382,8 @@ class TestMacOSInstall:
             # install() passes str(args.session_root_dir); a Path stringifies with the host
             # separator, so build the expected value the same way rather than hard-coding it.
             str(Path("/var/lib/deadline/sessions")),
+            "--user",
+            "wa-user",
             "--group",
             "job-group",
             "-y",

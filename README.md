@@ -95,7 +95,7 @@ command performs all worker host setup activities, such as:
 
 *   creates an operating system user account (specified by the `--user` argument) on the worker
     host that the worker will run as. `install-deadline-worker` accepts a previously created user.
-    The user defaults to `deadline-worker-agent` on Linux and `deadline-worker` on Windows.
+    The user defaults to `deadline-worker`.
 *   creates a job user group (specified by `--group`, defaults to `deadline-job-users`) if required. The
     `install-deadline-worker` accepts an existing group.
 *   creates cache, log, and config directories, and an example config file
