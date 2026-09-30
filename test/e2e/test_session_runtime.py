@@ -25,9 +25,9 @@ Hint-dependent scenarios:
       TestServiceSelectedWithPythonexprHint outer gate open, per-OS gate
                                             closed (hint=pythonexpr)
 
-    Note that TestServiceSelectedDefaultsToPython asserts the absence of a
-    hint. Its premise inverts in either of those worlds, so it will start
-    failing and must be retired at the same time.
+    TestServiceSelectedDefaultsToPython asserts only that python is selected,
+    so it holds with hint=None or hint=pythonexpr. It must be retired when the
+    account is allowlisted for rust.
 
 The Rust adapter needs no env var: openjd-model ships the Rust extension
 (openjd._openjd_rs) in its platform wheels from 0.10.0 onward, and this
@@ -244,15 +244,13 @@ def service_selected_worker(
 
 
 class TestServiceSelectedDefaultsToPython:
-    """Worker with session_runtime=service-selected defaults to python when no hint is stamped.
+    """Worker with session_runtime=service-selected defaults to python.
 
-    The service does not stamp runtimeHint today (the service-side feature
-    gates are closed). This validates the no-hint default branch on real
-    infrastructure: when session_runtime=service-selected and no runtimeHint
-    is present in the session spec, the worker falls back to the python
-    adapter. NOTE: this premise inverts once the runtime-hint feature gates
-    open for the test account. This class will then start failing and must be
-    retired, at the same time as the hint-following classes below are enabled.
+    The service stamps runtimeHint=pythonexpr by default, but the worker only
+    sees it when its botocore model has AssignedSession.metadata, so the hint
+    is None on some platforms. Both route to python, so the assertion does not
+    pin the hint value. This will need revisiting once the test account is
+    allowlisted for rust.
     """
 
     def test_job_succeeds_and_log_shows_python_selected(
@@ -262,7 +260,7 @@ class TestServiceSelectedDefaultsToPython:
         service_selected_worker: EC2InstanceWorker,
     ) -> None:
         job = submit_sleep_job(
-            "session_runtime=service-selected (no hint) routing test",
+            "session_runtime=service-selected (default) routing test",
             deadline_client,
             deadline_resources.farm,
             deadline_resources.queue_a,
@@ -274,8 +272,8 @@ class TestServiceSelectedDefaultsToPython:
 
         _assert_log_contains(
             service_selected_worker,
-            "Selected session runtime: python (hint=None)",
-            "service-selected with no hint should default to python",
+            "Selected session runtime: python",
+            "service-selected should default to python",
         )
 
 
