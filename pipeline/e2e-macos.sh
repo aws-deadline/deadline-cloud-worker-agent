@@ -130,6 +130,37 @@ sw_vers
 uname -m
 id
 
+# The interpreter LocalMacWorker builds the agent venv from. Logged because the
+# TestServiceSelectedFollowsServiceHint xfail is justified by this being 3.9, which caps botocore
+# below the release that models AssignedSession.metadata: if a future macOS ships something newer,
+# the xfail should be removed rather than left to pass silently as an xpass.
+echo "=== agent venv interpreter ==="
+/usr/bin/python3 --version 2>&1 || echo "no /usr/bin/python3"
+
+# Is IMDS reachable here? Nothing has established this, and one skip depends on the answer.
+# test_worker_requires_no_instance_profile asserts a job is never picked up, which holds on EC2
+# because the agent finds an instance profile and refuses to run. It is skipped on macOS on the
+# grounds that a Mac has no IMDS so the agent exits instead -- but CodeBuild's reserved capacity is
+# EC2 Mac underneath, so IMDS may well answer here and that skip may be hiding a test that works.
+#
+# Diagnostic only: it prints and never fails the build. --max-time keeps a silent drop from costing
+# the build two minutes, and 169.254.169.254 is link-local so this reaches nothing outside the host.
+echo "=== IMDS reachability (decides whether the no-instance-profile skip is correct) ==="
+IMDS_TOKEN="$(curl -s --max-time 3 -X PUT "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)"
+if [ -n "${IMDS_TOKEN}" ]; then
+    echo "IMDS: reachable (IMDSv2 token obtained)"
+    echo "IMDS iam/info: $(curl -s --max-time 3 -H "X-aws-ec2-metadata-token: ${IMDS_TOKEN}" \
+        -o /dev/null -w '%{http_code}' http://169.254.169.254/latest/meta-data/iam/info 2>/dev/null || echo unknown)"
+    echo "  -> a 200 means an instance profile is attached, so the skip on"
+    echo "     test_worker_requires_no_instance_profile is wrong and that test may run here."
+    echo "  -> a 404 means IMDS answers but no profile is attached, so the agent would not refuse"
+    echo "     work and the test would fail rather than being inapplicable. The skip stays."
+else
+    echo "IMDS: unreachable, so _enforce_no_instance_profile would raise IMDSUnreachableError"
+    echo "  -> confirms the reason given on the test_worker_requires_no_instance_profile skip."
+fi
+
 # Before the suite, not after: a build killed mid-run cannot clean up after itself, so the next
 # build has to assume it inherited a loaded daemon and a stale worker id.
 echo "=== resetting agent state left by any previous build ==="
