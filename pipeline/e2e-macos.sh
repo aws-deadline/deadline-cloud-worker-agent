@@ -244,22 +244,51 @@ fi
 # the way out, because leaving live credentials in root's home on reserved capacity outlives the
 # build that needed them.
 echo "=== granting root the build credentials (sudo strips AWS_* from the environment) ==="
+# Written to two locations because which one a root shell reads depends on HOME, and macOS sudoers
+# carries `env_keep+="HOME MAIL"` -- so sudo preserves the invoking user's HOME and the AWS CLI
+# running as root looks in the *build user's* home, not /var/root. The first attempt wrote only
+# /var/root/.aws and root still resolved to the host instance profile. Writing both covers either
+# sudoers configuration rather than depending on one.
 ROOT_AWS_DIR=/var/root/.aws
-cleanup_root_credentials() {
+BUILD_AWS_DIR="${HOME}/.aws"
+cleanup_build_credentials() {
     sudo -n rm -rf "${ROOT_AWS_DIR}" >/dev/null 2>&1 || true
+    sudo -n rm -f "${BUILD_AWS_DIR}/credentials" >/dev/null 2>&1 || true
 }
-trap cleanup_root_credentials EXIT
+trap cleanup_build_credentials EXIT
 
 if CREDS="$(aws configure export-credentials --format env-no-export 2>/dev/null)"; then
-    sudo -n mkdir -p "${ROOT_AWS_DIR}"
-    # Piped through stdin so no secret appears in a command line or in this log.
-    printf '[default]\n%s\n' "$(echo "${CREDS}" \
+    CREDS_INI="$(printf '[default]\n%s\n' "$(echo "${CREDS}" \
         | sed -e 's/^AWS_ACCESS_KEY_ID=/aws_access_key_id=/' \
               -e 's/^AWS_SECRET_ACCESS_KEY=/aws_secret_access_key=/' \
-              -e 's/^AWS_SESSION_TOKEN=/aws_session_token=/')" \
-        | sudo -n tee "${ROOT_AWS_DIR}/credentials" >/dev/null
-    sudo -n chmod 600 "${ROOT_AWS_DIR}/credentials"
-    echo "root credentials written; identity as root is now:"
+              -e 's/^AWS_SESSION_TOKEN=/aws_session_token=/')")"
+    write_creds_to() {
+        sudo -n mkdir -p "$1"
+        # Piped through stdin so no secret appears in a command line or in this log.
+        printf '%s\n' "${CREDS_INI}" | sudo -n tee "$1/credentials" >/dev/null
+        sudo -n chmod 600 "$1/credentials"
+    }
+    root_sees_build_role() {
+        sudo -n aws sts get-caller-identity --query Arn --output text 2>/dev/null \
+            | grep -q "${CODEBUILD_BUILD_ARN##*:build/}" 2>/dev/null && return 0
+        # The build ARN is not in the role ARN, so match on the account instead.
+        sudo -n aws sts get-caller-identity --query Account --output text 2>/dev/null \
+            | grep -qx "$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
+    }
+
+    write_creds_to "${ROOT_AWS_DIR}"
+    # The build user's home only as a fallback, and only if root still cannot see the build role.
+    # Writing [default] there shadows the build user's own credentials, which on CodeBuild usually
+    # come from the container endpoint and refresh; a static snapshot does not, and the suite is
+    # budgeted at up to 3 hours. So pay that cost only when the first location did not work.
+    if root_sees_build_role; then
+        echo "root resolves the build role from ${ROOT_AWS_DIR}"
+    else
+        echo "root did not pick up ${ROOT_AWS_DIR} (macOS sudoers keeps HOME, so root reads the"
+        echo "build user's home); writing ${BUILD_AWS_DIR} as well."
+        write_creds_to "${BUILD_AWS_DIR}"
+    fi
+    echo "identity as root is now:"
     sudo -n aws sts get-caller-identity --query Arn --output text 2>&1 || true
 else
     echo "WARNING: could not export build credentials. The agent install runs" >&2
