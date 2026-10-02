@@ -63,6 +63,7 @@ BUILD_RESIDUE=(
     /opt/mysessionroot
     /var/lib/deadline/credentials
     /var/lib/deadline/queues
+    /var/root/.aws
 )
 
 # Suffix used by test_session_runtime.py's rust_unavailable_worker fixture when it moves
@@ -221,6 +222,48 @@ if [ "${TEST_TYPE:-}" = WHEEL ]; then
         ls -1 dist/ >&2 || true
         exit 1
     fi
+fi
+
+# Give root the build's credentials before the suite installs the agent.
+#
+# send_command runs every fixture command through `sudo`, and sudo's env_reset strips AWS_* from
+# the environment. The AWS CLI then falls back to IMDS -- which this host has, being EC2 Mac
+# underneath -- and picks up the CodeBuild host's own instance profile: an identity in an
+# AWS-owned account with no access to our CodeArtifact domain. The agent install chains
+# `aws codeartifact login` with && before `pip install`, so that AccessDenied aborts the install.
+#
+# On EC2 Linux the equivalent lookup succeeds because the instance profile is one the fixtures
+# bootstrapped and it has the access. Here the host's profile is not ours to configure, so the
+# credentials have to be placed where a root shell will find them.
+#
+# export-credentials rather than copying AWS_* directly: on CodeBuild the build role usually
+# arrives through the container credential endpoint rather than as static keys, so there may be
+# nothing in the environment to copy. This materialises whatever the chain resolved.
+#
+# /var/root/.aws is in BUILD_RESIDUE, so the next build removes it. It is also removed below on
+# the way out, because leaving live credentials in root's home on reserved capacity outlives the
+# build that needed them.
+echo "=== granting root the build credentials (sudo strips AWS_* from the environment) ==="
+ROOT_AWS_DIR=/var/root/.aws
+cleanup_root_credentials() {
+    sudo -n rm -rf "${ROOT_AWS_DIR}" >/dev/null 2>&1 || true
+}
+trap cleanup_root_credentials EXIT
+
+if CREDS="$(aws configure export-credentials --format env-no-export 2>/dev/null)"; then
+    sudo -n mkdir -p "${ROOT_AWS_DIR}"
+    # Piped through stdin so no secret appears in a command line or in this log.
+    printf '[default]\n%s\n' "$(echo "${CREDS}" \
+        | sed -e 's/^AWS_ACCESS_KEY_ID=/aws_access_key_id=/' \
+              -e 's/^AWS_SECRET_ACCESS_KEY=/aws_secret_access_key=/' \
+              -e 's/^AWS_SESSION_TOKEN=/aws_session_token=/')" \
+        | sudo -n tee "${ROOT_AWS_DIR}/credentials" >/dev/null
+    sudo -n chmod 600 "${ROOT_AWS_DIR}/credentials"
+    echo "root credentials written; identity as root is now:"
+    sudo -n aws sts get-caller-identity --query Arn --output text 2>&1 || true
+else
+    echo "WARNING: could not export build credentials. The agent install runs" >&2
+    echo "         'aws codeartifact login' under sudo and will fail AccessDenied." >&2
 fi
 
 hatch run e2e:test
