@@ -224,75 +224,44 @@ if [ "${TEST_TYPE:-}" = WHEEL ]; then
     fi
 fi
 
-# Give root the build's credentials before the suite installs the agent.
+# Let sudo keep the AWS credential environment, rather than copying credentials to a file.
 #
-# send_command runs every fixture command through `sudo`, and sudo's env_reset strips AWS_* from
-# the environment. The AWS CLI then falls back to IMDS -- which this host has, being EC2 Mac
-# underneath -- and picks up the CodeBuild host's own instance profile: an identity in an
-# AWS-owned account with no access to our CodeArtifact domain. The agent install chains
-# `aws codeartifact login` with && before `pip install`, so that AccessDenied aborts the install.
+# send_command runs every fixture command through sudo, and sudo's env_reset strips AWS_*. The CLI
+# then falls back to IMDS -- this host has it, being EC2 Mac underneath -- and picks up the
+# CodeBuild host's own instance profile: an identity in an AWS-owned account with no access to our
+# CodeArtifact domain, so the agent install fails AccessDenied on GetAuthorizationToken.
 #
-# On EC2 Linux the equivalent lookup succeeds because the instance profile is one the fixtures
-# bootstrapped and it has the access. Here the host's profile is not ours to configure, so the
-# credentials have to be placed where a root shell will find them.
+# An earlier revision copied the credentials to a file instead. That worked for about 25 minutes
+# and then every later install failed the same way, because CodeBuild's build credentials arrive
+# through the container endpoint and rotate, while a file is a snapshot that expires. Preserving
+# the environment means root resolves credentials exactly as the build user does, refresh included,
+# and nothing secret is written to a disk that outlives the build.
 #
-# export-credentials rather than copying AWS_* directly: on CodeBuild the build role usually
-# arrives through the container credential endpoint rather than as static keys, so there may be
-# nothing in the environment to copy. This materialises whatever the chain resolved.
-#
-# /var/root/.aws is in BUILD_RESIDUE, so the next build removes it. It is also removed below on
-# the way out, because leaving live credentials in root's home on reserved capacity outlives the
-# build that needed them.
-echo "=== granting root the build credentials (sudo strips AWS_* from the environment) ==="
-# Written to two locations because which one a root shell reads depends on HOME, and macOS sudoers
-# carries `env_keep+="HOME MAIL"` -- so sudo preserves the invoking user's HOME and the AWS CLI
-# running as root looks in the *build user's* home, not /var/root. The first attempt wrote only
-# /var/root/.aws and root still resolved to the host instance profile. Writing both covers either
-# sudoers configuration rather than depending on one.
-ROOT_AWS_DIR=/var/root/.aws
-BUILD_AWS_DIR="${HOME}/.aws"
-cleanup_build_credentials() {
-    sudo -n rm -rf "${ROOT_AWS_DIR}" >/dev/null 2>&1 || true
-    sudo -n rm -f "${BUILD_AWS_DIR}/credentials" >/dev/null 2>&1 || true
+# Validated with visudo -cf before installing: a malformed file in /etc/sudoers.d breaks sudo for
+# every user on the host, which on reserved capacity would outlast this build.
+echo "=== allowing sudo to keep the AWS credential environment ==="
+SUDOERS_AWS_ENV=/etc/sudoers.d/deadline-e2e-aws-env
+cleanup_sudoers_aws_env() {
+    sudo -n rm -f "${SUDOERS_AWS_ENV}" >/dev/null 2>&1 || true
 }
-trap cleanup_build_credentials EXIT
+trap cleanup_sudoers_aws_env EXIT
 
-if CREDS="$(aws configure export-credentials --format env-no-export 2>/dev/null)"; then
-    CREDS_INI="$(printf '[default]\n%s\n' "$(echo "${CREDS}" \
-        | sed -e 's/^AWS_ACCESS_KEY_ID=/aws_access_key_id=/' \
-              -e 's/^AWS_SECRET_ACCESS_KEY=/aws_secret_access_key=/' \
-              -e 's/^AWS_SESSION_TOKEN=/aws_session_token=/')")"
-    write_creds_to() {
-        sudo -n mkdir -p "$1"
-        # Piped through stdin so no secret appears in a command line or in this log.
-        printf '%s\n' "${CREDS_INI}" | sudo -n tee "$1/credentials" >/dev/null
-        sudo -n chmod 600 "$1/credentials"
-    }
-    root_sees_build_role() {
-        sudo -n aws sts get-caller-identity --query Arn --output text 2>/dev/null \
-            | grep -q "${CODEBUILD_BUILD_ARN##*:build/}" 2>/dev/null && return 0
-        # The build ARN is not in the role ARN, so match on the account instead.
-        sudo -n aws sts get-caller-identity --query Account --output text 2>/dev/null \
-            | grep -qx "$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
-    }
-
-    write_creds_to "${ROOT_AWS_DIR}"
-    # The build user's home only as a fallback, and only if root still cannot see the build role.
-    # Writing [default] there shadows the build user's own credentials, which on CodeBuild usually
-    # come from the container endpoint and refresh; a static snapshot does not, and the suite is
-    # budgeted at up to 3 hours. So pay that cost only when the first location did not work.
-    if root_sees_build_role; then
-        echo "root resolves the build role from ${ROOT_AWS_DIR}"
-    else
-        echo "root did not pick up ${ROOT_AWS_DIR} (macOS sudoers keeps HOME, so root reads the"
-        echo "build user's home); writing ${BUILD_AWS_DIR} as well."
-        write_creds_to "${BUILD_AWS_DIR}"
-    fi
+SUDOERS_TMP="$(mktemp)"
+cat > "${SUDOERS_TMP}" <<'SUDOERS'
+Defaults env_keep += "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN"
+Defaults env_keep += "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI AWS_CONTAINER_CREDENTIALS_FULL_URI"
+Defaults env_keep += "AWS_CONTAINER_AUTHORIZATION_TOKEN AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"
+Defaults env_keep += "AWS_REGION AWS_DEFAULT_REGION"
+SUDOERS
+if sudo -n visudo -cf "${SUDOERS_TMP}" >/dev/null 2>&1; then
+    sudo -n install -m 440 -o root -g wheel "${SUDOERS_TMP}" "${SUDOERS_AWS_ENV}"
+    rm -f "${SUDOERS_TMP}"
     echo "identity as root is now:"
     sudo -n aws sts get-caller-identity --query Arn --output text 2>&1 || true
 else
-    echo "WARNING: could not export build credentials. The agent install runs" >&2
-    echo "         'aws codeartifact login' under sudo and will fail AccessDenied." >&2
+    rm -f "${SUDOERS_TMP}"
+    echo "WARNING: the sudoers drop-in did not validate and was not installed. The agent install" >&2
+    echo "         runs 'aws codeartifact login' under sudo and will fail AccessDenied." >&2
 fi
 
 hatch run e2e:test
