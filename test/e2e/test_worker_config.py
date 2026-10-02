@@ -33,16 +33,11 @@ LOG = logging.getLogger(__name__)
 
 
 class TestWorkerConfiguration:
-    @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "macos",
-        reason=(
-            "Asserts the job is never picked up, which holds on EC2 only because the instance "
-            "has an instance profile for the agent to refuse to run under. A native Mac host has "
-            "no IMDS, so _enforce_no_instance_profile exhausts its retries and raises "
-            "IMDSUnreachableError instead: the worker exits during bootstrap and the test would "
-            "either error in setup or pass without exercising the check it exists for."
-        ),
-    )
+    # Runs on macOS. It was briefly skipped there on the assumption that a Mac host has no IMDS, so
+    # _enforce_no_instance_profile would raise IMDSUnreachableError rather than the agent finding a
+    # profile and refusing work. A diagnostic on the real host disproved that: CodeBuild reserved
+    # capacity is EC2 Mac underneath, IMDSv2 answers, and iam/info returns 200 -- so a profile is
+    # attached and this test's premise holds exactly as it does on the Linux and Windows instances.
     def test_worker_requires_no_instance_profile(
         self,
         deadline_resources,

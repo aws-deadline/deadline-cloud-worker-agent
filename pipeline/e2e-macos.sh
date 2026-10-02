@@ -187,8 +187,21 @@ fi
 # capacity every artefact it leaves outlives the build.
 cd "$(dirname "$0")/.."
 
-pip3 install --upgrade pip
-pip3 install --upgrade hatch "virtualenv<21"
+# A venv for the build tooling, not a system-wide pip install. The host's pip3 is Homebrew's and
+# enforces PEP 668, so `pip3 install hatch` fails with externally-managed-environment. The obvious
+# escape, --break-system-packages, is the wrong one here: this is reserved capacity, so mutating the
+# host's Homebrew python is a change every later build inherits, which is the class of problem the
+# rest of this script exists to avoid. The venv lives under the build directory, which CodeBuild
+# already cleans between builds.
+TOOLS_VENV="${CODEBUILD_SRC_DIR:-/tmp}/.e2e-tools"
+rm -rf "${TOOLS_VENV}"
+python3 -m venv "${TOOLS_VENV}"
+"${TOOLS_VENV}/bin/pip" install --upgrade pip
+"${TOOLS_VENV}/bin/pip" install --upgrade hatch "virtualenv<21"
+# Ahead of the existing PATH so `hatch` below resolves to this venv's copy rather than anything
+# preinstalled on the image.
+export PATH="${TOOLS_VENV}/bin:${PATH}"
+echo "hatch: $(command -v hatch) ($(hatch --version 2>&1))"
 
 # Mirrors e2e.sh rather than shortening to `hatch run e2e:test`. The reusable workflow sets
 # TEST_TYPE=WHEEL, and with WORKER_AGENT_WHL_PATH unset conftest installs the PUBLISHED agent
