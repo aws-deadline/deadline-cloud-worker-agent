@@ -126,6 +126,9 @@ class TestWorkerStatus:
         # SIGKILL is an unsuccessful exit and launchd respawns the job.
 
         assert class_worker.worker_id is not None  # This fixes linter type mismatch
+        # Bound to a local so the nested closures below do not re-read an attribute that could
+        # change, which is how the other tests in this package narrow it for mypy.
+        worker_id = class_worker.worker_id
         label = f"system/{LocalMacWorker.LAUNCHD_LABEL}"
 
         assert is_worker_started(
@@ -187,6 +190,28 @@ class TestWorkerStatus:
 
         check_restarted_with_a_new_pid()
         check_worker_processes_exist()
+
+        # Wait for the respawned agent to re-register before leaving. class_worker is class-scoped
+        # and the next test in this class stops the service and asserts the worker reports STOPPED;
+        # a new pid and a live process are both true within seconds of the respawn, well before the
+        # agent has finished registering. Returning at that point let the next test boot the service
+        # out mid-registration, so the agent died without ever reporting STOPPED and that test
+        # failed on a worker this one had left half-started.
+        @backoff.on_exception(
+            backoff.constant,
+            Exception,
+            max_time=120,
+            interval=5,
+        )
+        def wait_until_registered_again() -> None:
+            assert is_worker_started(
+                deadline_client=deadline_client,
+                farm_id=deadline_resources.farm.id,
+                fleet_id=deadline_resources.fleet.id,
+                worker_id=worker_id,
+            )
+
+        wait_until_registered_again()
 
     @pytest.mark.skipif(
         os.environ["OPERATING_SYSTEM"] != "windows",
