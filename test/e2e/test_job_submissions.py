@@ -67,7 +67,7 @@ class TestJobSubmission:
 
     @pytest.mark.skipif(
         os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Linux specific queue crendentials test",
+        reason="POSIX queue credentials test; the paths and sudo checks hold on macOS too",
     )
     def test_queue_credentials_file_is_secure_from_other_users(
         self,
@@ -157,7 +157,7 @@ class TestJobSubmission:
 
     @pytest.mark.skipif(
         os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Linux specific queue crendentials test",
+        reason="POSIX queue credentials test; the paths and sudo checks hold on macOS too",
     )
     def test_queue_credentials_file_is_secure_from_other_queues(
         self,
@@ -256,7 +256,7 @@ class TestJobSubmission:
 
     @pytest.mark.skipif(
         os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Linux specific worker log test",
+        reason="POSIX worker log test; /var/log/amazon/deadline is the same path on macOS",
     )
     def test_worker_writes_logs_to_disk_securely(
         self,
@@ -291,6 +291,20 @@ class TestJobSubmission:
         assert sessions
 
         worker_logs_directory: str = "/var/log/amazon/deadline"
+
+        # Positive control for the negative assertions below, which all require `sudo -u
+        # <job user>` to exit exactly 1 from `[ -e ]` returning false. sudo itself exits 1 when it
+        # cannot switch to the user at all, so without this a host where that impersonation is
+        # broken would satisfy every "the job user cannot read it" check while proving nothing --
+        # the wrong direction to be wrong in on a security test.
+        sudo_works_result = session_worker.send_command(
+            command=f"sudo -u {posix_job_user.user} true"
+        )
+        assert sudo_works_result.exit_code == 0, (
+            f"Cannot impersonate {posix_job_user.user}, so the checks below would pass on sudo "
+            f"failing rather than on the file being unreadable: {sudo_works_result}"
+        )
+
         # Check that the session log file is accessible by the worker agent user only
         for session in sessions:
             session_id: str = session["sessionId"]

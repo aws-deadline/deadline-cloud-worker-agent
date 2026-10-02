@@ -47,6 +47,7 @@ steps:
     - name: attr.worker.os.family
       anyOf:
       - linux
+      - macos
   script:
     actions:
       onRun:
@@ -56,7 +57,7 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          #!/bin/env bash
+          #!/usr/bin/env bash
 
           set -euo pipefail
 
@@ -68,19 +69,19 @@ steps:
           # The three input job attachments directories should match the files
           # defined in the job bundle.
           echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
-          if [ "`ls {{Param.DataDir1}} | wc -l`" != "2" ]; then
+          if [ "`ls {{Param.DataDir1}} | wc -l`" -ne 2 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.DataDir1}}
             exit 1
           fi
           echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
-          if [ "`ls {{Param.DataDir2}} | wc -l`" != "1" ]; then
+          if [ "`ls {{Param.DataDir2}} | wc -l`" -ne 1 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.DataDir2}}
             exit 1
           fi
           echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
-          if [ "`ls {{Param.InputDir}} | wc -l`" != "2" ]; then
+          if [ "`ls {{Param.InputDir}} | wc -l`" -ne 2 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.InputDir}}
             exit 1
@@ -124,6 +125,7 @@ steps:
     - name: attr.worker.os.family
       anyOf:
       - linux
+      - macos
   dependencies:
   - dependsOn: Step1
   parameterSpace:
@@ -140,7 +142,7 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          #!/bin/env bash
+          #!/usr/bin/env bash
 
           set -euo pipefail
 
@@ -220,6 +222,7 @@ steps:
     - name: attr.worker.os.family
       anyOf:
       - linux
+      - macos
   dependencies:
   - dependsOn: Step1-2
   script:
@@ -231,7 +234,7 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          #!/bin/env bash
+          #!/usr/bin/env bash
 
           set -euo pipefail
 
@@ -242,7 +245,7 @@ steps:
 
           # DataDir1 should now include the output of every task in Step2, but not Step1.
           echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
-          if [ "`ls {{Param.DataDir1}} | wc -l`" != "6" ]; then
+          if [ "`ls {{Param.DataDir1}} | wc -l`" -ne 6 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.DataDir1}}
             exit 1
@@ -250,7 +253,7 @@ steps:
 
           # DataDir2 should now include the output of every task in Step2, but not Step1.
           echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
-          if [ "`ls {{Param.DataDir2}}/test | wc -l`" != "6" ]; then
+          if [ "`ls {{Param.DataDir2}}/test | wc -l`" -ne 6 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.DataDir2}}/test
             exit 1
@@ -258,7 +261,7 @@ steps:
 
           # InputDir should not include the output of Step1 or Step2
           echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
-          if [ "`ls {{Param.InputDir}} | wc -l`" != "2" ]; then
+          if [ "`ls {{Param.InputDir}} | wc -l`" -ne 2 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.InputDir}}
             exit 1
@@ -297,6 +300,7 @@ steps:
     - name: attr.worker.os.family
       anyOf:
       - linux
+      - macos
   dependencies:
   - dependsOn: Step1-2
   script:
@@ -308,7 +312,7 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          #!/bin/env bash
+          #!/usr/bin/env bash
 
           set -euo pipefail
 
@@ -319,7 +323,7 @@ steps:
 
           # DataDir1 should now include the output of every task in Step2, but not Step1.
           echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
-          if [ "`ls {{Param.DataDir1}} | wc -l`" != "6" ]; then
+          if [ "`ls {{Param.DataDir1}} | wc -l`" -ne 6 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.DataDir1}}
             exit 1
@@ -327,7 +331,7 @@ steps:
 
           # DataDir2 should now include the output of every task in Step2, but not Step1.
           echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
-          if [ "`ls {{Param.DataDir2}}/test | wc -l`" != "6" ]; then
+          if [ "`ls {{Param.DataDir2}}/test | wc -l`" -ne 6 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.DataDir2}}/test
             exit 1
@@ -335,7 +339,7 @@ steps:
 
           # InputDir should not include the output of Step1 or Step2
           echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
-          if [ "`ls {{Param.InputDir}} | wc -l`" != "2" ]; then
+          if [ "`ls {{Param.InputDir}} | wc -l`" -ne 2 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.InputDir}}
             exit 1
@@ -374,6 +378,7 @@ steps:
     - name: attr.worker.os.family
       anyOf:
       - linux
+      - macos
   dependencies:
   - dependsOn: Step1-2-3
   - dependsOn: Step1-2-4
@@ -386,7 +391,7 @@ steps:
         runnable: true
         type: TEXT
         data: |
-          #!/bin/env bash
+          #!/usr/bin/env bash
 
           set -euo pipefail
 
@@ -397,7 +402,7 @@ steps:
 
           # DataDir1 should now include the output of Steps 3 and 4, but not Steps 1 or 2.
           echo "Checking DataDir1: {{RawParam.DataDir1}} / {{Param.DataDir1}}"
-          if [ "`ls {{Param.DataDir1}} | wc -l`" != "4" ]; then
+          if [ "`ls {{Param.DataDir1}} | wc -l`" -ne 4 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.DataDir1}}
             exit 1
@@ -405,7 +410,7 @@ steps:
 
           # DataDir2 should now include the output of Steps 3 and 4, but not Steps 1 or 2.
           echo "Checking DataDir2: {{RawParam.DataDir2}} / {{Param.DataDir2}}"
-          if [ "`ls {{Param.DataDir2}}/test | wc -l`" != "4" ]; then
+          if [ "`ls {{Param.DataDir2}}/test | wc -l`" -ne 4 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.DataDir2}}
             exit 1
@@ -413,7 +418,7 @@ steps:
 
           # InputDir should not include the output of any dependency steps
           echo "Checking InputDir: {{RawParam.InputDir}} / {{Param.InputDir}}"
-          if [ "`ls {{Param.InputDir}} | wc -l`" != "2" ]; then
+          if [ "`ls {{Param.InputDir}} | wc -l`" -ne 2 ]; then
             echo Starting dir contents is incorrect:
             ls {{Param.InputDir}}
             exit 1

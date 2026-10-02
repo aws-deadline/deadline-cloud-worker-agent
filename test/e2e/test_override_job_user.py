@@ -7,12 +7,14 @@ Deadline Cloud service and checking that the result/output of the jobs is as we 
 import backoff
 import pytest
 import os
+import shlex
 from flaky import flaky
 
 import logging
 
 from e2e.conftest import DeadlineResources
 from e2e.utils import (
+    macos_agent_daemon_stopped,
     is_worker_started,
     is_worker_stopped,
     job_failure_message,
@@ -21,6 +23,7 @@ from e2e.utils import (
 from deadline_test_fixtures import (
     Job,
     Farm,
+    LocalMacWorker,
     PosixSessionUser,
     Queue,
     TaskStatus,
@@ -29,6 +32,77 @@ from deadline_test_fixtures import (
 )
 
 LOG = logging.getLogger(__name__)
+
+
+def submit_posix_whoami_job(
+    test_name: str,
+    deadline_client: DeadlineClient,
+    farm: Farm,
+    queue: Queue,
+    expected_user: str,
+    os_family: str,
+) -> Job:
+    """Submit a job whose only action asserts the user it runs as.
+
+    Shared by the Linux and macOS suites: the script is bash and the only difference is the
+    os.family the step requires, so a third copy would be the same file with one word changed.
+    """
+    job = Job.submit(
+        client=deadline_client,
+        farm=farm,
+        queue=queue,
+        priority=98,
+        template={
+            "specificationVersion": "jobtemplate-2023-09",
+            "name": f"whoami {test_name}",
+            "description": f"Verifies job runs as '{expected_user}'. Expected status: SUCCEEDED",
+            "steps": [
+                {
+                    "name": "Step0",
+                    "hostRequirements": {
+                        "attributes": [{"name": "attr.worker.os.family", "allOf": [os_family]}]
+                    },
+                    "script": {
+                        "embeddedFiles": [
+                            {
+                                "name": "runScript",
+                                "type": "TEXT",
+                                "runnable": True,
+                                "filename": "runScript.sh",
+                                "data": "\n".join(
+                                    [
+                                        "#!/bin/bash",
+                                        "set -e",
+                                        f'echo "=== Whoami Test: {test_name} ==="',
+                                        f'echo "Expected user: {expected_user}"',
+                                        'echo ""',
+                                        'echo "--- Step 1: Running whoami ---"',
+                                        "actual=$(whoami)",
+                                        'echo "Actual user: $actual"',
+                                        'echo ""',
+                                        'echo "--- Step 2: Validating user identity ---"',
+                                        f'if [ "$actual" != "{expected_user}" ]; then',
+                                        f"  echo \"FAIL: expected '{expected_user}' but got '$actual'\"",
+                                        "  exit 1",
+                                        "fi",
+                                        f"echo \"PASS: Running as expected user '{expected_user}'\"",
+                                        'echo ""',
+                                        'echo "=== All checks passed ==="',
+                                    ]
+                                ),
+                            },
+                        ],
+                        "actions": {
+                            "onRun": {
+                                "command": "{{Task.File.runScript}}",
+                            },
+                        },
+                    },
+                },
+            ],
+        },
+    )
+    return job
 
 
 @pytest.mark.skipif(
@@ -326,62 +400,9 @@ class TestLinuxJobUserOverride:
         queue: Queue,
         expected_user: str,
     ) -> Job:
-        job = Job.submit(
-            client=deadline_client,
-            farm=farm,
-            queue=queue,
-            priority=98,
-            template={
-                "specificationVersion": "jobtemplate-2023-09",
-                "name": f"whoami {test_name}",
-                "description": f"Verifies job runs as '{expected_user}'. Expected status: SUCCEEDED",
-                "steps": [
-                    {
-                        "name": "Step0",
-                        "hostRequirements": {
-                            "attributes": [{"name": "attr.worker.os.family", "allOf": ["linux"]}]
-                        },
-                        "script": {
-                            "embeddedFiles": [
-                                {
-                                    "name": "runScript",
-                                    "type": "TEXT",
-                                    "runnable": True,
-                                    "filename": "runScript.sh",
-                                    "data": "\n".join(
-                                        [
-                                            "#!/bin/bash",
-                                            "set -e",
-                                            f'echo "=== Whoami Test: {test_name} ==="',
-                                            f'echo "Expected user: {expected_user}"',
-                                            'echo ""',
-                                            'echo "--- Step 1: Running whoami ---"',
-                                            "actual=$(whoami)",
-                                            'echo "Actual user: $actual"',
-                                            'echo ""',
-                                            'echo "--- Step 2: Validating user identity ---"',
-                                            f'if [ "$actual" != "{expected_user}" ]; then',
-                                            f"  echo \"FAIL: expected '{expected_user}' but got '$actual'\"",
-                                            "  exit 1",
-                                            "fi",
-                                            f"echo \"PASS: Running as expected user '{expected_user}'\"",
-                                            'echo ""',
-                                            'echo "=== All checks passed ==="',
-                                        ]
-                                    ),
-                                },
-                            ],
-                            "actions": {
-                                "onRun": {
-                                    "command": "{{Task.File.runScript}}",
-                                },
-                            },
-                        },
-                    },
-                ],
-            },
+        return submit_posix_whoami_job(
+            test_name, deadline_client, farm, queue, expected_user, os_family="linux"
         )
-        return job
 
     def test_no_user_override(
         self,
@@ -539,3 +560,210 @@ class TestLinuxJobUserOverride:
                 f"Resetting the job user override via CLI failed: {cmd_result}"
             )
             class_worker.send_command("sudo systemctl daemon-reload")
+
+
+@pytest.mark.skipif(
+    os.environ["OPERATING_SYSTEM"] != "macos",
+    reason="macOS (launchd) specific Job User Override tests",
+)
+class TestMacosJobUserOverride:
+    """The macOS counterpart of TestLinuxJobUserOverride.
+
+    Same four behaviours and the same bash whoami job. What differs is how the daemon is
+    stopped, restarted, and given an environment: macOS has no systemd, so the config-file
+    test edits the same worker.toml with BSD sed and the environment test writes the
+    LaunchDaemon plist's EnvironmentVariables instead of a systemd drop-in.
+
+    The three POSIX job users these assert on (job-user, config-override, env-override) are
+    created on the host by LocalMacWorker from worker_config.job_users, the same list the EC2
+    workers use, so no macOS-specific provisioning is involved.
+    """
+
+    @staticmethod
+    def submit_whoami_job(
+        test_name: str,
+        deadline_client: DeadlineClient,
+        farm: Farm,
+        queue: Queue,
+        expected_user: str,
+    ) -> Job:
+        return submit_posix_whoami_job(
+            test_name, deadline_client, farm, queue, expected_user, os_family="macos"
+        )
+
+    @staticmethod
+    def _assert_service_stopped(worker: LocalMacWorker) -> None:
+        """Wait for launchd to report the agent's label gone, the systemctl check's analog.
+
+        `launchctl print` exits non-zero once the job is unloaded, which is what
+        stop_worker_service leaves behind. A loaded-but-idle job is also an acceptable stop,
+        so the running state is checked too rather than requiring the label to disappear.
+        """
+
+        @backoff.on_exception(
+            backoff.constant,
+            Exception,
+            max_time=45,
+            interval=5,
+        )
+        def check() -> None:
+            assert macos_agent_daemon_stopped(worker, LocalMacWorker.LAUNCHD_LABEL), (
+                "The worker agent daemon is still running"
+            )
+
+        check()
+
+    def test_no_user_override(
+        self,
+        deadline_resources,
+        deadline_client: DeadlineClient,
+        class_worker: LocalMacWorker,
+        posix_job_user: PosixSessionUser,
+    ) -> None:
+        job = self.submit_whoami_job(
+            "No user override",
+            deadline_client,
+            deadline_resources.farm,
+            deadline_resources.queue_a,
+            expected_user=posix_job_user.user,
+        )
+
+        job.wait_until_complete(client=deadline_client, max_retries=20)
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
+
+    def test_job_is_run_as_custom_worker_agent_user(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        class_worker: LocalMacWorker,
+    ) -> None:
+        job = self.submit_whoami_job(
+            test_name="override macos worker agent",
+            deadline_client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.jobs_run_as_agent_user_queue,
+            expected_user=class_worker.configuration.agent_user,
+        )
+        job.wait_until_complete(client=deadline_client)
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job,
+            deadline_client,
+            deadline_resources.jobs_run_as_agent_user_queue,
+            deadline_resources,
+        )
+
+    def test_config_file_user_override(
+        self,
+        deadline_resources,
+        class_worker: LocalMacWorker,
+        posix_config_override_job_user: PosixSessionUser,
+        deadline_client: DeadlineClient,
+    ) -> None:
+        override = f"{posix_config_override_job_user.user}:{posix_config_override_job_user.group}"
+        toml_path = "/etc/amazon/deadline/worker.toml"
+        # -i.bak rather than a bare -i: BSD sed, which macOS ships, requires an argument to -i
+        # and would otherwise take the script as the backup suffix. The grep makes a silent
+        # no-op loud, because a sed that matched nothing still exits 0 and the test would then
+        # assert the override while the agent ran with the default user.
+        set_cmd = (
+            f'sed -i.bak \'s|# posix_job_user = "user:group"|posix_job_user = "{override}"|g\''
+            f" {toml_path}"
+            f" && rm -f {toml_path}.bak"
+            f" && grep -q '^posix_job_user = \"{override}\"$' {toml_path}"
+        )
+        reset_cmd = (
+            f'sed -i.bak \'s|^posix_job_user = "{override}"|# posix_job_user = "user:group"|g\''
+            f" {toml_path}"
+            f" && rm -f {toml_path}.bak"
+        )
+
+        class_worker.stop_worker_service()
+        self._assert_service_stopped(class_worker)
+
+        try:
+            # Inside the try for the same reason as the plist write above: set_cmd seds worker.toml
+            # and then greps to verify, so a failed verification leaves the file already rewritten.
+            # e2e-macos.sh removes worker.toml on the next build, but only one agent fits on this
+            # host, so an unreverted config poisons the rest of *this* run.
+            cmd_result = class_worker.send_command(set_cmd)
+            assert cmd_result.exit_code == 0, (
+                f"Setting the job user override in worker.toml failed: {cmd_result}"
+            )
+
+            class_worker.start_worker_service()
+
+            job = self.submit_whoami_job(
+                "config user override",
+                deadline_client,
+                deadline_resources.farm,
+                deadline_resources.queue_a,
+                expected_user=posix_config_override_job_user.user,
+            )
+
+            job.wait_until_complete(client=deadline_client, max_retries=20)
+            assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+                job, deadline_client, deadline_resources.queue_a, deadline_resources
+            )
+        finally:
+            cmd_result = class_worker.send_command(reset_cmd)
+            assert cmd_result.exit_code == 0, (
+                f"Resetting the job user override in worker.toml failed: {cmd_result}"
+            )
+
+    def test_env_var_user_override(
+        self,
+        deadline_resources,
+        class_worker: LocalMacWorker,
+        posix_env_override_job_user: PosixSessionUser,
+        deadline_client: DeadlineClient,
+    ) -> None:
+        override = f"{posix_env_override_job_user.user}:{posix_env_override_job_user.group}"
+        env_key = "DEADLINE_WORKER_POSIX_JOB_USER"
+
+        class_worker.stop_worker_service()
+        self._assert_service_stopped(class_worker)
+
+        # The LaunchDaemon plist is where macOS keeps daemon environment; there is no systemd
+        # drop-in to append to. Reusing the worker's own helper rather than open-coding a
+        # plistlib edit here keeps one implementation of that write, and it feeds the value on
+        # stdin so a user or group containing a space never reaches a command line.
+        try:
+            # Inside the try: the write is a read-merge-write, so a failure after the plist landed
+            # would otherwise leave the override in place with the finally unreached. `launchctl
+            # bootout` does not rewrite the plist and BUILD_RESIDUE does not list it, so that
+            # survives into the next build and every job there runs as the override user.
+            class_worker._set_plist_env({env_key: override})
+
+            class_worker.start_worker_service()
+
+            job = self.submit_whoami_job(
+                "environment override",
+                deadline_client,
+                deadline_resources.farm,
+                deadline_resources.queue_a,
+                expected_user=posix_env_override_job_user.user,
+            )
+
+            job.wait_until_complete(client=deadline_client, max_retries=20)
+            assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+                job, deadline_client, deadline_resources.queue_a, deadline_resources
+            )
+        finally:
+            # Popped, not set to empty: _set_plist_env only merges, and an empty override is a
+            # different state from an absent one for the next test that installs onto this host.
+            # The key is a constant, so nothing test-controlled is interpolated here.
+            script = (
+                "import plistlib,sys;"
+                "path=sys.argv[1];"
+                "data=plistlib.load(open(path,'rb'));"
+                f"data.get('EnvironmentVariables',{{}}).pop('{env_key}',None);"
+                "plistlib.dump(data,open(path,'wb'))"
+            )
+            cmd_result = class_worker.send_command(
+                f"/usr/bin/python3 -c {shlex.quote(script)} {LocalMacWorker.LAUNCHD_PLIST}"
+            )
+            assert cmd_result.exit_code == 0, (
+                f"Removing {env_key} from the LaunchDaemon plist failed: {cmd_result}"
+            )

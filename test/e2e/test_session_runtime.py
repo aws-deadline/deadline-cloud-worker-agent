@@ -6,28 +6,21 @@ These tests validate that the worker agent correctly routes session execution
 to the configured runtime (python, rust, or service-selected) and that
 missing-runtime failures surface visibly rather than silently falling back.
 
-TestRustUnavailableAndRecovery is adaptive: it explicitly removes the Rust
-extension files before testing failure, then switches to python and verifies
-recovery, all within a single test function to guarantee phase ordering.
+TestRustUnavailableAndRecovery is adaptive: its fixture moves the Rust
+adapter's one exclusive import aside before the test runs, then the test
+switches to python and verifies recovery, all within a single test function to
+guarantee phase ordering. The fixture moves the tree back in its teardown, so
+the fault does not outlive the class on a host that outlives the build.
 Shell commands branch per OS: Linux workers use bash, Windows workers use
 PowerShell via SSM AWS-RunPowerShellScript.
 
 Hint-dependent scenarios:
-    Two classes below cannot run until the service stamps a runtimeHint on
-    session specs for the test account, which requires that account to be
-    allowlisted for the service-side runtime-hint feature gates. The tests
-    themselves cannot create or observe that state, so they carry an
-    unconditional skip mark with the unlock condition in the reason. Remove
-    the mark when the account reaches the corresponding state:
-
-      TestServiceSelectedWithRustHint       account allowlisted for the
-                                            per-OS runtime gate (hint=rust)
-      TestServiceSelectedWithPythonexprHint outer gate open, per-OS gate
-                                            closed (hint=pythonexpr)
-
-    TestServiceSelectedDefaultsToPython asserts only that python is selected,
-    so it holds with hint=None or hint=pythonexpr. It must be retired when the
-    account is allowlisted for rust.
+    TestServiceSelectedFollowsServiceHint accepts either hint the service may
+    stamp (pythonexpr by default, rust for allowlisted accounts), so it needs
+    no allowlist state of its own. It does need the worker's botocore to model
+    AssignedSession.metadata: Python 3.9 caps botocore below that release and
+    the hint is dropped, which is what the xfail on that class covers for the
+    Linux and macOS workers.
 
 The Rust adapter needs no env var: openjd-model ships the Rust extension
 (openjd._openjd_rs) in its platform wheels from 0.10.0 onward, and this
@@ -44,11 +37,11 @@ Worker agent log paths:
 
 Worker openjd package location (for making the Rust adapter unloadable):
     Resolved from the worker's own python at test time on both platforms
-    (Linux: the venv at /opt/deadline/worker; Windows: the system python; see the
-    fault-injection step in TestRustUnavailableAndRecovery)
+    (Linux: the venv at /opt/deadline/worker; Windows: the system python; see
+    the rust_unavailable_worker fixture)
 """
 
-from typing import Generator, Sequence, Type, Union
+from typing import Generator, Sequence, Union
 
 import backoff
 import dataclasses
@@ -63,11 +56,13 @@ from deadline_test_fixtures import (
     DeadlineWorker,
     DeadlineWorkerConfiguration,
     EC2InstanceWorker,
+    LocalMacWorker,
     TaskStatus,
 )
 
 from e2e.conftest import DeadlineResources, create_worker, stop_worker
 from e2e.utils import (
+    macos_agent_daemon_stopped,
     is_worker_started,
     job_failure_message,
     submit_sleep_job,
@@ -76,6 +71,11 @@ from e2e.utils import (
 LOG = logging.getLogger(__name__)
 
 # Agent log paths per OS
+# This module drives the agent's service directly, which the DeadlineWorker base
+# class does not declare. Both concrete workers that can host a macOS or Linux
+# agent expose it, so accept either rather than requiring the EC2 one.
+ServiceControllableWorker = Union[EC2InstanceWorker, LocalMacWorker]
+
 _LINUX_AGENT_LOG = "/var/log/amazon/deadline/worker-agent.log"
 _WINDOWS_AGENT_LOG = r"C:\ProgramData\Amazon\Deadline\Logs\worker-agent.log"
 
@@ -92,6 +92,11 @@ _WINDOWS_WORKER_TOML = r"C:\ProgramData\Amazon\Deadline\Config\worker.toml"
 # installer puts python on the machine PATH (PrependPath=1 in the fixtures
 # userdata), so the interpreter is asked directly.
 _LINUX_WORKER_VENV = "/opt/deadline/worker"
+
+# The macOS agent runs as a system LaunchDaemon; `launchctl print system/<label>` is the equivalent
+# of `systemctl is-active` there. Taken from the worker class rather than repeated as a literal, so
+# a rename in the fixtures package cannot leave this querying a label that no longer exists.
+_MACOS_LAUNCHD_LABEL = LocalMacWorker.LAUNCHD_LABEL
 
 
 # ---------------------------------------------------------------------------
@@ -111,13 +116,23 @@ def _running_on_windows() -> bool:
     return os.environ["OPERATING_SYSTEM"].lower() == "windows"
 
 
-def _agent_log_path(worker: EC2InstanceWorker) -> str:
+def _running_on_macos() -> bool:
+    """Return True when the suite is running against a macOS worker.
+
+    Same reasoning as _running_on_windows: OPERATING_SYSTEM is what every other e2e module in this
+    package branches on, and duck-typing the worker object would fall through to the systemd branch
+    if the fixture library renamed an attribute.
+    """
+    return os.environ["OPERATING_SYSTEM"].lower() == "macos"
+
+
+def _agent_log_path(worker: ServiceControllableWorker) -> str:
     """Return the agent log path appropriate for the worker's OS."""
     return _WINDOWS_AGENT_LOG if _running_on_windows() else _LINUX_AGENT_LOG
 
 
 def _assert_log_contains(
-    worker: EC2InstanceWorker,
+    worker: ServiceControllableWorker,
     pattern: Union[str, Sequence[str]],
     description: str,
 ) -> None:
@@ -174,8 +189,7 @@ def _assert_log_contains(
 def explicit_runtime_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
-) -> Generator[tuple[EC2InstanceWorker, str], None, None]:
+) -> Generator[tuple[ServiceControllableWorker, str], None, None]:
     """Create a worker with session_runtime set to the parametrized value.
 
     Two values: python and rust. Both run unconditionally; the Rust
@@ -187,10 +201,9 @@ def explicit_runtime_worker(
     runtime: str = request.param
     with create_worker(
         dataclasses.replace(worker_config, session_runtime=runtime),
-        ec2_worker_type,
         request,
     ) as worker:
-        assert isinstance(worker, EC2InstanceWorker)
+        assert isinstance(worker, (EC2InstanceWorker, LocalMacWorker))
         yield worker, runtime
     stop_worker(request, worker)
 
@@ -209,7 +222,7 @@ class TestExplicitModeRouting:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        explicit_runtime_worker: tuple[EC2InstanceWorker, str],
+        explicit_runtime_worker: tuple[ServiceControllableWorker, str],
     ) -> None:
         worker, runtime = explicit_runtime_worker
         job = submit_sleep_job(
@@ -234,24 +247,23 @@ class TestExplicitModeRouting:
 def service_selected_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
     with create_worker(
         dataclasses.replace(worker_config, session_runtime="service-selected"),
-        ec2_worker_type,
         request,
     ) as worker:
-        assert isinstance(worker, EC2InstanceWorker)
+        assert isinstance(worker, (EC2InstanceWorker, LocalMacWorker))
         yield worker
     stop_worker(request, worker)
 
 
 @pytest.mark.xfail(
-    os.environ["OPERATING_SYSTEM"] == "linux",
+    os.environ["OPERATING_SYSTEM"] in ("linux", "macos"),
     strict=False,
-    reason="The Linux worker runs Python 3.9, which caps botocore below the release that "
-    "models AssignedSession.metadata, so the runtimeHint is dropped. Remove this mark once "
-    "the Linux worker's botocore keeps the field.",
+    reason="The Linux and macOS workers run Python 3.9, which caps botocore below the release "
+    "that models AssignedSession.metadata, so the runtimeHint is dropped. macOS is included "
+    "because LocalMacWorker builds its venv from /usr/bin/python3, which is 3.9.6 on current "
+    "macOS. Remove each platform from this mark once its botocore keeps the field.",
 )
 class TestServiceSelectedFollowsServiceHint:
     """Worker with session_runtime=service-selected receives and follows the service's runtimeHint.
@@ -266,7 +278,7 @@ class TestServiceSelectedFollowsServiceHint:
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        service_selected_worker: EC2InstanceWorker,
+        service_selected_worker: ServiceControllableWorker,
     ) -> None:
         job = submit_sleep_job(
             "session_runtime=service-selected routing test",
@@ -289,19 +301,129 @@ class TestServiceSelectedFollowsServiceHint:
         )
 
 
+# Suffix for the moved-aside openjd/model/_v1 tree. Not an importable module name, so the tree is
+# inert where it sits, and a literal so pipeline/e2e-macos.sh can find and restore one left behind
+# by a build that was killed between the move and the restore.
+_V1_MOVED_ASIDE_SUFFIX = ".e2e-moved-aside"
+
+
+def _resolve_openjd_model_dir(worker: ServiceControllableWorker) -> str:
+    """Return the directory of the worker's installed openjd.model package.
+
+    Resolved once, by asking the worker's own python, and reused for both the move and the move
+    back. It cannot be resolved a second time: openjd.model imports from its _v1 subpackage, so
+    once that is moved aside the import used to locate it no longer works.
+    """
+    if _running_on_windows():
+        # openjd is a namespace package (no __init__), so its __file__ is None; resolve the
+        # concrete openjd.model subpackage instead.
+        cmd = 'python -c "import openjd.model, os; print(os.path.dirname(openjd.model.__file__))"'
+    else:
+        cmd = (
+            f"{_LINUX_WORKER_VENV}/bin/python -c "
+            "'import openjd.model, os; print(os.path.dirname(openjd.model.__file__))'"
+        )
+    result = worker.send_command(cmd)
+    assert result.exit_code == 0, f"Failed to resolve the openjd.model location: {result}"
+    # Last line, not the whole of stdout: the remote transport may prepend its own output.
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    assert lines, f"Resolving the openjd.model location produced no output: {result}"
+    return lines[-1]
+
+
 @pytest.fixture(scope="class")
 def rust_unavailable_worker(
     request: pytest.FixtureRequest,
     worker_config: DeadlineWorkerConfiguration,
-    ec2_worker_type: Type[EC2InstanceWorker],
 ) -> Generator[DeadlineWorker, None, None]:
+    """A worker with session_runtime=rust whose Rust adapter cannot load.
+
+    Fault injection: openjd/model/_v1 is the one import the Rust adapter needs that nothing else
+    does. rust.py imports openjd.model._v1 (plus openjd._openjd_rs and openjd.expr), so taking it
+    away makes the adapter fail to import while leaving the agent itself intact.
+
+    Do NOT touch openjd/_openjd_rs.* or openjd/expr: openjd.sessions' pure-Python runner
+    (_runner_base.py) imports openjd.expr, which is a facade over the native extension. Removing
+    those stops the agent from starting at all -- a broken install, not an unavailable adapter, and
+    it defeats the point of these tests.
+
+    Moved aside and moved back rather than deleted. On EC2 either would do, because the instance is
+    discarded with the class. LocalMacWorker installs into a venv at /opt/deadline/worker on a
+    reserved-capacity host that outlives the build, and pipeline/e2e-macos.sh keeps that venv
+    deliberately, so a delete would be permanent: every later rust assertion on that machine would
+    fail, starting with TestExplicitModeRouting[rust] in the next build, which runs before this
+    class and would report a missing adapter as a routing regression.
+
+    The move is asserted in both directions -- target present before, gone after, back afterwards --
+    so a change in install layout fails here rather than surfacing as a confusing job outcome.
+    """
     with create_worker(
         dataclasses.replace(worker_config, session_runtime="rust"),
-        ec2_worker_type,
         request,
     ) as worker:
-        assert isinstance(worker, EC2InstanceWorker)
-        yield worker
+        assert isinstance(worker, (EC2InstanceWorker, LocalMacWorker))
+
+        is_win = _running_on_windows()
+        model_dir = _resolve_openjd_model_dir(worker)
+        sep = "\\" if is_win else "/"
+        v1 = f"{model_dir}{sep}_v1"
+        moved = f"{v1}{_V1_MOVED_ASIDE_SUFFIX}"
+
+        if is_win:
+            move_cmd = (
+                f"if (-not (Test-Path '{v1}')) {{ Write-Error 'expected {v1} to exist'; exit 1 }}; "
+                f"Move-Item -Force '{v1}' '{moved}'; "
+                f"if (Test-Path '{v1}') {{ Write-Error 'failed to move {v1} aside'; exit 1 }}; "
+                "exit 0"
+            )
+            # A present target means the fixture already restored it, so the suffixed copy is
+            # stale: drop it rather than deleting the good tree first. Removing the target and then
+            # failing the move would leave neither, and nothing for the pipeline recovery to find.
+            restore_cmd = (
+                f"if (Test-Path '{moved}') {{ "
+                f"if (Test-Path '{v1}') {{ Remove-Item -Recurse -Force '{moved}' }} "
+                f"else {{ Move-Item -Force '{moved}' '{v1}' }} }}; "
+                f"if (-not (Test-Path '{v1}')) {{ Write-Error 'failed to restore {v1}'; exit 1 }}; "
+                "exit 0"
+            )
+        else:
+            move_cmd = (
+                f'set -e; if [ ! -d "{v1}" ]; then echo "expected {v1} to exist" >&2; exit 1; fi; '
+                f'mv "{v1}" "{moved}"; '
+                f'if [ -d "{v1}" ]; then echo "failed to move {v1} aside" >&2; exit 1; fi'
+            )
+            # Same guard as the Windows branch: a present target means the suffixed copy is
+            # stale, so remove that rather than the tree that is already in place.
+            restore_cmd = (
+                f'set -e; if [ -d "{moved}" ]; then '
+                f'if [ -d "{v1}" ]; then rm -rf "{moved}"; else mv "{moved}" "{v1}"; fi; fi; '
+                f'if [ ! -d "{v1}" ]; then echo "failed to restore {v1}" >&2; exit 1; fi'
+            )
+
+        # The try covers the move itself, not just the yield. move_cmd is a pre-condition check,
+        # then mv, then a post-condition check, so a failure of that last check -- or a transport
+        # failure after the shell ran mv -- returns non-zero with the tree already moved. Asserting
+        # outside the try would skip the restore in exactly that case, which is the one the
+        # move-aside-rather-than-delete design exists for. The restore is a no-op when the suffixed
+        # path is absent, so covering the move costs nothing when it failed before moving anything.
+        try:
+            move_result = worker.send_command(move_cmd)
+            assert move_result.exit_code == 0, f"Failed to move {v1} aside: {move_result}"
+
+            yield worker
+        finally:
+            # Asserted, not best-effort. On macOS a failed restore leaves the host's venv unable to
+            # load the Rust adapter for every subsequent build, so it has to be loud even though
+            # raising in teardown reports as an error on a test that may have passed. Logged first,
+            # because an assertion raised here replaces whatever was already propagating and the
+            # original failure is usually the more informative of the two.
+            restore_result = worker.send_command(restore_cmd)
+            if restore_result.exit_code != 0:
+                LOG.error(f"Failed to restore {v1}: {restore_result}")
+            assert restore_result.exit_code == 0, (
+                f"Failed to restore {v1}; a macOS host is now poisoned for later builds and needs "
+                f"the tree moved back by hand: {restore_result}"
+            )
     stop_worker(request, worker)
 
 
@@ -310,16 +432,20 @@ class TestRustUnavailableAndRecovery:
     then recovers after switching to python via config edit + service restart.
 
     This is a single sequential test function rather than separate methods because
-    the phases share one worker and are order-dependent: extension removal is
-    irreversible on this instance. A single function makes the ordering immune to
+    the phases share one worker and are order-dependent: the config edit in phase 2 only means
+    anything after the failure in phase 1. A single function makes the ordering immune to
     test reordering/parallelization plugins (pytest-xdist, pytest-randomly).
+
+    The Rust adapter is already unloadable on arrival -- rust_unavailable_worker moves
+    openjd/model/_v1 aside before yielding and moves it back in its teardown, so the fault does
+    not outlive the class on a host that outlives the build.
     """
 
     def test_rust_unavailable_fails_visibly_then_recovers_after_switch_to_python(
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
-        rust_unavailable_worker: EC2InstanceWorker,
+        rust_unavailable_worker: ServiceControllableWorker,
     ) -> None:
         """Rust mode fails visibly when the adapter cannot load, then recovers after
         switching to python via worker.toml edit + service restart."""
@@ -327,53 +453,7 @@ class TestRustUnavailableAndRecovery:
         worker = rust_unavailable_worker
         is_win = _running_on_windows()
 
-        # -- Phase 1: Make the Rust adapter unloadable ---------------------------
-        # Fault injection: remove openjd/model/_v1, the one import the Rust
-        # adapter needs that nothing else does. rust.py imports
-        # openjd.model._v1 (plus openjd._openjd_rs and openjd.expr), so
-        # deleting it makes the adapter fail to import while leaving the agent
-        # itself intact.
-        #
-        # Do NOT delete openjd/_openjd_rs.* or openjd/expr: openjd.sessions'
-        # pure-Python runner (_runner_base.py) imports openjd.expr, which is a
-        # facade over the native extension. Removing those stops the agent from
-        # starting at all -- which is a broken install, not an unavailable
-        # adapter, and defeats the point of this test.
-        #
-        # The openjd location is resolved by asking the worker's own python,
-        # and the removal is asserted before (target exists) and after (target
-        # gone), so a change in install layout fails loudly right here instead
-        # of surfacing later as a confusing job-outcome mismatch.
-        if is_win:
-            rm_cmd = (
-                "$model = python -c "
-                # openjd is a namespace package (no __init__), so its __file__ is
-                # None; resolve the concrete openjd.model subpackage instead.
-                '"import openjd.model, os; print(os.path.dirname(openjd.model.__file__))"; '
-                "if (-not $model) { Write-Error 'could not resolve the openjd.model package location'; exit 1 }; "
-                "$v1 = Join-Path $model '_v1'; "
-                'if (-not (Test-Path $v1)) { Write-Error "expected $v1 to exist before removal"; exit 1 }; '
-                "Remove-Item -Recurse -Force $v1; "
-                'if (Test-Path $v1) { Write-Error "failed to remove $v1"; exit 1 }; '
-                "exit 0"
-            )
-        else:
-            rm_cmd = (
-                "set -e; "
-                # openjd is a namespace package (no __init__), so its __file__ is
-                # None; resolve the concrete openjd.model subpackage instead.
-                f"MODEL=$({_LINUX_WORKER_VENV}/bin/python -c "
-                "'import openjd.model, os; print(os.path.dirname(openjd.model.__file__))'); "
-                'V1="$MODEL/_v1"; '
-                'if [ ! -d "$V1" ]; then echo "expected $V1 to exist before removal" >&2; exit 1; fi; '
-                'rm -rf "$V1"; '
-                'if [ -d "$V1" ]; then echo "failed to remove $V1" >&2; exit 1; fi'
-            )
-
-        rm_result = worker.send_command(rm_cmd)
-        assert rm_result.exit_code == 0, f"Failed to remove openjd.model._v1: {rm_result}"
-
-        # -- Phase 2: Submit job as rust mode -> expect failure --------------------
+        # -- Phase 1: Submit job as rust mode -> expect failure --------------------
         job = submit_sleep_job(
             "session_runtime=rust (unavailable) failure test",
             deadline_client,
@@ -395,7 +475,7 @@ class TestRustUnavailableAndRecovery:
             "rust mode with missing extension should log adapter-not-available error",
         )
 
-        # -- Phase 3: Switch to python + restart service --------------------------
+        # -- Phase 2: Switch to python + restart service --------------------------
         toml_path = _WINDOWS_WORKER_TOML if is_win else _LINUX_WORKER_TOML
 
         if is_win:
@@ -413,8 +493,12 @@ class TestRustUnavailableAndRecovery:
                 f"-Pattern '^session_runtime = .python.$' -Quiet)) {{ exit 1 }}"
             )
         else:
+            # -i.bak rather than a bare -i: BSD sed, which macOS ships, requires an
+            # argument to -i and would otherwise take the script as the backup suffix.
+            # The suffixed form is accepted by both BSD and GNU sed.
             switch_cmd = (
-                f"sed -i 's/^session_runtime = .*/session_runtime = \"python\"/' {toml_path}"
+                f"sed -i.bak 's/^session_runtime = .*/session_runtime = \"python\"/' {toml_path}"
+                f" && rm -f {toml_path}.bak"
                 f" && grep -q '^session_runtime = .python.$' {toml_path}"
             )
 
@@ -426,33 +510,45 @@ class TestRustUnavailableAndRecovery:
         # Restart the worker service to pick up the new config
         worker.stop_worker_service()
 
-        if is_win:
-
-            @backoff.on_exception(
-                backoff.constant,
-                Exception,
-                max_time=45,
-                interval=5,
-            )
-            def check_worker_service_stopped_win() -> None:
+        # Three branches, not two. The POSIX branch names systemctl, which macOS has not got:
+        # `systemctl is-active` there exits 127 with empty stdout, satisfying both assertions on
+        # the first attempt. That is a gate that contributes no settle time at all on the one
+        # platform where the restart actually races, so macOS asks launchd instead.
+        @backoff.on_exception(
+            backoff.constant,
+            Exception,
+            max_time=45,
+            interval=5,
+        )
+        def check_worker_service_stopped() -> None:
+            if is_win:
                 status_result = worker.send_command("(Get-Service DeadlineWorker).Status")
                 assert status_result.stdout.strip() != "Running"
-
-            check_worker_service_stopped_win()
-        else:
-
-            @backoff.on_exception(
-                backoff.constant,
-                Exception,
-                max_time=45,
-                interval=5,
-            )
-            def check_worker_service_stopped() -> None:
+            elif _running_on_macos():
+                # `launchctl print` exits non-zero once the job is unloaded, which is what
+                # stop_worker_service does on macOS. While it is still loaded the output carries
+                # `state = running` until the process is gone, so both are checked: a job that is
+                # loaded but stopped is also an acceptable stop.
+                #
+                # Anchored to a single leading tab, as in the other two launchctl checks in this
+                # suite: `launchctl print` repeats `state` for nested endpoints and services at
+                # deeper indentation, and an unanchored match is too permissive for a negation --
+                # any nested endpoint still reporting running would keep this retrying until the
+                # backoff expired, failing a restart that had in fact worked.
+                # Shared helper, because the previous form here was vacuous: an `or` between
+                # "launchd says unloaded" and "the output has no running state" is satisfied by
+                # every error message launchctl can emit, so any failure passed the gate on the
+                # first attempt with no settle time. The helper treats an unrecognized response as
+                # neither stopped nor running and raises, so the backoff keeps trying.
+                assert macos_agent_daemon_stopped(worker, _MACOS_LAUNCHD_LABEL), (
+                    "The worker agent daemon is still running"
+                )
+            else:
                 status_result = worker.send_command("systemctl is-active deadline-worker")
                 assert status_result.exit_code != 0
                 assert status_result.stdout.strip() != "active"
 
-            check_worker_service_stopped()
+        check_worker_service_stopped()
 
         worker.start_worker_service()
 
@@ -480,7 +576,7 @@ class TestRustUnavailableAndRecovery:
 
         wait_worker_started()
 
-        # -- Phase 4: Submit job -> expect success with python --------------------
+        # -- Phase 3: Submit job -> expect success with python --------------------
         job = submit_sleep_job(
             "session_runtime switch rust->python test",
             deadline_client,
