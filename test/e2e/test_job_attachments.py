@@ -1821,12 +1821,21 @@ with open(output_path, "w") as f:
             output_dir_path=output_root_path + "/output",
         )
 
-    # POSIX, for the same reason as the dependency-data-flow test above.
+    # Linux only, unlike the dependency-data-flow test above, and not because of the script.
+    # complex_bundle/linux hardcodes /tmp/storageprofiletest in its attachment manifests, while
+    # MacOSJobStorageProfile declares the resolved /private/tmp/storageprofiletest -- correctly,
+    # since /tmp is a symlink there and the agent reports resolved paths. The sync then fails with
+    # "No path mapping rule found for the source path /tmp/storageprofiletest" before any task
+    # runs, which is what a real run showed. Enabling this on macOS needs a complex_bundle/macos
+    # variant with the resolved paths, the same way the Windows suite has its own.
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] not in ("linux", "macos"),
-        reason="POSIX-specific job bundle to test create job API call",
+        os.environ["OPERATING_SYSTEM"] != "linux",
+        reason=(
+            "complex_bundle/linux hardcodes /tmp paths that MacOSJobStorageProfile declares as "
+            "/private/tmp, so job attachment sync finds no mapping rule; needs a macos bundle"
+        ),
     )
-    def test_worker_create_job_API_call_posix(
+    def test_worker_create_job_API_call_linux(
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
