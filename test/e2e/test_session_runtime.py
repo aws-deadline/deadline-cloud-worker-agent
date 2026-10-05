@@ -420,11 +420,20 @@ def rust_unavailable_worker(
             restore_result = worker.send_command(restore_cmd)
             if restore_result.exit_code != 0:
                 LOG.error(f"Failed to restore {v1}: {restore_result}")
+
+            # stop_worker before the assert, and inside this finally rather than after the `with`.
+            # create_worker's context manager wraps only start(); the yield is bare, so an
+            # AssertionError raised here propagates straight out and a stop_worker placed after the
+            # `with` never runs. That made a failed restore -- the one condition this fixture is
+            # most defensive about -- also the condition that leaks the worker: on EC2 the instance
+            # and its record survive the rest of the build, and on macOS _installed_worker still
+            # names it, so it is only cleaned up if some later test happens to claim the host.
+            stop_worker(request, worker)
+
             assert restore_result.exit_code == 0, (
                 f"Failed to restore {v1}; a macOS host is now poisoned for later builds and needs "
                 f"the tree moved back by hand: {restore_result}"
             )
-    stop_worker(request, worker)
 
 
 class TestRustUnavailableAndRecovery:

@@ -70,7 +70,7 @@ BUILD_RESIDUE=(
     /opt/mysessionroot
     /var/lib/deadline/credentials
     /var/lib/deadline/queues
-    /var/root/.aws
+    /etc/sudoers.d/deadline-e2e-aws-env
 )
 
 # Suffix used by test_session_runtime.py's rust_unavailable_worker fixture when it moves
