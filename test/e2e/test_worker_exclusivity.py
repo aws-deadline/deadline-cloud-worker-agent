@@ -88,6 +88,33 @@ def test_a_failed_reinstall_stays_displaced() -> None:
         conftest.reinstate_session_worker(_req(), sess)
 
     assert conftest._displaced_session_worker is sess
+    # And the host is recorded as free. _claim_host sets the slot before start(), so a failed
+    # reinstall would otherwise leave it naming a worker with no agent installed and no record left
+    # to delete -- the next claim would stop_worker that, raise, and refuse every later claim.
+    assert conftest._installed_worker is None
+
+
+def test_a_failed_reinstall_does_not_refuse_the_next_claim() -> None:
+    # The consequence of the assertion above, stated as behaviour: whatever ran next used to inherit
+    # a wall of setup errors from one failed reinstall.
+    sess, variant, later = (
+        MagicMock(name="sess"),
+        MagicMock(name="variant"),
+        MagicMock(name="later"),
+    )
+    sess.start.side_effect = RuntimeError("bootstrap failed")
+    conftest._claim_host(_req(), sess, sess)
+    conftest._claim_host(_req(), variant, sess)
+    with pytest.raises(RuntimeError, match="bootstrap failed"):
+        conftest.reinstate_session_worker(_req(), sess)
+    sess.stop.reset_mock()
+
+    conftest._claim_host(_req(), later, sess)
+
+    assert conftest._installed_worker is later
+    # Nothing to stop: the displacement already deleted its record, and the failed start made no new
+    # one. A second stop here is the DeleteWorker that raises.
+    sess.stop.assert_not_called()
 
 
 def test_no_reinstate_when_not_displaced() -> None:

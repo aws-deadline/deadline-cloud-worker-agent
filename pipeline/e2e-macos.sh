@@ -45,6 +45,11 @@ AGENT_WORKER_JSON=/var/lib/deadline/worker.json
 AGENT_WORKER_TOML=/etc/amazon/deadline/worker.toml
 AGENT_VENV=/opt/deadline/worker
 
+# This script's own sudoers drop-in, written further down so the agent install can reach CodeArtifact
+# under sudo. Declared up here because reset_agent_state removes a leftover one, and that runs before
+# the block that installs it.
+SUDOERS_AWS_ENV=/etc/sudoers.d/deadline-e2e-aws-env
+
 # Per-build accumulations. Each build creates a fresh set of these for worker and queue ids that
 # no longer exist afterwards, and on reserved capacity nothing else removes them, so the host
 # grows without bound until the volume fills -- which would surface as an unrelated test failing
@@ -57,8 +62,10 @@ AGENT_VENV=/opt/deadline/worker
 # way. _grab_bootstrap_log reads the agent and bootstrap logs from there after a start failure, so
 # a build that wiped them first would destroy the only diagnostic for the failure it is about to
 # hit. Log text also grows far more slowly than job working files, so it is the less pressing of
-# the two. The LaunchDaemon plist and the /etc/sudoers.d rule are absent for a different reason:
-# every start() rewrites both wholesale, so they are self-healing rather than accumulating.
+# the two. The LaunchDaemon plist and the installer's own /etc/sudoers.d rule are absent for a
+# different reason: every start() rewrites both wholesale, so they are self-healing rather than
+# accumulating. That reasoning does not extend to SUDOERS_AWS_ENV, which this script writes and no
+# start() touches, so reset_agent_state removes that one by name.
 BUILD_RESIDUE=(
     /opt/mysessionroot
     /var/lib/deadline/credentials
@@ -119,6 +126,12 @@ reset_agent_state() {
     sudo -n launchctl bootout "system/${AGENT_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
     sudo -n rm -f "${AGENT_WORKER_JSON}" >/dev/null 2>&1 || true
     sudo -n rm -f "${AGENT_WORKER_TOML}" >/dev/null 2>&1 || true
+    # This build's own drop-in, from a previous build that did not get to run its trap. It grants a
+    # host-wide `Defaults env_keep` for the AWS credential variables, which applies to every sudo on
+    # the host rather than only the install it exists for, so inheriting one is worse than inheriting
+    # the agent state above: a job launched through the agent's `sudo -u <job-user>` would see
+    # whatever credential environment the invoking process happened to carry.
+    sudo -n rm -f "${SUDOERS_AWS_ENV}" >/dev/null 2>&1 || true
     for path in "${BUILD_RESIDUE[@]}"; do
         sudo -n rm -rf "${path}" >/dev/null 2>&1 || true
     done
@@ -240,11 +253,15 @@ fi
 # Validated with visudo -cf before installing: a malformed file in /etc/sudoers.d breaks sudo for
 # every user on the host, which on reserved capacity would outlast this build.
 echo "=== allowing sudo to keep the AWS credential environment ==="
-SUDOERS_AWS_ENV=/etc/sudoers.d/deadline-e2e-aws-env
 cleanup_sudoers_aws_env() {
     sudo -n rm -f "${SUDOERS_AWS_ENV}" >/dev/null 2>&1 || true
 }
-trap cleanup_sudoers_aws_env EXIT
+# INT and TERM as well as EXIT: a bare EXIT trap does not fire when the shell is killed rather than
+# exiting, which is the case this script is otherwise built around -- a CodeBuild timeout or a host
+# reclaim. Without them the drop-in survives on reserved capacity, which is why reset_agent_state
+# removes a leftover too. Belt and braces deliberately: the trap keeps the window short on a normal
+# or interrupted run, and the reset catches the kill -9 that no trap can.
+trap cleanup_sudoers_aws_env EXIT INT TERM
 
 SUDOERS_TMP="$(mktemp)"
 cat > "${SUDOERS_TMP}" <<'SUDOERS'

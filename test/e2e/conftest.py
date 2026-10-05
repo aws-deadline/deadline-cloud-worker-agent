@@ -578,7 +578,21 @@ def reinstate_session_worker(request: pytest.FixtureRequest, worker: DeadlineWor
     # while a class-scoped per-test worker is still alive would otherwise overwrite its config in
     # place and leave its teardown with nothing to stop, leaking its worker record.
     _claim_host(request, worker, worker)
-    worker.start()
+    try:
+        worker.start()
+    except Exception:
+        # _claim_host recorded this worker as the one holding the host before start() ran, which is
+        # right while the install is in flight and wrong once it has failed: the incumbent it
+        # displaced is already stopped and this start never replaced it, so no agent holds the host.
+        # Leaving the slot pointing here would send the next _claim_host into stop_worker on a record
+        # start() never created. That raises, _claim_host deliberately does not catch it, and one
+        # failed reinstall becomes a refused claim for every later test.
+        #
+        # Through stop_worker rather than clearing the slot directly, matching what create_worker
+        # does on a failed start: a start that got far enough to register before failing leaves a
+        # worker record, and stop_worker is what deletes it and clears the slot.
+        stop_worker(request, worker)
+        raise
     # Cleared only after a successful start. If the reinstall raises, the worker is still displaced,
     # and the next use has to try again rather than be handed a host with no agent on it.
     _displaced_session_worker = None
