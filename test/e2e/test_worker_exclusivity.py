@@ -117,6 +117,31 @@ def test_a_failed_reinstall_does_not_refuse_the_next_claim() -> None:
     sess.stop.assert_not_called()
 
 
+def test_a_failed_reinstall_releases_the_host_even_when_keeping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The autouse fixture clears KEEP_WORKER_AFTER_FAILURE, so the other failed-reinstall tests all
+    # run the path where honouring it is a no-op. With the flag set and a test already failed,
+    # stop_worker takes its early return: left at the default it would keep the slot pointing at a
+    # worker whose start() raised, record it as kept, and refuse every later claim with a message
+    # saying an agent is being kept for inspection -- when the install never completed.
+    monkeypatch.setenv("KEEP_WORKER_AFTER_FAILURE", "true")
+    sess, variant, nxt = MagicMock(name="sess"), MagicMock(name="variant"), MagicMock(name="next")
+    sess.start.side_effect = RuntimeError("bootstrap failed")
+    conftest._claim_host(_req(), sess, sess)
+    conftest._claim_host(_req(), variant, sess)
+
+    with pytest.raises(RuntimeError, match="bootstrap failed"):
+        conftest.reinstate_session_worker(_req(failed=1), sess)
+
+    assert conftest._installed_worker is None
+    assert conftest._kept_worker is not sess
+
+    # The next claim proceeds rather than being refused.
+    conftest._claim_host(_req(failed=1), nxt, sess)
+    assert conftest._installed_worker is nxt
+
+
 def test_no_reinstate_when_not_displaced() -> None:
     sess = MagicMock(name="sess")
     conftest._claim_host(_req(), sess, sess)

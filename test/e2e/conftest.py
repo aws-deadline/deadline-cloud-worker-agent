@@ -591,7 +591,15 @@ def reinstate_session_worker(request: pytest.FixtureRequest, worker: DeadlineWor
         # Through stop_worker rather than clearing the slot directly, matching what create_worker
         # does on a failed start: a start that got far enough to register before failing leaves a
         # worker record, and stop_worker is what deletes it and clears the slot.
-        stop_worker(request, worker)
+        #
+        # honor_keep_after_failure=False, for the same reason _claim_host passes it on the
+        # displacement stop. KEEP_WORKER_AFTER_FAILURE preserves a *failed test's* worker for
+        # inspection; this is a start that never completed, so there is nothing to preserve. Left
+        # at the default, stop_worker would take its early return once any test had failed with the
+        # flag set: the slot would keep naming a worker with no agent behind it, _kept_worker would
+        # name it too, and every later claim would be refused with a message saying an agent is
+        # being kept -- which would not be true.
+        stop_worker(request, worker, honor_keep_after_failure=False)
         raise
     # Cleared only after a successful start. If the reinstall raises, the worker is still displaced,
     # and the next use has to try again rather than be handed a host with no agent on it.
@@ -721,7 +729,10 @@ def create_worker(
             LOG.error(f"Failed to start worker: {e}")
             _grab_bootstrap_log(worker)
             LOG.info("Stopping worker because it failed to start")
-            stop_worker(request, worker)
+            # honor_keep_after_failure=False: same shape and same reason as the reinstate path
+            # above. A start that failed left nothing worth keeping, and honouring the flag here
+            # would strand the slot on a worker with no agent and refuse every later claim.
+            stop_worker(request, worker, honor_keep_after_failure=False)
             raise
         yield worker
 
