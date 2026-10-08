@@ -485,7 +485,14 @@ def _host_configuration(
             host_configuration_script=worker_bootstrap.host_config.script_body,
             host_configuration_timeout_seconds=worker_bootstrap.host_config.script_timeout_seconds,
         )
-        exit_code = host_config_runner.run()
+        try:
+            exit_code = host_config_runner.run()
+        except Exception:
+            # A host configuration failure, not an agent crash. Reported as a non-zero
+            # exit so it takes the path below; left uncaught it exits 1 without ever
+            # setting the Worker to STOPPED. Fixed message text: the body is sensitive.
+            _logger.exception("Host configuration script runner raised an exception.")
+            exit_code = 1
         if exit_code == 0:
             _logger.info(
                 WorkerHostConfigurationLogEvent(

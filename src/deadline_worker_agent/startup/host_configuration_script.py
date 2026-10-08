@@ -1,12 +1,13 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+import os
+import stat
 import time
 from datetime import timedelta
 from logging import Logger
 from pathlib import Path
 from threading import Event, Thread
 from collections.abc import Mapping
-from openjd.model import SymbolTable
 from typing import Any, MutableMapping, Optional
 import sys
 
@@ -15,15 +16,8 @@ from deadline_worker_agent.utils import FileContext
 
 from ..config.config import Configuration
 from openjd.sessions._runner_base import ScriptRunnerBase, TerminateCancelMethod
-from openjd.sessions._embedded_files import EmbeddedFilesScope
+from openjd.sessions._embedded_files import write_file_for_user
 from openjd.sessions._session_user import PosixSessionUser
-from openjd.model.v2023_09 import (
-    EmbeddedFileText as EmbeddedFileText_2023_09,
-)
-from openjd.model.v2023_09 import (
-    EmbeddedFileTypes as EmbeddedFileTypes_2023_09,
-)
-from openjd.model.v2023_09 import DataString as DataString_2023_09
 from ..aws_credentials.worker_boto3_session import WorkerBoto3Session
 from openjd.sessions._types import ActionState
 from openjd.sessions._logging import LoggerAdapter
@@ -271,24 +265,36 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
 
     def _write_script_file(self) -> str:
         """Returns the full path with file name after writing the script to disk."""
-        # Materialize the input script to the session directory.
+        # Opaque customer content under no format string contract, so it is written
+        # verbatim rather than as an OpenJD embedded file (Bea-60617).
         script_file_name = self._script_file_name()
-        host_config_script = EmbeddedFileText_2023_09(
-            name="WorkerHostConfigurationScript",
-            type=EmbeddedFileTypes_2023_09.TEXT,
-            filename=script_file_name,
-            data=DataString_2023_09(self._host_configuration_script),
-            runnable=True,  # chmod +x
-        )
-        self._materialize_files(
-            scope=EmbeddedFilesScope.ENV,  # env files are runnable.
-            files=[host_config_script],
-            dest_directory=self._session_files_directory,
-            symtab=SymbolTable(),
+        script_file_path = self._session_files_directory / script_file_name
+
+        # Two steps, deliberately: write_file_for_user has no line-ending pass-through,
+        # as every end_of_line it accepts rewrites LF or CRLF. Called with no content,
+        # purely for the mode, group ownership and Windows ACL it used to give the file.
+        write_file_for_user(
+            script_file_path,
+            "",
+            self._user,
+            # Mirrors EmbeddedFiles._materialize_file for a runnable file.
+            additional_permissions=stat.S_IXUSR | (stat.S_IXGRP if self._user is not None else 0),
         )
 
-        script_file_path = str(self._session_files_directory / script_file_name)
-        return script_file_path
+        # No O_CREAT: the file already exists with the permissions it is to keep.
+        # O_BINARY stops the Windows CRT expanding LF; O_NOFOLLOW refuses a symlink
+        # swapped in between the two opens. Each is absent on the other platform.
+        flags = os.O_WRONLY | os.O_TRUNC
+        flags |= getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(script_file_path, flags)
+        try:
+            with open(fd, "wb", closefd=False) as script_file:
+                script_file.write(self._host_configuration_script.encode("utf-8"))
+        finally:
+            os.close(fd)
+
+        return str(script_file_path)
 
     def run(self) -> int:
         """
