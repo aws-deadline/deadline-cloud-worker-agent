@@ -15,6 +15,8 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+from openjd.model import FormatStringError
+
 from deadline_worker_agent.api_models import WorkerStatus
 from deadline_worker_agent.config import Configuration, ConfigurationError
 from deadline_worker_agent.errors import ServiceShutdown
@@ -912,3 +914,73 @@ def test_fleet_host_config(
             sys_exit_mock.assert_called_once_with(1)
             mock_host_shutdown.assert_not_called()
             sleep_mock.assert_not_called()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Bea-60617: no try/except around host_config_runner.run() at entrypoint.py:488",
+)
+@patch.object(entrypoint_mod, "_repeatedly_attempt_host_shutdown")
+@patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")
+@patch.object(entrypoint_mod.sys, "exit")
+@patch.object(entrypoint_mod, "sleep")
+def test_host_config_runner_exception_takes_the_failure_path(
+    sleep_mock: MagicMock,
+    sys_exit_mock: MagicMock,
+    telemetry_mock: MagicMock,
+    mock_repeat_attempt_host_shutdown: MagicMock,
+    bootstrap_worker_mock: MagicMock,
+    mock_fleet_host_configuration_runner: MagicMock,
+    worker_info: WorkerPersistenceInfo,
+    configuration_load: MagicMock,
+    mock_host_shutdown: MagicMock,
+    worker_id: str,
+) -> None:
+    """An exception out of the host config runner must be a host configuration failure.
+
+    `host_config_runner.run()` is called with no try/except around it, so an exception
+    propagates past `_host_configuration()` to the entrypoint's top-level handler. That
+    reports it as an uncaught agent crash and exits 1, bypassing the failure path: the
+    worker is never transitioned to STOPPED and the host is never shut down.
+
+    FormatStringError is used because that is the exception seen in the field
+    (Bea-60617), but the handler gap is not specific to it.
+    """
+
+    # GIVEN the runner raises rather than returning a non-zero exit code. The arguments
+    # are the ones openjd-model's parser passes for the body
+    # `docker inspect --format '{{.State.Running}}' c`.
+    mock_fleet_host_configuration_runner.return_value.run.side_effect = FormatStringError(
+        string="docker inspect --format '{{.State.Running}}' c",
+        start=25,
+        end=43,
+        details="Unexpected '.' in '.State.Running' after ''",
+    )
+    configuration_load.return_value.no_shutdown = False
+    mock_repeat_attempt_host_shutdown.side_effect = [True, False]
+
+    with (
+        patch.object(entrypoint_mod, "_logger"),
+        patch.object(entrypoint_mod, "update_worker") as update_worker_mock,
+    ):
+        # WHEN
+        entrypoint()
+
+    # THEN host configuration is not marked as having succeeded
+    assert not worker_info.host_configuration_succeeded
+
+    # THEN the worker is reported STOPPED, as it is for a non-zero exit code
+    update_worker_mock.assert_any_call(
+        deadline_client=ANY,
+        farm_id=configuration_load.return_value.farm_id,
+        fleet_id=configuration_load.return_value.fleet_id,
+        worker_id=worker_id,
+        status=WorkerStatus.STOPPED,
+    )
+
+    # THEN the host is shut down, as it is for a non-zero exit code
+    mock_host_shutdown.assert_called_once()
+
+    # THEN it is not reported as an uncaught agent crash. It is a known host
+    # configuration failure, and the telemetry must say so.
+    telemetry_mock.assert_not_called()
