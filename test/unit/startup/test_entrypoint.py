@@ -916,10 +916,6 @@ def test_fleet_host_config(
             sleep_mock.assert_not_called()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Bea-60617: no try/except around host_config_runner.run() at entrypoint.py:488",
-)
 @patch.object(entrypoint_mod, "_repeatedly_attempt_host_shutdown")
 @patch.object(entrypoint_mod, "record_uncaught_exception_telemetry_event")
 @patch.object(entrypoint_mod.sys, "exit")
@@ -938,10 +934,11 @@ def test_host_config_runner_exception_takes_the_failure_path(
 ) -> None:
     """An exception out of the host config runner must be a host configuration failure.
 
-    `host_config_runner.run()` is called with no try/except around it, so an exception
-    propagates past `_host_configuration()` to the entrypoint's top-level handler. That
-    reports it as an uncaught agent crash and exits 1, bypassing the failure path: the
-    worker is never transitioned to STOPPED and the host is never shut down.
+    `host_config_runner.run()` used to be called with no try/except around it, so an
+    exception propagated past `_host_configuration()` to the entrypoint's top-level
+    handler. That reported it as an uncaught agent crash and exited 1, bypassing the
+    failure path: the worker was never transitioned to STOPPED and the host was never
+    shut down.
 
     FormatStringError is used because that is the exception seen in the field
     (Bea-60617), but the handler gap is not specific to it.
