@@ -17,14 +17,18 @@ pairs are copied from upstream's
 
 The host is simulated by patching ``openjd.sessions._path_mapping.os_name``, the
 one seam upstream patches: both ``PathMappingRule.apply`` and the new
-``to_host_path_separators`` read it, so patching it alone yields a consistent
-host. A POSIX host renders both readings identically, so without the patch these
-assertions would pass whatever the session did.
+``to_host_path_separators`` read it, so for non-EXPR rendering it yields a
+consistent host. On an unpatched POSIX host old and new sessions render the same
+text, so only the simulated Windows host tells them apart.
+
+EXPR evaluation takes its path format from the real host instead, so the
+LIST[PATH] cases discriminate old from new sessions on a POSIX host only.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -35,7 +39,7 @@ import openjd.sessions._path_mapping as openjd_path_mapping
 import pytest
 from openjd.sessions import ActionState
 
-from deadline_worker_agent.api_models import StepDetailsData
+from deadline_worker_agent.api_models import PathMappingRule, StepDetailsData
 from deadline_worker_agent.sessions.actions.run_step_task import RunStepTaskAction
 from deadline_worker_agent.sessions.job_entities.job_details import (
     parameters_from_api_response,
@@ -50,8 +54,11 @@ _ACTION_TIMEOUT = 30.0
 _POSIX_TEXT = "/path/a.exr"
 _WINDOWS_TEXT = r"\path\a.exr"
 
-# The task prints `OUT=[<value>]`; the brackets make an empty value visible.
-_PREFIX = "OUT=["
+# The task prints `OUT=<value>`; the delimiters make an empty value visible. Not
+# brackets: on Windows `echo` is MSYS echo.exe, and the Cygwin runtime globs an
+# argument holding any of ?*[]"'(){}, which can strip its backslashes.
+_PREFIX = "OUT=<"
+_SUFFIX = ">"
 
 
 class _RunTaskOnlySession:
@@ -74,7 +81,7 @@ def _render(
     arg: str,
     job_params: Optional[dict[str, Any]] = None,
     task_params: Optional[dict[str, Any]] = None,
-    rules: Optional[list[dict[str, str]]] = None,
+    rules: Optional[list[PathMappingRule]] = None,
     expr: bool = False,
 ) -> str:
     """Run one ``echo OUT=[<arg>]`` task on a simulated host and return what
@@ -92,7 +99,9 @@ def _render(
         "extensions": extensions,
         "template": {
             "name": "MyStep",
-            "script": {"actions": {"onRun": {"command": "echo", "args": [f"{_PREFIX}{arg}]"]}}},
+            "script": {
+                "actions": {"onRun": {"command": "echo", "args": [f"{_PREFIX}{arg}{_SUFFIX}"]}}
+            },
         },
     }
     details = StepDetails.from_boto(payload)
@@ -101,7 +110,7 @@ def _render(
         SessionRuntimeConfig(
             session_id=f"session-{uuid.uuid4().hex}",
             job_parameter_values=parameters_from_api_response(job_params or {}),
-            path_mapping_rules=path_mapping_api_model_to_openjd(rules) if rules else None,  # type: ignore[arg-type]
+            path_mapping_rules=path_mapping_api_model_to_openjd(rules) if rules else None,
             retain_working_dir=False,
             user=None,
             action_callback=lambda session_id, status: None,
@@ -134,9 +143,9 @@ def _render(
 
     # Match the stdout line exactly. On a real Windows host the session also
     # logs the resolved command line at INFO, which contains the same text.
-    outputs = [m for m in caplog.messages if m.startswith(_PREFIX) and m.endswith("]")]
+    outputs = [m for m in caplog.messages if m.startswith(_PREFIX) and m.endswith(_SUFFIX)]
     assert len(outputs) == 1, caplog.messages
-    return outputs[0][len(_PREFIX) : -1]
+    return outputs[0][len(_PREFIX) : -len(_SUFFIX)]
 
 
 def _path(value: str) -> dict[str, Any]:
@@ -208,7 +217,9 @@ class TestPathParameterFormatAndPathMappingAgree:
     def test_a_non_matching_rule_still_leaves_a_host_format_value(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        rules = [{"sourcePathFormat": "POSIX", "sourcePath": "/nowhere", "destinationPath": "/x"}]
+        rules: list[PathMappingRule] = [
+            {"sourcePathFormat": "POSIX", "sourcePath": "/nowhere", "destinationPath": "/x"}
+        ]
         rendered = _render(
             caplog,
             tmp_path,
@@ -222,7 +233,7 @@ class TestPathParameterFormatAndPathMappingAgree:
     def test_a_matching_rule_is_unchanged(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        rules = [
+        rules: list[PathMappingRule] = [
             {"sourcePathFormat": "POSIX", "sourcePath": "/path", "destinationPath": r"C:\dest"}
         ]
         rendered = _render(
@@ -265,13 +276,23 @@ class TestPathParameterFormatIsSeparatorsOnly:
 
 
 class TestListPathParameterTakesTheHostFormat:
-    """LIST[PATH] is EXPR-only, so these run with the EXPR extension."""
+    """LIST[PATH] is EXPR-only, so these run with the EXPR extension. The EXPR
+    engine formats typed paths for the real host, not the patched seam, so on a
+    real Windows host the elements take backslashes before and after #364: the
+    windows-host case pins #364 on a POSIX host only."""
 
     @pytest.mark.parametrize(
         "os_name,expected",
         [
             pytest.param("nt", r"\path\a.exr|\other\b.exr", id="windows host"),
-            pytest.param("posix", "/path/a.exr|/other/b.exr", id="posix host"),
+            pytest.param(
+                "posix",
+                "/path/a.exr|/other/b.exr",
+                id="posix host",
+                marks=pytest.mark.skipif(
+                    os.name == "nt", reason="EXPR renders typed paths for the real host"
+                ),
+            ),
         ],
     )
     def test_every_element(
