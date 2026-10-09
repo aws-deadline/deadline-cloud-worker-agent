@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -39,8 +40,14 @@ import openjd.sessions._path_mapping as openjd_path_mapping
 import pytest
 from openjd.sessions import ActionState
 
-from deadline_worker_agent.api_models import PathMappingRule, StepDetailsData
+from deadline_worker_agent.api_models import (
+    EnvironmentDetailsData,
+    PathMappingRule,
+    StepDetailsData,
+)
+from deadline_worker_agent.sessions.actions.enter_env import EnterEnvironmentAction
 from deadline_worker_agent.sessions.actions.run_step_task import RunStepTaskAction
+from deadline_worker_agent.sessions.job_entities.environment_details import EnvironmentDetails
 from deadline_worker_agent.sessions.job_entities.job_details import (
     parameters_from_api_response,
     path_mapping_api_model_to_openjd,
@@ -61,16 +68,32 @@ _PREFIX = "OUT=<"
 _SUFFIX = ">"
 
 
-class _RunTaskOnlySession:
+class _PassThroughSession:
     """Stands in for ``deadline_worker_agent.sessions.Session``, whose
-    ``run_task`` is a pass-through to the runtime. Same stand-in as
-    test_step_scope_let_end_to_end.py."""
+    ``run_task`` and ``enter_environment`` forward to the runtime. Extends the
+    stand-in in test_step_scope_let_end_to_end.py."""
 
     def __init__(self, runtime: PythonSessionRuntime) -> None:
         self._runtime = runtime
 
     def run_task(self, **kwargs: Any) -> None:
         self._runtime.run_task(**kwargs)
+
+    def enter_environment(self, *, job_env_id: str, **kwargs: Any) -> None:
+        # The real Session passes job_env_id to the runtime as `identifier`.
+        self._runtime.enter_environment(identifier=job_env_id, **kwargs)
+
+
+def _wait_for_success(runtime: PythonSessionRuntime) -> None:
+    deadline = time.monotonic() + _ACTION_TIMEOUT
+    while True:
+        status = runtime.action_status
+        if status is not None and status.state != ActionState.RUNNING:
+            break
+        if time.monotonic() > deadline:
+            pytest.fail(f"action did not finish within {_ACTION_TIMEOUT}s ({status})")
+        time.sleep(0.05)
+    assert status.state == ActionState.SUCCESS, status
 
 
 def _render(
@@ -84,8 +107,8 @@ def _render(
     rules: Optional[list[PathMappingRule]] = None,
     expr: bool = False,
 ) -> str:
-    """Run one ``echo OUT=[<arg>]`` task on a simulated host and return what
-    it printed between the brackets.
+    """Run one ``echo OUT=<arg>`` task on a simulated host and return what
+    it printed between the delimiters.
 
     ``job_params``, ``task_params`` and ``rules`` are in the API shape the
     service serves, so the worker's own conversion runs.
@@ -128,16 +151,8 @@ def _render(
             task_parameter_values=parameters_from_api_response(task_params or {}),
         )
         with patch.object(openjd_path_mapping, "os_name", os_name):
-            action.start(session=_RunTaskOnlySession(runtime), executor=Mock())  # type: ignore[arg-type]
-            deadline = time.monotonic() + _ACTION_TIMEOUT
-            while True:
-                status = runtime.action_status
-                if status is not None and status.state != ActionState.RUNNING:
-                    break
-                if time.monotonic() > deadline:
-                    pytest.fail(f"task did not finish within {_ACTION_TIMEOUT}s ({status})")
-                time.sleep(0.05)
-        assert status.state == ActionState.SUCCESS, status
+            action.start(session=_PassThroughSession(runtime), executor=Mock())  # type: ignore[arg-type]
+            _wait_for_success(runtime)
     finally:
         runtime.cleanup()
 
@@ -274,6 +289,28 @@ class TestPathParameterFormatIsSeparatorsOnly:
         )
         assert rendered == expected
 
+    @pytest.mark.parametrize(
+        "given",
+        [
+            pytest.param(r"C:\proj\a.exr", id="drive path"),
+            pytest.param(r"\\server\share\a.exr", id="UNC path"),
+            pytest.param(r"dir\sub/a.exr", id="mixed separators"),
+        ],
+    )
+    def test_posix_host_keeps_backslashes(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, given: str
+    ) -> None:
+        # A backslash is a legal POSIX filename character, so every Linux worker
+        # must pass it through untouched.
+        rendered = _render(
+            caplog,
+            tmp_path,
+            os_name="posix",
+            arg="{{Task.Param.InputFile}}",
+            task_params=_path(given),
+        )
+        assert rendered == given
+
 
 class TestListPathParameterTakesTheHostFormat:
     """LIST[PATH] is EXPR-only, so these run with the EXPR extension. The EXPR
@@ -308,6 +345,23 @@ class TestListPathParameterTakesTheHostFormat:
         )
         assert rendered == expected
 
+    def test_a_rule_maps_one_element_and_the_other_still_takes_the_host_format(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        rules: list[PathMappingRule] = [
+            {"sourcePathFormat": "POSIX", "sourcePath": "/path", "destinationPath": r"C:\dest"}
+        ]
+        rendered = _render(
+            caplog,
+            tmp_path,
+            os_name="nt",
+            arg="{{ Param.Inputs[0] }}|{{ Param.Inputs[1] }}",
+            job_params={"Inputs": {"pathList": ["/path/a.exr", "/other/b.exr"]}},
+            rules=rules,
+            expr=True,
+        )
+        assert rendered == r"C:\dest\a.exr|\other\b.exr"
+
 
 class TestOtherParameterTypesAreUntouched:
     @pytest.mark.parametrize("arg", ["{{Param.Text}}", "{{Task.Param.Text}}"])
@@ -324,3 +378,104 @@ class TestOtherParameterTypesAreUntouched:
             task_params=params if arg.startswith("{{Task") else None,
         )
         assert rendered == _POSIX_TEXT
+
+
+# Prints the embedded file's text and the environment variable. Python rather
+# than a shell, so no shell expands the backslashes in the values.
+_PRINT_FILE_AND_ENV = (
+    "import os, sys; "
+    "print('FILE=<' + open(sys.argv[1]).read().strip() + '>'); "
+    "print('ENV=<' + os.environ['SCENE_VAR'] + '>')"
+)
+
+
+def _render_file_and_env_var(
+    caplog: pytest.LogCaptureFixture, session_root: Path, *, os_name: str, scene: str
+) -> tuple[str, str]:
+    """Enter a job environment whose ``variables`` hold ``{{Param.Scene}}``,
+    then run a task whose embedded file holds it too. Returns the file's text
+    and the variable's value, as the task saw them."""
+    env_payload: EnvironmentDetailsData = {
+        "jobId": "job-123",
+        "environmentId": "env-123",
+        "schemaVersion": "jobtemplate-2023-09",
+        "template": {"name": "Env", "variables": {"SCENE_VAR": "{{Param.Scene}}"}},
+    }
+    step_payload: StepDetailsData = {
+        "jobId": "job-123",
+        "stepId": "step-123",
+        "schemaVersion": "jobtemplate-2023-09",
+        "dependencies": [],
+        "template": {
+            "name": "MyStep",
+            "script": {
+                "embeddedFiles": [{"name": "F", "type": "TEXT", "data": "{{Param.Scene}}"}],
+                "actions": {
+                    "onRun": {
+                        "command": sys.executable,
+                        "args": ["-c", _PRINT_FILE_AND_ENV, "{{Task.File.F}}"],
+                    }
+                },
+            },
+        },
+    }
+    runtime = PythonSessionRuntime(
+        SessionRuntimeConfig(
+            session_id=f"session-{uuid.uuid4().hex}",
+            job_parameter_values=parameters_from_api_response({"Scene": {"path": scene}}),
+            path_mapping_rules=None,
+            retain_working_dir=False,
+            user=None,
+            action_callback=lambda session_id, status: None,
+            os_env_vars=None,
+            session_root_directory=session_root,
+        )
+    )
+    session = _PassThroughSession(runtime)
+    caplog.set_level(logging.INFO)
+    try:
+        with patch.object(openjd_path_mapping, "os_name", os_name):
+            EnterEnvironmentAction(
+                id="sessionaction-1",
+                job_env_id="jobenv-1",
+                details=EnvironmentDetails.from_boto(env_payload),
+            ).start(session=session, executor=Mock())  # type: ignore[arg-type]
+            _wait_for_success(runtime)
+            RunStepTaskAction(
+                id="sessionaction-2",
+                details=StepDetails.from_boto(step_payload),
+                task_id="task-456",
+                task_parameter_values={},
+            ).start(session=session, executor=Mock())  # type: ignore[arg-type]
+            _wait_for_success(runtime)
+    finally:
+        runtime.cleanup()
+
+    def printed(prefix: str) -> str:
+        lines = [m for m in caplog.messages if m.startswith(prefix) and m.endswith(">")]
+        assert len(lines) == 1, caplog.messages
+        return lines[0][len(prefix) : -1]
+
+    return printed("FILE=<"), printed("ENV=<")
+
+
+class TestEmbeddedFilesAndEnvironmentVariablesTakeTheHostFormat:
+    """#364 changed the symbol table every action renders from, so a PATH
+    parameter reaches embedded-file data and environment ``variables`` in the
+    host format too. A forward-slash Windows path with no matching rule now
+    reaches them with backslashes."""
+
+    @pytest.mark.parametrize(
+        "os_name,expected",
+        [
+            pytest.param("nt", r"C:\new\file.ma", id="windows host"),
+            pytest.param("posix", "C:/new/file.ma", id="posix host"),
+        ],
+    )
+    def test_both_surfaces(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, os_name: str, expected: str
+    ) -> None:
+        file_text, env_value = _render_file_and_env_var(
+            caplog, tmp_path, os_name=os_name, scene="C:/new/file.ma"
+        )
+        assert (file_text, env_value) == (expected, expected)
