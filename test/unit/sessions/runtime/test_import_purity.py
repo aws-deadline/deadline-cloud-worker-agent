@@ -183,6 +183,94 @@ def test_constructing_runtime_without_table_does_not_load_native_extension(
     )
 
 
+def test_running_non_expr_task_with_path_parameter_does_not_load_native_extension(
+    tmp_path: Path,
+) -> None:
+    """A non-EXPR task with a PATH job parameter runs without the extension.
+
+    openjd-sessions 0.12.1 (#364) runs every PATH parameter through
+    ``to_host_path_separators`` when it builds the symbol table, and keeps that
+    function pure Python so this flow stays extension-free. This pins the
+    worker's end of it: API parameter shape, ``StepDetails.from_boto``, and a
+    real ``run_task`` to completion. ``path_mapping_rules=None`` for the reason
+    given on the test above.
+    """
+    # WHEN
+    loaded = _run_probe(
+        tmp_path,
+        """
+        import tempfile
+        import time
+        from pathlib import Path
+
+        from openjd.sessions import ActionState
+
+        from deadline_worker_agent.sessions.job_entities.job_details import (
+            parameters_from_api_response,
+        )
+        from deadline_worker_agent.sessions.job_entities.step_details import StepDetails
+        from deadline_worker_agent.sessions.runtime import SessionRuntimeConfig
+        from deadline_worker_agent.sessions.runtime.python import PythonSessionRuntime
+
+        details = StepDetails.from_boto(
+            {
+                "jobId": "job-1",
+                "stepId": "step-1",
+                "schemaVersion": "jobtemplate-2023-09",
+                "dependencies": [],
+                "template": {
+                    "name": "S",
+                    "script": {
+                        "actions": {
+                            "onRun": {"command": "echo", "args": ["X={{Param.InputFile}}"]}
+                        }
+                    },
+                },
+            }
+        )
+        with tempfile.TemporaryDirectory() as td:
+            runtime = PythonSessionRuntime(
+                SessionRuntimeConfig(
+                    session_id="purity-probe",
+                    job_parameter_values=parameters_from_api_response(
+                        {"InputFile": {"path": "/path/a.exr"}}
+                    ),
+                    path_mapping_rules=None,
+                    retain_working_dir=False,
+                    user=None,
+                    action_callback=lambda session_id, status: None,
+                    os_env_vars=None,
+                    session_root_directory=Path(td),
+                )
+            )
+            try:
+                runtime.run_task(
+                    step_script=details.step_template.script, task_parameter_values={}
+                )
+                deadline = time.monotonic() + 15
+                while True:
+                    status = runtime.action_status
+                    if status is not None and status.state != ActionState.RUNNING:
+                        break
+                    if time.monotonic() > deadline:
+                        raise SystemExit("task did not finish")
+                    time.sleep(0.05)
+            finally:
+                runtime.cleanup()
+
+        assert status.state == ActionState.SUCCESS, status
+        print(RS in sys.modules)
+        """,
+    )
+
+    # THEN
+    assert loaded == "False", (
+        "running a non-EXPR task with a PATH job parameter loaded the native "
+        "extension. Something on the symbol-table or run_task path imports "
+        "openjd.expr unconditionally."
+    )
+
+
 def test_native_extension_is_available(tmp_path: Path) -> None:
     """Positive control: the extension really is installed here. Without this,
     every "must not be loaded" test above would pass trivially in an

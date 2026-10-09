@@ -31,7 +31,7 @@ Hint-dependent scenarios:
 
 The Rust adapter needs no env var: openjd-model ships the Rust extension
 (openjd._openjd_rs) in its platform wheels from 0.10.0 onward, and this
-package pins openjd-model >= 0.11.1, so a worker installed from this wheel
+package's openjd-model floor is above that, so a worker installed from this wheel
 always has it. The rust scenarios therefore run unconditionally.
 
 Log assertion anchor: the scheduler logs
