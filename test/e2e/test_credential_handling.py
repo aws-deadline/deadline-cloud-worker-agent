@@ -25,7 +25,7 @@ from .utils import job_failure_message
 
 @pytest.mark.skipif(
     os.environ["OPERATING_SYSTEM"] == "windows",
-    reason="Linux specific test",
+    reason="POSIX test: asserts on /var/lib/deadline/credentials, which macOS shares with Linux",
 )
 def test_access_worker_credential_file_from_job_linux(
     session_worker: EC2InstanceWorker,

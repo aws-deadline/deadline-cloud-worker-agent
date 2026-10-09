@@ -263,6 +263,12 @@ if __name__ == "__main__":
             },
         )
         job.wait_until_complete(client=deadline_client)
+        # Asserted before the output check below: wait_until_complete treats FAILED as
+        # complete, so a job that failed yields an empty mapping and the test reports
+        # "expected exactly one output root, but got {}" with nothing about the cause.
+        assert job.task_run_status == TaskStatus.SUCCEEDED, job_failure_message(
+            job, deadline_client, deadline_resources.queue_a, deadline_resources
+        )
 
         output_root_to_file_mappings: dict[str, list[str]] = wait_for_job_output(
             job=job,
@@ -719,9 +725,12 @@ if __name__ == "__main__":
             job, deadline_client, deadline_resources.queue_a, deadline_resources
         )
 
+    # POSIX, not Linux: the bundle's scripts are bash and its steps accept both linux and macos
+    # workers, so a macOS worker runs it unchanged. The bundle directory keeps its name because
+    # the Windows suite has its own; only the OS families it admits have widened.
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Linux specific job bundle to test job attachments dependency data flow",
+        os.environ["OPERATING_SYSTEM"] not in ("linux", "macos"),
+        reason="POSIX-specific job bundle to test job attachments dependency data flow",
     )
     @pytest.mark.parametrize(
         "file_system",
@@ -731,7 +740,7 @@ if __name__ == "__main__":
             "VIRTUAL",
         ],
     )
-    def test_worker_job_attachments_dep_data_flow_linux(
+    def test_worker_job_attachments_dep_data_flow_posix(
         self,
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
@@ -776,7 +785,7 @@ if __name__ == "__main__":
         # Get job output path
         os.makedirs(name=self.JOB_OUTPUT_PATH, exist_ok=True)
         output_root_path = tempfile.mkdtemp(
-            dir=self.JOB_OUTPUT_PATH, prefix=f"dep_data_flow_linux-{file_system}"
+            dir=self.JOB_OUTPUT_PATH, prefix=f"dep_data_flow_posix-{file_system}"
         )
         output_path: dict[str, list[str]] = wait_for_job_output(
             job=job,
@@ -1812,9 +1821,19 @@ with open(output_path, "w") as f:
             output_dir_path=output_root_path + "/output",
         )
 
+    # Linux only, unlike the dependency-data-flow test above, and not because of the script.
+    # complex_bundle/linux hardcodes /tmp/storageprofiletest in its attachment manifests, while
+    # MacOSJobStorageProfile declares the resolved /private/tmp/storageprofiletest -- correctly,
+    # since /tmp is a symlink there and the agent reports resolved paths. The sync then fails with
+    # "No path mapping rule found for the source path /tmp/storageprofiletest" before any task
+    # runs, which is what a real run showed. Enabling this on macOS needs a complex_bundle/macos
+    # variant with the resolved paths, the same way the Windows suite has its own.
     @pytest.mark.skipif(
-        os.environ["OPERATING_SYSTEM"] == "windows",
-        reason="Linux specific job bundle to test create job API call",
+        os.environ["OPERATING_SYSTEM"] != "linux",
+        reason=(
+            "complex_bundle/linux hardcodes /tmp paths that MacOSJobStorageProfile declares as "
+            "/private/tmp, so job attachment sync finds no mapping rule; needs a macos bundle"
+        ),
     )
     def test_worker_create_job_API_call_linux(
         self,

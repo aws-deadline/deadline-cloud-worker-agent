@@ -4,23 +4,21 @@ name: macOS E2E Test
 # Windows jobs use. The project is deadline-cloud-worker-agent-mainline-macos-e2e, on a
 # MAC_ARM reserved-capacity fleet.
 #
-# READ THE RESULT IN CLOUDWATCH, NOT HERE. While pipeline/e2e-macos.sh is a capability probe
-# its entire output is the answer, and the reusable workflow below passes
-# hide-cloudwatch-logs: true with no input to override it -- so this run shows only a red X
-# for every outcome (exit 1 = denied or unproven, exit 2 = all present but no tests ran,
-# exit 3 = stale records from an earlier run, so nothing was probed).
-# Open the CodeBuild project's build log for the OK/DENIED lines. One reserved host and
-# concurrency: macose2e mean a re-run to see the log costs a full build.
+# READ THE RESULT IN CLOUDWATCH, NOT HERE. The reusable workflow below passes
+# hide-cloudwatch-logs: true and takes no input to override it, so this run shows only pass or
+# fail. Which tests failed, and the agent's own logs, are in the CodeBuild project's log. One
+# reserved host and concurrency: macose2e mean a re-run to see that log costs a full build.
 #
-# Dispatch-only, deliberately. The Linux and Windows jobs also run on push to mainline;
-# this one does not yet, because nothing has confirmed that a CodeBuild macOS build can do
-# what the agent installer needs -- create users and groups, write a sudoers rule, and
-# bootstrap a LaunchDaemon. A dispatch-only workflow cannot turn mainline red or block
-# anyone's PR, so it is safe to land unproven and is the only way to exercise the project
-# at all: branch creation is blocked on this repository, and a fork PR gets no secrets, so
-# `mainline` is the only ref that can reach the CodeBuild role.
+# Dispatch-only, deliberately, though no longer because the host is unproven: a probe build
+# confirmed everything the installer needs is permitted here (passwordless sudo, a hidden
+# sub-500 account via dscl, dseditgroup GID allocation, an /etc/sudoers.d rule, and a
+# LaunchDaemon running as that account). What is still unproven is the suite itself, which has
+# never completed a run on this fleet. A dispatch-only workflow cannot turn mainline red or
+# block anyone's PR, and it is the only way to exercise the project at all: branch creation is
+# blocked on this repository and a fork PR gets no secrets, so `mainline` is the only ref that
+# can reach the CodeBuild role.
 #
-# Once a run confirms the installer works here, add the push trigger the other two have:
+# Once a dispatched run passes, add the push trigger the other two have:
 #
 #   push:
 #     branches:
