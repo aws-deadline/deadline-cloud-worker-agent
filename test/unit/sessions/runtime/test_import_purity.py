@@ -243,16 +243,20 @@ def test_running_non_expr_task_with_path_parameter_does_not_load_native_extensio
                     session_root_directory=Path(td),
                 )
             )
-            runtime.run_task(step_script=details.step_template.script, task_parameter_values={})
-            deadline = time.monotonic() + 15
-            while True:
-                status = runtime.action_status
-                if status is not None and status.state != ActionState.RUNNING:
-                    break
-                if time.monotonic() > deadline:
-                    raise SystemExit("task did not finish")
-                time.sleep(0.05)
-            runtime.cleanup()
+            try:
+                runtime.run_task(
+                    step_script=details.step_template.script, task_parameter_values={}
+                )
+                deadline = time.monotonic() + 15
+                while True:
+                    status = runtime.action_status
+                    if status is not None and status.state != ActionState.RUNNING:
+                        break
+                    if time.monotonic() > deadline:
+                        raise SystemExit("task did not finish")
+                    time.sleep(0.05)
+            finally:
+                runtime.cleanup()
 
         assert status.state == ActionState.SUCCESS, status
         print(RS in sys.modules)
