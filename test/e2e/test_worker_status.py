@@ -191,12 +191,23 @@ class TestWorkerStatus:
         check_restarted_with_a_new_pid()
         check_worker_processes_exist()
 
-        # Wait for the respawned agent to re-register before leaving. class_worker is class-scoped
-        # and the next test in this class stops the service and asserts the worker reports STOPPED;
-        # a new pid and a live process are both true within seconds of the respawn, well before the
-        # agent has finished registering. Returning at that point let the next test boot the service
-        # out mid-registration, so the agent died without ever reporting STOPPED and that test
-        # failed on a worker this one had left half-started.
+        # Wait for the respawned agent to get past startup before leaving. class_worker is
+        # class-scoped and the next test in this class stops the service and asserts the worker
+        # reports STOPPED.
+        #
+        # Registration alone is not enough, which a failed run proved. is_worker_started accepts
+        # STARTED, and a respawned agent reaches STARTED on its first UpdateWorkerSchedule call,
+        # a few hundred milliseconds in. Handing the host over there let the next test boot out an
+        # agent that was still initializing: it died without reporting STOPPED, and the service
+        # held the worker at STARTED until a timeout far longer than that test waits. Comparing
+        # the agent's own CloudWatch stream across runs, the passing agents had logged for 12-14s
+        # and completed several schedule calls by this point; the failing one logged for 185ms,
+        # completed one, and then went silent for the 8s until it was killed.
+        #
+        # So wait for evidence the agent is still working after registering, rather than for a
+        # status that a half-started agent already satisfies. Line growth in its own log is that
+        # evidence and needs no knowledge of the log's format: a steady agent keeps writing, and
+        # the one that wedged wrote nothing more.
         @backoff.on_exception(
             backoff.constant,
             Exception,
@@ -212,6 +223,33 @@ class TestWorkerStatus:
             )
 
         wait_until_registered_again()
+
+        def agent_log_lines() -> int:
+            # The agent runs as its own user and the log directory is mode 0750, so this needs
+            # sudo even to count lines.
+            result = class_worker.send_command(
+                "sudo wc -l < /var/log/amazon/deadline/worker-agent.log"
+            )
+            assert result.exit_code == 0, f"Could not read the agent log: {result}"
+            # BSD wc right-pads its count, so strip before converting.
+            return int(result.stdout.strip())
+
+        lines_at_registration = agent_log_lines()
+
+        @backoff.on_exception(
+            backoff.constant,
+            Exception,
+            max_time=120,
+            interval=5,
+        )
+        def wait_until_agent_is_still_working() -> None:
+            assert agent_log_lines() > lines_at_registration, (
+                "The respawned agent registered but then wrote nothing further to "
+                "/var/log/amazon/deadline/worker-agent.log, so it is still in its startup path. "
+                "Stopping it now would leave the worker without a STOPPED report."
+            )
+
+        wait_until_agent_is_still_working()
 
     @pytest.mark.skipif(
         os.environ["OPERATING_SYSTEM"] != "windows",
