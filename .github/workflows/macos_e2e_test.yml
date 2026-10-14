@@ -9,23 +9,32 @@ name: macOS E2E Test
 # fail. Which tests failed, and the agent's own logs, are in the CodeBuild project's log. One
 # reserved host and concurrency: macose2e mean a re-run to see that log costs a full build.
 #
-# Dispatch-only, deliberately, though no longer because the host is unproven: a probe build
-# confirmed everything the installer needs is permitted here (passwordless sudo, a hidden
-# sub-500 account via dscl, dseditgroup GID allocation, an /etc/sudoers.d rule, and a
-# LaunchDaemon running as that account). What is still unproven is the suite itself, which has
-# never completed a run on this fleet. A dispatch-only workflow cannot turn mainline red or
-# block anyone's PR, and it is the only way to exercise the project at all: branch creation is
-# blocked on this repository and a fork PR gets no secrets, so `mainline` is the only ref that
-# can reach the CodeBuild role.
+# Kept as its own workflow rather than a third job in mainline_e2e_test.yml so that a
+# workflow_dispatch can exercise macOS alone. Folding it in there would make every manual macOS
+# run also pay for the Windows suite, which takes over two hours.
 #
-# Once a dispatched run passes, add the push trigger the other two have:
+# One reserved host and concurrency: macose2e mean macOS runs serially. That is not a new
+# constraint on mainline, where the Linux and Windows suites already take 1.5 and 2.2 hours, but
+# it does mean a push landing while a run is in flight waits rather than running beside it. If
+# the fleet's single host is unhealthy this gate fails every mainline push, so treat a macOS-only
+# failure as suspect-the-host before suspect-the-commit, and read CloudWatch before reverting.
 #
-#   push:
-#     branches:
-#       - 'mainline'
+# `mainline` is still the only ref that can reach the CodeBuild role: branch creation is blocked
+# on this repository and a fork PR gets no secrets. So workflow_dispatch stays, and it only ever
+# does anything useful from mainline.
+#
+# NOT added to the canaries, unlike Linux and Windows. Those call reusable_canary.yml against
+# per-stage CodeBuild projects, and the macOS equivalents do not exist: there is no
+# mainline-macos-canary, no release-macos-e2e, and no release-macos-canary. Creating them is a
+# CDK change in the infrastructure package, not a change here. Capacity is the bigger reason to
+# wait: the canaries run every three hours, so adding macOS to both would ask one reserved host
+# for sixteen ~32-minute builds a day on top of the per-merge runs this trigger adds.
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'mainline'
 
 jobs:
   MainlineMacOSE2ETest:
