@@ -15,26 +15,18 @@ dependencies = [
     "boto3 >= 1.34.75",
     "deadline-job-attachments == 0.1.3",
     # Pinned to patch version due to Host Config Script runner usage of private OpenJD Sessions API.
-    # 0.12.0 is required in both directions, so this pin and the code change in
-    # this PR must ship together:
-    #   - it adds `resolved_symtab` to the v0 Session's enter_environment,
-    #     exit_environment and run_task, which this package now passes to
-    #     deliver step-scope `let` and the rest of the service-resolved table;
-    #     against 0.11.0 those calls raise TypeError.
-    #   - it removes `extra_let_bindings` from the same three methods, which
-    #     this package no longer passes. Code still passing it would raise
-    #     TypeError against 0.12.0.
-    "openjd-sessions == 0.12.0",
-    # This package also depends on two openjd-model APIs directly:
-    # StepTemplate.resolve_syntax_sugar() (run_step_task.py, for FEATURE_BUNDLE_1
-    # simple-action steps) and openjd.expr.SerializedSymbolTable (the runtime
-    # adapters). resolve_syntax_sugar() first shipped in openjd-model 0.9.0, well
-    # below the floor here, so no floor change is needed for it to exist. Its
-    # fold behaviour changed in openjd-model 0.11.9: the produced `script.let` no
-    # longer includes step-scope `let`, which now travels exclusively through the
-    # service-served resolvedSymbolTable. This package's tests have been adapted
-    # to that contract.
-    "openjd-model >= 0.11.4, < 0.12",
+    # This package needs >= 0.12.0, which added `resolved_symtab` to the v0
+    # Session's enter_environment, exit_environment and run_task (passed here)
+    # and removed `extra_let_bindings` from them. Both still hold in 0.13.0.
+    "openjd-sessions == 0.13.0",
+    # The floor is set by openjd-sessions 0.13.0, which requires
+    # openjd-model >= 0.13, < 0.14. This package also uses two openjd-model APIs
+    # directly: StepTemplate.resolve_syntax_sugar() (run_step_task.py, for
+    # FEATURE_BUNDLE_1 simple-action steps, since 0.9.0) and
+    # openjd.expr.SerializedSymbolTable (the runtime adapters, JSON transport
+    # since 0.11.4). Since 0.11.9 the fold's `script.let` excludes step-scope
+    # `let`, which travels only through the service-served resolvedSymbolTable.
+    "openjd-model >= 0.13.0, < 0.14",
     # tomli became tomllib in standard library in Python 3.11
     "tomli == 2.0.* ; python_version<'3.11'",
     "tomlkit >= 0.13,< 0.16",

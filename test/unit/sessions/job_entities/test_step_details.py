@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 import pytest
+from openjd.model import DecodeValidationError
 
 from deadline_worker_agent.api_models import StepDetailsData
 from deadline_worker_agent.sessions.job_entities.step_details import StepDetails
@@ -239,3 +240,36 @@ class TestResolvedSymbolTable:
         result = StepDetails.from_boto(cast(StepDetailsData, step_details_data))
 
         assert result.resolved_symbol_table_json == symtab_json
+
+
+class TestFromBotoExpressionMemoryBudget:
+    """openjd-model 0.13.0 (openjd-rs #417/#418) counts a slice's result
+    against the default 100 MB expression budget, which applies whenever the
+    caller passes no limit, as the worker does. Decode folds a constant
+    expression, so a step that decoded under 0.11.x is now rejected here."""
+
+    @staticmethod
+    def _step(arg: str) -> StepDetailsData:
+        return cast(
+            StepDetailsData,
+            {
+                "jobId": "job-0000",
+                "schemaVersion": "jobtemplate-2023-09",
+                "stepId": "step-0000",
+                "dependencies": [],
+                "extensions": ["EXPR"],
+                "template": {
+                    "name": "TestStep",
+                    "script": {"actions": {"onRun": {"command": "/bin/echo", "args": [arg]}}},
+                },
+            },
+        )
+
+    def test_a_slice_over_the_budget_fails_to_decode(self) -> None:
+        with pytest.raises(DecodeValidationError, match="exceeded limit"):
+            StepDetails.from_boto(self._step("{{ len(('A' * 60000000)[:]) }}"))
+
+    def test_the_same_value_unsliced_still_decodes(self) -> None:
+        result = StepDetails.from_boto(self._step("{{ len('A' * 60000000) }}"))
+
+        assert result.step_template.name == "TestStep"
