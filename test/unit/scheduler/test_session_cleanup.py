@@ -203,7 +203,14 @@ class TestSessionUserCleanupManager:
             subprocess_run_mock.return_value.stderr = "stderr"
 
             # WHEN
-            SessionUserCleanupManager.cleanup_session_user_processes(os_user)
+            # The resolver is stubbed so this asserts the argv shape rather than
+            # this host's sudo and pkill locations, and so that a literal in the
+            # source would fail the assertion below.
+            with patch(
+                "deadline_worker_agent.scheduler.session_cleanup.system_command_path",
+                side_effect=lambda name: f"/trusted/{name}",
+            ):
+                SessionUserCleanupManager.cleanup_session_user_processes(os_user)
 
             # THEN
             assert (
@@ -213,7 +220,7 @@ class TestSessionUserCleanupManager:
             if sys.platform == "darwin":
                 pkill_opt = ["-lU", os_user.user]
             subprocess_run_mock.assert_called_once_with(
-                args=["sudo", "-u", os_user.user, "/usr/bin/pkill", *pkill_opt],
+                args=["/trusted/sudo", "-u", os_user.user, "/trusted/pkill", *pkill_opt],
                 capture_output=True,
                 check=True,
                 text=True,

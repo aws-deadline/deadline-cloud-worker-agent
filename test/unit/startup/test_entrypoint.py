@@ -527,9 +527,28 @@ def test_agent_self_initiated_shutdown(
 @pytest.mark.parametrize(
     ("expected_platform", "expected_command"),
     (
-        pytest.param("win32", ["shutdown", "-s"], id="windows"),
-        pytest.param("linux", ["sudo", "shutdown", "now"], id="linux"),
-        pytest.param("darwin", ["sudo", "shutdown", "-h", "now"], id="macOS"),
+        # The "/trusted/" prefix comes from the stubbed resolver these tests
+        # install below. Asserting stub output rather than real locations keeps
+        # the expectation independent of the host -- these cases simulate a
+        # platform via sys.platform, so a real lookup would resolve against
+        # whatever platform the suite is actually running on -- and makes the
+        # assertion prove the command went through the resolver, since a literal
+        # in the source would no longer match.
+        # "/trusted/" marks a command that goes through the stubbed resolver.
+        # `shutdown` deliberately does NOT: its path is a contract with the sudoers
+        # rule install.sh writes, so it is the literal module constant. See
+        # test_system_commands.TestShutdownPathIsASudoersContract.
+        pytest.param("win32", ["/trusted/shutdown.exe", "-s"], id="windows"),
+        pytest.param(
+            "linux",
+            ["/trusted/sudo", entrypoint_mod.LINUX_SHUTDOWN_PATH, "now"],
+            id="linux",
+        ),
+        pytest.param(
+            "darwin",
+            ["/trusted/sudo", entrypoint_mod.MACOS_SHUTDOWN_PATH, "-h", "now"],
+            id="macOS",
+        ),
     ),
 )
 @patch.object(entrypoint_mod._logger, "info")
@@ -550,7 +569,12 @@ def test_host_shutdown(
     process.returncode = 0
 
     configuration.no_shutdown = False
-    with patch.object(sys, "platform", expected_platform):
+    with (
+        patch.object(sys, "platform", expected_platform),
+        patch.object(
+            entrypoint_mod, "system_command_path", side_effect=lambda name: f"/trusted/{name}"
+        ),
+    ):
         # WHEN
         entrypoint_mod._host_shutdown(config=configuration)
 
@@ -566,9 +590,28 @@ def test_host_shutdown(
 @pytest.mark.parametrize(
     ("expected_platform", "expected_command"),
     (
-        pytest.param("win32", ["shutdown", "-s"], id="windows"),
-        pytest.param("linux", ["sudo", "shutdown", "now"], id="linux"),
-        pytest.param("darwin", ["sudo", "shutdown", "-h", "now"], id="macOS"),
+        # The "/trusted/" prefix comes from the stubbed resolver these tests
+        # install below. Asserting stub output rather than real locations keeps
+        # the expectation independent of the host -- these cases simulate a
+        # platform via sys.platform, so a real lookup would resolve against
+        # whatever platform the suite is actually running on -- and makes the
+        # assertion prove the command went through the resolver, since a literal
+        # in the source would no longer match.
+        # "/trusted/" marks a command that goes through the stubbed resolver.
+        # `shutdown` deliberately does NOT: its path is a contract with the sudoers
+        # rule install.sh writes, so it is the literal module constant. See
+        # test_system_commands.TestShutdownPathIsASudoersContract.
+        pytest.param("win32", ["/trusted/shutdown.exe", "-s"], id="windows"),
+        pytest.param(
+            "linux",
+            ["/trusted/sudo", entrypoint_mod.LINUX_SHUTDOWN_PATH, "now"],
+            id="linux",
+        ),
+        pytest.param(
+            "darwin",
+            ["/trusted/sudo", entrypoint_mod.MACOS_SHUTDOWN_PATH, "-h", "now"],
+            id="macOS",
+        ),
     ),
 )
 @patch.object(entrypoint_mod, "_logger")
@@ -596,7 +639,12 @@ def test_host_shutdown_failure(
     logger_mock.handlers = [handler_0, handler_1]
 
     configuration.no_shutdown = False
-    with patch.object(sys, "platform", expected_platform):
+    with (
+        patch.object(sys, "platform", expected_platform),
+        patch.object(
+            entrypoint_mod, "system_command_path", side_effect=lambda name: f"/trusted/{name}"
+        ),
+    ):
         # WHEN
         entrypoint_mod._host_shutdown(config=configuration)
 
@@ -617,9 +665,28 @@ def test_host_shutdown_failure(
 @pytest.mark.parametrize(
     ("expected_platform", "expected_command"),
     (
-        pytest.param("win32", ["shutdown", "-s"], id="windows"),
-        pytest.param("linux", ["sudo", "shutdown", "now"], id="linux"),
-        pytest.param("darwin", ["sudo", "shutdown", "-h", "now"], id="macOS"),
+        # The "/trusted/" prefix comes from the stubbed resolver these tests
+        # install below. Asserting stub output rather than real locations keeps
+        # the expectation independent of the host -- these cases simulate a
+        # platform via sys.platform, so a real lookup would resolve against
+        # whatever platform the suite is actually running on -- and makes the
+        # assertion prove the command went through the resolver, since a literal
+        # in the source would no longer match.
+        # "/trusted/" marks a command that goes through the stubbed resolver.
+        # `shutdown` deliberately does NOT: its path is a contract with the sudoers
+        # rule install.sh writes, so it is the literal module constant. See
+        # test_system_commands.TestShutdownPathIsASudoersContract.
+        pytest.param("win32", ["/trusted/shutdown.exe", "-s"], id="windows"),
+        pytest.param(
+            "linux",
+            ["/trusted/sudo", entrypoint_mod.LINUX_SHUTDOWN_PATH, "now"],
+            id="linux",
+        ),
+        pytest.param(
+            "darwin",
+            ["/trusted/sudo", entrypoint_mod.MACOS_SHUTDOWN_PATH, "-h", "now"],
+            id="macOS",
+        ),
     ),
 )
 @patch.object(entrypoint_mod._logger, "debug")
@@ -638,7 +705,12 @@ def test_no_shutdown_only_log(
     """
     # GIVEN
     configuration.no_shutdown = True
-    with patch.object(sys, "platform", expected_platform):
+    with (
+        patch.object(sys, "platform", expected_platform),
+        patch.object(
+            entrypoint_mod, "system_command_path", side_effect=lambda name: f"/trusted/{name}"
+        ),
+    ):
         # WHEN
         entrypoint_mod._host_shutdown(config=configuration)
 

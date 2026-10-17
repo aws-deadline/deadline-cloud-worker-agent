@@ -37,6 +37,7 @@ from ..log_messages import (
     WorkerLogEventOp,
     WorkerHostConfigurationLogEvent,
 )
+from .._system_commands import SystemCommandNotFoundError, system_command_path
 from ..log_sync.cloudwatch import stream_cloudwatch_logs
 from ..log_sync.loggers import ROOT_LOGGER, logger as log_sync_logger
 from ..worker import Worker
@@ -45,6 +46,18 @@ from .host_configuration_script import HostConfigurationScriptRunner
 
 __all__ = ["entrypoint"]
 _logger = logging.getLogger(__name__)
+
+LINUX_SHUTDOWN_PATH = "/usr/sbin/shutdown"
+"""The absolute path the installer's sudoers rule grants.
+
+Must stay byte-identical to the path in the ``NOPASSWD:`` rule that
+``installer/install.sh`` writes to ``/etc/sudoers.d/deadline-worker-shutdown``.
+sudoers matches one exact path, so resolving this at runtime instead risks
+producing a path the rule does not cover -- see ``_host_shutdown``.
+"""
+
+MACOS_SHUTDOWN_PATH = "/sbin/shutdown"
+"""macOS ships shutdown at /sbin/shutdown, and /usr/sbin/shutdown does not exist."""
 
 
 def _repeatedly_attempt_host_shutdown() -> bool:
@@ -337,12 +350,37 @@ def _host_shutdown(config: Configuration) -> None:
 
     shutdown_command: list[str]
 
-    if sys.platform == "win32":
-        shutdown_command = ["shutdown", "-s"]
-    elif sys.platform == "darwin":
-        shutdown_command = ["sudo", "shutdown", "-h", "now"]
-    else:
-        shutdown_command = ["sudo", "shutdown", "now"]
+    # `sudo` is resolved from trusted directories: the agent execs it directly, so
+    # that position really is a PATH lookup.
+    #
+    # `shutdown` is NOT resolved, and must not be. Its path is not a free choice --
+    # it is a contract with the sudoers rule the installer writes:
+    #
+    #     ${wa_user} ALL=(root) NOPASSWD: /usr/sbin/shutdown now
+    #                                     ^ installer/install.sh
+    #
+    # sudoers grants one exact path. Resolving instead of using LINUX_SHUTDOWN_PATH
+    # can yield /usr/bin/shutdown on a usr-merged distribution, which no longer
+    # matches the granted rule, so shutdown-on-stop starts prompting for a password
+    # and fails. Nor is this position a PATH lookup to begin with: sudo resolves its
+    # own argument, as root, and the agent hands it an absolute path either way.
+    #
+    # test_shutdown_path_matches_the_installer_sudoers_rule pins the pairing by
+    # reading install.sh, so the two cannot drift apart silently.
+    # A resolution failure is reported and returned from, not raised. Callers treat
+    # _host_shutdown as best-effort and retry until the host goes down; letting an
+    # exception out of here instead unwinds to the top-level handler and exits the
+    # agent, which ends the retrying and leaves the host up with no further attempt.
+    try:
+        if sys.platform == "win32":
+            shutdown_command = [system_command_path("shutdown.exe"), "-s"]
+        elif sys.platform == "darwin":
+            shutdown_command = [system_command_path("sudo"), MACOS_SHUTDOWN_PATH, "-h", "now"]
+        else:
+            shutdown_command = [system_command_path("sudo"), LINUX_SHUTDOWN_PATH, "now"]
+    except SystemCommandNotFoundError as e:
+        _logger.error(f"Cannot shut down the host: {e}")
+        return
 
     # flush all the logs before initiating the shutdown command.
     for handler in _logger.handlers:

@@ -46,6 +46,21 @@ def mock_sys_platform(platform: str) -> Generator[str, None, None]:
         yield mock_sys_platform
 
 
+@pytest.fixture(autouse=True)
+def stub_system_command_path() -> Generator[MagicMock, None, None]:
+    """Stub the trusted-path resolver.
+
+    These tests simulate a platform via ``sys.platform``, so a real lookup would
+    resolve against whatever platform the suite is running on. Stubbing also means
+    the ``expected_cmd`` assertion fails if the source ever goes back to a bare or
+    hardcoded command name.
+    """
+    with patch.object(
+        installer_mod, "system_command_path", side_effect=lambda name: f"/trusted/{name}"
+    ) as mock_resolver:
+        yield mock_resolver
+
+
 @pytest.fixture
 def expected_cmd(
     parsed_args: ParsedCommandLineArguments,
@@ -53,7 +68,7 @@ def expected_cmd(
 ) -> list[str]:
     assert parsed_args.region is not None, "Region is required"
     expected_cmd = [
-        "sudo",
+        "/trusted/sudo",
         str(installer_mod.INSTALLER_PATH[platform]),
         "--farm-id",
         parsed_args.farm_id,
@@ -366,7 +381,8 @@ class TestMacOSInstall:
         )
 
         expected_cmd = [
-            "sudo",
+            # Stubbed resolver, per the stub_system_command_path autouse fixture.
+            "/trusted/sudo",
             str(installer_mod.INSTALLER_PATH["darwin"]),
             "--farm-id",
             "farm-1",
