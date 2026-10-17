@@ -9,6 +9,7 @@ import re
 import requests
 import sys
 import sysconfig
+import time
 
 from deadline_worker_agent.config.settings import (
     DEFAULT_MACOS_SESSION_ROOT_DIR,
@@ -30,17 +31,93 @@ INSTALLER_PATH = {
 }
 
 
+_IMDS_REQUEST_TIMEOUT = (1.0, None)
+"""(connect, read) ceiling on one IMDS request during install.
+
+The address is link-local, so where nothing answers it the connect waits on ARP rather than
+being refused, stalling the installer with no output on every workstation install.
+
+Read stays unbounded: `None` from _get_ec2_region is fatal -- `install()` exits 1 -- and a
+user-data install runs during boot, when IMDS is slowest. A ceiling would fail the install on a
+slow-but-present IMDS, and the retry cannot help, since N attempts at an N-second read tolerate
+a consistently slower IMDS no better than one."""
+
+_IMDS_ATTEMPTS = 3
+"""Attempts before giving up. Retried because `None` here is fatal, so bounding the request
+without retrying would turn a slow EC2 answer into a failed install."""
+
+_IMDS_BACKOFF_S = 0.5
+"""Delay between attempts. A throttled IMDS answers immediately, so back-to-back retries would
+meet the same empty token bucket."""
+
+
+def _is_transient_status(status_code: int) -> bool:
+    """Whether an IMDS status may clear on its own.
+
+    5xx as much as 429: boot is when a user-data install runs and when the metadata service is
+    not yet up.
+    """
+    return status_code == 429 or status_code >= 500
+
+
+class _ImdsTransientError(Exception):
+    """IMDS answered in a way another attempt may improve on.
+
+    Raised for a transient status, and for a 401 on the availability-zone hop. Everything else
+    is determinate -- IMDSv2 disabled, a low hop limit, an empty token, an empty or unparseable
+    AZ, a ConnectTimeout -- and retrying only repeats the same message at the user.
+
+    Not raised for a slow read, because the read is unbounded and there is no ReadTimeout to
+    catch. Anyone bounding it later must add that clause; the retry does not already cover it.
+
+    Must be re-raised past the broad `except Exception` in _get_ec2_region_once.
+    """
+
+
 def _get_ec2_region() -> Optional[str]:
     """
     Gets the AWS region if running on EC2 by querying IMDS.
     Returns None if region could not be detected.
+    """
+    for attempt in range(1, _IMDS_ATTEMPTS + 1):
+        try:
+            return _get_ec2_region_once()
+        except _ImdsTransientError as e:
+            print(f"Failed to detect AWS region: {e}")
+            if attempt < _IMDS_ATTEMPTS:
+                print(f"Retrying region detection ({attempt} of {_IMDS_ATTEMPTS} attempts used)")
+                time.sleep(_IMDS_BACKOFF_S)
+    return None
+
+
+def _get_ec2_region_once() -> Optional[str]:
+    """One attempt at reading the region from IMDS.
+
+    Returns None when the answer is determinate; raises _ImdsTransientError when another attempt
+    may resolve it.
     """
     try:
         # Create IMDSv2 token
         token_response = requests.put(
             url="http://169.254.169.254/latest/api/token",
             headers={"X-aws-ec2-metadata-token-ttl-seconds": "10"},  # 10 second expiry
+            timeout=_IMDS_REQUEST_TIMEOUT,
         )
+        # Checked before the body is used: an error body is non-empty, so `if not token` misses
+        # it, and forwarding it as the token gets a 401 next hop -- surfacing as "unexpected
+        # availability zone" with an error page quoted at the user.
+        if _is_transient_status(token_response.status_code):
+            raise _ImdsTransientError(
+                f"IMDS returned HTTP {token_response.status_code} for the token request"
+            )
+        if token_response.status_code != 200:
+            print(
+                "AWS region could not be detected: IMDS returned HTTP "
+                f"{token_response.status_code} for an IMDSv2 token. IMDSv2 may be disabled, "
+                "or the hop limit may be too low to reach it from here."
+            )
+            return None
+
         token = token_response.text
         if not token:
             raise RuntimeError("Received empty IMDSv2 token")
@@ -49,8 +126,28 @@ def _get_ec2_region() -> Optional[str]:
         az_response = requests.get(
             url="http://169.254.169.254/latest/meta-data/placement/availability-zone",
             headers={"X-aws-ec2-metadata-token": token},
+            timeout=_IMDS_REQUEST_TIMEOUT,
         )
+        # Same reason as the token: throttling is per request, so this hop can fail after the
+        # token succeeded. 401 is transient here only -- it means the 10s token TTL lapsed, and a
+        # fresh token fixes it, whereas a rejected token *request* is not re-obtainable.
+        if _is_transient_status(az_response.status_code) or az_response.status_code == 401:
+            raise _ImdsTransientError(
+                f"IMDS returned HTTP {az_response.status_code} for the availability zone"
+            )
+        if az_response.status_code != 200:
+            print(
+                "AWS region could not be detected: IMDS returned HTTP "
+                f"{az_response.status_code} for the availability zone."
+            )
+            return None
+
         az = az_response.text
+    except _ImdsTransientError:
+        # Re-raised past the broad handler below, which would make a retryable case determinate.
+        # No ReadTimeout clause: the read is unbounded. A ConnectTimeout is the black-holed
+        # workstation and falls through as determinate, which is right.
+        raise
     except Exception as e:
         print(f"Failed to detect AWS region: {e}")
         return None

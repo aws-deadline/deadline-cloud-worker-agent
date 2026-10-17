@@ -1014,6 +1014,50 @@ class TestEnforceNoInstanceProfile:
         )
         assert result is None
 
+    def test_a_connect_timeout_reads_as_not_on_ec2(
+        self,
+        mod_logger_mock: MagicMock,
+    ) -> None:
+        """ConnectTimeout subclasses both ConnectionError and Timeout, so a handler catching
+        Timeout would warn on every non-EC2 host, naming the wrong cause."""
+        # GIVEN
+        with patch.object(
+            bootstrap_mod.requests,
+            "put",
+            side_effect=bootstrap_mod.requests.ConnectTimeout("connect timed out"),
+        ):
+            # WHEN
+            result = bootstrap_mod._get_metadata("instance-id")
+
+        # THEN
+        assert result is None
+        mod_logger_mock.info.assert_called_once_with(
+            "Not running on EC2 or the metadata service was unable to be found!",
+        )
+        mod_logger_mock.warning.assert_not_called()
+
+    def test_the_token_hop_keeps_its_read_bound(
+        self,
+    ) -> None:
+        """This hop shipped `timeout=0.5`, which requests applies to read too, so dropping the
+        read half would be a regression. A hang is worse than a false `None`: it never reaches
+        the IMDS_RETRY_* budget, which only runs once this call returns."""
+        connect, read = bootstrap_mod.IMDS_TOKEN_REQUEST_TIMEOUT
+
+        assert connect == 0.5
+        assert read == 0.5, "this hop shipped with a bounded read; do not drop it"
+
+    def test_the_metadata_hop_leaves_the_read_unbounded(
+        self,
+    ) -> None:
+        """This hop had no timeout, so only its connect is newly bounded. A read ceiling would be
+        a new `None` path, which stops the worker on one call path and silently skips the
+        AMI-staleness check on the other."""
+        connect, read = bootstrap_mod.IMDS_METADATA_REQUEST_TIMEOUT
+
+        assert connect is not None, "the link-local connect must stay bounded"
+        assert read is None, "a read ceiling here would make a slow IMDS fail the worker"
+
     def test_imds_none_then_recovers(
         self,
         get_metadata_mock: MagicMock,

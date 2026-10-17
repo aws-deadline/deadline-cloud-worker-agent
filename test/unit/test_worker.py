@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, call, patch
 from pathlib import Path
 
 import pytest
+import requests
 
 from deadline_worker_agent import Worker
 from deadline_worker_agent.config import JobsRunAsUserOverride
@@ -104,6 +105,36 @@ def mock_signal() -> Generator[MagicMock, None, None]:
         yield mock_signal
 
 
+class TestImdsProbeCost:
+    """Pins what the three probe constants cost together, so prose arithmetic cannot drift.
+
+    Not a guarantee: urllib3's read timeout is per-socket-read inactivity with no `total` set, so
+    a peer dribbling bytes can keep one attempt alive indefinitely. A true ceiling would need
+    urllib3.Timeout(total=...), i.e. depending directly on a transitive dependency. This is the
+    expected cost against a peer that answers or goes silent.
+    """
+
+    def test_expected_cost_against_a_silent_peer(self) -> None:
+        connect, read = Worker._IMDS_REQUEST_TIMEOUT
+        attempts = Worker._IMDS_PROBE_ATTEMPTS
+
+        # Both halves, because requests applies each to its own phase -- one attempt can spend
+        # connect + read, not one of the two.
+        expected = attempts * (connect + read) + (attempts - 1) * Worker._IMDS_PROBE_BACKOFF_S
+
+        assert expected == 7.0
+
+    def test_a_black_holed_address_costs_less(self) -> None:
+        """Nothing answers ARP, so each attempt fails in connect -- the figure above overstates
+        what an ordinary workstation or runner pays."""
+        connect, _read = Worker._IMDS_REQUEST_TIMEOUT
+        attempts = Worker._IMDS_PROBE_ATTEMPTS
+
+        connect_only = attempts * connect + (attempts - 1) * Worker._IMDS_PROBE_BACKOFF_S
+
+        assert connect_only == 4.0
+
+
 def test_monitor_rate() -> None:
     """Asserts that Worker._MONITOR_RATE (the rate between polling for spot interruption and ASG
     life-cycle events) is once per second.
@@ -178,6 +209,74 @@ class TestInit:
 
 
 class TestRun:
+    @pytest.fixture(autouse=True)
+    def imds_answers(self, requests_put: MagicMock) -> MagicMock:
+        """Let the startup probe succeed first try: otherwise it pays the real backoff twice,
+        and a negative verdict leaves the monitor-future branch these tests set up unexercised."""
+        requests_put.return_value.status_code = 200
+        requests_put.return_value.text = "TOKEN"
+        return requests_put
+
+    def test_a_raising_ec2_probe_shuts_the_scheduler_down(
+        self,
+        worker: Worker,
+        thread_pool_executor: MagicMock,
+        scheduler: MagicMock,
+        mock_logger: MagicMock,
+    ) -> None:
+        """The scheduler is already submitted when the probe runs, and the `with` joins it on the
+        way out -- so without this cleanup that join never returns and SIGTERM cannot kill the
+        worker. Holds for any exception type, not only ones the probe's handler catches."""
+        # GIVEN
+        boom = RuntimeError("something the probe's own handlers do not cover")
+        with (
+            patch.object(worker, "_is_ec2_host", side_effect=boom),
+            patch.object(worker_mod, "AwsCredentialsRefresher"),
+            # THEN
+            pytest.raises(RuntimeError) as raise_ctx,
+        ):
+            # WHEN
+            worker.run()
+
+        # THEN
+        assert raise_ctx.value is boom
+        scheduler.shutdown.assert_called_once()
+        assert worker._stop.is_set()
+
+    def test_a_raising_monitor_future_does_not_hang_the_executor(
+        self,
+        worker: Worker,
+        thread_pool_executor: MagicMock,
+        scheduler: MagicMock,
+        mock_logger: MagicMock,
+    ) -> None:
+        """result() re-raises from outside `except BaseException`, so without the try/finally the
+        executor joins a scheduler never asked to stop. Reachable: the monitor parses IMDS
+        responses, and JSONDecodeError is not a RequestException."""
+        # GIVEN: the monitor future completed by raising
+        boom = ValueError("Invalid isoformat string")
+        monitor_future = MagicMock()
+        monitor_future.result.side_effect = boom
+        scheduler_future = MagicMock()
+        thread_pool_executor.submit.side_effect = [scheduler_future, monitor_future]
+
+        with (
+            patch.object(worker, "_is_ec2_host", return_value=True),
+            patch.object(worker_mod, "wait", return_value=([monitor_future], [])),
+            patch.object(worker_mod, "AwsCredentialsRefresher"),
+            # THEN
+            pytest.raises(ValueError) as raise_ctx,
+        ):
+            # WHEN
+            worker.run()
+
+        # THEN: it propagated, and both stops happened. The scheduler assertion is the
+        # load-bearing one: _stop alone does not stop the scheduler, because it builds its own
+        # Event whenever entrypoint() is called without one.
+        assert raise_ctx.value is boom
+        scheduler.shutdown.assert_called_once()
+        assert worker._stop.is_set()
+
     def test_service_shutdown_raised_not_logged(
         self,
         worker: Worker,
@@ -308,7 +407,10 @@ class TestMonitorEc2Shutdown:
             result = worker._monitor_ec2_shutdown()
 
         # THEN
-        logger_info.assert_has_calls(
+        # At debug, not info: this is the first thing every failing poll logs, so at 1 Hz an
+        # info line here buries the warning that names the condition. That warning is emitted
+        # once, on the transition, by _log_imds_unanswered.
+        mock_logger.debug.assert_has_calls(
             [
                 call(
                     "IMDS unavailable - unable to monitor for spot interruption or ASG life-cycle changes"
@@ -318,6 +420,8 @@ class TestMonitorEc2Shutdown:
                 ),
             ]
         )
+        logger_info.assert_not_called()
+        mock_logger.warning.assert_called_once()
         assert result is None
 
     def test_asg_termination(
@@ -406,6 +510,7 @@ class TestEC2MetadataQueries:
         requests_put.assert_called_once_with(
             "http://169.254.169.254/latest/api/token",
             headers={"X-aws-ec2-metadata-token-ttl-seconds": "10"},
+            timeout=Worker._IMDS_REQUEST_TIMEOUT,
         )
 
     def test_get_imdsv2_token_cannot_connect(self, worker: Worker, requests_put: MagicMock) -> None:
@@ -463,6 +568,7 @@ class TestEC2MetadataQueries:
         requests_get.assert_called_once_with(
             "http://169.254.169.254/latest/meta-data/spot/instance-action",
             headers={"X-aws-ec2-metadata-token": fake_token},
+            timeout=Worker._IMDS_REQUEST_TIMEOUT,
         )
         if not is_interrupt:
             assert result is None
@@ -575,6 +681,7 @@ class TestEC2MetadataQueries:
         requests_get.assert_called_once_with(
             "http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state",
             headers={"X-aws-ec2-metadata-token": fake_token},
+            timeout=Worker._IMDS_REQUEST_TIMEOUT,
         )
 
     def test_asg_terminate_cannot_connect(self, worker: Worker, requests_get: MagicMock) -> None:
@@ -598,3 +705,343 @@ class TestEC2MetadataQueries:
 
         # THEN
         assert not result
+
+
+class TestIsEc2Host:
+    """The startup determination that gates EC2 shutdown monitoring.
+
+    Taken once, at startup, and a negative permanently skips spot-interruption and ASG
+    life-cycle handling for the life of the process -- so a single slow or throttled
+    probe must not decide it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def no_real_backoff(self, worker: Worker) -> Generator[MagicMock, None, None]:
+        """Keep the retry backoff out of the suite's wall-clock time.
+
+        Patched on the Event rather than on time.sleep so the tests still exercise the real
+        call the implementation makes. `False` is the return the implementation reads as
+        "not stopped, keep probing", so this stands in for a backoff that elapsed.
+        """
+        with patch.object(worker._stop, "wait", return_value=False) as m:
+            yield m
+
+    def test_first_answer_wins(self, worker: Worker, no_real_backoff: MagicMock) -> None:
+        with patch.object(worker, "_get_ec2_metadata_imdsv2_token", return_value="TOKEN") as probe:
+            assert worker._is_ec2_host() is True
+
+        # No wasted probes on the host where this normally answers in about a millisecond.
+        probe.assert_called_once()
+        # And no delay paid on an EC2 fleet, which is the case that matters for startup.
+        no_real_backoff.assert_not_called()
+
+    def test_a_slow_probe_does_not_decide_it(self, worker: Worker) -> None:
+        """Instance boot is when this runs and when IMDS is most likely to be slow."""
+        with patch.object(
+            worker, "_get_ec2_metadata_imdsv2_token", side_effect=[None, None, "TOKEN"]
+        ) as probe:
+            assert worker._is_ec2_host() is True
+
+        assert probe.call_count == 3
+
+    def test_backs_off_between_attempts(self, worker: Worker, no_real_backoff: MagicMock) -> None:
+        """A throttled IMDS answers immediately, so back-to-back retries would be useless.
+
+        They would meet the same empty token bucket microseconds apart, leaving the retry
+        covering only the slow case.
+        """
+        with patch.object(worker, "_get_ec2_metadata_imdsv2_token", return_value=None):
+            assert worker._is_ec2_host() is False
+
+        # Between attempts, not after the last one.
+        assert no_real_backoff.call_count == Worker._IMDS_PROBE_ATTEMPTS - 1
+        for backoff_call in no_real_backoff.call_args_list:
+            assert backoff_call.kwargs["timeout"] == Worker._IMDS_PROBE_BACKOFF_S
+
+    def test_abandons_the_probe_when_stop_is_requested(self, worker: Worker) -> None:
+        """Shutdown during the backoff must not hold the startup path for the full budget.
+
+        The monitor this gates would only be asked to stop, so there is nothing to wait for.
+        """
+        with (
+            # One patch, because the implementation reads the flag from wait's return value
+            # rather than following it with a second is_set().
+            patch.object(worker._stop, "wait", return_value=True),
+            patch.object(worker, "_get_ec2_metadata_imdsv2_token", return_value=None) as probe,
+        ):
+            assert worker._is_ec2_host() is False
+
+        probe.assert_called_once()
+
+    def test_gives_up_after_the_attempt_budget(self, worker: Worker) -> None:
+        with patch.object(worker, "_get_ec2_metadata_imdsv2_token", return_value=None) as probe:
+            assert worker._is_ec2_host() is False
+
+        assert probe.call_count == Worker._IMDS_PROBE_ATTEMPTS
+
+    def test_says_so_when_monitoring_is_disabled(self, worker: Worker) -> None:
+        """Nothing else on this path reports that interruption handling was turned off."""
+        with (
+            patch.object(worker, "_get_ec2_metadata_imdsv2_token", return_value=None),
+            patch.object(worker_mod.logger, "info") as logger_info,
+        ):
+            worker._is_ec2_host()
+
+        logger_info.assert_called_once()
+        assert "not be" in logger_info.call_args.args[0]
+
+
+class TestImdsTimeoutIsVisible:
+    """A timed-out interruption query must not pass for "nothing is shutting down".
+
+    None and False are the caller's "no interruption pending", indistinguishable from a real
+    answer -- so a reachable-but-slow IMDS would report all-clear every second and a missed spot
+    notice would leave nothing to diagnose.
+    """
+
+    def test_a_timed_out_spot_query_warns(
+        self, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        requests_get.side_effect = requests.ReadTimeout("timed out")
+
+        assert worker._get_spot_instance_shutdown_action_timeout(imdsv2_token="TOKEN") is None
+
+        mock_logger.warning.assert_called_once()
+        assert "no usable answer" in mock_logger.warning.call_args.args[0]
+        assert Worker._IMDS_CAUSE_SLOW_READ in mock_logger.warning.call_args.args
+
+    def test_a_timed_out_asg_query_warns(
+        self, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        requests_get.side_effect = requests.ReadTimeout("timed out")
+
+        assert worker._is_asg_terminated(imdsv2_token="TOKEN") is False
+
+        mock_logger.warning.assert_called_once()
+
+    def test_a_connection_error_does_not_warn(
+        self, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """Control: the not-on-EC2 case is not a slow IMDS and has its own reporting.
+
+        Warning there would fire on every poll of every non-EC2 worker.
+        """
+        requests_get.side_effect = requests.ConnectionError("no route")
+
+        assert worker._get_spot_instance_shutdown_action_timeout(imdsv2_token="TOKEN") is None
+
+        mock_logger.warning.assert_not_called()
+
+    def test_it_warns_once_per_outage_not_once_per_poll(
+        self, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """The monitor polls once a second, so an unconditional warning would bury itself.
+
+        3600 identical lines an hour hides the thing the warning exists to surface.
+        """
+        requests_get.side_effect = requests.ReadTimeout("timed out")
+
+        for _ in range(5):
+            worker._get_spot_instance_shutdown_action_timeout(imdsv2_token="TOKEN")
+
+        mock_logger.warning.assert_called_once()
+
+    def test_a_404_counts_as_answered(
+        self, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """404 is the normal reply on both endpoints, so it must not read as unanswered.
+
+        /spot/instance-action returns it when no interruption is pending and
+        /autoscaling/target-lifecycle-state when the host is not in an ASG -- the steady state of
+        a healthy worker. Warning there would fire on every healthy fleet, and because the state
+        suppresses repeats it would then stay quiet through a real outage.
+        """
+        requests_get.return_value = MagicMock(status_code=404)
+
+        assert worker._get_spot_instance_shutdown_action_timeout(imdsv2_token="TOKEN") is None
+        assert worker._is_asg_terminated(imdsv2_token="TOKEN") is False
+
+        mock_logger.warning.assert_not_called()
+        assert worker._imds_unanswered == set()
+
+    @pytest.mark.parametrize("status_code", [429, 500, 503])
+    def test_an_unusable_status_warns_like_a_timeout(
+        self, status_code: int, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """Getting bytes back is not getting an answer.
+
+        A 429 produces the same silent "no interruption pending" a timeout does, and throttling
+        is per-request against a path polled once a second, so it is at least as likely.
+        """
+        requests_get.return_value = MagicMock(status_code=status_code)
+
+        assert worker._get_spot_instance_shutdown_action_timeout(imdsv2_token="TOKEN") is None
+
+        mock_logger.warning.assert_called_once()
+        assert f"HTTP {status_code}" in str(mock_logger.warning.call_args)
+
+    def test_an_error_status_is_not_a_recovery(
+        self, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """A timeout followed by a 429 has not recovered, and must not say so."""
+        requests_get.side_effect = [
+            requests.ReadTimeout("timed out"),
+            MagicMock(status_code=429),
+        ]
+
+        for _ in range(2):
+            worker._get_spot_instance_shutdown_action_timeout(imdsv2_token="TOKEN")
+
+        assert not any("is answering" in str(c) for c in mock_logger.info.call_args_list), (
+            mock_logger.info.call_args_list
+        )
+        assert "spot/instance-action" in worker._imds_unanswered
+
+    def test_a_failing_token_hop_warns_once_not_once_per_poll(
+        self, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """The token hop is the first thing every failing poll hits.
+
+        Left unsuppressed it emits a line a second and buries the warnings from the two queries
+        below it -- and after _is_ec2_host gated this thread on IMDS answering, a token that now
+        fails is the same condition, not "not on EC2".
+        """
+        with (
+            patch.object(worker, "_get_ec2_metadata_imdsv2_token", return_value=None),
+            patch.object(worker._stop, "wait", side_effect=[False, False, False, True]),
+        ):
+            worker._monitor_ec2_shutdown()
+
+        mock_logger.warning.assert_called_once()
+        assert "api/token" in str(mock_logger.warning.call_args)
+
+    def test_an_alternating_path_warns_once_not_on_every_flip(
+        self, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """A shared IMDS token bucket produces bursty 429s, not a clean outage.
+
+        Clearing the state on the first good answer would re-arm immediately, so alternating
+        429/200 would warn every other poll -- worse than the volume the suppression exists to
+        avoid, and worse than mainline, which was silent here.
+        """
+        throttled = MagicMock(status_code=429)
+        answered = MagicMock(status_code=404)
+        requests_get.side_effect = [throttled, answered] * 6
+
+        for _ in range(12):
+            worker._get_spot_instance_shutdown_action_timeout(imdsv2_token="TOKEN")
+
+        mock_logger.warning.assert_called_once()
+        assert not any("is answering" in str(c) for c in mock_logger.info.call_args_list)
+
+    def test_a_non_ec2_host_does_not_warn(self, worker: Worker, mock_logger: MagicMock) -> None:
+        """Every customer-managed fleet on non-EC2 hardware reaches this on each start.
+
+        It is correct behaviour there, so it must not read as a fault. Mainline logged nothing.
+        """
+        with patch.object(worker, "_get_ec2_metadata_imdsv2_token", return_value=None):
+            with patch.object(worker._stop, "wait", return_value=False):
+                assert worker._is_ec2_host() is False
+
+        mock_logger.warning.assert_not_called()
+        assert any("not being an" in str(c.args[0]) for c in mock_logger.info.call_args_list)
+
+    def test_one_slow_path_does_not_flap_against_a_fast_one(
+        self, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """The realistic partial-slowness case, driven through the monitor loop.
+
+        _monitor_ec2_shutdown queries both paths per poll, so a spot query over the read bound
+        followed by an ASG query under it is the case a single shared flag got wrong: set by the
+        first, cleared by the second, producing a warning and a spurious recovery every second.
+        Driven through the loop rather than the queries directly, because that interleaving is
+        the whole defect and calling either query alone cannot reproduce it.
+        """
+
+        # GIVEN: spot always read-times-out, ASG always answers "not terminating"
+        def get(url: str, **kwargs: object) -> MagicMock:
+            if "spot/instance-action" in url:
+                raise requests.ReadTimeout("timed out")
+            return MagicMock(status_code=200, text="InService")
+
+        requests_get.side_effect = get
+
+        # WHEN: three polls, then stop
+        with patch.object(worker._stop, "wait", side_effect=[False, False, False, True]):
+            with patch.object(worker, "_get_ec2_metadata_imdsv2_token", return_value="TOKEN"):
+                worker._monitor_ec2_shutdown()
+
+        # THEN: the slow path is reported once across all three polls, and the fast path never
+        # claims a recovery on its behalf.
+        assert mock_logger.warning.call_count == 1
+        assert not any("answering" in str(c.args[0]) for c in mock_logger.info.call_args_list), (
+            mock_logger.info.call_args_list
+        )
+
+    def test_a_later_answer_re_arms_the_warning(
+        self, worker: Worker, requests_get: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """A second outage after a recovery is news again, and the recovery itself is logged."""
+        answered = MagicMock(status_code=404)
+        requests_get.side_effect = (
+            [requests.ReadTimeout("timed out")]
+            + [answered] * Worker._IMDS_RECOVERY_ANSWERS
+            + [requests.ReadTimeout("timed out")]
+        )
+
+        for _ in range(Worker._IMDS_RECOVERY_ANSWERS + 2):
+            worker._get_spot_instance_shutdown_action_timeout(imdsv2_token="TOKEN")
+
+        assert mock_logger.warning.call_count == 2
+        # The recovery names the path, since only that path recovered.
+        assert any(
+            "is answering" in c.args[0] and "spot/instance-action" in c.args
+            for c in mock_logger.info.call_args_list
+        ), mock_logger.info.call_args_list
+
+
+class TestImdsRequestsAreBounded:
+    """The metadata address is link-local, so where nothing answers it the connect waits
+    on ARP rather than being refused. Unbounded, that parks the calling thread -- and for
+    the token probe that thread is the one the shutdown path returns through.
+    """
+
+    def test_token_probe_survives_a_read_timeout(
+        self, worker: Worker, requests_put: MagicMock
+    ) -> None:
+        """ReadTimeout subclasses Timeout, not ConnectionError.
+
+        So this is the case the widened handler adds: against the previous
+        `except requests.ConnectionError` alone it escapes and takes the agent down.
+        """
+        requests_put.side_effect = requests.ReadTimeout("timed out")
+
+        assert worker._get_ec2_metadata_imdsv2_token() is None
+
+    def test_token_probe_survives_a_proxy_error(
+        self, worker: Worker, requests_put: MagicMock
+    ) -> None:
+        """ProxyError subclasses ConnectionError, so this was already handled.
+
+        Kept as documentation of the intent rather than as coverage of the change: a proxy
+        configured in the environment intercepts the metadata address, and the right answer
+        on this path is still "assume we are not on EC2" rather than an exception out of
+        `run()`. It would fail if someone narrowed the handler to ConnectTimeout.
+        """
+        requests_put.side_effect = requests.exceptions.ProxyError("bad proxy")
+
+        assert worker._get_ec2_metadata_imdsv2_token() is None
+
+    def test_spot_query_survives_a_read_timeout(
+        self, worker: Worker, requests_get: MagicMock
+    ) -> None:
+        requests_get.side_effect = requests.ReadTimeout("timed out")
+
+        assert worker._get_spot_instance_shutdown_action_timeout(imdsv2_token="TOKEN") is None
+
+    def test_asg_query_survives_a_read_timeout(
+        self, worker: Worker, requests_get: MagicMock
+    ) -> None:
+        requests_get.side_effect = requests.ReadTimeout("timed out")
+
+        assert worker._is_asg_terminated(imdsv2_token="TOKEN") is False
