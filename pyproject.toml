@@ -13,7 +13,7 @@ license = "Apache-2.0"
 dependencies = [
     "requests >= 2.32,< 2.35",
     "boto3 >= 1.34.75",
-    "deadline-job-attachments == 0.1.3",
+    "deadline-job-attachments == 0.1.5",
     # Pinned to patch version due to Host Config Script runner usage of private OpenJD Sessions API.
     # 0.12.0 or newer is required for `resolved_symtab` on the v0 Session's
     # enter_environment, exit_environment and run_task; 0.14.0 requires openjd-model 0.14.
