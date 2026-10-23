@@ -1,4 +1,7 @@
 ## 0.33.6 (2026-10-22)
+
+### Bug Fixes
+* Updated the OpenJD dependencies to openjd-sessions 0.14.0 and openjd-model 0.14. With this update, PATH job parameters are rendered in the worker host's native path format, and job templates are validated more strictly: some invalid templates that previously parsed are now rejected, such as nested lists with mismatched element types or timeouts that resolve to invalid values. (#1111)
 ## 0.33.5 (2026-09-30)
 
 ### Features
