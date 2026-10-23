@@ -1,10 +1,14 @@
 [envs.default]
+# Install via hatch's uv ({env:HATCH_UV}) rather than a bare `pip`: when hatch
+# builds the env with uv (e.g. HATCH_ENV_TYPE_VIRTUAL_UV_PATH is set in CI), the
+# env has no pip, so `pip` would resolve to one outside the env and the test
+# requirements would be installed into the wrong interpreter.
 pre-install-commands = [
-  "pip install -r requirements-testing.txt"
+  "{env:HATCH_UV} pip install -r requirements-testing.txt"
 ]
 
 [envs.default.scripts]
-sync = "pip install -r requirements-testing.txt"
+sync = "{env:HATCH_UV} pip install -r requirements-testing.txt"
 test = "pytest test/unit --numprocesses=auto {args}"
 # Don't pass --numprocesses here so that tests run sequentially.
 # pytest-xdist does not allow live output of stdout, meaning integ tests only show output after the test is done
