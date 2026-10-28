@@ -29,12 +29,25 @@ User Guide
 
 ## Compatibility
 
-The worker agent requires Python 3.9 or higher and is supported on Linux and Windows.  The platform-specific requirements are listed below:
+The worker agent requires Python 3.9 or higher and is supported on Linux, macOS, and Windows.  The platform-specific requirements are listed below:
 
 **Linux:**
 
 *   Amazon Linux 2 and 2023 are recommended and tested
 *   `sudo` must be installed
+
+**macOS:**
+
+*   A Mac that you own with `arm64` (Apple silicon) hardware is recommended and tested
+*   Amazon EC2 Mac instances are not supported. Apple's macOS software license agreement limits
+    leased macOS, including EC2 Mac, to continuous integration and software development services,
+    which don't cover running Deadline Cloud workloads.
+*   `sudo` must be installed
+*   The session root must be traversable by the queue's `jobRunAsUser`. The agent nests it under
+    `/var/lib/deadline` because the root volume is read only, so the default per-user `TMPDIR`
+    (`/var/folders/<hash>/T`, mode `0700`) is not used and does not need changing.
+*   The virtual file system (VFS) for job attachments is not supported, and
+    `--vfs-install-path` is rejected by the installer
 
 **Windows:**
 
