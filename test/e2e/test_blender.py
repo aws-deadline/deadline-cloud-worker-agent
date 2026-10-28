@@ -37,7 +37,7 @@ _RENDER_SCRIPT = r"""#!/bin/zsh
 set -euo pipefail
 BLENDER='{blender}'
 echo "=== identity ==="; whoami
-echo "=== blender ==="; "$BLENDER" --version | head -1
+echo "=== blender ==="; "$BLENDER" --version | sed -n 1p
 cat > ./render_probe.py <<'PY'
 import os, sys, bpy
 scene = bpy.context.scene

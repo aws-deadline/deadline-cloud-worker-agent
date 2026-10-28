@@ -264,7 +264,7 @@ BLENDER_MIRRORS=(
 )
 
 install_blender() {
-    if "${BLENDER_BIN}" --version 2>/dev/null | grep -q "^Blender ${BLENDER_VERSION} "; then
+    if "${BLENDER_BIN}" --version 2>/dev/null | grep "^Blender ${BLENDER_VERSION} " >/dev/null; then
         echo "Blender ${BLENDER_VERSION} already installed at ${BLENDER_APP}"
         return 0
     fi
