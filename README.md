@@ -38,7 +38,10 @@ The worker agent requires Python 3.9 or higher and is supported on Linux, macOS,
 
 **macOS:**
 
-*   `arm64` (Apple silicon) is recommended and tested
+*   A Mac that you own with `arm64` (Apple silicon) hardware is recommended and tested
+*   Amazon EC2 Mac instances are not supported. Apple's macOS software license agreement limits
+    leased macOS, including EC2 Mac, to continuous integration and software development services,
+    which don't cover running Deadline Cloud workloads.
 *   `sudo` must be installed
 *   The session root must be traversable by the queue's `jobRunAsUser`. The agent nests it under
     `/var/lib/deadline` because the root volume is read only, so the default per-user `TMPDIR`
