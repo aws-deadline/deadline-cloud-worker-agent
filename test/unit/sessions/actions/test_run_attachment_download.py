@@ -248,6 +248,40 @@ class TestStart:
             },
             log_task_banner=False,
         )
+        session.write_job_attachments_session_info.assert_called_once_with()
+
+    def test_attachment_download_action_start_session_info_write_failure(
+        self,
+        executor: Mock,
+        session: Mock,
+        action: actions_module.AttachmentDownloadAction,
+        session_dir: Path,
+        mock_asset_sync: MagicMock,
+    ) -> None:
+        """
+        Tests that failing to write the session job attachments info doesn't stop the download
+        """
+        # GIVEN
+        session.write_job_attachments_session_info = Mock(side_effect=OSError("disk full"))
+        session.add_local_manifest_path = Mock(
+            return_value=WorkerManifestProperties(
+                manifest_properties=ManifestProperties(
+                    rootPath="/foo/bar", rootPathFormat=PathFormat.POSIX
+                ),
+                local_root_path=str(session_dir),
+            )
+        )
+        mock_asset_sync.get_local_destination.return_value = str(session_dir)
+        mock_asset_sync._check_and_write_local_manifests.return_value = {
+            str(session_dir): "/path/to/manifest.json"
+        }
+
+        # WHEN
+        action.start(session=session, executor=executor)
+
+        # THEN
+        session.write_job_attachments_session_info.assert_called_once_with()
+        session._run_attachment_sync_task.assert_called_once()
 
     def test_attachment_download_action_start_path_mapping(
         self,

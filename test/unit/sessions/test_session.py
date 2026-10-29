@@ -2901,3 +2901,94 @@ class TestResolvedSymbolTableForwarding:
         mock_create_runtime.assert_called_once()
         config = mock_create_runtime.call_args[0][1]
         assert config.resolved_symbol_table_json == table
+
+
+class TestJobAttachmentsSessionInfo:
+    """Tests for the session job attachments info file and its environment variable."""
+
+    @pytest.fixture
+    def session_dir(self, tmp_path: Path, mock_runtime: MagicMock) -> Path:
+        mock_runtime.working_directory = tmp_path
+        return tmp_path
+
+    @pytest.fixture
+    def written_session(self, session: Session, session_dir: Path) -> Session:
+        from deadline.job_attachments.models import ManifestProperties, PathFormat
+
+        session.set_worker_manifest_properties(
+            WorkerManifestProperties(
+                manifest_properties=ManifestProperties(
+                    rootPath="/home/artist/project",
+                    rootPathFormat=PathFormat.POSIX,
+                    inputManifestPath="farm/queue/job/input",
+                    inputManifestHash="abc",
+                    outputRelativeDirectories=["renders"],
+                ),
+                local_root_path=str(session_dir / "assetroot-1"),
+            )
+        )
+        session.write_job_attachments_session_info()
+        return session
+
+    def test_writes_file(self, written_session: Session, session_dir: Path) -> None:
+        from deadline.job_attachments.models import PathFormat
+        from deadline.job_attachments.session_info import (
+            SESSION_INFO_FILE_NAME,
+            SessionAssetRoot,
+            read_session_info,
+        )
+
+        info = read_session_info(session_dir / SESSION_INFO_FILE_NAME)
+        assert info.roots == [
+            SessionAssetRoot(
+                root_path="/home/artist/project",
+                root_path_format=PathFormat.POSIX,
+                local_root_path=str(session_dir / "assetroot-1"),
+                output_relative_directories=["renders"],
+            )
+        ]
+
+    def test_no_env_var_before_file_is_written(
+        self, session: Session, mock_runtime: MagicMock
+    ) -> None:
+        session.run_task(
+            step_script=MagicMock(),
+            task_parameter_values=dict[str, ParameterValue](),
+            os_env_vars={"DEADLINE_SESSIONACTION_ID": "sessionaction-1"},
+        )
+        assert mock_runtime.run_task.call_args.kwargs["os_env_vars"] == {
+            "DEADLINE_SESSIONACTION_ID": "sessionaction-1"
+        }
+
+    def test_run_task_env_var(
+        self, written_session: Session, session_dir: Path, mock_runtime: MagicMock
+    ) -> None:
+        written_session.run_task(
+            step_script=MagicMock(),
+            task_parameter_values=dict[str, ParameterValue](),
+            os_env_vars={"DEADLINE_SESSIONACTION_ID": "sessionaction-1"},
+        )
+        assert mock_runtime.run_task.call_args.kwargs["os_env_vars"] == {
+            "DEADLINE_SESSIONACTION_ID": "sessionaction-1",
+            "DEADLINE_JA_SESSION_INFO_FILE": str(session_dir / "job_attachments_session_info.json"),
+        }
+
+    def test_enter_and_exit_environment_env_var(
+        self, written_session: Session, session_dir: Path, mock_runtime: MagicMock
+    ) -> None:
+        expected = {
+            "DEADLINE_SESSIONACTION_ID": "sessionaction-1",
+            "DEADLINE_JA_SESSION_INFO_FILE": str(session_dir / "job_attachments_session_info.json"),
+        }
+        written_session.enter_environment(
+            job_env_id="env-1",
+            environment=MagicMock(),
+            os_env_vars={"DEADLINE_SESSIONACTION_ID": "sessionaction-1"},
+        )
+        assert mock_runtime.enter_environment.call_args.kwargs["os_env_vars"] == expected
+
+        written_session.exit_environment(
+            job_env_id="env-1",
+            os_env_vars={"DEADLINE_SESSIONACTION_ID": "sessionaction-1"},
+        )
+        assert mock_runtime.exit_environment.call_args.kwargs["os_env_vars"] == expected

@@ -55,6 +55,12 @@ from deadline.job_attachments.models import (
     UploadManifestInfo,
 )
 from deadline.job_attachments.progress_tracker import ProgressReportMetadata
+from deadline.job_attachments.session_info import (
+    SESSION_INFO_ENV_VAR,
+    SessionAssetRoot,
+    SessionJobAttachmentsInfo,
+    write_session_info,
+)
 
 from ..scheduler.session_action_status import SessionActionStatus
 from ..sessions.errors import SessionActionError
@@ -208,6 +214,7 @@ class Session:
             thread_name_prefix=id,
         )
         self._worker_manifest_properties_by_local_root: dict[str, WorkerManifestProperties] = {}
+        self._job_attachments_session_info_path: Optional[Path] = None
 
         def openjd_session_action_callback(session_id: str, action_status: ActionStatus) -> None:
             self.update_action(action_status)
@@ -289,6 +296,40 @@ class Session:
             The cached list of worker manifest properties
         """
         return list(self._worker_manifest_properties_by_local_root.values())
+
+    def write_job_attachments_session_info(self) -> Path:
+        """Write the session job attachments info file to the session working directory
+
+        Later environment and task actions get its path in the DEADLINE_JA_SESSION_INFO_FILE
+        environment variable, so scripts in the session can find each job attachments root and
+        its output directories.
+
+        Returns
+        -------
+        Path
+            The path of the file
+        """
+        info = SessionJobAttachmentsInfo(
+            roots=[
+                SessionAssetRoot.from_manifest_properties(
+                    worker_props.manifest_properties, worker_props.local_root_path
+                )
+                for worker_props in self.get_worker_manifest_properties_list()
+            ]
+        )
+        self._job_attachments_session_info_path = write_session_info(info, self.working_directory)
+        return self._job_attachments_session_info_path
+
+    def _with_job_attachments_env_vars(
+        self, os_env_vars: Optional[dict[str, str]]
+    ) -> Optional[dict[str, str]]:
+        """Add the session job attachments info file path to an action's environment variables"""
+        if self._job_attachments_session_info_path is None:
+            return os_env_vars
+        return {
+            **(os_env_vars or {}),
+            SESSION_INFO_ENV_VAR: str(self._job_attachments_session_info_path),
+        }
 
     def add_local_manifest_path(
         self, local_root_path: str, manifest_path: str
@@ -885,7 +926,7 @@ class Session:
         session_env_id = self._runtime.enter_environment(
             environment=environment,
             identifier=job_env_id,
-            os_env_vars=os_env_vars,
+            os_env_vars=self._with_job_attachments_env_vars(os_env_vars),
             resolved_symbol_table_json=resolved_symbol_table_json,
             step_name=step_name,
             step_let_declarations=step_let_declarations,
@@ -922,7 +963,7 @@ class Session:
         )
         self._runtime.exit_environment(
             identifier=active_env.session_env_id,
-            os_env_vars=os_env_vars,
+            os_env_vars=self._with_job_attachments_env_vars(os_env_vars),
             resolved_symbol_table_json=effective_table,
         )
         self._active_envs.pop()
@@ -1236,7 +1277,7 @@ class Session:
         self._runtime.run_task(
             step_script=step_script,
             task_parameter_values=task_parameter_values,
-            os_env_vars=os_env_vars,
+            os_env_vars=self._with_job_attachments_env_vars(os_env_vars),
             log_task_banner=log_task_banner,
             step_name=step_name,
             resolved_symbol_table_json=resolved_symbol_table_json,

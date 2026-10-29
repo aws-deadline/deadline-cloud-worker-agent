@@ -320,6 +320,13 @@ class AttachmentDownloadAction(OpenjdAction):
                 )
                 session.set_worker_manifest_properties(worker_manifest_props)
 
+            # Publish the roots and output directories for scripts that run in the session
+            try:
+                session_info_path = session.write_job_attachments_session_info()
+                self._logger.info(f"Wrote job attachments session info to {session_info_path}")
+            except OSError as e:
+                self._logger.warning(f"Failed to write the job attachments session info: {e}")
+
         # Prepare input manifest for download task run
         download_manifest_properties_list: list[WorkerManifestProperties] = list()
         for local_root_path, manifest_path in manifest_paths_by_root.items():
