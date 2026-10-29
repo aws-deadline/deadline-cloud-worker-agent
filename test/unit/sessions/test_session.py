@@ -2992,3 +2992,31 @@ class TestJobAttachmentsSessionInfo:
             os_env_vars={"DEADLINE_SESSIONACTION_ID": "sessionaction-1"},
         )
         assert mock_runtime.exit_environment.call_args.kwargs["os_env_vars"] == expected
+
+    def test_cleanup_exit_environment_env_var(
+        self, written_session: Session, session_dir: Path, mock_runtime: MagicMock
+    ) -> None:
+        from deadline_worker_agent.sessions.session import ActiveEnvironment
+
+        written_session._active_envs.append(
+            ActiveEnvironment(job_env_id="env-1", session_env_id="session-env-1")
+        )
+        mock_runtime.action_status = ActionStatus(state=ActionState.SUCCESS)
+
+        written_session._cleanup()
+
+        assert mock_runtime.exit_environment.call_args.kwargs["os_env_vars"] == {
+            "DEADLINE_JA_SESSION_INFO_FILE": str(session_dir / "job_attachments_session_info.json"),
+        }
+
+    def test_attachment_sync_task_has_no_env_var(
+        self, written_session: Session, mock_runtime: MagicMock
+    ) -> None:
+        written_session._run_attachment_sync_task(
+            step_script=MagicMock(),
+            task_parameter_values=dict[str, ParameterValue](),
+            os_env_vars={"DEADLINE_QUEUE_ID": "queue-1"},
+        )
+        assert mock_runtime._run_task_without_session_env.call_args.kwargs["os_env_vars"] == {
+            "DEADLINE_QUEUE_ID": "queue-1"
+        }

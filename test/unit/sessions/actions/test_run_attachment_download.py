@@ -283,6 +283,30 @@ class TestStart:
         session.write_job_attachments_session_info.assert_called_once_with()
         session._run_attachment_sync_task.assert_called_once()
 
+    def test_step_dependency_download_does_not_write_session_info(
+        self,
+        executor: Mock,
+        session: Mock,
+        mock_asset_sync: MagicMock,
+    ) -> None:
+        """
+        Tests that downloading step dependencies doesn't rewrite the session job attachments info
+        """
+        # GIVEN
+        step_details = Mock(step_id="step-2", dependencies=["step-1"])
+        action = actions_module.AttachmentDownloadAction(
+            id="sessionaction-dep",
+            session_id="session-1234",
+            step_details=step_details,
+        )
+        mock_asset_sync._check_and_write_local_manifests.return_value = {}
+
+        # WHEN
+        action.start(session=session, executor=executor)
+
+        # THEN
+        session.write_job_attachments_session_info.assert_not_called()
+
     def test_attachment_download_action_start_path_mapping(
         self,
         executor: Mock,

@@ -514,6 +514,7 @@ class Session:
                 partial(
                     self._runtime.exit_environment,
                     identifier=env.session_env_id,
+                    os_env_vars=self._with_job_attachments_env_vars(None),
                     resolved_symbol_table_json=env.resolved_symbol_table_json,
                 ),
                 f"exit environment {env.job_env_id}",
