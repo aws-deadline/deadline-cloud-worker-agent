@@ -1,3 +1,7 @@
+## 0.33.7 (2026-10-29)
+
+### Bug Fixes
+* Updated the deadline-job-attachments dependency from 0.1.3 to 0.1.5. With this update, Windows workers upload job output files with paths longer than 260 characters (MAX_PATH) without needing `LongPathsEnabled` set in the registry; previously these files could be skipped or cause the output sync to fail. Job attachment syncs also no longer stall for up to 5 minutes on networks where AWS STS is unreachable. (#1112)
 ## 0.33.6 (2026-10-22)
 
 ### Bug Fixes
