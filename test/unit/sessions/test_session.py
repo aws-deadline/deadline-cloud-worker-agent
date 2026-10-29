@@ -3020,3 +3020,39 @@ class TestJobAttachmentsSessionInfo:
         assert mock_runtime._run_task_without_session_env.call_args.kwargs["os_env_vars"] == {
             "DEADLINE_QUEUE_ID": "queue-1"
         }
+
+    def test_written_json_for_windows_submitted_job(
+        self, session: Session, session_dir: Path
+    ) -> None:
+        """The file is the documented public format, read here without the library"""
+        import json
+
+        from deadline.job_attachments.models import ManifestProperties, PathFormat
+
+        local_root = str(session_dir / "assetroot-1")
+        session.set_worker_manifest_properties(
+            WorkerManifestProperties(
+                manifest_properties=ManifestProperties(
+                    rootPath="C:\\Users\\artist\\project",
+                    rootPathFormat=PathFormat.WINDOWS,
+                    outputRelativeDirectories=["renders\\beauty"],
+                ),
+                local_root_path=local_root,
+            )
+        )
+
+        path = session.write_job_attachments_session_info()
+
+        assert json.loads(path.read_text(encoding="utf-8")) == {
+            "version": "ja-session-info-1.0",
+            "roots": [
+                {
+                    "rootPath": "C:\\Users\\artist\\project",
+                    "rootPathFormat": "windows",
+                    "fileSystemLocationName": None,
+                    "localRootPath": local_root,
+                    "outputRelativeDirectories": ["renders/beauty"],
+                    "localOutputDirectories": [os.path.join(local_root, "renders", "beauty")],
+                }
+            ],
+        }
