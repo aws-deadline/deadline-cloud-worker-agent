@@ -1815,10 +1815,11 @@ with open(output_path, "w") as f:
         )
         LOG.info(f"output_path dict is: {output_path}")
 
-        # Verify the final output file exists and contains expected content
+        # The job writes into its OUT directory, which is also its only asset root, so the
+        # outputs download to the top of output_root_path rather than an "output" subdirectory.
         verify_output_dir_matches(
-            reference_dir_path=f"{os.path.dirname(__file__)}/job_attachment_bundle/output_only_job/correct_output",
-            output_dir_path=output_root_path + "/output",
+            reference_dir_path=os.path.join(job_bundle_path, "correct_output"),
+            output_dir_path=output_root_path,
         )
 
     # Linux only, unlike the dependency-data-flow test above, and not because of the script.
