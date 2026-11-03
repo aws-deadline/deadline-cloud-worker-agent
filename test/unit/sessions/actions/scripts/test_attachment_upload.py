@@ -3,11 +3,12 @@
 import json
 import sys
 import pytest
-from pathlib import Path
+from pathlib import Path, PurePath
 from unittest.mock import Mock, call, patch, mock_open
 from typing import Optional, Generator
 
 import deadline_worker_agent.sessions.actions.scripts.attachment_upload as attachment_upload_mod
+from deadline.job_attachments.api.manifest import _manifest_snapshot
 from deadline.job_attachments.asset_manifests.decode import decode_manifest
 from deadline.job_attachments.progress_tracker import ProgressStatus, ProgressTracker
 from deadline.job_attachments.models import JobAttachmentS3Settings
@@ -17,6 +18,7 @@ from deadline_worker_agent.sessions.attachment_models import (
     PathFormat,
 )
 from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
+    _output_directory_include_glob,
     parse_args,
     parse_worker_manifest_properties,
     merge,
@@ -218,7 +220,7 @@ class TestAttachmentUpload:
             root="/local/path4",
             destination="manifest_snapshot",
             diff=None,
-            include=["./**"],
+            include=["**"],
             name="output",
         )
 
@@ -301,6 +303,74 @@ class TestAttachmentUpload:
             ],
             name="output",
         )
+
+    @pytest.mark.parametrize(
+        ("output_relative_directory", "expected_glob"),
+        [
+            pytest.param(".", "**", id="asset-root"),
+            pytest.param("./", "**", id="asset-root-trailing-separator"),
+            pytest.param("output", "output/**", id="subdirectory"),
+            pytest.param("./output", "output/**", id="leading-dot"),
+            pytest.param(
+                "output/./frames",
+                str(PurePath("output", "frames")) + "/**",
+                id="inner-dot",
+            ),
+        ],
+    )
+    def test_output_directory_include_glob_has_no_dot_components(
+        self, output_relative_directory: str, expected_glob: str
+    ):
+        # A "." component matches nothing once job attachments walks the asset root under the
+        # Windows \\?\ prefix, so the glob must never contain one.
+        assert _output_directory_include_glob(output_relative_directory) == expected_glob
+
+    def test_snapshot_captures_outputs_written_to_the_asset_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        # GIVEN
+        # This runs the real job attachments snapshot rather than a mock, so on Windows it walks
+        # the asset root under the \\?\ prefix, where a "./**" glob matched no files at all.
+        home_dir = tmp_path / "home"
+        home_dir.mkdir()
+        # Keep the hash cache that hashing writes out of the real home directory.
+        monkeypatch.setenv("HOME", str(home_dir))
+        monkeypatch.setenv("USERPROFILE", str(home_dir))
+        # snapshot() writes its manifests relative to the working directory.
+        monkeypatch.chdir(tmp_path)
+
+        asset_root = tmp_path / "assetroot"
+        asset_root.mkdir()
+        (asset_root / "input.txt").write_text("input")
+        input_manifest = _manifest_snapshot(
+            root=str(asset_root), destination=str(tmp_path / "input_manifest"), name="input"
+        )
+        assert input_manifest is not None
+
+        (asset_root / "output_file").write_text("output")
+        (asset_root / "frames").mkdir()
+        (asset_root / "frames" / "frame_0001.exr").write_text("frame")
+
+        worker_manifest_properties = WorkerManifestProperties(
+            manifest_properties=ManifestProperties(
+                rootPath=str(asset_root),
+                rootPathFormat=PathFormat.get_host_path_format(),
+                outputRelativeDirectories=["."],
+            ),
+            local_root_path=str(asset_root),
+        )
+
+        # WHEN
+        result = snapshot([worker_manifest_properties], {str(asset_root): input_manifest.manifest})
+
+        # THEN
+        assert str(asset_root) in result
+        output_manifest = decode_manifest(Path(result[str(asset_root)]).read_text())
+        # The unchanged input is left out; both new outputs are captured.
+        assert sorted(path.path for path in output_manifest.paths) == [
+            "frames/frame_0001.exr",
+            "output_file",
+        ]
 
     @patch.dict(
         "os.environ",

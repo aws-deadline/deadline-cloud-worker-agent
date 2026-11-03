@@ -20,7 +20,7 @@ import time
 import os
 import json
 from typing import cast, Any, Callable, Optional, TypeVar
-from pathlib import Path
+from pathlib import Path, PurePath
 from dataclasses import asdict
 import glob
 
@@ -133,6 +133,29 @@ def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[st
     return root_path_to_local_manifest
 
 
+def _output_directory_include_glob(output_relative_directory: str) -> str:
+    """
+    Build the include glob that selects every file under one output directory.
+
+    The job attachments library joins this glob onto the asset root and, on Windows, walks it
+    under the \\\\?\\ extended-length prefix. That prefix turns off Win32 path normalization, so a
+    "." component is looked up as a literal name and the walk matches nothing. An output
+    directory of "." is the asset root itself, so it has to become "**" rather than "./**".
+
+    PurePath also drops any other "." components and repeated separators. It keeps ".." as written.
+
+    Args:
+        output_relative_directory: Output directory relative to the asset root, in host format
+
+    Returns:
+        A glob, relative to the asset root, that matches every file in the output directory
+    """
+    output_directory = PurePath(output_relative_directory)
+    if not output_directory.parts:
+        return "**"
+    return glob.escape(str(output_directory)) + "/**"
+
+
 @failure_telemetry
 def snapshot(
     worker_manifest_properties: list[WorkerManifestProperties],
@@ -181,7 +204,9 @@ def snapshot(
             diff=root_path_to_base_manifest.get(manifest_props.root_path),
             # include patterns for output directories (with recursive wildcard)
             # when the code reaches here, it's guaranteed output_relative_directories contains value
-            include=[glob.escape(subdir) + "/**" for subdir in output_relative_directories],
+            include=[
+                _output_directory_include_glob(subdir) for subdir in output_relative_directories
+            ],
             name="output",
         )
 
