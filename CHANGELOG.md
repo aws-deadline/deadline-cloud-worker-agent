@@ -1,3 +1,7 @@
+## 0.33.8 (2026-11-04)
+
+### Bug Fixes
+* Fixed Windows workers not uploading outputs written directly into a job's asset root. Previously the task succeeded but logged "No output to upload", so the job had no outputs to download. (#1129)
 ## 0.33.7 (2026-10-29)
 
 ### Bug Fixes
