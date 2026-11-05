@@ -310,8 +310,9 @@ echo "Host has not been rebooted."
 # Remove the previous worker agent installation
 mv /opt/deadline/worker /opt/deadline/worker-old
 
-# Create a new virtual environment in its place
-python -m venv /opt/deadline/worker
+# Create a new virtual environment in its place. Name the interpreter: the worker agent
+# requires Python 3.10 or later, and the service-managed fleet image also ships 3.9.
+python3.11 -m venv /opt/deadline/worker
 source /opt/deadline/worker/bin/activate
 
 ###
