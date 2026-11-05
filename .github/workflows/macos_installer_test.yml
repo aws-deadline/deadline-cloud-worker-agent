@@ -25,8 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Matches code_quality.yml and requires-python >=3.9.
-        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+        # Matches code_quality.yml.
+        python-version: ['3.10', '3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -46,10 +46,7 @@ jobs:
           test -x /opt/wa-venv/bin/deadline-worker-agent
 
       - name: Install Hatch
-        # virtualenv 21 removed an API that the hatch version resolvable on 3.9 still calls,
-        # so `hatch run` fails there with "Environment `default` is incompatible". Same
-        # constraint the other workflows in this repo use.
-        run: pip install --upgrade hatch 'virtualenv<21; python_version < "3.10"'
+        run: pip install --upgrade hatch
 
       - name: Run integration tests
         env:
