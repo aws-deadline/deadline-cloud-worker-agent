@@ -109,12 +109,15 @@ scp deadline-agent-linux-dev:remote_file_path local_file_path
 # Update the system
 sudo dnf update -y
 
-# Install development tools and dependencies
-sudo dnf install -y git python3-pip python3-devel gcc make
+# Install development tools and dependencies. The worker agent requires
+# Python 3.10 or later, so install 3.11 alongside the default python3.
+sudo dnf install -y git python3.11 python3.11-pip python3.11-devel gcc make
 
-# Install Hatch
-sudo pip install pipx
-pipx install hatch
+# Install Hatch, and have it build its environments with Python 3.11
+python3.11 -m pip install --user pipx
+python3.11 -m pipx install hatch
+echo 'export HATCH_PYTHON=python3.11' >> ~/.bashrc
+export HATCH_PYTHON=python3.11
 ```
 
 ### 4. Clone the Repository and Install Hatch

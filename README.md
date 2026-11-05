@@ -29,12 +29,13 @@ User Guide
 
 ## Compatibility
 
-The worker agent requires Python 3.9 or higher and is supported on Linux and Windows.  The platform-specific requirements are listed below:
+The worker agent requires Python 3.10 or higher and is supported on Linux and Windows.  The platform-specific requirements are listed below:
 
 **Linux:**
 
 *   Amazon Linux 2 and 2023 are recommended and tested
 *   `sudo` must be installed
+*   On Amazon Linux 2023 the default `python3` is 3.9. Install a newer interpreter (`sudo dnf install -y python3.11`) and create the worker agent's virtual environment with it (`python3.11 -m venv ...`). On Python 3.9, `pip install deadline-cloud-worker-agent` does not fail; it installs the last release that supported 3.9.
 
 **Windows:**
 
