@@ -1,0 +1,44 @@
+{
+  "name": "mainline-required-reviewers-by-path",
+  "target": "branch",
+  "enforcement": "evaluate",
+  "bypass_actors": [],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "~DEFAULT_BRANCH"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": true,
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": false,
+        "allowed_merge_methods": [
+          "squash",
+          "rebase"
+        ],
+        "required_reviewers": [
+          {
+            "minimum_approvals": 2,
+            "file_patterns": [
+              "*",
+              "!/.github/**",
+              "!/*.md"
+            ],
+            "reviewer": {
+              "id": 19836849,
+              "type": "Team"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
