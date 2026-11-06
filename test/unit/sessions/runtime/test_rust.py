@@ -1069,6 +1069,18 @@ class TestRuntimeCrashConversion:
             runtime.exit_environment(identifier=MagicMock())
         assert isinstance(exc_info.value.__cause__, _FakePanic)
 
+    def test_construction_panic_is_converted(
+        self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
+    ) -> None:
+        """A native panic in the constructor is converted before it reaches the scheduler."""
+        panic = _FakePanic("panicked while creating native session")
+        mock_rust_session.side_effect = panic
+
+        with pytest.raises(SessionRuntimeCrashError, match="_FakePanic") as exc_info:
+            RustSessionRuntime(runtime_config)
+
+        assert exc_info.value.__cause__ is panic
+
     def test_regular_exception_from_v1_call_propagates_unchanged(
         self, runtime_config: SessionRuntimeConfig, mock_rust_session: MagicMock
     ) -> None:
