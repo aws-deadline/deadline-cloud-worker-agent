@@ -237,6 +237,77 @@ if [ "${TEST_TYPE:-}" = WHEEL ]; then
     fi
 fi
 
+# Blender, for test_blender.py: an end-to-end render through the worker agent. Installed here
+# rather than through a conda queue environment because Deadline Cloud's conda channel has no
+# macOS Blender package.
+#
+# Pinned to an LTS release by version and SHA-256. The hash was cross-checked against three
+# independent mirrors, since a single mirror could serve a tampered image and a matching manifest.
+# download.blender.org itself answers 403 to scripted downloads, so the mirrors are the source.
+#
+# Installed under a versioned /opt path and kept between builds: this is reserved capacity, and the
+# image is 312 MB to fetch. Other versions under /opt/blender are removed so a version bump doesn't
+# leave ~800 MB behind per release.
+#
+# A failure here doesn't stop the build. One mirror outage shouldn't turn every mainline push red,
+# so the suite still runs, and test_blender.py fails on its own with this reason, because
+# E2E_REQUIRE_BLENDER tells it a skip isn't acceptable here.
+BLENDER_VERSION=4.5.15
+BLENDER_SHA256=bfbc0bda099d1ab7aef0992a584f872f58bed9bb491210ad45f9ca071aa2e688
+BLENDER_ROOT=/opt/blender
+BLENDER_APP="${BLENDER_ROOT}/${BLENDER_VERSION}/Blender.app"
+BLENDER_BIN="${BLENDER_APP}/Contents/MacOS/Blender"
+BLENDER_MIRRORS=(
+    https://mirrors.ocf.berkeley.edu/blender/release
+    https://ftp.nluug.nl/pub/graphics/blender/release
+    https://mirror.clarkson.edu/blender/release
+)
+
+install_blender() {
+    if "${BLENDER_BIN}" --version 2>/dev/null | grep "^Blender ${BLENDER_VERSION} " >/dev/null; then
+        echo "Blender ${BLENDER_VERSION} already installed at ${BLENDER_APP}"
+        return 0
+    fi
+    local series dmg url mnt
+    series="Blender$(echo "${BLENDER_VERSION}" | cut -d. -f1-2)"
+    dmg="${CODEBUILD_SRC_DIR:-/tmp}/blender-${BLENDER_VERSION}-macos-arm64.dmg"
+    for mirror in "${BLENDER_MIRRORS[@]}"; do
+        url="${mirror}/${series}/blender-${BLENDER_VERSION}-macos-arm64.dmg"
+        echo "fetching ${url}"
+        if curl -fsSL --retry 2 --max-time 600 -o "${dmg}" "${url}" \
+            && echo "${BLENDER_SHA256}  ${dmg}" | shasum -a 256 -c - >/dev/null 2>&1; then
+            break
+        fi
+        echo "  failed or checksum mismatch; trying the next mirror" >&2
+        rm -f "${dmg}"
+    done
+    if [ ! -f "${dmg}" ]; then
+        echo "WARNING: could not download a verified Blender ${BLENDER_VERSION}" >&2
+        return 1
+    fi
+    # Each step returns on failure explicitly: this function is called from an `if`, and bash
+    # suspends `set -e` for the whole of a function called that way.
+    mnt="$(mktemp -d)"
+    hdiutil attach -nobrowse -readonly -mountpoint "${mnt}" "${dmg}" >/dev/null || return 1
+    # ditto keeps the bundle's code signature intact, which `cp -R` doesn't guarantee.
+    sudo -n rm -rf "${BLENDER_ROOT}" \
+        && sudo -n mkdir -p "$(dirname "${BLENDER_APP}")" \
+        && sudo -n ditto "${mnt}/Blender.app" "${BLENDER_APP}"
+    local copied=$?
+    hdiutil detach "${mnt}" >/dev/null || true
+    rm -f "${dmg}"
+    [ "${copied}" -eq 0 ] || return 1
+    "${BLENDER_BIN}" --version 2>/dev/null | grep "^Blender ${BLENDER_VERSION} "
+}
+
+echo "=== installing Blender ${BLENDER_VERSION} for test_blender.py ==="
+export E2E_REQUIRE_BLENDER=1
+if install_blender; then
+    export E2E_BLENDER_PATH="${BLENDER_BIN}"
+else
+    echo "WARNING: Blender install failed; test_blender.py will fail with this reason" >&2
+fi
+
 # Let sudo keep the AWS credential environment, rather than copying credentials to a file.
 #
 # send_command runs every fixture command through sudo, and sudo's env_reset strips AWS_*. The CLI
