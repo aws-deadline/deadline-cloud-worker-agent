@@ -16,6 +16,8 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
       - name: Approve a PR
+        # Never an openjd-* update: the release train owns those bumps (dependabot.yml ignores them).
+        if: ${{ !contains(steps.metadata.outputs.dependency-names, 'openjd-') }}
         run: gh pr review --approve "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
