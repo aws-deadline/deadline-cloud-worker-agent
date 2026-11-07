@@ -1,4 +1,7 @@
 [envs.default]
+# Without this, hatch picks the newest Python that satisfies requires-python when the runner has no
+# 3.14, and deadline-job-attachments does not install on 3.15.
+python = "3.14"
 # Install via hatch's uv ({env:HATCH_UV}) rather than a bare `pip`: when hatch
 # builds the env with uv (e.g. HATCH_ENV_TYPE_VIRTUAL_UV_PATH is set in CI), the
 # env has no pip, so `pip` would resolve to one outside the env and the test
