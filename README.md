@@ -29,7 +29,7 @@ User Guide
 
 ## Compatibility
 
-The worker agent requires Python 3.14 or higher and is supported on Linux and Windows. The
+The worker agent requires Python 3.14 and is supported on Linux and Windows. The
 platform-specific requirements are listed below:
 
 **Linux:**
@@ -41,8 +41,10 @@ platform-specific requirements are listed below:
 **Windows:**
 
 *   Windows Server 2022 is recommended and tested
-*   Requires the CPython implementation of Python, from the [python.org installer][python-windows]
-*   **Python must be installed for all users** (e.g. in `C:\Program Files`)
+*   Requires the CPython implementation of Python
+*   **Python must be installed for all users** (e.g. in `C:\Program Files`). The full installer
+    from [python.org][python-windows] does this with `InstallAllUsers=1`; the Python install
+    manager installs for the current user only.
 
 [python-windows]: https://www.python.org/downloads/windows/
 

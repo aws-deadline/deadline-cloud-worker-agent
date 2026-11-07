@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import closing, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -14,7 +14,6 @@ from enum import Enum
 from pathlib import Path
 from contextlib import AbstractContextManager
 from typing import Any
-from collections.abc import Callable
 
 from ..log_sync.log_constants import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,

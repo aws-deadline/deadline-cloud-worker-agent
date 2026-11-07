@@ -5,10 +5,9 @@ from datetime import timedelta
 from logging import Logger
 from pathlib import Path
 from threading import Event, Thread
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from openjd.model import SymbolTable
 from typing import Any
-from collections.abc import MutableMapping
 import sys
 
 from deadline_worker_agent.utils import FileContext

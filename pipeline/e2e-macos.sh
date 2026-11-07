@@ -135,6 +135,13 @@ reset_agent_state() {
     for path in "${BUILD_RESIDUE[@]}"; do
         sudo -n rm -rf "${path}" >/dev/null 2>&1 || true
     done
+    # A venv from a build that used another Python. Building a venv over it would leave bin/python
+    # on the old interpreter while pip and the agent move to the new one.
+    if [ -d "${AGENT_VENV}" ] && ! "${AGENT_VENV}/bin/python" -c \
+        'import sys; sys.exit(sys.version_info[:2] != (3, 14))' >/dev/null 2>&1; then
+        echo "NOTE: ${AGENT_VENV} is not a Python 3.14 venv; removing it." >&2
+        sudo -n rm -rf "${AGENT_VENV}" >/dev/null 2>&1 || true
+    fi
     restore_moved_aside_openjd_v1
 }
 
@@ -204,7 +211,7 @@ TOOLS_VENV="${CODEBUILD_SRC_DIR:-/tmp}/.e2e-tools"
 rm -rf "${TOOLS_VENV}"
 python3 -m venv "${TOOLS_VENV}"
 "${TOOLS_VENV}/bin/pip" install --upgrade pip
-"${TOOLS_VENV}/bin/pip" install --upgrade hatch "virtualenv<21"
+"${TOOLS_VENV}/bin/pip" install --upgrade hatch 'virtualenv<21; python_version < "3.10"'
 # Ahead of the existing PATH so `hatch` below resolves to this venv's copy rather than anything
 # preinstalled on the image.
 export PATH="${TOOLS_VENV}/bin:${PATH}"

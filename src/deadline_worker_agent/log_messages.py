@@ -675,6 +675,8 @@ class LogRecordStringTranslationFilter(logging.Filter):
     Notes:
     - The filter is *modifying* the LogRecord. That means that it applies to
       every log handler that will be handling the log message after the translation.
+      Returning a modified copy instead (possible since Python 3.12) would change
+      what those later handlers see.
     """
 
     formatter = logging.Formatter()

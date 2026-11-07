@@ -6,12 +6,11 @@ import os
 import sys
 import threading
 import traceback
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from configparser import ConfigParser
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
 from typing import cast
-from collections.abc import Callable
 
 import backoff
 import boto3

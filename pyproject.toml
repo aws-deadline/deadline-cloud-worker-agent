@@ -29,9 +29,10 @@ dependencies = [
     # to that contract.
     "openjd-model >= 0.14, < 0.15",
     "tomlkit >= 0.13,< 0.16",
-    # The floors of psutil, pydantic and pywin32 are their first releases with Python 3.14 wheels.
-    "psutil >= 7.0,< 8.0",
-    "pydantic >= 2.12, < 3",
+    "psutil >= 5.9,< 8.0",
+    # pydantic 2.13 is the first release whose pydantic.v1, used by the config models, supports
+    # Python 3.14. pywin32 311 is the first release with Python 3.14 wheels.
+    "pydantic >= 2.13, < 3",
     "pywin32 == 311; platform_system == 'Windows'",
 ]
 requires-python = ">=3.14"
@@ -130,9 +131,10 @@ module = [
 
 [tool.ruff]
 line-length = 100
-# These run on the test runner's or the build backend's Python rather than the agent's, so they
-# keep syntax that Python 3.10 accepts.
-per-file-target-version = { "test/e2e/**/*.py" = "py310", "hatch_version_hook.py" = "py310", ".github/scripts/*.py" = "py310" }
+# These do not run on the agent's Python. The E2E tests run on the test runner's, which
+# requirements-e2e.txt holds at 3.10 or later through mypy. The build hook runs inside hatch and
+# the release scripts on the release workflow's Python, either of which can be 3.9.
+per-file-target-version = { "test/e2e/**/*.py" = "py310", "hatch_version_hook.py" = "py39", ".github/scripts/*.py" = "py39" }
 
 [tool.ruff.lint]
 extend-select = ["UP"]
