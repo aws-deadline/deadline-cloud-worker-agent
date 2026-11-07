@@ -6,7 +6,6 @@ Utility functions for validating S3 setup in E2E tests for Deadline Cloud jobs.
 
 import json
 import logging
-from typing import Dict, List, Optional, Tuple
 
 import re
 from collections import defaultdict
@@ -64,22 +63,22 @@ def _get_job_details(
 
 
 class _JobDetails:
-    def __init__(self, attachments: Optional[Attachments]):
+    def __init__(self, attachments: Attachments | None):
         self.attachments = attachments
 
 
 def _get_task_manifest_keys_from_s3(
     manifest_prefix: str,
     s3_bucket: str,
-    session: Optional[boto3.Session] = None,
-) -> List[str]:
+    session: boto3.Session | None = None,
+) -> list[str]:
     """List S3 manifest keys under a prefix, selecting the latest per task."""
     s3_client = get_s3_client(session=session) if session else get_s3_client()
-    all_contents: List[Dict] = []
+    all_contents: list[dict] = []
     continuation_token = None
 
     while True:
-        kwargs: Dict = {"Bucket": s3_bucket, "Prefix": manifest_prefix}
+        kwargs: dict = {"Bucket": s3_bucket, "Prefix": manifest_prefix}
         if continuation_token:
             kwargs["ContinuationToken"] = continuation_token
         response = s3_client.list_objects_v2(**kwargs)
@@ -88,8 +87,8 @@ def _get_task_manifest_keys_from_s3(
             break
         continuation_token = response.get("NextContinuationToken")
 
-    manifests_keys: List[str] = []
-    task_prefixes: Dict[str, List[str]] = defaultdict(list)
+    manifests_keys: list[str] = []
+    task_prefixes: dict[str, list[str]] = defaultdict(list)
     step_pattern = re.compile(r"step-.*/.*/.*output.*")
 
     for content in all_contents:
@@ -120,7 +119,7 @@ def _get_task_manifest_keys_from_s3(
 def validate_s3_job_output_manifest(
     job: Job,
     deadline_client: DeadlineClient,
-    session: Optional[boto3.Session] = None,
+    session: boto3.Session | None = None,
 ) -> None:
     """
     Validates the S3 setup for a Deadline Cloud job by checking:
@@ -200,7 +199,7 @@ def validate_s3_job_output_manifest(
 
 def _get_job_steps(
     deadline_client: DeadlineClient, farm_id: str, queue_id: str, job_id: str
-) -> List[Dict]:
+) -> list[dict]:
     """Get all steps for a job."""
     try:
         steps = []
@@ -231,8 +230,8 @@ def _validate_output_directory(
     queue_id: str,
     job_id: str,
     root_path: str,
-    file_system_location_name: Optional[str],
-    session: Optional[boto3.Session] = None,
+    file_system_location_name: str | None,
+    session: boto3.Session | None = None,
 ) -> None:
     """Validate output directory: session action, timestamp, hash, and metadata."""
     # Parse key for step ID, task ID, session action ID and timestamp
@@ -276,7 +275,7 @@ def _get_session_action_details(
     queue_id: str,
     job_id: str,
     session_action_id: str,
-) -> Dict:
+) -> dict:
     """Get session action details by searching through all sessions."""
     try:
         sessions_response = deadline_client.list_sessions(
@@ -324,7 +323,7 @@ def _get_session_action_details(
         raise S3ValidationError(f"Failed to list sessions for job {job_id}: {e}")
 
 
-def _parse_manifest_key(manifest_key: str) -> Tuple[str, str, str, str]:
+def _parse_manifest_key(manifest_key: str) -> tuple[str, str, str, str]:
     """Parse manifest key to extract step ID, task ID, session action ID and timestamp."""
     key_parts = manifest_key.split("/")
     step_id = task_id = session_action_id = timestamp_part = None
@@ -390,7 +389,7 @@ def _validate_task_exists(
         raise S3ValidationError(f"Failed to list tasks for step {step_id}: {e}")
 
 
-def _validate_timestamp_match(timestamp_part: str, session_action: Dict) -> None:
+def _validate_timestamp_match(timestamp_part: str, session_action: dict) -> None:
     """Validate that key timestamp matches session action start time."""
     try:
         key_timestamp = datetime.fromisoformat(timestamp_part.replace("Z", "+00:00")).replace(
@@ -422,8 +421,8 @@ def _validate_file_and_metadata(
     manifest_key: str,
     s3_bucket: str,
     root_path: str,
-    file_system_location_name: Optional[str],
-    session: Optional[boto3.Session] = None,
+    file_system_location_name: str | None,
+    session: boto3.Session | None = None,
 ) -> None:
     """Validate file hash and S3 metadata."""
     filename = manifest_key.split("/")[-1]

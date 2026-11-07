@@ -5,7 +5,8 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Generator, Optional
+from typing import TYPE_CHECKING
+from collections.abc import Callable, Generator
 
 import backoff
 import pytest
@@ -67,7 +68,7 @@ RuntimeFactory = Callable[[SessionRuntimeKind], "tuple[SessionRuntime, _StatusRe
 @pytest.fixture
 def make_runtime(
     tmp_path: Path,
-) -> Generator[RuntimeFactory, None, None]:
+) -> Generator[RuntimeFactory]:
     """Builds real SessionRuntime adapters and tears them down afterwards.
 
     Returns a factory that constructs a runtime of the requested kind with a
@@ -113,7 +114,7 @@ def make_runtime(
 def _build_step_script(
     command: str,
     args: list[str],
-    embedded_files: Optional[list[dict[str, str]]] = None,
+    embedded_files: list[dict[str, str]] | None = None,
 ) -> StepScriptModel:
     """Build a real pydantic v2023_09 StepScript via the openjd decoder.
 
@@ -137,7 +138,7 @@ def _build_step_script(
     return step_script
 
 
-def _build_environment(name: str, variables: Optional[dict[str, str]] = None) -> EnvironmentModel:
+def _build_environment(name: str, variables: dict[str, str] | None = None) -> EnvironmentModel:
     """Build a real pydantic v2023_09 Environment via the openjd decoder."""
     environment: dict[str, object] = {"name": name}
     if variables is not None:
@@ -151,7 +152,7 @@ def _build_environment(name: str, variables: Optional[dict[str, str]] = None) ->
     return env_template.environment
 
 
-def _state_name(runtime: SessionRuntime) -> Optional[str]:
+def _state_name(runtime: SessionRuntime) -> str | None:
     """Normalized state name of the runtime's latest action, or None."""
     status = runtime.action_status
     return None if status is None else status.state.name
@@ -197,7 +198,7 @@ def _cancel_when_registered(runtime: SessionRuntime) -> None:
     runtime.cancel_action()
 
 
-def _wait_for_terminal(runtime: SessionRuntime, timeout: float = 30.0) -> Optional[str]:
+def _wait_for_terminal(runtime: SessionRuntime, timeout: float = 30.0) -> str | None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         name = _state_name(runtime)

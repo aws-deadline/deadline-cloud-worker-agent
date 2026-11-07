@@ -3,7 +3,7 @@
 import os
 import sys
 import typing
-from typing import Generator
+from collections.abc import Generator
 from unittest.mock import Mock, call, patch, MagicMock, ANY
 
 from deadline_worker_agent.file_system_operations import FileSystemPermissionEnum
@@ -30,7 +30,7 @@ from win32serviceutil import GetServiceClassString
 
 
 @pytest.fixture
-def parsed_kwargs(parsed_args: ParsedCommandLineArguments) -> Generator[dict, None, None]:
+def parsed_kwargs(parsed_args: ParsedCommandLineArguments) -> Generator[dict]:
     assert parsed_args.region is not None, "Region is required"
     with patch.object(installer_mod, "get_argument_parser") as mock_get_arg_parser:
         arg_parser: MagicMock = mock_get_arg_parser.return_value
@@ -164,7 +164,7 @@ class TestCreateLocalQueueUserGroup:
         return "test_group"
 
     @pytest.fixture(autouse=True)
-    def mock_NetLocalGroupAdd(self) -> typing.Generator[MagicMock, None, None]:
+    def mock_NetLocalGroupAdd(self) -> typing.Generator[MagicMock]:
         with patch.object(win_installer.win32net, "NetLocalGroupAdd") as m:
             yield m
 
@@ -212,7 +212,7 @@ class TestCreateLocalAgentUser:
         return "password123"
 
     @pytest.fixture(autouse=True)
-    def mock_NetUserAdd(self) -> typing.Generator[MagicMock, None, None]:
+    def mock_NetUserAdd(self) -> typing.Generator[MagicMock]:
         with patch.object(win_installer.win32net, "NetUserAdd") as m:
             yield m
 
@@ -278,22 +278,22 @@ class TestEnsureUserProfileExists:
         return "password123"
 
     @pytest.fixture(autouse=True)
-    def mock_LogonUser(self) -> typing.Generator[MagicMock, None, None]:
+    def mock_LogonUser(self) -> typing.Generator[MagicMock]:
         with patch.object(win_installer.win32security, "LogonUser") as m:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_LoadUserProfile(self) -> typing.Generator[MagicMock, None, None]:
+    def mock_LoadUserProfile(self) -> typing.Generator[MagicMock]:
         with patch.object(win_installer.win32profile, "LoadUserProfile") as m:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_UnloadUserProfile(self) -> typing.Generator[MagicMock, None, None]:
+    def mock_UnloadUserProfile(self) -> typing.Generator[MagicMock]:
         with patch.object(win_installer.win32profile, "UnloadUserProfile") as m:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_CloseHandle(self) -> typing.Generator[MagicMock, None, None]:
+    def mock_CloseHandle(self) -> typing.Generator[MagicMock]:
         with patch.object(win_installer.win32api, "CloseHandle") as m:
             yield m
 
@@ -396,7 +396,7 @@ class TestInstallService:
     """Test cases for the install_service() function"""
 
     @pytest.fixture(autouse=True)
-    def mock_configure_service_failure_actions(self) -> typing.Generator[Mock, None, None]:
+    def mock_configure_service_failure_actions(self) -> typing.Generator[Mock]:
         with patch.object(
             win_installer, "configure_service_failure_actions", new_callable=Mock
         ) as mock_configure_service_failure_actions:
@@ -622,7 +622,7 @@ class TestConfigureServiceFailureActions:
     """Test cases for configure_service_failure_actions()"""
 
     @pytest.fixture(autouse=True)
-    def mock_win32_service(self) -> typing.Generator[Mock, None, None]:
+    def mock_win32_service(self) -> typing.Generator[Mock]:
         with patch.object(win_installer, "win32service", new_callable=Mock) as mock_win32_service:
             yield mock_win32_service
 
@@ -643,7 +643,7 @@ class TestConfigureServiceFailureActions:
         return mock_win32_service.ChangeServiceConfig2
 
     @pytest.fixture
-    def mock_logging_debug(self) -> typing.Generator[Mock, None, None]:
+    def mock_logging_debug(self) -> typing.Generator[Mock]:
         with patch.object(win_installer.logging, "debug") as mock_logging_debug:
             yield mock_logging_debug
 
@@ -846,17 +846,17 @@ class TestSetRegistryKeyValue:
     """Tests for set_registry_key_value"""
 
     @pytest.fixture(autouse=True)
-    def mock_RegOpenKeyEx(self) -> typing.Generator[MagicMock, None, None]:
+    def mock_RegOpenKeyEx(self) -> typing.Generator[MagicMock]:
         with patch.object(win_installer.win32api, "RegOpenKeyEx") as m:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_RegSetValueEx(self) -> typing.Generator[MagicMock, None, None]:
+    def mock_RegSetValueEx(self) -> typing.Generator[MagicMock]:
         with patch.object(win_installer.win32api, "RegSetValueEx") as m:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_CloseHandle(self) -> typing.Generator[MagicMock, None, None]:
+    def mock_CloseHandle(self) -> typing.Generator[MagicMock]:
         with patch.object(win_installer.win32api, "CloseHandle") as m:
             yield m
 
@@ -869,7 +869,7 @@ class TestSetRegistryKeyValue:
     )
     def test_sets_registry_key_value(
         self,
-        reg_key: typing.Union[str, int],
+        reg_key: str | int,
         expected_reg_key_call_arg: int,
         mock_RegOpenKeyEx: MagicMock,
         mock_RegSetValueEx: MagicMock,
@@ -930,12 +930,12 @@ class TestProvisionDirectories:
     """Tests for the provision_directories function"""
 
     @pytest.fixture(autouse=True)
-    def mock_os_makedirs(self) -> Generator[MagicMock, None, None]:
+    def mock_os_makedirs(self) -> Generator[MagicMock]:
         with patch.object(win_installer.os, "makedirs") as mock_os_makedirs:
             yield mock_os_makedirs
 
     @pytest.fixture(autouse=True)
-    def mock_set_windows_permissions(self) -> Generator[MagicMock, None, None]:
+    def mock_set_windows_permissions(self) -> Generator[MagicMock]:
         with patch.object(
             win_installer, "_set_windows_permissions"
         ) as mock_set_windows_permissions:

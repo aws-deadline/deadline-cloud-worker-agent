@@ -29,10 +29,7 @@ from pathlib import Path
 
 import pytest
 
-try:
-    from tomllib import load as load_toml
-except ModuleNotFoundError:
-    from tomli import load as load_toml
+from tomllib import load as load_toml
 
 FARM_ID = "farm-aabbccddeeff11223344556677889900"
 FLEET_ID = "fleet-00998877665544332211ffeeddccbbaa"

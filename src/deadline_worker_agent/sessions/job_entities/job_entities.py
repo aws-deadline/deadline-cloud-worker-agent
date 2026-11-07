@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from itertools import islice
 from logging import getLogger
 from threading import Event, Thread
-from typing import Any, Iterator, Iterable, TYPE_CHECKING, TypeVar, Union, cast, Optional
+from typing import Any, TYPE_CHECKING, TypeVar, cast
+from collections.abc import Iterator, Iterable
 import sys
 
 from ...api_models import (
@@ -60,9 +61,7 @@ S = TypeVar(
     StepDetailsIdentifier,
 )
 F = TypeVar("F", JobDetails, JobAttachmentDetails, StepDetails, EnvironmentDetails)
-DetailsData = Union[
-    EnvironmentDetailsData, JobAttachmentDetailsData, JobDetailsData, StepDetailsData
-]
+DetailsData = EnvironmentDetailsData | JobAttachmentDetailsData | JobDetailsData | StepDetailsData
 
 
 logger = getLogger(__name__)
@@ -109,8 +108,8 @@ class JobEntities:
         worker_id: str,
         job_id: str,
         deadline_client: DeadlineClient,
-        windows_credentials_resolver: Optional[WindowsCredentialsResolver],
-        job_run_as_user_override: Optional[JobsRunAsUserOverride],
+        windows_credentials_resolver: WindowsCredentialsResolver | None,
+        job_run_as_user_override: JobsRunAsUserOverride | None,
     ) -> None:
         self._job_id = job_id
         self._farm_id = farm_id
@@ -228,7 +227,7 @@ class JobEntities:
                     worker_id=self._worker_id,
                     identifiers=[identifier for identifier in batched_identifiers],
                 )
-            except (DeadlineRequestWorkerNotFound, DeadlineRequestUnrecoverableError):
+            except DeadlineRequestWorkerNotFound, DeadlineRequestUnrecoverableError:
                 # Technically, the API log reports this information, but we'll log anyways just to
                 # draw attention to it.
                 logger.error("Errors from BatchGetJobEntity! See API log event for details.")

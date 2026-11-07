@@ -8,7 +8,8 @@ import logging
 import os
 import subprocess
 import sys
-from typing import Any, Generator, Optional
+from typing import Any
+from collections.abc import Generator
 from unittest.mock import ANY, MagicMock, call, patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -109,7 +110,7 @@ def bootstrap_worker_mock(
     mock_boto_session: MagicMock,
     worker_log_config: WorkerLogConfig,
     worker_host_config: WorkerHostConfiguration,
-) -> Generator[MagicMock, None, None]:
+) -> Generator[MagicMock]:
     with patch.object(
         entrypoint_mod,
         "bootstrap_worker",
@@ -124,13 +125,13 @@ def bootstrap_worker_mock(
 
 
 @pytest.fixture(autouse=True)
-def mock_stream_cloudwatch_logs() -> Generator[MagicMock, None, None]:
+def mock_stream_cloudwatch_logs() -> Generator[MagicMock]:
     with patch.object(entrypoint_mod, "stream_cloudwatch_logs") as mock_stream_cloudwatch_logs:
         yield mock_stream_cloudwatch_logs
 
 
 @pytest.fixture(autouse=True)
-def mock_timed_rotating_file_handler() -> Generator[MagicMock, None, None]:
+def mock_timed_rotating_file_handler() -> Generator[MagicMock]:
     """This mocks the TimedRotatingFileHandler so that our tests don't perform actual file I/O"""
     with patch.object(entrypoint_mod, "TimedRotatingFileHandler") as mock_obj:
         mock_obj.return_value.level = logging.INFO
@@ -138,14 +139,14 @@ def mock_timed_rotating_file_handler() -> Generator[MagicMock, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def mock_worker_run() -> Generator[MagicMock, None, None]:
+def mock_worker_run() -> Generator[MagicMock]:
     """Mock the Worker.run() method which is an infinite loop"""
     with patch.object(entrypoint_mod.Worker, "run") as mock_worker_run:
         yield mock_worker_run
 
 
 @pytest.fixture(autouse=True)
-def mock_windows_credentials_resolver() -> Generator[MagicMock, None, None]:
+def mock_windows_credentials_resolver() -> Generator[MagicMock]:
     if sys.platform == "win32":
         with patch.object(
             scheduler_mod.WindowsCredentialsResolver, "get_windows_session_user"
@@ -169,38 +170,38 @@ def configuration() -> MagicMock:
 
 
 @pytest.fixture(autouse=True)
-def configuration_load(configuration: MagicMock) -> Generator[MagicMock, None, None]:
+def configuration_load(configuration: MagicMock) -> Generator[MagicMock]:
     with patch.object(entrypoint_mod.Configuration, "load") as load_mock:
         load_mock.return_value = configuration
         yield load_mock
 
 
 @pytest.fixture
-def mock_agent_shutdown() -> Generator[MagicMock, None, None]:
+def mock_agent_shutdown() -> Generator[MagicMock]:
     with patch.object(entrypoint_mod, "_agent_shutdown") as mock:
         yield mock
 
 
 @pytest.fixture
-def mock_host_shutdown() -> Generator[MagicMock, None, None]:
+def mock_host_shutdown() -> Generator[MagicMock]:
     with patch.object(entrypoint_mod, "_host_shutdown") as mock:
         yield mock
 
 
 @pytest.fixture(autouse=True)
-def block_rich_import() -> Generator[None, None, None]:
+def block_rich_import() -> Generator[None]:
     with patch.dict("sys.modules", {"rich.logging": None}):
         yield
 
 
 @pytest.fixture(autouse=True)
-def block_telemetry_client() -> Generator[MagicMock, None, None]:
+def block_telemetry_client() -> Generator[MagicMock]:
     with patch.object(entrypoint_mod, "record_worker_start_telemetry_event") as telem_mock:
         yield telem_mock
 
 
 @pytest.fixture(autouse=True)
-def mock_fleet_host_configuration_runner() -> Generator[MagicMock, None, None]:
+def mock_fleet_host_configuration_runner() -> Generator[MagicMock]:
     """This mocks the HostConfigurationScriptRunner so We can test the entry point script run behavior."""
     with patch.object(entrypoint_mod, "HostConfigurationScriptRunner") as mock_obj:
         mock_obj.return_value.run.return_value = 0
@@ -738,7 +739,7 @@ class TestCloudWatchLogStreaming:
     def cloudwatch_log_stream_sequence_token(
         self,
         request: pytest.FixtureRequest,
-    ) -> Optional[str]:
+    ) -> str | None:
         return request.param
 
     def test_cloudwatch_log_streaming(

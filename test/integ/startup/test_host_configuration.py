@@ -10,10 +10,10 @@ from botocore.credentials import Credentials
 from pathlib import Path
 import random
 import string
-from typing import Any, List
+from typing import Any
 import pytest
 
-from typing import Generator
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 
@@ -45,7 +45,7 @@ def queue_handler(message_queue: SimpleQueue) -> QueueHandler:
 
 
 @pytest.fixture(scope="function", autouse=True)
-def config_file_mock() -> Generator[MagicMock, None, None]:
+def config_file_mock() -> Generator[MagicMock]:
     """Fixture that mocks deadline_worker_agent.config.config_file.ConfigFile.load() to raise a
     FileNotFound error.
 
@@ -272,7 +272,7 @@ Get-ChildItem env: | ForEach-Object { "$($_.Name)=$($_.Value)" }
         script: str,
         timeout: int,
         success: bool,
-        expected_logs: List[str],
+        expected_logs: list[str],
         test_os: TestOS,
         message_queue: SimpleQueue,
         queue_handler: QueueHandler,

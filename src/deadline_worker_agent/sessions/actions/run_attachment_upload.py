@@ -7,7 +7,7 @@ from concurrent.futures import (
 import json
 import sys
 from logging import LoggerAdapter
-from typing import Any, TYPE_CHECKING, Optional
+from typing import Any, TYPE_CHECKING
 from pathlib import Path
 from deadline.job_attachments.models import (
     JobAttachmentS3Settings,
@@ -48,9 +48,9 @@ class AttachmentUploadAction(OpenjdAction):
         The task identifier that the action belongs to
     """
 
-    _step_script: Optional[StepScript_2023_09]
+    _step_script: StepScript_2023_09 | None
     _step_id: str
-    _task_id: Optional[str]
+    _task_id: str | None
     _start_time: float
 
     def __init__(
@@ -59,10 +59,10 @@ class AttachmentUploadAction(OpenjdAction):
         id: str,
         session_id: str,
         step_id: str,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
         start_time: float,
     ) -> None:
-        super(AttachmentUploadAction, self).__init__(
+        super().__init__(
             id=id,
             action_log_kind=(SessionActionLogKind.JA_SYNC_OUTPUT),
         )

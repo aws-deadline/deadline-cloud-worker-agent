@@ -9,7 +9,7 @@ while maintaining backward compatibility for CLI operations.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Any
+from typing import Any
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import json
 
@@ -29,8 +29,8 @@ class WorkerManifestProperties:
         self,
         manifest_properties: ManifestProperties,
         local_root_path: str,
-        local_manifest_paths: Optional[List[str]] = None,
-        local_input_manifest_path: Optional[str] = None,
+        local_manifest_paths: list[str] | None = None,
+        local_input_manifest_path: str | None = None,
     ):
         """
         Initialize WorkerManifestProperties.
@@ -56,26 +56,26 @@ class WorkerManifestProperties:
         return self.manifest_properties.rootPathFormat
 
     @property
-    def file_system_location_name(self) -> Optional[str]:
+    def file_system_location_name(self) -> str | None:
         """Get the file system location name from manifest properties."""
         return self.manifest_properties.fileSystemLocationName
 
     @property
-    def input_manifest_path(self) -> Optional[str]:
+    def input_manifest_path(self) -> str | None:
         """Get the input manifest path from manifest properties."""
         return self.manifest_properties.inputManifestPath
 
     @property
-    def input_manifest_hash(self) -> Optional[str]:
+    def input_manifest_hash(self) -> str | None:
         """Get the input manifest hash from manifest properties."""
         return self.manifest_properties.inputManifestHash
 
     @property
-    def output_relative_directories(self) -> Optional[List[str]]:
+    def output_relative_directories(self) -> list[str] | None:
         """Get the output relative directories from manifest properties."""
         return self.manifest_properties.outputRelativeDirectories
 
-    def local_output_relative_directories(self) -> Optional[List[str]]:
+    def local_output_relative_directories(self) -> list[str] | None:
         """
         Normalize the output relative directory to host operating system format.
 
@@ -165,7 +165,7 @@ class WorkerManifestProperties:
             f"{self.file_system_location_name or ''}{self.root_path}".encode(), hash_alg
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """
         Convert WorkerManifestProperties to a dictionary for JSON serialization.
         Returns:
@@ -180,7 +180,7 @@ class WorkerManifestProperties:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WorkerManifestProperties":
+    def from_dict(cls, data: dict[str, Any]) -> WorkerManifestProperties:
         """
         Create WorkerManifestProperties from a dictionary (JSON deserialization).
         Args:

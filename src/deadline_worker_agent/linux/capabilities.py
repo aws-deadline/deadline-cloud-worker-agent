@@ -12,7 +12,7 @@ import sys
 from logging import getLogger
 from ctypes.util import find_library
 from functools import cache
-from typing import Any, Optional, Tuple, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 
 logger = getLogger(__name__)
@@ -75,7 +75,7 @@ else:
 def _cap_set_proc_err_check(
     result: ctypes.c_int,
     func: Any,
-    args: Tuple[Any, ...],
+    args: tuple[Any, ...],
 ) -> ctypes.c_int:  # pragma: nocover
     if result != 0:
         errno = ctypes.get_errno()
@@ -86,7 +86,7 @@ def _cap_set_proc_err_check(
 def _cap_get_proc_err_check(
     result: cap_t,
     func: Any,
-    args: Tuple[cap_t, cap_flag_t, ctypes.c_int, cap_value_ptr, cap_flag_value_t],
+    args: tuple[cap_t, cap_flag_t, ctypes.c_int, cap_value_ptr, cap_flag_value_t],
 ) -> cap_t:  # pragma: nocover
     if not result:
         errno = ctypes.get_errno()
@@ -97,7 +97,7 @@ def _cap_get_proc_err_check(
 def _cap_to_text_errcheck(
     result: ctypes.c_char_p,
     func: Any,
-    args: Tuple[cap_t, ssize_ptr_t],
+    args: tuple[cap_t, ssize_ptr_t],
 ) -> ctypes.c_char_p:  # pragma: nocover
     if not result:
         errno = ctypes.get_errno()
@@ -106,7 +106,7 @@ def _cap_to_text_errcheck(
 
 
 def _cap_get_flag_errcheck(
-    result: ctypes.c_int, func: Any, args: Tuple[cap_t, cap_value_t, cap_flag_t, cap_flag_value_ptr]
+    result: ctypes.c_int, func: Any, args: tuple[cap_t, cap_value_t, cap_flag_t, cap_flag_value_ptr]
 ) -> ctypes.c_int:  # pragma: nocover
     if result != 0:
         errno = ctypes.get_errno()
@@ -115,7 +115,7 @@ def _cap_get_flag_errcheck(
 
 
 @cache
-def _get_libcap() -> Optional[ctypes.CDLL]:  # pragma: nocover
+def _get_libcap() -> ctypes.CDLL | None:  # pragma: nocover
     if not sys.platform.startswith("linux"):
         raise OSError(f"libcap is only available on Linux, but found platform: {sys.platform}")
 

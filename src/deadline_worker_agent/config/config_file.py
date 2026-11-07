@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, NamedTuple, Optional, cast
+from typing import Any, NamedTuple, cast
 import shutil
 import sys
 import os
@@ -14,10 +14,7 @@ from pydantic.v1 import BaseModel, BaseSettings, Field, ValidationError, root_va
 from tomlkit.container import Container
 from tomlkit.items import Bool, Comment, SingleKey, String, Table, Trivia, Whitespace
 
-try:
-    from tomllib import load as load_toml, TOMLDecodeError
-except ModuleNotFoundError:
-    from tomli import load as load_toml, TOMLDecodeError  # type: ignore[no-redef]
+from tomllib import load as load_toml, TOMLDecodeError
 
 from ..capabilities import Capabilities
 from .._session_runtime_kind import SessionRuntimeKind
@@ -193,38 +190,36 @@ DEFAULT_CONFIG_PATH: dict[str, Path] = {
 
 
 class WorkerConfigSection(BaseModel):
-    farm_id: Optional[str] = Field(regex=r"^farm-[a-z0-9]{32}$", default=None)
-    fleet_id: Optional[str] = Field(regex=r"^fleet-[a-z0-9]{32}$", default=None)
+    farm_id: str | None = Field(regex=r"^farm-[a-z0-9]{32}$", default=None)
+    fleet_id: str | None = Field(regex=r"^fleet-[a-z0-9]{32}$", default=None)
     cleanup_session_user_processes: bool = True
-    worker_persistence_dir: Optional[Path] = None
-    session_root_dir: Optional[Path] = None
-    session_runtime: Optional[SessionRuntimeKind] = None
+    worker_persistence_dir: Path | None = None
+    session_root_dir: Path | None = None
+    session_runtime: SessionRuntimeKind | None = None
 
 
 class AwsConfigSection(BaseModel):
-    profile: Optional[str] = Field(min_length=1, max_length=64, default=None)
-    allow_ec2_instance_profile: Optional[bool] = None
-    region: Optional[str] = Field(min_length=1, default=None)
+    profile: str | None = Field(min_length=1, max_length=64, default=None)
+    allow_ec2_instance_profile: bool | None = None
+    region: str | None = Field(min_length=1, default=None)
 
 
 class LoggingConfigSection(BaseModel):
-    verbose: Optional[bool] = None
-    worker_logs_dir: Optional[Path] = None
-    local_session_logs: Optional[bool] = None
-    host_metrics_logging: Optional[bool] = None
-    host_metrics_logging_interval_seconds: Optional[float] = None
-    structured_logs: Optional[bool] = None
+    verbose: bool | None = None
+    worker_logs_dir: Path | None = None
+    local_session_logs: bool | None = None
+    host_metrics_logging: bool | None = None
+    host_metrics_logging_interval_seconds: float | None = None
+    structured_logs: bool | None = None
 
 
 class OsConfigSection(BaseModel):
-    run_jobs_as_agent_user: Optional[bool] = None
-    posix_job_user: Optional[str] = Field(
-        regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
-    )
-    shutdown_on_stop: Optional[bool] = None
-    retain_session_dir: Optional[bool] = None
-    windows_job_user: Optional[StrictStr] = Field(regex=r"^.{1,512}$")  # defer validation to OS.
-    windows_job_user_password_arn: Optional[StrictStr] = Field(
+    run_jobs_as_agent_user: bool | None = None
+    posix_job_user: str | None = Field(regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$")
+    shutdown_on_stop: bool | None = None
+    retain_session_dir: bool | None = None
+    windows_job_user: StrictStr | None = Field(regex=r"^.{1,512}$")  # defer validation to OS.
+    windows_job_user_password_arn: StrictStr | None = Field(
         regex=r"^arn:aws:secretsmanager:[a-z0-9\-]+:\d{12}:secret[:/][a-zA-Z0-9/_+=.@:-]+$"
     )
 
@@ -238,8 +233,8 @@ class OsConfigSection(BaseModel):
 
 
 class TelemetryConfigSection(BaseModel):
-    opt_out: Optional[bool] = None
-    identifier: Optional[str] = Field(
+    opt_out: bool | None = None
+    identifier: str | None = Field(
         regex=r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
         default=None,
     )
@@ -254,12 +249,12 @@ class ConfigFile(BaseModel):
     telemetry: TelemetryConfigSection = TelemetryConfigSection()
 
     @classmethod
-    def load(cls, config_path: Optional[Path] = None) -> ConfigFile:
+    def load(cls, config_path: Path | None = None) -> ConfigFile:
         if not config_path:
             config_path = cls.get_config_path()
 
         try:
-            # File must be open in binary mode for tomli to ensure the file is utf-8
+            # tomllib requires a binary file so that it can enforce UTF-8
             with config_path.open(mode="rb") as fh:
                 toml_doc = load_toml(fh)
         except TOMLDecodeError as toml_error:
@@ -285,7 +280,7 @@ class ConfigFile(BaseModel):
     def backup(
         cls,
         *,
-        config_path: Optional[Path] = None,
+        config_path: Path | None = None,
     ) -> None:
         if config_path is None:
             config_path = cls.get_config_path()
@@ -320,7 +315,7 @@ class ConfigFile(BaseModel):
         *,
         settings_to_modify: list[SettingModification],
         backup: bool = False,
-        config_path: Optional[Path] = None,
+        config_path: Path | None = None,
     ) -> None:
         if config_path is None:
             config_path = ConfigFile.get_config_path()

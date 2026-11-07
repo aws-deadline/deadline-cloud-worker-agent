@@ -3,7 +3,8 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import PurePath, PurePosixPath, PureWindowsPath
-from typing import Any, Callable, cast
+from typing import Any, cast
+from collections.abc import Callable
 import os
 
 from openjd.model import (

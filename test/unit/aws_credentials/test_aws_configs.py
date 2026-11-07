@@ -3,7 +3,8 @@
 import pytest
 from unittest.mock import ANY, patch, MagicMock, PropertyMock
 from pathlib import Path
-from typing import Callable, Generator, Optional, cast
+from typing import cast
+from collections.abc import Callable, Generator
 
 import deadline_worker_agent.aws_credentials.aws_configs as aws_configs_mod
 from deadline_worker_agent.aws_credentials.aws_configs import (
@@ -24,19 +25,19 @@ def profile_name() -> str:
 
 
 @pytest.fixture(autouse=True)
-def mock_chown() -> Generator[MagicMock, None, None]:
+def mock_chown() -> Generator[MagicMock]:
     with patch.object(aws_configs_mod, "chown") as mock_chown:
         yield mock_chown
 
 
 @pytest.fixture(autouse=True)
-def mock_touch_file() -> Generator[MagicMock, None, None]:
+def mock_touch_file() -> Generator[MagicMock]:
     with patch.object(aws_configs_mod, "touch_file") as mock_touch_file:
         yield mock_touch_file
 
 
 @pytest.fixture(params=[True, False])
-def os_user(request: pytest.FixtureRequest) -> Optional[SessionUser]:
+def os_user(request: pytest.FixtureRequest) -> SessionUser | None:
     if request.param:
         if os.name == "posix":
             return PosixSessionUser(user="user", group="group")
@@ -76,7 +77,7 @@ class TestSetupFile:
     def test_creates_file_if_needed(
         self,
         file_path: MagicMock,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         exists: bool,
         mock_touch_file: MagicMock,
     ) -> None:
@@ -115,7 +116,7 @@ class TestSetupFile:
     def test_changes_permissions(
         self,
         file_path: MagicMock,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         mock_touch_file: MagicMock,
     ) -> None:
         """Tests the config/credentials file is created if necessary"""
@@ -149,7 +150,7 @@ class TestSetupFile:
     def test_changes_group_ownership(
         self,
         file_path: MagicMock,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         mock_touch_file: MagicMock,
         mock_chown: MagicMock,
     ) -> None:
@@ -190,7 +191,7 @@ class AWSConfigTestBase:
     """Base class for common testing logic of AWSConfig and AWSCredentials classes"""
 
     @pytest.fixture(autouse=True)
-    def mock_config_parser_cls(self) -> Generator[MagicMock, None, None]:
+    def mock_config_parser_cls(self) -> Generator[MagicMock]:
         with patch.object(aws_configs_mod, "ConfigParser") as mock_config_parser:
             yield mock_config_parser
 
@@ -199,17 +200,17 @@ class AWSConfigTestBase:
         return mock_config_parser_cls.return_value
 
     @pytest.fixture(autouse=True)
-    def mock_open(self) -> Generator[MagicMock, None, None]:
+    def mock_open(self) -> Generator[MagicMock]:
         with patch("builtins.open") as mock_open:
             yield mock_open
 
     @pytest.fixture(autouse=True)
-    def mock_expanduser(self) -> Generator[MagicMock, None, None]:
+    def mock_expanduser(self) -> Generator[MagicMock]:
         with patch.object(aws_configs_mod.Path, "expanduser") as mock_expanduser:
             yield mock_expanduser
 
     @pytest.fixture(autouse=True)
-    def mock_chmod(self) -> Generator[MagicMock, None, None]:
+    def mock_chmod(self) -> Generator[MagicMock]:
         with patch.object(aws_configs_mod.Path, "chmod") as mock_chmod:
             yield mock_chmod
 
@@ -238,7 +239,7 @@ class AWSConfigTestBase:
     def test_init(
         self,
         create_config_class: Callable[[], _AWSConfigBase],
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         mock_config_parser: MagicMock,
     ) -> None:
         # GIVEN
@@ -263,7 +264,7 @@ class AWSConfigTestBase:
         self,
         create_config_class: Callable[[], _AWSConfigBase],
         expected_path: Path,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         parent_dir: MagicMock,
     ) -> None:
         # WHEN
@@ -285,7 +286,7 @@ class AWSConfigTestBase:
         create_config_class: Callable[[], _AWSConfigBase],
         profile_name: str,
         expected_profile_name_section: str,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         mock_config_parser: MagicMock,
     ) -> None:
         # GIVEN
@@ -315,7 +316,7 @@ class AWSConfigTestBase:
         create_config_class: Callable[[], _AWSConfigBase],
         profile_name: str,
         expected_profile_name_section: str,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         mock_config_parser: MagicMock,
     ) -> None:
         # GIVEN
@@ -345,7 +346,7 @@ class AWSConfigTestBase:
     def test_write(
         self,
         create_config_class: Callable[[], _AWSConfigBase],
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         mock_config_parser: MagicMock,
     ) -> None:
         # GIVEN
@@ -382,7 +383,7 @@ class TestAWSConfig(AWSConfigTestBase):
     @pytest.fixture
     def create_config_class(
         self,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         parent_dir: Path,
         region: str,
     ) -> Callable[[], _AWSConfigBase]:
@@ -445,7 +446,7 @@ class TestAWSCredentials(AWSConfigTestBase):
     @pytest.fixture
     def create_config_class(
         self,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         parent_dir: Path,
     ) -> Callable[[], _AWSConfigBase]:
         def creator() -> AWSCredentials:

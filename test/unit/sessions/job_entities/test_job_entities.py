@@ -1,7 +1,8 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from typing import Generator, Optional, cast
+from typing import cast
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 from deadline.job_attachments.models import JobAttachmentsFileSystem
@@ -84,7 +85,7 @@ def os_user() -> SessionUser:
 
 
 @pytest.fixture
-def windows_credentials_resolver(os_user: MagicMock) -> Optional[MagicMock]:
+def windows_credentials_resolver(os_user: MagicMock) -> MagicMock | None:
     if os.name == "nt":
         resolver = MagicMock()
         resolver.get_windows_session_user.return_value = os_user
@@ -147,7 +148,7 @@ def job_entities(
     deadline_client: MagicMock,
     windows_credentials_resolver: MagicMock,
     job_id: str,
-) -> Generator[JobEntities, None, None]:
+) -> Generator[JobEntities]:
     job_entities = JobEntities(
         farm_id="farm-id",
         fleet_id="fleet-id",
@@ -620,7 +621,7 @@ class TestDetails:
 
 class TestCaching:
     @pytest.fixture(autouse=True)
-    def mock_batch_get_job_entity(self) -> Generator[MagicMock, None, None]:
+    def mock_batch_get_job_entity(self) -> Generator[MagicMock]:
         with patch.object(job_entities_mod, "batch_get_job_entity") as mock:
             yield mock
 

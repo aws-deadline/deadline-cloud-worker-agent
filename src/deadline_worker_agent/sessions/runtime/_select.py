@@ -1,7 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 from __future__ import annotations
 
-from typing import Optional
 
 from ..._session_runtime_kind import SessionRuntimeKind
 
@@ -25,7 +24,7 @@ _RUNTIME_HINT_MAP: dict[str, SessionRuntimeKind] = {
 def select_runtime(
     configured_kind: SessionRuntimeKind,
     *,
-    runtime_hint: Optional[str] = None,
+    runtime_hint: str | None = None,
 ) -> SessionRuntimeKind:
     """Resolve the worker's configured runtime mode to a concrete runtime kind.
 

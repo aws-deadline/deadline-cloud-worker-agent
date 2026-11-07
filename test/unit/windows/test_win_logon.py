@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from unittest.mock import patch, MagicMock, call
-from typing import Generator
+from collections.abc import Generator
 import string
 import sys
 
@@ -37,12 +37,12 @@ if sys.platform == "win32":
             return request.param
 
         @fixture(autouse=True)
-        def windows_session_user(self) -> Generator[MagicMock, None, None]:
+        def windows_session_user(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "WindowsSessionUser") as mock:
                 yield mock
 
         @fixture(autouse=True)
-        def outside_session_0(self) -> Generator[MagicMock, None, None]:
+        def outside_session_0(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "is_windows_session_zero", return_value=False) as mock:
                 yield mock
 
@@ -86,28 +86,28 @@ if sys.platform == "win32":
             return request.param
 
         @fixture(autouse=True)
-        def logon_user(self) -> Generator[MagicMock, None, None]:
+        def logon_user(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "LogonUser") as mock:
                 mock.return_value.__int__.return_value = 12983791  # default is 1, mix it up a bit
                 yield mock
 
         @fixture(autouse=True)
-        def load_user_profile(self) -> Generator[MagicMock, None, None]:
+        def load_user_profile(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "LoadUserProfile") as mock:
                 yield mock
 
         @fixture(autouse=True)
-        def windows_session_user(self) -> Generator[MagicMock, None, None]:
+        def windows_session_user(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "WindowsSessionUser") as mock:
                 yield mock
 
         @fixture(autouse=True)
-        def chandle(self) -> Generator[MagicMock, None, None]:
+        def chandle(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "cHANDLE") as mock:
                 yield mock
 
         @fixture(autouse=True)
-        def is_session_0(self) -> Generator[MagicMock, None, None]:
+        def is_session_0(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "is_windows_session_zero", return_value=True) as mock:
                 yield mock
 
@@ -209,17 +209,17 @@ if sys.platform == "win32":
             return "some-user"
 
         @fixture(autouse=True)
-        def get_windows_credentials(self) -> Generator[MagicMock, None, None]:
+        def get_windows_credentials(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "get_windows_credentials") as mock:
                 yield mock
 
         @fixture(autouse=True)
-        def win32net(self) -> Generator[MagicMock, None, None]:
+        def win32net(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "win32net") as mock:
                 yield mock
 
         @fixture(autouse=True)
-        def generate_password(self) -> Generator[MagicMock, None, None]:
+        def generate_password(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "generate_password") as mock:
                 mock.return_value = "new-password"
                 yield mock
@@ -309,7 +309,7 @@ if sys.platform == "win32":
 
     class TestUnloadAndClose:
         @fixture
-        def unload_user_profile(self) -> Generator[MagicMock, None, None]:
+        def unload_user_profile(self) -> Generator[MagicMock]:
             with patch.object(win_logon_mod, "UnloadUserProfile") as mock:
                 yield mock
 
@@ -336,7 +336,7 @@ if sys.platform == "win32":
 
     class TestGeneratePassword:
         @fixture
-        def secrets_choice(self) -> Generator[MagicMock, None, None]:
+        def secrets_choice(self) -> Generator[MagicMock]:
             with patch.object(
                 win_logon_mod.secrets, "choice", side_effect=["a", "A", "1", "*"] * 100
             ) as mock:

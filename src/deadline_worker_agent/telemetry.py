@@ -17,7 +17,8 @@ from datetime import datetime
 from pathlib import Path
 from queue import Queue, Full
 from threading import Thread
-from typing import Any, Callable, Dict, Optional, TypeVar, cast
+from typing import Any, TypeVar, cast
+from collections.abc import Callable
 from urllib import request, error
 
 import boto3
@@ -81,7 +82,7 @@ class TelemetryEvent:
     """Base class for telemetry events"""
 
     event_type: str = "com.amazon.rum.deadline.uncategorized"
-    event_details: Dict[str, Any] = field(default_factory=dict)
+    event_details: dict[str, Any] = field(default_factory=dict)
 
 
 class TelemetryClient:
@@ -121,8 +122,8 @@ class TelemetryClient:
         package_ver: str,
     ):
         # Instance-level dicts so every TelemetryClient has its own state
-        self._common_details: Dict[str, Any] = {}
-        self._system_metadata: Dict[str, Any] = {}
+        self._common_details: dict[str, Any] = {}
+        self._system_metadata: dict[str, Any] = {}
 
         self._initialized: bool = False
         self.package_name = package_name
@@ -278,7 +279,7 @@ class TelemetryClient:
 
     def _start_threads(self) -> None:
         """Set up background threads for shutdown checking and request sending"""
-        self.event_queue: Queue[Optional[TelemetryEvent]] = Queue(
+        self.event_queue: Queue[TelemetryEvent | None] = Queue(
             maxsize=TelemetryClient.MAX_QUEUE_SIZE
         )
         atexit.register(self._exit_cleanly)
@@ -287,7 +288,7 @@ class TelemetryClient:
         )
         self.processing_thread.start()
 
-    def _get_system_metadata(self) -> Dict[str, Any]:
+    def _get_system_metadata(self) -> dict[str, Any]:
         """
         Builds up a dict of non-identifiable metadata about the system environment.
         """
@@ -349,7 +350,7 @@ class TelemetryClient:
 
         while True:
             # Blocks until we get a new entry in the queue
-            event_data: Optional[TelemetryEvent] = self.event_queue.get()
+            event_data: TelemetryEvent | None = self.event_queue.get()
             # We've received the shutdown signal
             if event_data is None:
                 return
@@ -395,12 +396,12 @@ class TelemetryClient:
             # Silently swallow the error if the event queue is full (due to throttling of the service)
             pass
 
-    def record_error(self, event_details: Dict[str, Any], exception_type: str):
+    def record_error(self, event_details: dict[str, Any], exception_type: str):
         event_details["exception_type"] = exception_type
         self.record_event("com.amazon.rum.deadline.error", event_details)
 
     @_swallow_exceptions
-    def record_event(self, event_type: str, event_details: Dict[str, Any], **kwargs: Any):
+    def record_event(self, event_type: str, event_details: dict[str, Any], **kwargs: Any):
         self._put_telemetry_record(
             TelemetryEvent(
                 event_type=event_type,
@@ -409,7 +410,7 @@ class TelemetryClient:
         )
 
     @lru_cache
-    def get_account_id(self, boto3_session) -> Optional[str]:
+    def get_account_id(self, boto3_session) -> str | None:
         """Best-effort AWS account ID lookup for telemetry, cached per session."""
         try:
             credentials = boto3_session.get_credentials()
@@ -427,6 +428,6 @@ class TelemetryClient:
             logger.debug("Could not resolve account ID for telemetry", exc_info=True)
             return None
 
-    def update_common_details(self, details: Dict[str, Any]):
+    def update_common_details(self, details: dict[str, Any]):
         """Updates the dict of common data that is included in every telemetry request."""
         self._common_details.update(details)

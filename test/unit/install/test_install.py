@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import Generator
+from collections.abc import Generator
 from unittest.mock import ANY, MagicMock, patch
 import sys
 import sysconfig
-import typing
 
 import pytest
 
@@ -23,7 +22,7 @@ VFS_DEFAULT_INSTALL_PATH = "/opt/deadline_vfs"
 
 
 @pytest.fixture(autouse=True)
-def mock_subprocess_run() -> Generator[MagicMock, None, None]:
+def mock_subprocess_run() -> Generator[MagicMock]:
     with patch.object(installer_mod, "run") as mock_subprocess_run:
         yield mock_subprocess_run
 
@@ -41,7 +40,7 @@ def test_installer_path(platform: str) -> None:
 
 
 @pytest.fixture(autouse=True)
-def mock_sys_platform(platform: str) -> Generator[str, None, None]:
+def mock_sys_platform(platform: str) -> Generator[str]:
     with patch.object(installer_mod.sys, "platform", new=platform) as mock_sys_platform:
         yield mock_sys_platform
 
@@ -217,12 +216,12 @@ class TestGetEc2Region:
     """Tests for _get_ec2_region function"""
 
     @pytest.fixture(autouse=True)
-    def mock_requests_get(self) -> Generator[MagicMock, None, None]:
+    def mock_requests_get(self) -> Generator[MagicMock]:
         with patch.object(installer_mod.requests, "get") as m:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_requests_put(self) -> Generator[MagicMock, None, None]:
+    def mock_requests_put(self) -> Generator[MagicMock]:
         with patch.object(installer_mod.requests, "put") as m:
             yield m
 
@@ -256,8 +255,8 @@ class TestGetEc2Region:
     )
     def test_fails_if_request_raises(
         self,
-        put_side_effect: typing.Optional[Exception],
-        get_side_effect: typing.Optional[Exception],
+        put_side_effect: Exception | None,
+        get_side_effect: Exception | None,
         mock_requests_put: MagicMock,
         mock_requests_get: MagicMock,
         capfd: pytest.CaptureFixture,
@@ -333,7 +332,7 @@ class TestMacOSInstall:
     """Test cases for macOS (darwin) support in the installer dispatcher."""
 
     @pytest.fixture(autouse=True)
-    def mock_darwin_platform(self) -> Generator[str, None, None]:
+    def mock_darwin_platform(self) -> Generator[str]:
         with patch.object(installer_mod.sys, "platform", new="darwin") as m:
             yield m
 

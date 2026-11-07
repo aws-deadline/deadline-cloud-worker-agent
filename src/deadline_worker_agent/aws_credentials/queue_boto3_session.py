@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 import shlex
 from threading import Event
-from typing import Any, Optional, cast
+from typing import Any, cast
 import logging
 import os
 import shutil
@@ -100,7 +100,7 @@ class QueueBoto3Session(BaseBoto3Session):
     _queue_id: str
     _worker_id: str
     _role_arn: str
-    _os_user: Optional[SessionUser]
+    _os_user: SessionUser | None
     _interrupt_event: Event
     _region: str
 
@@ -133,7 +133,7 @@ class QueueBoto3Session(BaseBoto3Session):
         worker_id: str,
         queue_id: str,
         role_arn: str,
-        os_user: Optional[SessionUser] = None,
+        os_user: SessionUser | None = None,
         interrupt_event: Event,
         worker_persistence_dir: Path,
         region: str,
@@ -408,7 +408,7 @@ class QueueBoto3Session(BaseBoto3Session):
                 )
             )
 
-    def _create_credentials_directory(self, os_user: Optional[SessionUser] = None) -> None:
+    def _create_credentials_directory(self, os_user: SessionUser | None = None) -> None:
         """Creates the directory that we're going to write the credentials file to"""
 
         # make the <worker_persistence_dir>/queues/<queue-id> dir and set permissions
@@ -564,11 +564,11 @@ class QueueBoto3Session(BaseBoto3Session):
         """
         credential_files_path = self._credentials_file_path()
         if os.name == "posix":
-            return ("#!/bin/bash\nset -eu\n{0}").format(
+            return ("#!/bin/bash\nset -eu\n{}").format(
                 " ".join(shlex.quote(arg) for arg in ["cat", str(credential_files_path)])
             )
         else:
-            return ("@echo off\n{0}\n").format(
+            return ("@echo off\n{}\n").format(
                 subprocess.list2cmdline(["type", str(credential_files_path)])
             )
 

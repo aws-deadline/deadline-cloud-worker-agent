@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional, TypeVar, Any, cast
+from typing import TypeVar, Any, cast
+from collections.abc import Callable
 from types import TracebackType
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from threading import Lock, Timer
 
 from .boto3_sessions import BaseBoto3Session, SettableCredentials
@@ -57,7 +58,7 @@ class AwsCredentialsRefresher:
     _advisory_refresh_timeout: timedelta
     _mandatory_refresh_timeout: timedelta
     _failure_callback: Callable[[Exception], None]
-    _timer: Optional[Timer]
+    _timer: Timer | None
     _retries_attempted_after_expired: int
 
     # How many times this context manager has been entered, and
@@ -128,7 +129,7 @@ class AwsCredentialsRefresher:
 
     def _credentials_time_to_expiry(self) -> tuple[datetime, timedelta]:
         credentials = cast(SettableCredentials, self._session.get_credentials())
-        time_now = datetime.now(timezone.utc)
+        time_now = datetime.now(UTC)
         return time_now, credentials.expiry - time_now
 
     def _set_timer(self, time_now: datetime, time_remaining: timedelta) -> None:

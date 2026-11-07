@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import MutableMapping
+from collections.abc import Callable, Iterator, MutableMapping
 import os
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, Generic, Iterator, TypeVar
+from typing import Any, Generic, TypeVar
 
 _K = TypeVar("_K")
 _V = TypeVar("_V")

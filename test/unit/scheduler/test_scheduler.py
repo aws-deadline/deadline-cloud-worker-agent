@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
-from typing import Generator, Optional
+from collections.abc import Generator
 from unittest.mock import ANY, MagicMock, Mock, call, patch
 import logging
 
@@ -56,7 +56,7 @@ from openjd.model import SpecificationRevision
 
 
 @pytest.fixture(autouse=True)
-def log_translation_filter() -> Generator[None, None, None]:
+def log_translation_filter() -> Generator[None]:
     string_translation_filter = LogRecordStringTranslationFilter()
     logging.root.addFilter(string_translation_filter)
     yield None
@@ -103,14 +103,14 @@ def scheduler(
 
 
 @pytest.fixture
-def module_logger() -> Generator[MagicMock, None, None]:
+def module_logger() -> Generator[MagicMock]:
     """Mocks the scheduler module's logger"""
     with patch.object(scheduler_mod, "logger") as module_logger:
         yield module_logger
 
 
 @pytest.fixture(autouse=True)
-def mock_session_map_callbacks() -> Generator[None, None, None]:
+def mock_session_map_callbacks() -> Generator[None]:
     # Mock out the callbacks in SessionMap since we're not testing that logic here
     with (
         patch.object(scheduler_mod.SessionMap, "setitem_callback"),
@@ -131,7 +131,7 @@ class MockSession(MagicMock):
 
 
 @pytest.fixture()
-def mock_session() -> Generator[MagicMock, None, None]:
+def mock_session() -> Generator[MagicMock]:
     with patch.object(scheduler_mod, "Session") as mock_session:
         yield mock_session
 
@@ -529,7 +529,7 @@ class TestSchedulerSync:
     """Tests for WorkerScheduler._sync()"""
 
     @pytest.fixture
-    def mock_update_worker_schedule(self) -> Generator[MagicMock, None, None]:
+    def mock_update_worker_schedule(self) -> Generator[MagicMock]:
         with patch.object(scheduler_mod, "update_worker_schedule") as mock:
             yield mock
 
@@ -693,7 +693,7 @@ class TestSchedulerSync:
         ],
     )
     def test_updated_action_to_boto_exitcode(
-        self, scheduler: WorkerScheduler, exitcode: Optional[int], expected_result: Optional[int]
+        self, scheduler: WorkerScheduler, exitcode: int | None, expected_result: int | None
     ) -> None:
         # GIVEN
         action_status = SessionActionStatus(
@@ -790,17 +790,17 @@ class TestCreateNewSessions:
         }
 
     @pytest.fixture
-    def mock_datetime(self) -> Generator[MagicMock, None, None]:
+    def mock_datetime(self) -> Generator[MagicMock]:
         with patch.object(scheduler_mod, "datetime") as mock_datetime:
             yield mock_datetime
 
     @pytest.fixture
-    def mock_datetime_now(self, mock_datetime: MagicMock) -> Generator[MagicMock, None, None]:
+    def mock_datetime_now(self, mock_datetime: MagicMock) -> Generator[MagicMock]:
         datetime_now_mock: MagicMock = mock_datetime.now
         yield datetime_now_mock
 
     @pytest.fixture
-    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+    def mock_job_entities(self) -> Generator[MagicMock]:
         with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
             yield job_entities_mock
 
@@ -1449,10 +1449,10 @@ class TestCreateNewSessions:
     def test_determine_user_for_session(
         self,
         host_is_posix: bool,
-        job_run_as_user: Optional[JobRunAsUser],
+        job_run_as_user: JobRunAsUser | None,
         job_run_as_user_override: JobsRunAsUserOverride,
-        expected_result: Optional[SessionUser],
-        expected_exception: Optional[str],
+        expected_result: SessionUser | None,
+        expected_exception: str | None,
     ) -> None:
         # WHEN
         if expected_exception is not None:
@@ -1484,7 +1484,7 @@ class TestCreateNewSessionsPrefetchSymbolTable:
     """Tests that the scheduler prefetches the resolved symbol table and passes it to Session"""
 
     @pytest.fixture
-    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+    def mock_job_entities(self) -> Generator[MagicMock]:
         with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
             yield job_entities_mock
 
@@ -1557,7 +1557,7 @@ class TestCreateNewSessionsRuntimeHint:
     """Tests for runtime hint consumption in WorkerScheduler._create_new_sessions"""
 
     @pytest.fixture
-    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+    def mock_job_entities(self) -> Generator[MagicMock]:
         with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
             job_entity_instance = MagicMock()
             job_entity_instance.job_details.return_value = JobDetails(
@@ -1656,7 +1656,7 @@ class TestCreateNewSessionsRuntimeHint:
         mock_session: MagicMock,
         mock_job_entities: MagicMock,
         session_runtime_kind: str,
-        metadata: Optional[dict[str, str]],
+        metadata: dict[str, str] | None,
         expected_runtime_kind: str,
     ) -> None:
         """Tests that select_runtime is called correctly and the result is passed to Session."""
@@ -1932,7 +1932,7 @@ class TestTelemetryFailureResilience:
     """
 
     @pytest.fixture
-    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+    def mock_job_entities(self) -> Generator[MagicMock]:
         with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
             job_entity_instance = MagicMock()
             job_entity_instance.job_details.return_value = JobDetails(
@@ -1988,7 +1988,7 @@ class TestCreateNewSessionsConstructionFailure:
     and do not crash the scheduler loop."""
 
     @pytest.fixture
-    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+    def mock_job_entities(self) -> Generator[MagicMock]:
         with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
             job_entity_instance = MagicMock()
             job_entity_instance.job_details.return_value = JobDetails(
@@ -2611,7 +2611,7 @@ class TestSessionEnvVars:
         }
 
     @pytest.fixture
-    def mock_job_entities(self) -> Generator[MagicMock, None, None]:
+    def mock_job_entities(self) -> Generator[MagicMock]:
         with patch.object(scheduler_mod, "JobEntities") as job_entities_mock:
             yield job_entities_mock
 

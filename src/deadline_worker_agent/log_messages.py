@@ -5,7 +5,7 @@ import sys
 from enum import Enum
 import logging
 import json
-from typing import Any, Optional, Union, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from types import MethodType
 from pathlib import Path
 from getpass import getuser
@@ -25,10 +25,10 @@ if TYPE_CHECKING:
 
 
 class BaseLogEvent:
-    ti: Optional[str] = None
-    type: Optional[str] = None
-    subtype: Optional[str] = None
-    exc_text: Optional[str] = None
+    ti: str | None = None
+    type: str | None = None
+    subtype: str | None = None
+    exc_text: str | None = None
 
     def desc(self) -> str:
         dd = BaseLogEvent.asdict(self)
@@ -92,17 +92,15 @@ class AgentInfoLogEvent(BaseLogEvent):
     def getMessage(self) -> str:
         info = self.asdict()
         return self.add_exception_to_message(
-            (
-                "\n"
-                f"Python Interpreter: {info['python']['interpreter']}\n"
-                f"Python Version: {info['python']['version']}\n"
-                f"Platform: {info['platform']}\n"
-                f"Agent Version: {info['agent']['version']}\n"
-                f"Installed at: {info['agent']['installedAt']}\n"
-                f"Running as user: {info['agent']['runningAs']}\n"
-                "Dependency versions installed:\n"
-                + "\n".join(f"\t{k}: {v}" for k, v in info["dependencies"].items())
-            )
+            "\n"
+            f"Python Interpreter: {info['python']['interpreter']}\n"
+            f"Python Version: {info['python']['version']}\n"
+            f"Platform: {info['platform']}\n"
+            f"Agent Version: {info['agent']['version']}\n"
+            f"Installed at: {info['agent']['installedAt']}\n"
+            f"Running as user: {info['agent']['runningAs']}\n"
+            "Dependency versions installed:\n"
+            + "\n".join(f"\t{k}: {v}" for k, v in info["dependencies"].items())
         )
 
     def asdict(self) -> dict[str, Any]:
@@ -177,7 +175,7 @@ class WorkerLogEvent(BaseLogEvent):
         op: WorkerLogEventOp,
         farm_id: str,
         fleet_id: str,
-        worker_id: Optional[str] = None,
+        worker_id: str | None = None,
         message: str,
     ) -> None:
         self.subtype = op.value
@@ -213,8 +211,8 @@ class WorkerHostConfigurationLogEvent(WorkerLogEvent):
     ti = "📜"
     type = "Worker"
     status: WorkerHostConfigurationStatus
-    exit_code: Optional[int]
-    success: Optional[bool]
+    exit_code: int | None
+    success: bool | None
 
     def __init__(
         self,
@@ -223,9 +221,9 @@ class WorkerHostConfigurationLogEvent(WorkerLogEvent):
         fleet_id: str,
         message: str,
         status: WorkerHostConfigurationStatus,
-        worker_id: Optional[str] = None,
-        exit_code: Optional[int] = None,
-        success: Optional[bool] = None,
+        worker_id: str | None = None,
+        exit_code: int | None = None,
+        success: bool | None = None,
     ) -> None:
         self.exit_code = exit_code
         self.success = success
@@ -287,7 +285,7 @@ class WorkerHostConfigurationOutputLogEvent(WorkerLogEvent):
         farm_id: str,
         fleet_id: str,
         message: str,
-        worker_id: Optional[str] = None,
+        worker_id: str | None = None,
     ) -> None:
         super().__init__(
             op=WorkerLogEventOp.HOST_CONFIGURATION,
@@ -350,19 +348,19 @@ class AwsCredentialsLogEvent(BaseLogEvent):
     type = "AWSCreds"
     resource: str
     msg: str
-    role_arn: Optional[str] = None  # For Queue credentials
-    expiry: Optional[str] = None  # For Query & refresh
-    scheduled_time: Optional[str] = None  # For Refresh
+    role_arn: str | None = None  # For Queue credentials
+    expiry: str | None = None  # For Query & refresh
+    scheduled_time: str | None = None  # For Refresh
 
     def __init__(
         self,
         *,
         op: AwsCredentialsLogEventOp,
         resource: str,
-        role_arn: Optional[str] = None,
+        role_arn: str | None = None,
         message: str,
-        expiry: Optional[str] = None,
-        scheduled_time: Optional[str] = None,
+        expiry: str | None = None,
+        scheduled_time: str | None = None,
     ) -> None:
         self.subtype = op.value
         self.resource = resource
@@ -404,16 +402,16 @@ class ApiRequestLogEvent(BaseLogEvent):
 
     operation: str
     request_url: str
-    params: Union[dict[str, Any], str]
-    deadline_resource: Optional[dict[str, str]] = None
+    params: dict[str, Any] | str
+    deadline_resource: dict[str, str] | None = None
 
     def __init__(
         self,
         *,
         operation: str,
         request_url: str,
-        params: Union[dict[str, Any], str],
-        deadline_resource: Optional[dict[str, str]] = None,
+        params: dict[str, Any] | str,
+        deadline_resource: dict[str, str] | None = None,
     ) -> None:
         self.operation = operation
         self.request_url = request_url
@@ -450,18 +448,18 @@ class ApiResponseLogEvent(BaseLogEvent):
     operation: str
     status_code: str
     request_id: str
-    params: Union[dict[str, Any], str]
+    params: dict[str, Any] | str
     # We might have an error, but we always have parameters.
-    error: Optional[dict[str, str]] = None
+    error: dict[str, str] | None = None
 
     def __init__(
         self,
         *,
         operation: str,
-        params: Union[dict[str, Any], str],
+        params: dict[str, Any] | str,
         status_code: str,
         request_id: str,
-        error: Optional[dict[str, str]] = None,
+        error: dict[str, str] | None = None,
     ) -> None:
         self.operation = operation
         self.params = params
@@ -505,10 +503,10 @@ class SessionLogEvent(BaseLogEvent):
     queue_id: str
     job_id: str
     session_id: str
-    user: Optional[str]
-    action_ids: Optional[list[str]]  # for Add/Cancel
-    log_dest: Optional[str]
-    queued_action_count: Optional[int]
+    user: str | None
+    action_ids: list[str] | None  # for Add/Cancel
+    log_dest: str | None
+    queued_action_count: int | None
 
     def __init__(
         self,
@@ -517,11 +515,11 @@ class SessionLogEvent(BaseLogEvent):
         queue_id: str,
         job_id: str,
         session_id: str,
-        user: Optional[str] = None,
+        user: str | None = None,
         message: str,
-        action_ids: Optional[list[str]] = None,
-        log_dest: Optional[str] = None,
-        queued_action_count: Optional[int] = None,
+        action_ids: list[str] | None = None,
+        log_dest: str | None = None,
+        queued_action_count: int | None = None,
     ) -> None:
         self.subtype = subtype.value
         self.session_id = session_id
@@ -588,12 +586,12 @@ class SessionActionLogEvent(BaseLogEvent):
 
     queue_id: str
     job_id: str
-    step_id: Optional[str]
-    task_id: Optional[str]
+    step_id: str | None
+    task_id: str | None
     session_id: str
     kind: SessionActionLogKind
     action_id: str
-    status: Optional[str]
+    status: str | None
     msg: str
 
     def __init__(
@@ -602,13 +600,13 @@ class SessionActionLogEvent(BaseLogEvent):
         subtype: SessionActionLogEventSubtype,
         queue_id: str,
         job_id: str,
-        step_id: Optional[str] = None,
-        task_id: Optional[str] = None,
+        step_id: str | None = None,
+        task_id: str | None = None,
         session_id: str,
         action_log_kind: SessionActionLogKind,
         action_id: str,
         message: str,
-        status: Optional[str] = None,
+        status: str | None = None,
     ) -> None:
         if subtype in (SessionActionLogEventSubtype.START,):
             self.ti = "🟢"
@@ -677,19 +675,18 @@ class LogRecordStringTranslationFilter(logging.Filter):
     Notes:
     - The filter is *modifying* the LogRecord. That means that it applies to
       every log handler that will be handling the log message after the translation.
-      Python 3.12 allows for localized translation by having the filter() method
-      return a modified log record, but that is not currently available to us since
-      we must support Python 3.9+.
+      Returning a modified copy instead (possible since Python 3.12) would change
+      what those later handlers see.
     """
 
     formatter = logging.Formatter()
     openjd_worker_log_content = (
         LogContent.EXCEPTION_INFO | LogContent.PROCESS_CONTROL | LogContent.HOST_INFO
     )
-    _session_map: "SessionMap" | None = None
+    _session_map: SessionMap | None = None
 
     @property
-    def session_map(self) -> Optional["SessionMap"]:
+    def session_map(self) -> SessionMap | None:
         if self._session_map is None:
             from .scheduler.scheduler import SessionMap
 

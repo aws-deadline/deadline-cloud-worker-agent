@@ -7,7 +7,7 @@ import sys
 assert sys.platform == "win32"
 from logging import Logger, LoggerAdapter
 from pathlib import Path, PureWindowsPath
-from typing import IO, Optional, Union
+from typing import IO
 import subprocess
 import win32com.shell.shell as shell
 import win32con
@@ -39,7 +39,7 @@ class _WindowsScriptRunner:
         script_path: str,
         # A LoggerAdapter is accepted so the caller can hand over one that types the
         # tailed output lines; see _HostConfigurationOutputLogAdapter.
-        logger: Union[Logger, LoggerAdapter],
+        logger: Logger | LoggerAdapter,
     ):
         """
         working_directory: Process working directory.
@@ -172,7 +172,7 @@ class _WindowsScriptRunner:
             self._logger.info(f"Powershell exited with {return_code}")
             return return_code
 
-    def run_powershell(self, env_vars: Optional[dict[str, Optional[str]]]) -> int:
+    def run_powershell(self, env_vars: dict[str, str | None] | None) -> int:
         """Run powershell with the specified script file
         Args:
             env_vars: Dictionary of environment variables where values can be None

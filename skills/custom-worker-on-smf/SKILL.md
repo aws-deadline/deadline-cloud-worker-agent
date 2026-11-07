@@ -304,14 +304,15 @@ echo "Host has not been rebooted."
 # ls -al /opt/deadline
 # ls -al /opt/deadline/worker
 # ls -al /opt/deadline/worker/lib
-# ls -al /opt/deadline/worker/lib/python3.11
+# ls -al /opt/deadline/worker/lib/python3.14
 # whoami
 
 # Remove the previous worker agent installation
 mv /opt/deadline/worker /opt/deadline/worker-old
 
-# Create a new virtual environment in its place
-python -m venv /opt/deadline/worker
+# Create a new virtual environment in its place. The worker agent requires Python 3.14.
+dnf install -y python3.14
+python3.14 -m venv /opt/deadline/worker
 source /opt/deadline/worker/bin/activate
 
 ###
@@ -452,7 +453,7 @@ Start-Sleep 60
 | Aspect | Linux | Windows |
 |--------|-------|---------|
 | Marker file | `/var/lib/deadline/rebooted` | `C:/rebooted` |
-| Venv recreation | Yes — `mv` old, `python -m venv` new | No — installs into existing pip environment |
+| Venv recreation | Yes — `mv` old, `python3.14 -m venv` new | No — installs into existing pip environment |
 | Feature flags (optional) | systemd env file (`config.conf`) | Windows Registry (`HKLM:\SYSTEM\CurrentControlSet\Services\DeadlineWorker`) |
 | Reboot command | `sudo reboot now` | `Restart-Computer -Force` |
 | Permissions fix | `chmod -R go+rx /opt/deadline/worker` | Not needed |

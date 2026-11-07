@@ -28,26 +28,21 @@ dependencies = [
     # service-served resolvedSymbolTable. This package's tests have been adapted
     # to that contract.
     "openjd-model >= 0.14, < 0.15",
-    # tomli became tomllib in standard library in Python 3.11
-    "tomli == 2.0.* ; python_version<'3.11'",
     "tomlkit >= 0.13,< 0.16",
-    "typing_extensions ~= 4.8",
     "psutil >= 5.9,< 8.0",
-    "pydantic >= 2.10, < 3",
-    "pywin32 == 310; platform_system == 'Windows'",
-    "requests >= 2.32,< 2.35",
+    # pydantic 2.13 is the first release whose pydantic.v1, used by the config models, supports
+    # Python 3.14. pywin32 311 is the first release with Python 3.14 wheels.
+    "pydantic >= 2.13, < 3",
+    "pywin32 == 311; platform_system == 'Windows'",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 description = "The AWS Deadline Cloud worker agent can be used to run a worker in an AWS Deadline Cloud fleet"
 # https://pypi.org/classifiers/
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Operating System :: POSIX :: Linux",
   "Operating System :: Microsoft :: Windows",
   "License :: OSI Approved :: Apache Software License",
@@ -118,7 +113,7 @@ plugins = [
 ]
 
 files = [ "src/**/*.py" ]
-python_version = "3.10"
+python_version = "3.14"
 
 ignore_missing_imports = true
 
@@ -134,25 +129,26 @@ module = [
     "botocore.*"
 ]
 
-# numpy is not used by this package; it arrives transitively (via
-# deadline-cloud-test-fixtures >= 0.18.16) and mypy reaches its stubs through
-# pytest's `approx` implementation. numpy 2.5+ type stubs use PEP 695 `type`
-# statements, which mypy rejects while python_version is pinned below 3.12, so
-# do not follow imports into it. follow_imports_for_stubs is required for
-# follow_imports to apply to .pyi files like numpy/__init__.pyi.
-[[tool.mypy.overrides]]
-module = [ "numpy", "numpy.*" ]
-follow_imports = "skip"
-follow_imports_for_stubs = true
-
 [tool.ruff]
 line-length = 100
+# These do not run on the agent's Python. The E2E tests run on the test runner's, which
+# requirements-e2e.txt holds at 3.10 or later through mypy. The build hook runs inside hatch and
+# the release scripts on the release workflow's Python, either of which can be 3.9.
+per-file-target-version = { "test/e2e/**/*.py" = "py310", "hatch_version_hook.py" = "py39", ".github/scripts/*.py" = "py39" }
 
 [tool.ruff.lint]
+extend-select = ["UP"]
 ignore = [
   "E501",
   "E722",
   "F811",
+  # Not auto-fixable; %-formatting is left to change alongside the code around it.
+  "UP031",
+  # StrEnum changes str() and format() of the members, which callers may rely on.
+  "UP042",
+  # PEP 695 generics are a rewrite of the type parameters, not a syntax upgrade.
+  "UP046",
+  "UP047",
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -1,7 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from typing import Optional
 
 from .._version import version
 
@@ -19,8 +18,8 @@ class SessionActionError(Exception):
 
     action_id: str
     action_log_kind: SessionActionLogKind
-    step_id: Optional[str]
-    task_id: Optional[str]
+    step_id: str | None
+    task_id: str | None
     message: str
 
     def __init__(
@@ -29,8 +28,8 @@ class SessionActionError(Exception):
         action_log_kind: SessionActionLogKind,
         message: str,
         *,
-        step_id: Optional[str] = None,
-        task_id: Optional[str] = None,
+        step_id: str | None = None,
+        task_id: str | None = None,
     ):
         super().__init__()
         self.action_id = action_id
@@ -73,8 +72,8 @@ class JobEntityUnsupportedSchemaError(SessionActionError):
         action_log_kind: SessionActionLogKind,
         schema_version: str,
         *,
-        step_id: Optional[str] = None,
-        task_id: Optional[str] = None,
+        step_id: str | None = None,
+        task_id: str | None = None,
     ):
         self.schema_version = schema_version
         self.message = (

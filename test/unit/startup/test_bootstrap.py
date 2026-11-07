@@ -1,7 +1,8 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 from __future__ import annotations
 
-from typing import Any, Generator, Optional
+from typing import Any
+from collections.abc import Generator
 from unittest.mock import ANY, MagicMock, call, patch
 import stat
 from tempfile import TemporaryDirectory
@@ -74,7 +75,7 @@ def no_shutdown() -> bool:
 
 
 @fixture
-def profile() -> Optional[str]:
+def profile() -> str | None:
     return None
 
 
@@ -110,13 +111,13 @@ def config(
     run_jobs_as_agent_user: bool,
     posix_job_user: str,
     no_shutdown: bool,
-    profile: Optional[str],
+    profile: str | None,
     verbose: bool,
     allow_instance_profile: bool,
     # Specified to avoid any impact from an existing worker agent config file in the development
     # environment
     mock_config_file_not_found: MagicMock,
-) -> Generator[Configuration, None, None]:
+) -> Generator[Configuration]:
     with TemporaryDirectory() as tempdir:
         cli_args = ParsedCommandLineArguments()
         cli_args.farm_id = farm_id
@@ -188,19 +189,19 @@ def worker_info(
 
 
 @fixture
-def mod_logger_mock() -> Generator[MagicMock, None, None]:
+def mod_logger_mock() -> Generator[MagicMock]:
     with patch.object(bootstrap_mod, "_logger") as mod_logger_mock:
         yield mod_logger_mock
 
 
 @fixture
-def get_metadata_mock() -> Generator[MagicMock, None, None]:
+def get_metadata_mock() -> Generator[MagicMock]:
     with patch.object(bootstrap_mod, "_get_metadata") as get_metadata_mock:
         yield get_metadata_mock
 
 
 @fixture(autouse=True)
-def sleep_mock() -> Generator[MagicMock, None, None]:
+def sleep_mock() -> Generator[MagicMock]:
     with patch.object(bootstrap_mod, "sleep") as sleep_mock:
         yield sleep_mock
 
@@ -221,7 +222,7 @@ def test_worker_deregistered_error() -> None:
 @fixture(autouse=True)
 def mock_get_host_properties(
     host_properties: HostProperties,
-) -> Generator[MagicMock, None, None]:
+) -> Generator[MagicMock]:
     with patch.object(
         bootstrap_mod, "_get_host_properties", return_value=host_properties
     ) as mock_get_host_properties:
@@ -311,7 +312,7 @@ class TestWorkerInfo:
         worker_id: str,
         cloudwatch_log_group: str,
         cloudwatch_log_stream: str,
-        cloudwatch_log_stream_sequence_token: Optional[str],
+        cloudwatch_log_stream_sequence_token: str | None,
     ) -> None:
         """Tests that when the Worker persistence file exists, that WorkerInfo.load() returns the
         values loaded from the file."""
@@ -342,12 +343,12 @@ class TestBootstrapWorker:
     """Tests for bootstrap_worker function"""
 
     @fixture
-    def load_or_create_worker_mock(self) -> Generator[MagicMock, None, None]:
+    def load_or_create_worker_mock(self) -> Generator[MagicMock]:
         with patch.object(bootstrap_mod, "_load_or_create_worker") as mock:
             yield mock
 
     @fixture
-    def get_boto3_session_for_fleet_role_mock(self) -> Generator[MagicMock, None, None]:
+    def get_boto3_session_for_fleet_role_mock(self) -> Generator[MagicMock]:
         with patch.object(bootstrap_mod, "_get_boto3_session_for_fleet_role") as mock:
 
             def client_implementation(service: str, config: Any) -> MagicMock:
@@ -361,12 +362,12 @@ class TestBootstrapWorker:
             yield mock
 
     @fixture
-    def start_worker_mock(self) -> Generator[MagicMock, None, None]:
+    def start_worker_mock(self) -> Generator[MagicMock]:
         with patch.object(bootstrap_mod, "_start_worker") as start_worker_mock:
             yield start_worker_mock
 
     @fixture
-    def enforce_no_instance_profile_or_stop_worker_mock(self) -> Generator[MagicMock, None, None]:
+    def enforce_no_instance_profile_or_stop_worker_mock(self) -> Generator[MagicMock]:
         with patch.object(
             bootstrap_mod, "_enforce_no_instance_profile_or_stop_worker"
         ) as enforce_no_instance_profile_mock:
@@ -512,7 +513,7 @@ class TestLoadOrCreateWorker:
     """Tests for _load_or_create_worker()"""
 
     @fixture
-    def worker_persistence_info_mock(self) -> Generator[MagicMock, None, None]:
+    def worker_persistence_info_mock(self) -> Generator[MagicMock]:
         with patch.object(bootstrap_mod, "WorkerPersistenceInfo") as mock:
             yield mock
 
@@ -521,7 +522,7 @@ class TestLoadOrCreateWorker:
         return MagicMock()
 
     @fixture(autouse=True)
-    def get_instance_id_mock(self) -> Generator[MagicMock, None, None]:
+    def get_instance_id_mock(self) -> Generator[MagicMock]:
         with patch.object(bootstrap_mod, "_get_instance_id") as get_instance_id_mock:
             get_instance_id_mock.return_value = INSTANCE_ID
             yield get_instance_id_mock
@@ -540,7 +541,7 @@ class TestLoadOrCreateWorker:
         return deadline_client
 
     @fixture
-    def create_worker_mock(self, worker_id: str) -> Generator[MagicMock, None, None]:
+    def create_worker_mock(self, worker_id: str) -> Generator[MagicMock]:
         with patch.object(bootstrap_mod, "create_worker") as create_worker_mock:
             create_worker_mock.return_value = {"workerId": worker_id}
             yield create_worker_mock
@@ -663,7 +664,7 @@ class TestGetBoto3SessionForFleetRole:
     @fixture
     def worker_boto3_session_cls_mock(
         self,
-    ) -> Generator[MagicMock, None, None]:
+    ) -> Generator[MagicMock]:
         with patch.object(bootstrap_mod, "WorkerBoto3Session") as mock:
             yield mock
 
@@ -768,14 +769,12 @@ class TestStartWorker:
         return MagicMock()
 
     @fixture
-    def update_worker_mock(self) -> Generator[MagicMock, None, None]:
+    def update_worker_mock(self) -> Generator[MagicMock]:
         with patch.object(bootstrap_mod, "update_worker") as mock:
             yield mock
 
     @fixture
-    def mock_get_host_properties(
-        self, host_properties: HostProperties
-    ) -> Generator[MagicMock, None, None]:
+    def mock_get_host_properties(self, host_properties: HostProperties) -> Generator[MagicMock]:
         with patch.object(
             bootstrap_mod, "_get_host_properties", return_value=host_properties
         ) as mock:
@@ -807,8 +806,8 @@ class TestStartWorker:
         config: Configuration,
         worker_id: str,
         has_existing_worker: bool,
-        log_config: Optional[LogConfiguration],
-        host_config: Optional[HostConfiguration],
+        log_config: LogConfiguration | None,
+        host_config: HostConfiguration | None,
         deadline_client: MagicMock,
         update_worker_mock: MagicMock,
         mock_get_host_properties: MagicMock,
@@ -1052,14 +1051,14 @@ class TestEnforceNoInstanceProfile:
 
 class TestEnforceNoInstanceProfileOrStopWorker:
     @fixture(autouse=True)
-    def mock_enforce_no_instance_profile(self) -> Generator[MagicMock, None, None]:
+    def mock_enforce_no_instance_profile(self) -> Generator[MagicMock]:
         with patch.object(
             bootstrap_mod, "_enforce_no_instance_profile"
         ) as mock_enforce_no_instance_profile:
             yield mock_enforce_no_instance_profile
 
     @fixture(autouse=True)
-    def update_worker_mock(self) -> Generator[MagicMock, None, None]:
+    def update_worker_mock(self) -> Generator[MagicMock]:
         with patch.object(bootstrap_mod, "update_worker") as mock:
             yield mock
 

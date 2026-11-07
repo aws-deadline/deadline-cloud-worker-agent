@@ -1,7 +1,8 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from typing import Any, NamedTuple, Sequence, Type
+from typing import Any, NamedTuple
+from collections.abc import Sequence
 
 
 class Field(NamedTuple):
@@ -9,7 +10,7 @@ class Field(NamedTuple):
 
     key: str
     """The JSON object key of the field"""
-    expected_type: Type
+    expected_type: type[Any]
     """The expected runtime type of the field's value"""
     required: bool
     """Whether the field is required to be present"""

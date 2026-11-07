@@ -18,7 +18,7 @@ class CommentNotFoundError(Exception):
     """Raised when trying to comment out a setting that does not exist"""
 
     def __init__(self, key: SingleKey) -> None:
-        super(CommentNotFoundError, self).__init__()
+        super().__init__()
         self.key = key
 
 

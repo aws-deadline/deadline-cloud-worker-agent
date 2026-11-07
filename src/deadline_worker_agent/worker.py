@@ -9,7 +9,7 @@ import sys
 import traceback
 from contextlib import nullcontext
 from concurrent.futures import Executor, Future, ThreadPoolExecutor, wait
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from logging import getLogger
 from threading import Event
 from types import FrameType
@@ -292,7 +292,7 @@ class Worker:
         """
         if isinstance(exception, TimeoutError):
             expiry_time = cast(datetime, exception.args[0])
-            time_remaining = datetime.now(timezone.utc) - expiry_time
+            time_remaining = datetime.now(UTC) - expiry_time
             if time_remaining < timedelta(minutes=0):
                 logger.critical(
                     AwsCredentialsLogEvent(
@@ -442,11 +442,9 @@ class Worker:
                     )
                     return None
                 logger.info(f"Spot {action} happening at {shutdown_time}")
-                # Spot gives the time in UTC with a trailing Z, but Prior to Python 3.11 Python can't handle
-                # the Z so we strip it
-                shutdown_time = datetime.fromisoformat(shutdown_time[:-1])
-                shutdown_time = shutdown_time.replace(tzinfo=timezone.utc)
-                current_time = datetime.now(timezone.utc)
+                # Spot gives the time in UTC with a trailing Z, which fromisoformat parses as UTC.
+                shutdown_time = datetime.fromisoformat(shutdown_time)
+                current_time = datetime.now(UTC)
                 time_delta = shutdown_time - current_time
                 time_delta_seconds = int(time_delta.total_seconds())
                 # Being paranoid. This will always be positive.

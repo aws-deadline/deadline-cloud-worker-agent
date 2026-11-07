@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from logging import Logger, getLogger
 from threading import Event, Thread
-from typing import Any, Dict
+from typing import Any
 
 import os
 import psutil
@@ -126,7 +126,7 @@ class HostMetricsLogger:
                 f"may report zeroed rates. Error: {e}"
             )
 
-    def _get_gpu_metrics(self) -> Dict[str, str]:
+    def _get_gpu_metrics(self) -> dict[str, str]:
         """
         Get GPU metrics using nvidia-smi.
 
