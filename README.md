@@ -29,18 +29,22 @@ User Guide
 
 ## Compatibility
 
-The worker agent requires Python 3.9 or higher and is supported on Linux and Windows.  The platform-specific requirements are listed below:
+The worker agent requires Python 3.14 or higher and is supported on Linux and Windows. The
+platform-specific requirements are listed below:
 
 **Linux:**
 
-*   Amazon Linux 2 and 2023 are recommended and tested
+*   Amazon Linux 2023 is recommended and tested. Its system `python3` is 3.9, so install Python
+    3.14 alongside it with `dnf install python3.14`.
 *   `sudo` must be installed
 
 **Windows:**
 
 *   Windows Server 2022 is recommended and tested
-*   Requires CPython implementation of Python
+*   Requires the CPython implementation of Python, from the [python.org installer][python-windows]
 *   **Python must be installed for all users** (e.g. in `C:\Program Files`)
+
+[python-windows]: https://www.python.org/downloads/windows/
 
 ## Versioning
 
@@ -62,7 +66,7 @@ this, run:
 
 ```sh
 # Create venv
-python -m venv /opt/deadline/worker
+python3.14 -m venv /opt/deadline/worker
 
 # Activate the virtual environment - you can later type "deactivate" to exit the environment
 source /opt/deadline/worker/bin/activate

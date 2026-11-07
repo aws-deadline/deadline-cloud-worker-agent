@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal, TypedDict, Union
+from typing import Any, Literal, NotRequired, TypedDict, Union
 
-from typing_extensions import NotRequired
 
 __all__ = [
     "ManifestProperties",

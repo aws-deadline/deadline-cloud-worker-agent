@@ -15,6 +15,9 @@ from deadline_worker_agent.config import JobsRunAsUserOverride
 from deadline_worker_agent.errors import ServiceShutdown
 import deadline_worker_agent.worker as worker_mod
 
+# The format of the "time" field in the IMDS spot/instance-action response.
+_IMDS_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
 
 @pytest.fixture
 def asset_sync() -> MagicMock:
@@ -453,7 +456,9 @@ class TestEC2MetadataQueries:
         timeout = datetime.now(timezone.utc) + expected_result
         # See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html # noqa: E501
         response_mock.status_code = 200
-        response_mock.text = f'{{ "action": "{action_type}", "time": "{timeout.isoformat()}Z" }}'
+        response_mock.text = (
+            f'{{ "action": "{action_type}", "time": "{timeout.strftime(_IMDS_TIME_FORMAT)}" }}'
+        )
         requests_get.return_value = response_mock
 
         # WHEN
@@ -473,7 +478,7 @@ class TestEC2MetadataQueries:
             # takes to run the test.
             assert abs_delta <= 1
             mock_logger.info.assert_called_with(
-                f"Spot {action_type} happening at {timeout.isoformat()}Z"
+                f"Spot {action_type} happening at {timeout.strftime(_IMDS_TIME_FORMAT)}"
             )
 
     def test_spot_shutdown_in_past(
@@ -486,10 +491,12 @@ class TestEC2MetadataQueries:
         fake_token = "TOKEN_FAKE_VALUE"
         response_mock = MagicMock()
         timeout_delta = timedelta(seconds=-10)
-        timeout = datetime.utcnow() + timeout_delta
+        timeout = datetime.now(timezone.utc) + timeout_delta
         # See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html # noqa: E501
         response_mock.status_code = 200
-        response_mock.text = f'{{ "action": "terminate", "time": "{timeout.isoformat()}Z" }}'
+        response_mock.text = (
+            f'{{ "action": "terminate", "time": "{timeout.strftime(_IMDS_TIME_FORMAT)}" }}'
+        )
         requests_get.return_value = response_mock
 
         # WHEN

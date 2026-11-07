@@ -144,13 +144,6 @@ sw_vers
 uname -m
 id
 
-# The interpreter LocalMacWorker builds the agent venv from. Logged because the
-# TestServiceSelectedFollowsServiceHint xfail is justified by this being 3.9, which caps botocore
-# below the release that models AssignedSession.metadata: if a future macOS ships something newer,
-# the xfail should be removed rather than left to pass silently as an xpass.
-echo "=== agent venv interpreter ==="
-/usr/bin/python3 --version 2>&1 || echo "no /usr/bin/python3"
-
 # Is IMDS reachable here? Nothing has established this, and one skip depends on the answer.
 # test_worker_requires_no_instance_profile asserts a job is never picked up, which holds on EC2
 # because the agent finds an instance profile and refuses to run. It is skipped on macOS on the
@@ -216,6 +209,19 @@ python3 -m venv "${TOOLS_VENV}"
 # preinstalled on the image.
 export PATH="${TOOLS_VENV}/bin:${PATH}"
 echo "hatch: $(command -v hatch) ($(hatch --version 2>&1))"
+
+# The agent requires Python 3.14 and the host's /usr/bin/python3 is older, so LocalMacWorker builds
+# the agent venv from a uv-managed CPython instead (conftest reads WORKER_PYTHON). It lives under
+# /Users/Shared rather than the build directory because the agent runs as its own account, which
+# must be able to reach the interpreter the venv links to. Reinstalling is a no-op when present.
+WORKER_PYTHON_DIR=/Users/Shared/deadline-e2e-python
+"${TOOLS_VENV}/bin/pip" install --upgrade uv
+uv python install 3.14 --no-bin --install-dir "${WORKER_PYTHON_DIR}"
+WORKER_PYTHON="$(UV_PYTHON_INSTALL_DIR="${WORKER_PYTHON_DIR}" uv python find --managed-python 3.14)"
+export WORKER_PYTHON
+chmod -R a+rX "${WORKER_PYTHON_DIR}"
+echo "=== agent venv interpreter ==="
+echo "WORKER_PYTHON=${WORKER_PYTHON} ($("${WORKER_PYTHON}" --version 2>&1))"
 
 # Mirrors e2e.sh rather than shortening to `hatch run e2e:test`. The reusable workflow sets
 # TEST_TYPE=WHEEL, and with WORKER_AGENT_WHL_PATH unset conftest installs the PUBLISHED agent

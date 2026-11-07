@@ -37,10 +37,7 @@ from deadline_worker_agent.installer.win_installer import (
     WorkerAgentDirectories,
 )
 
-try:
-    from tomllib import load as load_toml
-except ModuleNotFoundError:
-    from tomli import load as load_toml
+from tomllib import load as load_toml
 
 
 def test_user_existence():

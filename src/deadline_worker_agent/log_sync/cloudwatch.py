@@ -12,9 +12,8 @@ from logging import Formatter, Handler, Logger, LogRecord
 from threading import Event, Thread
 from time import monotonic, sleep
 from types import TracebackType
-from typing import Any, Deque, Generator, NamedTuple, Type
+from typing import Any, Deque, Generator, NamedTuple, Type, TypedDict
 
-from typing_extensions import TypedDict
 
 from .loggers import logger as _logger
 from ..log_messages import LogRecordStringTranslationFilter

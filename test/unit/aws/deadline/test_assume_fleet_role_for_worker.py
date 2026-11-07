@@ -20,7 +20,7 @@ from deadline_worker_agent.api_models import AssumeFleetRoleForWorkerResponse, A
 def deadline_credentials() -> AwsCredentials:
     return AwsCredentials(
         accessKeyId="accessKeyId",
-        expiration=datetime.utcnow().astimezone(tzutc()) + timedelta(hours=1),
+        expiration=datetime.now(tzutc()) + timedelta(hours=1),
         secretAccessKey="secretAccessKey",
         sessionToken="sessionToken",
     )

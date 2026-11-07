@@ -6,10 +6,7 @@ from typing import Literal
 
 import pytest
 
-try:
-    from tomllib import load as load_toml
-except ModuleNotFoundError:
-    from tomli import load as load_toml  # type: ignore[no-redef]
+from tomllib import load as load_toml
 
 from deadline_worker_agent.config.config_file import ModifiableSetting
 

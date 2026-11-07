@@ -329,7 +329,7 @@ class WorkerScheduler:
             except ServiceShutdown:
                 # Suppress logging
                 raise
-            except (DeadlineRequestError, Exception):
+            except DeadlineRequestError, Exception:
                 logger.exception("Exception in WorkerScheduler", exc_info=True)
                 raise
             finally:
@@ -1423,12 +1423,12 @@ class WorkerScheduler:
                         worker_persistence_dir=self._worker_persistence_dir,
                         region=self._boto_session.region_name,
                     )
-                except (DeadlineRequestWorkerOfflineError, DeadlineRequestUnrecoverableError):
+                except DeadlineRequestWorkerOfflineError, DeadlineRequestUnrecoverableError:
                     # These are terminal errors for the Session. We need to fail it, without attempting,
                     # if we have a terminal error.
                     # The caller will log a message.
                     raise
-                except (DeadlineRequestError, DeadlineRequestInterrupted):
+                except DeadlineRequestError, DeadlineRequestInterrupted:
                     # We treat any non-terminal error as recoverable. We simply run the Session with no AWS Credentials,
                     # but will log to the customer that it's running with no Credentials.
                     return None

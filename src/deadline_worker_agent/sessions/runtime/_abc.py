@@ -55,7 +55,7 @@ def convert_runtime_crashes(method: _F) -> _F:
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return method(*args, **kwargs)
-        except (Exception, KeyboardInterrupt, SystemExit):
+        except Exception, KeyboardInterrupt, SystemExit:
             raise
         except BaseException as e:
             raise SessionRuntimeCrashError(f"session runtime crashed: {type(e).__name__}") from e

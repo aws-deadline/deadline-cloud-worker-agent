@@ -14,10 +14,7 @@ from pydantic.v1 import BaseModel, BaseSettings, Field, ValidationError, root_va
 from tomlkit.container import Container
 from tomlkit.items import Bool, Comment, SingleKey, String, Table, Trivia, Whitespace
 
-try:
-    from tomllib import load as load_toml, TOMLDecodeError
-except ModuleNotFoundError:
-    from tomli import load as load_toml, TOMLDecodeError  # type: ignore[no-redef]
+from tomllib import load as load_toml, TOMLDecodeError
 
 from ..capabilities import Capabilities
 from .._session_runtime_kind import SessionRuntimeKind
@@ -259,7 +256,7 @@ class ConfigFile(BaseModel):
             config_path = cls.get_config_path()
 
         try:
-            # File must be open in binary mode for tomli to ensure the file is utf-8
+            # tomllib requires a binary file so that it can enforce UTF-8
             with config_path.open(mode="rb") as fh:
                 toml_doc = load_toml(fh)
         except TOMLDecodeError as toml_error:

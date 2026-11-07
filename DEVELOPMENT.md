@@ -33,6 +33,9 @@ hatch run fmt
 hatch run all:test
 ```
 
+The package requires Python 3.14. When no Python 3.14 is on your `PATH`, hatch downloads one for
+its environments.
+
 ## Testing the agent with the live service
 
 ### Setup
@@ -114,7 +117,9 @@ are located under `test/e2e` in this repository. To run these tests:
 ./scripts/get_e2e_test_ids_from_cfn.sh --os Linux > .e2e_linux_infra.sh
 ./scripts/get_e2e_test_ids_from_cfn.sh --os Windows > .e2e_windows_infra.sh
 ```
-7. Run the tests:
+7. Run the tests. The workers run the agent on Python 3.14: the Linux worker installs the
+   `python3.14` AL2023 package and the Windows worker installs CPython 3.14.10. On macOS, set
+   `WORKER_PYTHON` to the path of a Python 3.14 interpreter on the host.
 ```
 rm -f dist/*
 hatch build

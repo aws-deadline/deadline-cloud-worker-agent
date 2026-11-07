@@ -228,7 +228,7 @@ class JobEntities:
                     worker_id=self._worker_id,
                     identifiers=[identifier for identifier in batched_identifiers],
                 )
-            except (DeadlineRequestWorkerNotFound, DeadlineRequestUnrecoverableError):
+            except DeadlineRequestWorkerNotFound, DeadlineRequestUnrecoverableError:
                 # Technically, the API log reports this information, but we'll log anyways just to
                 # draw attention to it.
                 logger.error("Errors from BatchGetJobEntity! See API log event for details.")

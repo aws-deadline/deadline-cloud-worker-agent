@@ -90,7 +90,7 @@ class _HostConfigurationOutputLogAdapter(LoggerAdapter):
             )
             try:
                 msg = msg % fmt_args
-            except (TypeError, ValueError, KeyError):
+            except TypeError, ValueError, KeyError:
                 # A malformed template. Leaving the args attached would drop them
                 # silently: process() below wraps any str in an event, and the filter's
                 # BaseLogEvent branch neither applies args nor reports the mismatch, so

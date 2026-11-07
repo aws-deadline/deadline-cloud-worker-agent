@@ -10,10 +10,7 @@ from deadline_worker_agent.capabilities import Capabilities
 from pydantic.v1 import ValidationError, BaseSettings
 import pytest
 
-try:
-    from tomllib import TOMLDecodeError
-except ModuleNotFoundError:
-    from tomli import TOMLDecodeError  # type: ignore[no-redef]
+from tomllib import TOMLDecodeError
 
 from deadline_worker_agent.config.errors import ConfigurationError
 from deadline_worker_agent.config.config_file import (
@@ -934,7 +931,7 @@ class TestConfigFileLoad:
             config_path_fh: MagicMock = config_path_open.return_value
             config_path_fh_ctx: MagicMock = config_path_fh.__enter__.return_value
             error_msg = "an error msg"
-            toml_decode_error = TOMLDecodeError(error_msg)
+            toml_decode_error = TOMLDecodeError(msg=error_msg, doc="", pos=0)
             mock_load_toml.side_effect = toml_decode_error
 
             # THEN
