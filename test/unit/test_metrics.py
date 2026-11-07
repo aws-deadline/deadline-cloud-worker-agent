@@ -6,7 +6,8 @@ from collections import namedtuple
 import logging
 import subprocess
 import threading
-from typing import Any, Dict, Generator
+from typing import Any
+from collections.abc import Generator
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -30,7 +31,7 @@ dioc = namedtuple(
 
 
 @pytest.fixture(autouse=True)
-def mock_psutil_module() -> Generator[MagicMock, None, None]:
+def mock_psutil_module() -> Generator[MagicMock]:
     """Mock the entire psutil module to prevent future errors due to KeyError from psutil.virtual_memory()"""
     with patch.object(metrics_mod, "psutil") as mock:
         yield mock
@@ -322,7 +323,7 @@ class TestHostMetricsLogger:
         assert log_event.metrics["cpu-usage-percent"] == "12.5"
 
     @pytest.fixture
-    def mock_subprocess(self) -> Generator[MagicMock, None, None]:
+    def mock_subprocess(self) -> Generator[MagicMock]:
         with patch.object(metrics_mod, "subprocess") as mock:
             mock.CalledProcessError = subprocess.CalledProcessError
             mock.TimeoutExpired = subprocess.TimeoutExpired
@@ -512,7 +513,7 @@ class TestHostMetricsLogger:
             cpu_percent: int,
             net_io_counters: tuple,
             disk_io_counters: tuple,
-        ) -> Generator[MagicMock, None, None]:
+        ) -> Generator[MagicMock]:
             with patch.object(metrics_mod, "psutil") as mock:
                 mock.virtual_memory.return_value = virtual_memory
                 mock.swap_memory.return_value = swap_memory
@@ -682,7 +683,7 @@ class TestHostMetricsLogger:
             self,
             host_metrics_logger: HostMetricsLogger,
             logger: MagicMock,
-            gpu_metrics: Dict[str, str],
+            gpu_metrics: dict[str, str],
             gpu_available: bool,
         ):
             # GIVEN

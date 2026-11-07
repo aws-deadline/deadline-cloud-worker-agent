@@ -1,7 +1,8 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from socket import AddressFamily
-from typing import Generator, NamedTuple, Optional
+from typing import NamedTuple
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 from pytest import fixture, mark, param
@@ -15,13 +16,13 @@ class MockNetworkAddress(NamedTuple):
 
     address: str
     family: AddressFamily
-    broadcast: Optional[str]
+    broadcast: str | None
     netmask: str
-    ptp: Optional[str]
+    ptp: str | None
 
 
 @fixture
-def mod_logger_mock() -> Generator[MagicMock, None, None]:
+def mod_logger_mock() -> Generator[MagicMock]:
     with patch.object(host_properties_mod, "_logger") as mod_logger_mock:
         yield mod_logger_mock
 
@@ -32,7 +33,7 @@ def hostname() -> str:
 
 
 @fixture(autouse=True)
-def mock_socket_gethostname(hostname: str) -> Generator[MagicMock, None, None]:
+def mock_socket_gethostname(hostname: str) -> Generator[MagicMock]:
     with patch.object(
         host_properties_mod.socket, "gethostname", return_value=hostname
     ) as mock_socket_gethostname:
@@ -140,7 +141,7 @@ class TestGetIpAddresses:
     def mock_psutil_net_if_addrs(
         self,
         net_if_addrs: dict[str, list[DetectedAddress]],
-    ) -> Generator[MagicMock, None, None]:
+    ) -> Generator[MagicMock]:
         with patch.object(host_properties_mod.psutil, "net_if_addrs") as mock_psutil_net_if_addrs:
             return_value: dict[str, list[MockNetworkAddress]] = {}
             for nic, addresses in net_if_addrs.items():

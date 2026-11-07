@@ -1,10 +1,10 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 # Built-in
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from threading import Event
-from typing import Optional, Generator
+from collections.abc import Generator
 from unittest.mock import ANY, MagicMock, patch
 import os
 import stat
@@ -28,25 +28,25 @@ import deadline_worker_agent.aws_credentials.queue_boto3_session as queue_boto3_
 
 
 @pytest.fixture(autouse=True)
-def file_cache_cls_mock() -> Generator[MagicMock, None, None]:
+def file_cache_cls_mock() -> Generator[MagicMock]:
     with patch.object(queue_boto3_session_mod, "JSONFileCache") as mock:
         yield mock
 
 
 @pytest.fixture(autouse=True)
-def temporary_credentials_cls_mock() -> Generator[MagicMock, None, None]:
+def temporary_credentials_cls_mock() -> Generator[MagicMock]:
     with patch.object(queue_boto3_session_mod, "TemporaryCredentials") as mock:
         yield mock
 
 
 @pytest.fixture(autouse=True)
-def aws_config_cls_mock() -> Generator[MagicMock, None, None]:
+def aws_config_cls_mock() -> Generator[MagicMock]:
     with patch.object(queue_boto3_session_mod, "AWSConfig") as mock:
         yield mock
 
 
 @pytest.fixture(autouse=True)
-def aws_credentials_cls_mock() -> Generator[MagicMock, None, None]:
+def aws_credentials_cls_mock() -> Generator[MagicMock]:
     with patch.object(queue_boto3_session_mod, "AWSCredentials") as mock:
         yield mock
 
@@ -57,7 +57,7 @@ def deadline_client() -> MagicMock:
 
 
 @pytest.fixture
-def os_user() -> Optional[SessionUser]:
+def os_user() -> SessionUser | None:
     if os.name == "posix":
         return PosixSessionUser(user="user", group="group")
     else:
@@ -77,7 +77,7 @@ class TestInit:
         fleet_id: str,
         worker_id: str,
         queue_id: str,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         region: str,
     ) -> None:
         # Just testing basic construction.
@@ -129,7 +129,7 @@ class TestInit:
         fleet_id: str,
         worker_id: str,
         queue_id: str,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         region: str,
     ) -> None:
         # Make sure that we cleanup when the refresh_credentials() method raises an exception
@@ -262,7 +262,7 @@ SAMPLE_DEADLINE_CREDENTIALS = {
     "accessKeyId": "access-key",
     "secretAccessKey": "secret-key",
     "sessionToken": "token",
-    "expiration": datetime.now(timezone.utc) + timedelta(hours=1),
+    "expiration": datetime.now(UTC) + timedelta(hours=1),
 }
 SAMPLE_ASSUME_ROLE_RESPONSE = {"credentials": SAMPLE_DEADLINE_CREDENTIALS}
 
@@ -497,7 +497,7 @@ class TestCreateCredentialsDirectory:
         fleet_id: str,
         worker_id: str,
         queue_id: str,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         region: str,
     ) -> None:
         # Test that the directory is created securely.
@@ -673,7 +673,7 @@ class TestInstallCredentialProcess:
         fleet_id: str,
         worker_id: str,
         queue_id: str,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         aws_config_cls_mock: MagicMock,
         aws_credentials_cls_mock: MagicMock,
         region: str,
@@ -773,7 +773,7 @@ class TestUninstallCredentialProcess:
         fleet_id: str,
         worker_id: str,
         queue_id: str,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         aws_config_cls_mock: MagicMock,
         aws_credentials_cls_mock: MagicMock,
         region: str,

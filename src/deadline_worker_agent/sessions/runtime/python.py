@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from openjd.model import RevisionExtensions, SpecificationRevision
 from openjd.sessions import Session as OpenJDSession
@@ -55,7 +55,7 @@ def _extract_job_name(json_str: str | None) -> str | None:
         return None
 
 
-def _parse_resolved_symtab(json_str: str | None) -> Optional["SerializedSymbolTable"]:
+def _parse_resolved_symtab(json_str: str | None) -> SerializedSymbolTable | None:
     """Parse a resolved symbol table JSON string into a SerializedSymbolTable.
 
     Returns None only when the input is None -- the common, benign case of the
@@ -136,8 +136,8 @@ class PythonSessionRuntime(SessionRuntime):
         self,
         *,
         environment: EnvironmentModel,
-        identifier: Optional[EnvironmentIdentifier] = None,
-        os_env_vars: Optional[dict[str, str]] = None,
+        identifier: EnvironmentIdentifier | None = None,
+        os_env_vars: dict[str, str] | None = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
         step_let_declarations: list[str] | None = None,
@@ -163,7 +163,7 @@ class PythonSessionRuntime(SessionRuntime):
         self,
         *,
         identifier: EnvironmentIdentifier,
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         keep_session_running: bool = False,
         resolved_symbol_table_json: str | None = None,
     ) -> None:
@@ -203,7 +203,7 @@ class PythonSessionRuntime(SessionRuntime):
         *,
         step_script: StepScriptModel,
         task_parameter_values: dict[str, Any],
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
         resolved_symbol_table_json: str | None = None,
@@ -226,7 +226,7 @@ class PythonSessionRuntime(SessionRuntime):
         *,
         step_script: StepScriptModel,
         task_parameter_values: dict[str, Any],
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
     ) -> None:
@@ -256,7 +256,7 @@ class PythonSessionRuntime(SessionRuntime):
     def cancel_action(
         self,
         *,
-        time_limit: Optional[timedelta] = None,
+        time_limit: timedelta | None = None,
         mark_action_failed: bool = False,
     ) -> None:
         self._session.cancel_action(time_limit=time_limit, mark_action_failed=mark_action_failed)
@@ -269,5 +269,5 @@ class PythonSessionRuntime(SessionRuntime):
         return self._session.working_directory
 
     @property
-    def action_status(self) -> Optional[ActionStatus]:
+    def action_status(self) -> ActionStatus | None:
         return self._session.action_status

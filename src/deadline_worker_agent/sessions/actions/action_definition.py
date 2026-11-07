@@ -3,7 +3,6 @@
 from __future__ import annotations
 from concurrent.futures import Executor
 from datetime import timedelta
-from typing import Optional
 
 from abc import ABC, abstractmethod
 
@@ -23,10 +22,10 @@ class SessionActionDefinition(ABC):
 
     _id: str
     _action_log_kind: SessionActionLogKind
-    _step_id: Optional[str]
+    _step_id: str | None
 
     def __init__(
-        self, *, id: str, action_log_kind: SessionActionLogKind, step_id: Optional[str] = None
+        self, *, id: str, action_log_kind: SessionActionLogKind, step_id: str | None = None
     ) -> None:
         self._id = id
         self._action_log_kind = action_log_kind
@@ -42,7 +41,7 @@ class SessionActionDefinition(ABC):
         return self._action_log_kind
 
     @property
-    def step_id(self) -> Optional[str]:
+    def step_id(self) -> str | None:
         return self._step_id
 
     @abstractmethod

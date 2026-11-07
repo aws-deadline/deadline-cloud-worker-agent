@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from logging import getLogger
 from threading import Event
-from typing import Any, Callable, Iterable, Generic, Literal, TypeVar, TYPE_CHECKING, cast
+from typing import Any, Generic, Literal, TypeVar, TYPE_CHECKING, cast
+from collections.abc import Callable, Iterable
 
 from openjd.model import UnsupportedSchema
 from openjd.sessions import ActionState, ActionStatus
@@ -232,7 +233,7 @@ class SessionActionQueue:
         action.cancel.set()
 
         # We provide start/end timestamps iff cancel_outcome is FAILED
-        timestamp = datetime.now(tz=timezone.utc) if cancel_outcome == "FAILED" else None
+        timestamp = datetime.now(tz=UTC) if cancel_outcome == "FAILED" else None
 
         self._action_update_callback(
             SessionActionStatus(

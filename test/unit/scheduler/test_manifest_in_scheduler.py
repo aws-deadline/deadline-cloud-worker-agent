@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from deadline_worker_agent.scheduler.scheduler import WorkerScheduler
 from deadline_worker_agent.scheduler.session_action_status import SessionActionStatus
@@ -22,7 +22,7 @@ class TestSchedulerManifests:
 
     def test_updated_action_to_boto_includes_manifests(self, scheduler):
         # Arrange
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         action_status = ActionStatus(state=ActionState.SUCCESS)
         manifests = [
             ManifestInfo(
@@ -54,7 +54,7 @@ class TestSchedulerManifests:
 
     def test_updated_action_to_boto_excludes_manifests_when_none(self, scheduler):
         # Arrange
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         action_status = ActionStatus(state=ActionState.SUCCESS)
 
         action_updated = SessionActionStatus(
@@ -74,7 +74,7 @@ class TestSchedulerManifests:
 
     def test_updated_action_to_boto_handles_empty_manifests_list(self, scheduler):
         # Arrange
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         action_status = ActionStatus(state=ActionState.SUCCESS)
 
         action_updated = SessionActionStatus(

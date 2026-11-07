@@ -44,9 +44,7 @@ class EnterEnvironmentAction(OpenjdAction):
         step_name: str | None = None,
         step_let_declarations: list[str] | None = None,
     ) -> None:
-        super(EnterEnvironmentAction, self).__init__(
-            id=id, action_log_kind=SessionActionLogKind.ENV_ENTER
-        )
+        super().__init__(id=id, action_log_kind=SessionActionLogKind.ENV_ENTER)
         self._job_env_id = job_env_id
         self._details = details
         self._step_name = step_name

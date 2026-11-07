@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal, NotRequired, TypedDict, Union
+from typing import Any, Literal, NotRequired, TypedDict
 
 
 __all__ = [
@@ -461,24 +461,16 @@ class JobAttachmentDetailsError(TypedDict):
     jobAttachmentDetails: JobAttachmentDetailsErrorFields
 
 
-EntityIdentifier = Union[
-    EnvironmentDetailsIdentifier,
-    JobDetailsIdentifier,
-    StepDetailsIdentifier,
-    JobAttachmentDetailsIdentifier,
-]
-EntityDetails = Union[
-    EnvironmentDetails,
-    JobAttachmentDetails,
-    JobDetails,
-    StepDetails,
-]
-EntityError = Union[
-    EnvironmentDetailsError,
-    JobAttachmentDetailsError,
-    JobDetailsError,
-    StepDetailsError,
-]
+EntityIdentifier = (
+    EnvironmentDetailsIdentifier
+    | JobDetailsIdentifier
+    | StepDetailsIdentifier
+    | JobAttachmentDetailsIdentifier
+)
+EntityDetails = EnvironmentDetails | JobAttachmentDetails | JobDetails | StepDetails
+EntityError = (
+    EnvironmentDetailsError | JobAttachmentDetailsError | JobDetailsError | StepDetailsError
+)
 
 
 class BatchGetJobEntityResponse(TypedDict):

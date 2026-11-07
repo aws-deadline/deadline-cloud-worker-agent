@@ -22,7 +22,7 @@ def test(
             value=value_to_set,
         )
     ]
-    with open(output_path, "r") as f:
+    with open(output_path) as f:
         expected_output = f.read()
     shutil.copyfile(input_path, worker_config_path)
 

@@ -10,7 +10,7 @@ import json
 
 from pathlib import Path
 from logging import LoggerAdapter
-from typing import Any, TYPE_CHECKING, Optional
+from typing import Any, TYPE_CHECKING
 from dataclasses import asdict
 
 from deadline.job_attachments.asset_manifests import BaseAssetManifest
@@ -71,19 +71,19 @@ class AttachmentDownloadAction(OpenjdAction):
         The unique action identifier
     """
 
-    _job_attachment_details: Optional[JobAttachmentDetails]
-    _step_details: Optional[StepDetails]
-    _step_script: Optional[StepScript_2023_09]
+    _job_attachment_details: JobAttachmentDetails | None
+    _step_details: StepDetails | None
+    _step_script: StepScript_2023_09 | None
 
     def __init__(
         self,
         *,
         id: str,
         session_id: str,
-        job_attachment_details: Optional[JobAttachmentDetails] = None,
-        step_details: Optional[StepDetails] = None,
+        job_attachment_details: JobAttachmentDetails | None = None,
+        step_details: StepDetails | None = None,
     ) -> None:
-        super(AttachmentDownloadAction, self).__init__(
+        super().__init__(
             id=id,
             action_log_kind=(
                 SessionActionLogKind.JA_SYNC_INPUT
@@ -380,7 +380,7 @@ class AttachmentDownloadAction(OpenjdAction):
         merged_manifests_by_root: dict[str, BaseAssetManifest],
         s3_settings: JobAttachmentS3Settings,
     ) -> bool:
-        fs_permission_settings: Optional[FileSystemPermissionSettings] = None
+        fs_permission_settings: FileSystemPermissionSettings | None = None
         if session._os_user is not None:
             if os.name == "posix":
                 if not isinstance(session._os_user, PosixSessionUser):

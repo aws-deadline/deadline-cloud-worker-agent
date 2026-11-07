@@ -1,8 +1,8 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from typing import Optional, Generator
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, UTC
 
 import pytest
 
@@ -20,7 +20,7 @@ def no_shutdown() -> bool:
 
 
 @pytest.fixture
-def profile() -> Optional[str]:
+def profile() -> str | None:
     return None
 
 
@@ -56,14 +56,14 @@ def config(
     run_jobs_as_agent_user: bool,
     posix_job_user: str,
     no_shutdown: bool,
-    profile: Optional[str],
+    profile: str | None,
     verbose: bool,
     worker_persistence_dir: MagicMock,
     worker_credentials_dir: MagicMock,
     # Specified to avoid any impact from an existing worker agent config file in the development
     # environment
     mock_config_file_not_found: MagicMock,
-) -> Generator[Configuration, None, None]:
+) -> Generator[Configuration]:
     cli_args = ParsedCommandLineArguments()
     cli_args.farm_id = farm_id
     cli_args.fleet_id = fleet_id
@@ -88,13 +88,13 @@ def bootstrap_session() -> MagicMock:
 
 
 @pytest.fixture
-def file_cache_cls_mock() -> Generator[MagicMock, None, None]:
+def file_cache_cls_mock() -> Generator[MagicMock]:
     with patch.object(worker_boto3_session_mod, "JSONFileCache") as mock:
         yield mock
 
 
 @pytest.fixture
-def temporary_credentials_cls_mock() -> Generator[MagicMock, None, None]:
+def temporary_credentials_cls_mock() -> Generator[MagicMock]:
     with patch.object(worker_boto3_session_mod, "TemporaryCredentials") as mock:
         yield mock
 
@@ -164,7 +164,7 @@ SAMPLE_DEADLINE_CREDENTIALS = {
     "accessKeyId": "access-key",
     "secretAccessKey": "secret-key",
     "sessionToken": "token",
-    "expiration": datetime.now(timezone.utc) + timedelta(hours=1),
+    "expiration": datetime.now(UTC) + timedelta(hours=1),
 }
 SAMPLE_ASSUME_ROLE_RESPONSE = {"credentials": SAMPLE_DEADLINE_CREDENTIALS}
 

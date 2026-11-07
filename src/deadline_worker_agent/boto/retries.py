@@ -3,7 +3,7 @@
 from __future__ import annotations
 import math
 import random
-from typing import Callable
+from collections.abc import Callable
 
 from botocore.retries.standard import ExponentialBackoff
 
@@ -27,7 +27,7 @@ class NoOverflowExponentialBackoff(ExponentialBackoff):
         max_backoff: float = 20,
         random_between: Callable[[float, float], float] = random.uniform,
     ) -> None:
-        super(NoOverflowExponentialBackoff, self).__init__(
+        super().__init__(
             max_backoff=max_backoff,
             random=self._unit_random,
         )

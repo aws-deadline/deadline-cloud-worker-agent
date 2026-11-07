@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
-from datetime import timedelta, datetime, timezone
+from datetime import timedelta, datetime, UTC
 
 from deadline_worker_agent.aws_credentials.boto3_sessions import SettableCredentials
 from deadline_worker_agent.aws_credentials.credentials_refresher import AwsCredentialsRefresher
@@ -52,7 +52,7 @@ class TestAwsCredentialRefresherInit:
             failure_callback=callback,
         )
         credentials = SettableCredentials()
-        now_start = datetime.now(timezone.utc)
+        now_start = datetime.now(UTC)
         credentials.expiry = now_start + timedelta(minutes=10)
         session.get_credentials.return_value = credentials
 
@@ -83,7 +83,7 @@ class TestAwsCredentialRefresherInit:
             session=session,
             failure_callback=callback,
         )
-        time_now = datetime.now(timezone.utc)
+        time_now = datetime.now(UTC)
         mock_timer_initial = MagicMock()
         refresher._timer = mock_timer_initial
 
@@ -148,7 +148,7 @@ class TestAwsCredentialRefresherInit:
         session = MagicMock()
         callback = MagicMock()
         resource = dict(queue_id="queue-1234")
-        time_now = datetime.now(timezone.utc)
+        time_now = datetime.now(UTC)
         time_remaining = timedelta(minutes=60)
 
         with (
@@ -179,7 +179,7 @@ class TestAwsCredentialRefresherInit:
         session = MagicMock()
         callback = MagicMock()
         resource = dict(queue_id="queue-1234")
-        time_now = datetime.now(timezone.utc)
+        time_now = datetime.now(UTC)
         time_remaining = timedelta(minutes=5)  # Less than 10mins => mandatory timeout
         credentials = SettableCredentials()
         credentials.expiry = time_now + time_remaining
@@ -227,7 +227,7 @@ class TestAwsCredentialRefresherInit:
         session = MagicMock()
         callback = MagicMock()
         resource = dict(queue_id="queue-1234")
-        time_now = datetime.now(timezone.utc)
+        time_now = datetime.now(UTC)
         time_remaining = timedelta(minutes=60)
 
         with (
@@ -274,7 +274,7 @@ class TestAwsCredentialRefresherInit:
         session = MagicMock()
         callback = MagicMock()
         resource = dict(queue_id="queue-1234")
-        time_now = datetime.now(timezone.utc)
+        time_now = datetime.now(UTC)
         time_remaining = timedelta(minutes=60)
 
         with (

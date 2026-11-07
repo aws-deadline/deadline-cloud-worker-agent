@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from typing import Generator
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
@@ -35,7 +35,7 @@ class TestSessionUserCleanupManager:
     def user_session_map_lock_mock(
         self,
         manager: SessionUserCleanupManager,
-    ) -> Generator[MagicMock, None, None]:
+    ) -> Generator[MagicMock]:
         with patch.object(manager, "_user_session_map_lock") as mock:
             yield mock
 
@@ -133,7 +133,7 @@ class TestSessionUserCleanupManager:
 
     class TestCleanupSessionUser:
         @pytest.fixture
-        def cleanup_session_user_processes_mock(self) -> Generator[MagicMock, None, None]:
+        def cleanup_session_user_processes_mock(self) -> Generator[MagicMock]:
             with patch.object(SessionUserCleanupManager, "cleanup_session_user_processes") as mock:
                 yield mock
 
@@ -177,7 +177,7 @@ class TestSessionUserCleanupManager:
         def subprocess_check_output_mock(
             self,
             agent_user: SessionUser,
-        ) -> Generator[MagicMock, None, None]:
+        ) -> Generator[MagicMock]:
             with patch.object(
                 session_cleanup_mod.subprocess,
                 "check_output",
@@ -186,7 +186,7 @@ class TestSessionUserCleanupManager:
                 yield mock
 
         @pytest.fixture(autouse=True)
-        def subprocess_run_mock(self) -> Generator[MagicMock, None, None]:
+        def subprocess_run_mock(self) -> Generator[MagicMock]:
             with patch.object(session_cleanup_mod.subprocess, "run") as mock:
                 yield mock
 

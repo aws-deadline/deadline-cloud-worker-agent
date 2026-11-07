@@ -3,7 +3,7 @@
 import os
 import pytest
 from unittest.mock import patch, MagicMock
-from typing import Generator
+from collections.abc import Generator
 
 import deadline_worker_agent.sessions.actions.scripts.attachment_upload as attachment_upload_mod
 from deadline_worker_agent.sessions.actions.scripts.attachment_upload import upload_output_assets
@@ -11,19 +11,19 @@ from deadline_worker_agent.sessions.attachment_models import WorkerManifestPrope
 
 
 @pytest.fixture(autouse=True)
-def mock_record_attachment_upload_fail_telemetry_event() -> Generator[MagicMock, None, None]:
+def mock_record_attachment_upload_fail_telemetry_event() -> Generator[MagicMock]:
     with patch.object(attachment_upload_mod, "record_attachment_upload_fail_telemetry_event") as m:
         yield m
 
 
 @pytest.fixture(autouse=True)
-def mock_record_attachment_upload_telemetry_event() -> Generator[MagicMock, None, None]:
+def mock_record_attachment_upload_telemetry_event() -> Generator[MagicMock]:
     with patch.object(attachment_upload_mod, "record_attachment_upload_telemetry_event") as m:
         yield m
 
 
 @pytest.fixture(autouse=True)
-def mock_record_attachment_upload_latencies_telemetry_event() -> Generator[MagicMock, None, None]:
+def mock_record_attachment_upload_latencies_telemetry_event() -> Generator[MagicMock]:
     with patch.object(
         attachment_upload_mod, "record_attachment_upload_latencies_telemetry_event"
     ) as m:
@@ -31,7 +31,7 @@ def mock_record_attachment_upload_latencies_telemetry_event() -> Generator[Magic
 
 
 @pytest.fixture(autouse=True)
-def mock_record_success_fail_telemetry_event() -> Generator[MagicMock, None, None]:
+def mock_record_success_fail_telemetry_event() -> Generator[MagicMock]:
     with patch.object(attachment_upload_mod, "record_success_fail_telemetry_event") as m:
         yield m
 

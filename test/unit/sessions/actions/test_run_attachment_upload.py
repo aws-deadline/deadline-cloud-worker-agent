@@ -5,7 +5,8 @@ from pathlib import Path
 import os
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING
+from collections.abc import Generator
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -59,7 +60,7 @@ def diff_dir(session_dir: str):
 
 
 @pytest.fixture
-def mock_runtime(session_dir: str) -> Generator[MagicMock, None, None]:
+def mock_runtime(session_dir: str) -> Generator[MagicMock]:
     """Patches create_session_runtime and yields a runtime mock with working_directory set."""
     runtime = MagicMock()
     runtime.working_directory = session_dir

@@ -6,7 +6,8 @@ from abc import ABC, abstractmethod
 from datetime import timedelta
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
+from collections.abc import Callable
 
 if TYPE_CHECKING:
     from openjd.sessions import (
@@ -74,8 +75,8 @@ class SessionRuntime(ABC):
         self,
         *,
         environment: EnvironmentModel,
-        identifier: Optional[EnvironmentIdentifier] = None,
-        os_env_vars: Optional[dict[str, str]] = None,
+        identifier: EnvironmentIdentifier | None = None,
+        os_env_vars: dict[str, str] | None = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
         step_let_declarations: list[str] | None = None,
@@ -95,7 +96,7 @@ class SessionRuntime(ABC):
         self,
         *,
         identifier: EnvironmentIdentifier,
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         keep_session_running: bool = False,
         resolved_symbol_table_json: str | None = None,
     ) -> None:
@@ -108,7 +109,7 @@ class SessionRuntime(ABC):
         *,
         step_script: StepScriptModel,
         task_parameter_values: dict[str, Any],
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
         resolved_symbol_table_json: str | None = None,
@@ -128,7 +129,7 @@ class SessionRuntime(ABC):
         *,
         step_script: StepScriptModel,
         task_parameter_values: dict[str, Any],
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
     ) -> None:
@@ -148,7 +149,7 @@ class SessionRuntime(ABC):
     def cancel_action(
         self,
         *,
-        time_limit: Optional[timedelta] = None,
+        time_limit: timedelta | None = None,
         mark_action_failed: bool = False,
     ) -> None:
         """Cancel the currently running action (env enter/exit, run_task, etc.)."""
@@ -167,6 +168,6 @@ class SessionRuntime(ABC):
 
     @property
     @abstractmethod
-    def action_status(self) -> Optional[ActionStatus]:
+    def action_status(self) -> ActionStatus | None:
         """Status of the most recent action; ``None`` if no action has run yet."""
         ...

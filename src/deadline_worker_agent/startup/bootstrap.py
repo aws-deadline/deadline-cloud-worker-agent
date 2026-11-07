@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict, fields, field
 from time import sleep
-from typing import Any, Dict, Optional, Tuple, cast
+from typing import Any, cast
 import json
 import logging as _logging
 import stat
@@ -129,7 +129,7 @@ class WorkerPersistenceInfo:
     host_configuration_succeeded: bool | None = field(default=None)
 
     @classmethod
-    def load(cls, *, config: Configuration) -> Optional[WorkerPersistenceInfo]:
+    def load(cls, *, config: Configuration) -> WorkerPersistenceInfo | None:
         """Load the Worker Bootstrap from the Worker Agent state persistence file"""
         if not config.worker_state_file.is_file():
             return None
@@ -157,7 +157,7 @@ class WorkerPersistenceInfo:
                 )
             )
 
-        return cls(**cast(Dict[str, Any], selected_data))
+        return cls(**cast(dict[str, Any], selected_data))
 
     def save(self, *, config: Configuration) -> None:
         """Save the Worker Bootstrap to the Worker Agent state persistence file"""
@@ -210,10 +210,10 @@ class WorkerBootstrap:
     session: WorkerBoto3Session
     """A boto3 session with Worker credentials"""
 
-    log_config: Optional[WorkerLogConfig] = None
+    log_config: WorkerLogConfig | None = None
     """The log configuration for the Worker"""
 
-    host_config: Optional[WorkerHostConfiguration] = None
+    host_config: WorkerHostConfiguration | None = None
     """The host configuration for the Worker"""
 
 
@@ -307,7 +307,7 @@ def _load_or_create_worker(
     """
     instance_id = _get_instance_id()
 
-    worker_info: Optional[WorkerPersistenceInfo] = None
+    worker_info: WorkerPersistenceInfo | None = None
     has_existing_worker = False
     if use_existing_worker:
         worker_info = WorkerPersistenceInfo.load(config=config)
@@ -474,7 +474,7 @@ def _start_worker(
     config: Configuration,
     worker_id: str,
     has_existing_worker: bool,
-) -> Tuple[Optional[WorkerLogConfig], Optional[WorkerHostConfiguration]]:
+) -> tuple[WorkerLogConfig | None, WorkerHostConfiguration | None]:
     """Updates the Worker in the service to the STARTED state.
 
     Returns:

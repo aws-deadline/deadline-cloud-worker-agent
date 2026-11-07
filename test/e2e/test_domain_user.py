@@ -15,7 +15,7 @@ import pytest
 import os
 import time
 import logging
-from typing import Generator
+from collections.abc import Generator
 
 from e2e.conftest import DeadlineResources
 from e2e.utils import (

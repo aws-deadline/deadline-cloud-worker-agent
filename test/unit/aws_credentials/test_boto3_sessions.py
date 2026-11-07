@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, UTC
 from unittest.mock import MagicMock
 from deadline_worker_agent.aws_credentials.boto3_sessions import (
     BaseBoto3Session,
@@ -46,7 +46,7 @@ class TestSettableCredentials:
         creds = SettableCredentials()
 
         # THEN
-        assert creds._expiry < datetime.now(timezone.utc)
+        assert creds._expiry < datetime.now(UTC)
         assert creds._lock is not None
 
     def test_set_credentials(self) -> None:
@@ -54,7 +54,7 @@ class TestSettableCredentials:
         # getters get the same credentials back.
 
         # GIVEN
-        expiry = datetime.now(timezone.utc) + timedelta(minutes=60)
+        expiry = datetime.now(UTC) + timedelta(minutes=60)
         given: AwsCredentials = {
             "accessKeyId": "access-key",
             "secretAccessKey": "secret-key",

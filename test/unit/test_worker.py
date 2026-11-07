@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from threading import Event
-from typing import Generator
+from collections.abc import Generator
 from unittest.mock import MagicMock, call, patch
 from pathlib import Path
 
@@ -35,7 +35,7 @@ def worker_logs_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def mock_scheduler_cls() -> Generator[MagicMock, None, None]:
+def mock_scheduler_cls() -> Generator[MagicMock]:
     with patch.object(worker_mod, "WorkerScheduler") as mock_scheduler_cls:
         yield mock_scheduler_cls
 
@@ -60,7 +60,7 @@ def worker(
     # This is unused, but declaring it as a dependency fixture ensures we mock the scheduler class
     # before we instantiate the Worker instance within this fixture body
     mock_scheduler_cls: MagicMock,
-) -> Generator[Worker, None, None]:
+) -> Generator[Worker]:
     with patch.object(worker_mod, "HostMetricsLogger"):
         yield Worker(
             farm_id=farm_id,
@@ -80,28 +80,28 @@ def worker(
 
 
 @pytest.fixture
-def mock_logger() -> Generator[MagicMock, None, None]:
+def mock_logger() -> Generator[MagicMock]:
     """Mocks the logger of the deadline_worker_agent.worker module"""
     with patch.object(worker_mod, "logger", spec=True) as mock_logger:
         yield mock_logger
 
 
 @pytest.fixture(autouse=True)
-def requests_put() -> Generator[MagicMock, None, None]:
+def requests_put() -> Generator[MagicMock]:
     """Mock requests.put()"""
     with patch.object(worker_mod.requests, "put") as mock:
         yield mock
 
 
 @pytest.fixture(autouse=True)
-def requests_get() -> Generator[MagicMock, None, None]:
+def requests_get() -> Generator[MagicMock]:
     """Mock requests.get()"""
     with patch.object(worker_mod.requests, "get") as mock:
         yield mock
 
 
 @pytest.fixture(autouse=True)
-def mock_signal() -> Generator[MagicMock, None, None]:
+def mock_signal() -> Generator[MagicMock]:
     """Mock signal import in the module"""
     with patch.object(worker_mod.signal, "signal") as mock_signal:
         yield mock_signal
@@ -118,7 +118,7 @@ def test_monitor_rate() -> None:
 
 
 @pytest.fixture(autouse=True)
-def mock_thread_pool_executor_cls() -> Generator[MagicMock, None, None]:
+def mock_thread_pool_executor_cls() -> Generator[MagicMock]:
     """Mocks the ThreadPoolExecutor class in the worker module"""
     with patch.object(worker_mod, "ThreadPoolExecutor") as mock_thread_pool_executor_cls:
         yield mock_thread_pool_executor_cls
@@ -222,7 +222,7 @@ class TestMonitorEc2Shutdown:
         self,
         worker: Worker,
         is_asg_terminated: bool,
-    ) -> Generator[MagicMock, None, None]:
+    ) -> Generator[MagicMock]:
         """Mocks the Worker._is_asg_terminated() method"""
         with patch.object(
             worker, "_is_asg_terminated", return_value=is_asg_terminated
@@ -453,7 +453,7 @@ class TestEC2MetadataQueries:
         fake_token = "TOKEN_FAKE_VALUE"
         expected_result = timedelta(seconds=30)
         response_mock = MagicMock()
-        timeout = datetime.now(timezone.utc) + expected_result
+        timeout = datetime.now(UTC) + expected_result
         # See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html # noqa: E501
         response_mock.status_code = 200
         response_mock.text = (
@@ -491,7 +491,7 @@ class TestEC2MetadataQueries:
         fake_token = "TOKEN_FAKE_VALUE"
         response_mock = MagicMock()
         timeout_delta = timedelta(seconds=-10)
-        timeout = datetime.now(timezone.utc) + timeout_delta
+        timeout = datetime.now(UTC) + timeout_delta
         # See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html # noqa: E501
         response_mock.status_code = 200
         response_mock.text = (

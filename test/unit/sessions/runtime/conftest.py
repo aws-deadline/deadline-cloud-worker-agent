@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
@@ -38,7 +38,7 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             *,
             environment: Any = None,
             identifier: Any = None,
-            os_env_vars: Optional[dict[str, str]] = None,
+            os_env_vars: dict[str, str] | None = None,
             resolved_symbol_table_json: str | None = None,
             step_name: str | None = None,
             step_let_declarations: list[str] | None = None,
@@ -49,7 +49,7 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             self,
             *,
             identifier: Any = None,
-            os_env_vars: Optional[dict[str, str]] = None,
+            os_env_vars: dict[str, str] | None = None,
             keep_session_running: bool = False,
             resolved_symbol_table_json: str | None = None,
         ) -> None:
@@ -60,7 +60,7 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             *,
             step_script: Any = None,
             task_parameter_values: dict[str, Any] | None = None,
-            os_env_vars: Optional[dict[str, str]] = None,
+            os_env_vars: dict[str, str] | None = None,
             log_task_banner: bool = True,
             step_name: str | None = None,
             resolved_symbol_table_json: str | None = None,
@@ -72,7 +72,7 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
             *,
             step_script: Any = None,
             task_parameter_values: dict[str, Any] | None = None,
-            os_env_vars: Optional[dict[str, str]] = None,
+            os_env_vars: dict[str, str] | None = None,
             log_task_banner: bool = True,
             step_name: str | None = None,
         ) -> None:
@@ -84,7 +84,7 @@ def _make_stub_runtime_class() -> type[SessionRuntime]:
         def cancel_action(
             self,
             *,
-            time_limit: Optional[timedelta] = None,
+            time_limit: timedelta | None = None,
             mark_action_failed: bool = False,
         ) -> None:
             return None

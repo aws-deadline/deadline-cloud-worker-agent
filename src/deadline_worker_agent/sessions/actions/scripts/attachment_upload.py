@@ -19,7 +19,8 @@ import sys
 import time
 import os
 import json
-from typing import cast, Any, Callable, Optional, TypeVar
+from typing import cast, Any, TypeVar
+from collections.abc import Callable
 from pathlib import Path, PurePath
 from dataclasses import asdict
 import glob
@@ -84,7 +85,7 @@ class AttachmentUploadLatences:
 
 
 @failure_telemetry
-def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[str, Optional[str]]:
+def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[str, str | None]:
     """
     Merge multiple manifest files for each worker manifest property.
 
@@ -102,12 +103,12 @@ def merge(worker_manifest_properties: list[WorkerManifestProperties]) -> dict[st
     """
     # Create directory for merged manifest files
     manifest_path = "manifest_merge"
-    root_path_to_local_manifest: dict[str, Optional[str]] = {}
+    root_path_to_local_manifest: dict[str, str | None] = {}
 
     # Process each worker manifest property
     for manifest_props in worker_manifest_properties:
         # Merge manifest files using the job attachments API
-        output: Optional[ManifestMerge] = _manifest_merge(
+        output: ManifestMerge | None = _manifest_merge(
             # Use source path for correct path hash correspondence
             root=manifest_props.to_path_mapping_rule().source_path,
             # paths to manifest files to be merged
@@ -159,7 +160,7 @@ def _output_directory_include_glob(output_relative_directory: str) -> str:
 @failure_telemetry
 def snapshot(
     worker_manifest_properties: list[WorkerManifestProperties],
-    root_path_to_base_manifest: dict[str, Optional[str]],
+    root_path_to_base_manifest: dict[str, str | None],
 ) -> dict[str, str]:
     """
     Create snapshots of output files by comparing against base manifests.
@@ -195,7 +196,7 @@ def snapshot(
             continue
 
         # Create a snapshot of the output files, comparing against the base manifest
-        output_manifest: Optional[ManifestSnapshot] = _manifest_snapshot(
+        output_manifest: ManifestSnapshot | None = _manifest_snapshot(
             root=local_root_path,
             # directory to put the generated diff manifests
             destination=output_path,
@@ -243,7 +244,7 @@ def parse_worker_manifest_properties(file_path: str) -> list[WorkerManifestPrope
         ValueError: If the file cannot be read or contains invalid JSON
     """
     try:
-        with open(file_path, "r") as f:
+        with open(file_path) as f:
             data = json.load(f)
     except Exception as e:
         raise ValueError(
@@ -332,9 +333,9 @@ def upload_output_assets(
             # Only upload when there is an output manifest (changes detected)
             try:
                 # Read and decode the output manifest
-                with open(output_manifest_path, "r") as manifest_file:
+                with open(output_manifest_path) as manifest_file:
                     output_manifest = decode_manifest(manifest_file.read())
-            except (IOError, OSError) as e:
+            except OSError as e:
                 print(f"Error reading output manifest: {e}")
                 continue
 
