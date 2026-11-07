@@ -28,26 +28,20 @@ dependencies = [
     # service-served resolvedSymbolTable. This package's tests have been adapted
     # to that contract.
     "openjd-model >= 0.14, < 0.15",
-    # tomli became tomllib in standard library in Python 3.11
-    "tomli == 2.0.* ; python_version<'3.11'",
     "tomlkit >= 0.13,< 0.16",
-    "typing_extensions ~= 4.8",
-    "psutil >= 5.9,< 8.0",
-    "pydantic >= 2.10, < 3",
-    "pywin32 == 310; platform_system == 'Windows'",
-    "requests >= 2.32,< 2.35",
+    # The floors of psutil, pydantic and pywin32 are their first releases with Python 3.14 wheels.
+    "psutil >= 7.0,< 8.0",
+    "pydantic >= 2.12, < 3",
+    "pywin32 == 311; platform_system == 'Windows'",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 description = "The AWS Deadline Cloud worker agent can be used to run a worker in an AWS Deadline Cloud fleet"
 # https://pypi.org/classifiers/
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Operating System :: POSIX :: Linux",
   "Operating System :: Microsoft :: Windows",
   "License :: OSI Approved :: Apache Software License",
@@ -118,7 +112,7 @@ plugins = [
 ]
 
 files = [ "src/**/*.py" ]
-python_version = "3.10"
+python_version = "3.14"
 
 ignore_missing_imports = true
 
@@ -134,19 +128,11 @@ module = [
     "botocore.*"
 ]
 
-# numpy is not used by this package; it arrives transitively (via
-# deadline-cloud-test-fixtures >= 0.18.16) and mypy reaches its stubs through
-# pytest's `approx` implementation. numpy 2.5+ type stubs use PEP 695 `type`
-# statements, which mypy rejects while python_version is pinned below 3.12, so
-# do not follow imports into it. follow_imports_for_stubs is required for
-# follow_imports to apply to .pyi files like numpy/__init__.pyi.
-[[tool.mypy.overrides]]
-module = [ "numpy", "numpy.*" ]
-follow_imports = "skip"
-follow_imports_for_stubs = true
-
 [tool.ruff]
 line-length = 100
+# These run on the test runner's or the build backend's Python rather than the agent's, so they
+# keep syntax that Python 3.10 accepts.
+per-file-target-version = { "test/e2e/**/*.py" = "py310", "hatch_version_hook.py" = "py310", ".github/scripts/*.py" = "py310" }
 
 [tool.ruff.lint]
 ignore = [

@@ -39,7 +39,7 @@ pre-install-commands = [
 sync = "pip install -r requirements-research.txt"
 
 [[envs.all.matrix]]
-python = ["3.10", "3.11"]
+python = ["3.14"]
 
 [envs.default.env-vars]
 RUN_AS_ADMIN="true"

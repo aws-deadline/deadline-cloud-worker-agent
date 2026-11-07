@@ -475,7 +475,7 @@ class SessionActionQueue:
                     if (env_step_id := _step_id_from_environment_id(environment_id)) is not None:
                         try:
                             env_step_details = self._job_entities.step_details(step_id=env_step_id)
-                        except (ValueError, RuntimeError, UnsupportedSchema):
+                        except ValueError, RuntimeError, UnsupportedSchema:
                             # The task run for this step will surface the real
                             # entity error; entering without step context here
                             # matches the pre-existing behavior.

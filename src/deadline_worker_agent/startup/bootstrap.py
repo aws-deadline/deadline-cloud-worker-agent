@@ -575,7 +575,7 @@ def _enforce_no_instance_profile_or_stop_worker(
 
     try:
         _enforce_no_instance_profile()
-    except (InstanceProfileAttachedError, IMDSUnreachableError):
+    except InstanceProfileAttachedError, IMDSUnreachableError:
         try:
             update_worker(
                 deadline_client=deadline_client,

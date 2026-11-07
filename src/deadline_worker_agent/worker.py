@@ -442,10 +442,8 @@ class Worker:
                     )
                     return None
                 logger.info(f"Spot {action} happening at {shutdown_time}")
-                # Spot gives the time in UTC with a trailing Z, but Prior to Python 3.11 Python can't handle
-                # the Z so we strip it
-                shutdown_time = datetime.fromisoformat(shutdown_time[:-1])
-                shutdown_time = shutdown_time.replace(tzinfo=timezone.utc)
+                # Spot gives the time in UTC with a trailing Z, which fromisoformat parses as UTC.
+                shutdown_time = datetime.fromisoformat(shutdown_time)
                 current_time = datetime.now(timezone.utc)
                 time_delta = shutdown_time - current_time
                 time_delta_seconds = int(time_delta.total_seconds())

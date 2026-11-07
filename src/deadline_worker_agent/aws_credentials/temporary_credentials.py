@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional, Type
+from typing import Any, Optional, Type, TypedDict
 import logging
 import json
 
-from typing_extensions import TypedDict
 
 from botocore.credentials import JSONFileCache
 

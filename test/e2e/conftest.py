@@ -278,6 +278,15 @@ def test_runner_identity() -> dict[str, str]:
     return sts_client.get_caller_identity()
 
 
+# The worker agent requires Python 3.14, and neither EC2 worker's default interpreter is 3.14.
+# Linux takes an AL2023 package name and Windows a python.org installer version; see
+# DeadlineWorkerConfiguration.worker_python.
+_DEFAULT_WORKER_PYTHON = {
+    "linux": "python3.14",
+    "windows": "3.14.10",
+}
+
+
 @pytest.fixture(scope="session")
 def worker_config(
     posix_job_user: PosixSessionUser,
@@ -302,10 +311,20 @@ def worker_config(
             If DEADLINE_SERVICE_MODEL_S3_URI was provided, this option is ignored.
         WORKER_AGENT_SESSION_RUNTIME: Pin the session_runtime worker config setting.
             Accepts: python, rust, service-selected. Overridden by --session-runtime CLI option.
+        WORKER_PYTHON: The Python that runs the agent. Defaults to Python 3.14 on the Linux and
+            Windows workers. Required on macOS: the path of a Python 3.14 interpreter on the host.
 
     Returns:
         DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
     """
+    worker_python = worker_config.worker_python or _DEFAULT_WORKER_PYTHON.get(
+        os.environ["OPERATING_SYSTEM"]
+    )
+    if worker_python is None:
+        raise RuntimeError(
+            "Set WORKER_PYTHON to the path of a Python 3.14 interpreter: the worker agent requires "
+            "Python 3.14 and the macOS worker's default /usr/bin/python3 is older."
+        )
 
     return dataclasses.replace(
         worker_config,
@@ -318,6 +337,7 @@ def worker_config(
         # TODO: Temporary workaround due to AWS CLI v2 upgrade causing canary failures when copying over AWS models for deadline
         service_model_path=None,
         session_runtime=session_runtime_option,
+        worker_python=worker_python,
     )
 
 

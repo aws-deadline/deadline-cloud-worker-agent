@@ -149,7 +149,7 @@ class SessionUserCleanupManager:
                     )
                     if username == process_owner:
                         processes.append(proc_info)
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            except psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess:
                 # Finding a process we can't get info for is not concerning
                 pass
 
