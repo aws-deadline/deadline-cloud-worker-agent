@@ -10,7 +10,8 @@ import time
 import os
 import boto3
 import boto3.session
-from typing import cast, Any, Callable, Dict, List, TypeVar
+from typing import cast, Any, TypeVar
+from collections.abc import Callable
 
 from deadline.job_attachments.download import download_files_from_manifests
 from deadline.job_attachments.asset_manifests.decode import decode_manifest
@@ -84,7 +85,7 @@ class AttachmentDownloadLatencies:
 
 
 @failure_telemetry
-def load_worker_manifest_properties(worker_properties_file: str) -> List[WorkerManifestProperties]:
+def load_worker_manifest_properties(worker_properties_file: str) -> list[WorkerManifestProperties]:
     """
     Load and parse worker manifest properties from a JSON file.
 
@@ -99,7 +100,7 @@ def load_worker_manifest_properties(worker_properties_file: str) -> List[WorkerM
         json.JSONDecodeError: If the file contains invalid JSON
         ValueError: If the JSON structure is invalid
     """
-    with open(worker_properties_file, "r") as f:
+    with open(worker_properties_file) as f:
         worker_manifest_properties_data = json.load(f)
 
     if isinstance(worker_manifest_properties_data, dict):
@@ -110,8 +111,8 @@ def load_worker_manifest_properties(worker_properties_file: str) -> List[WorkerM
 
 @failure_telemetry
 def build_merged_manifests_by_root(
-    worker_manifest_properties: List[WorkerManifestProperties],
-) -> Dict[str, BaseAssetManifest]:
+    worker_manifest_properties: list[WorkerManifestProperties],
+) -> dict[str, BaseAssetManifest]:
     """
     Build a dictionary mapping local root paths to decoded asset manifests.
 
@@ -129,7 +130,7 @@ def build_merged_manifests_by_root(
 
     for worker_prop in worker_manifest_properties:
         if worker_prop.local_input_manifest_path:
-            with open(worker_prop.local_input_manifest_path, "r") as manifest_file:
+            with open(worker_prop.local_input_manifest_path) as manifest_file:
                 manifests_by_root[worker_prop.local_root_path] = decode_manifest(
                     manifest_file.read()
                 )
@@ -142,7 +143,7 @@ def build_merged_manifests_by_root(
 @failure_telemetry
 def perform_download(
     s3_settings: JobAttachmentS3Settings,
-    manifests_by_root: Dict[str, BaseAssetManifest],
+    manifests_by_root: dict[str, BaseAssetManifest],
 ) -> DownloadSummaryStatistics:
     """
     Perform the actual download of files from S3 using the provided manifests.

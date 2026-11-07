@@ -12,7 +12,8 @@ from logging import Formatter, Handler, Logger, LogRecord
 from threading import Event, Thread
 from time import monotonic, sleep
 from types import TracebackType
-from typing import Any, Deque, Generator, NamedTuple, Type, TypedDict
+from typing import Any, NamedTuple, TypedDict
+from collections.abc import Generator
 
 
 from .loggers import logger as _logger
@@ -233,10 +234,10 @@ class CloudWatchLogEventPartitioner:
     See: https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutLogEvents.html
     """
 
-    _partitioned_event_deque: Deque[PartitionedCloudWatchLogEvent]
-    _raw_event_deque: Deque[FormattedLogEntry]
+    _partitioned_event_deque: deque[PartitionedCloudWatchLogEvent]
+    _raw_event_deque: deque[FormattedLogEntry]
 
-    def __init__(self, raw_deque: Deque[FormattedLogEntry]) -> None:
+    def __init__(self, raw_deque: deque[FormattedLogEntry]) -> None:
         self._raw_event_deque = raw_deque
         self._partitioned_event_deque = deque()
 
@@ -385,14 +386,14 @@ class CloudWatchLogStreamThread(Thread):
     _log_event_partitioner: CloudWatchLogEventPartitioner
     _log_group_name: str
     _log_stream_name: str
-    _prev_request_times: Deque[float]
+    _prev_request_times: deque[float]
     _stop_event: Event
 
     def __init__(
         self,
         *args: Any,
         logs_client: Any,
-        log_event_queue: Deque[FormattedLogEntry],
+        log_event_queue: deque[FormattedLogEntry],
         log_group_name: str,
         log_stream_name: str,
         stop_event: Event,
@@ -419,7 +420,7 @@ class CloudWatchLogStreamThread(Thread):
         self._log_group_name = log_group_name
         self._log_stream_name = log_stream_name
         self._stop_event = stop_event
-        self._prev_request_times: Deque[float] = deque()
+        self._prev_request_times: deque[float] = deque()
         if "name" not in kwargs:  # pragma: no cover
             kwargs["name"] = f"CloudWatchLogStreamThread({log_group_name}-{log_stream_name})"
 
@@ -589,7 +590,7 @@ class CloudWatchLogStreamThread(Thread):
 
 
 class CloudWatchHandler(Handler):
-    _log_event_queue: Deque[FormattedLogEntry]
+    _log_event_queue: deque[FormattedLogEntry]
     _log_stream_thread: CloudWatchLogStreamThread
     _stop_event: Event
 
@@ -612,14 +613,14 @@ class CloudWatchHandler(Handler):
         )
         self._log_stream_thread.start()
 
-        super(CloudWatchHandler, self).__init__()
+        super().__init__()
 
     def __enter__(self) -> CloudWatchHandler:
         return self
 
     def __exit__(
         self,
-        type: Type[BaseException] | None,
+        type: type[BaseException] | None,
         value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
@@ -665,7 +666,7 @@ def stream_cloudwatch_logs(
     log_group_name: str,
     log_stream_name: str,
     logger: Logger,
-) -> Generator[CloudWatchHandler, None, None]:
+) -> Generator[CloudWatchHandler]:
     """Stream the given logger for AGENT logs to CloudWatch.
 
     Note: Session logs use LogConfiguration.log_session() instead.

@@ -41,7 +41,7 @@ Worker openjd package location (for making the Rust adapter unloadable):
     the rust_unavailable_worker fixture)
 """
 
-from typing import Generator, Sequence, Union
+from collections.abc import Generator, Sequence
 
 import backoff
 import dataclasses
@@ -74,7 +74,7 @@ LOG = logging.getLogger(__name__)
 # This module drives the agent's service directly, which the DeadlineWorker base
 # class does not declare. Both concrete workers that can host a macOS or Linux
 # agent expose it, so accept either rather than requiring the EC2 one.
-ServiceControllableWorker = Union[EC2InstanceWorker, LocalMacWorker]
+ServiceControllableWorker = EC2InstanceWorker | LocalMacWorker
 
 _LINUX_AGENT_LOG = "/var/log/amazon/deadline/worker-agent.log"
 _WINDOWS_AGENT_LOG = r"C:\ProgramData\Amazon\Deadline\Logs\worker-agent.log"
@@ -133,7 +133,7 @@ def _agent_log_path(worker: ServiceControllableWorker) -> str:
 
 def _assert_log_contains(
     worker: ServiceControllableWorker,
-    pattern: Union[str, Sequence[str]],
+    pattern: str | Sequence[str],
     description: str,
 ) -> None:
     """Assert that the agent log on the remote worker contains *pattern*.

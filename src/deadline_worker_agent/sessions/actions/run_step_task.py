@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from concurrent.futures import Executor
-from typing import Any, Optional, TYPE_CHECKING, cast
+from typing import Any, TYPE_CHECKING, cast
 
 from openjd.model import TaskParameterSet
 
@@ -71,7 +71,7 @@ class RunStepTaskAction(OpenjdAction):
         The task parameter values
     """
 
-    task_id: Optional[str]
+    task_id: str | None
     _details: StepDetails
     _task_parameter_values: TaskParameterSet
 
@@ -80,10 +80,10 @@ class RunStepTaskAction(OpenjdAction):
         *,
         id: str,
         details: StepDetails,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
         task_parameter_values: TaskParameterSet,
     ) -> None:
-        super(RunStepTaskAction, self).__init__(
+        super().__init__(
             id=id, action_log_kind=SessionActionLogKind.TASK_RUN, step_id=details.step_id
         )
         self._details = details

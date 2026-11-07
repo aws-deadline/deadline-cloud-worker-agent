@@ -5,7 +5,8 @@ and making sure that the behavior and outputs of the Worker is that of what we e
 """
 
 from time import sleep
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 import backoff
 import boto3
 import dataclasses
@@ -182,7 +183,7 @@ class TestWorkerConfiguration:
                 worker_config, allow_shutdown=True, fleet=deadline_resources.scaling_fleet
             )
         )
-        instance_id: Optional[str] = worker_in_autoscaling_fleet_with_shut_down.instance_id
+        instance_id: str | None = worker_in_autoscaling_fleet_with_shut_down.instance_id
         assert instance_id
 
         ec2_client = boto3.client("ec2")

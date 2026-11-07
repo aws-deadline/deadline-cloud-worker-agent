@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from dateutil.tz import tzlocal
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -238,9 +238,9 @@ class TestTemporaryCredentials:
         assert result["AccessKeyId"] == temporary_credentials.access_key_id
         assert result["SecretAccessKey"] == temporary_credentials.secret_access_key
         assert result["SessionToken"] == temporary_credentials.session_token
-        assert result["Expiration"] == temporary_credentials.expiry_time.astimezone(
-            timezone.utc
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        assert result["Expiration"] == temporary_credentials.expiry_time.astimezone(UTC).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
 
     def test_from_file_format(
         self,
@@ -270,8 +270,8 @@ class TestTemporaryCredentials:
         assert temporary_credentials.session_token == data["SessionToken"] == session_token
         assert (
             temporary_credentials.expiry_time.replace(microsecond=0)
-            == datetime.strptime(data["Expiration"], _DATETIME_FORMAT).replace(tzinfo=timezone.utc)
-            == expiry_time.replace(microsecond=0, tzinfo=timezone.utc)
+            == datetime.strptime(data["Expiration"], _DATETIME_FORMAT).replace(tzinfo=UTC)
+            == expiry_time.replace(microsecond=0, tzinfo=UTC)
         )
 
     def test_validate_file_credentials_success(

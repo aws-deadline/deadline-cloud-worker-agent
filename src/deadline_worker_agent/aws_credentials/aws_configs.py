@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 from configparser import ConfigParser
 from pathlib import Path
 from shutil import chown
-from typing import Optional
 import logging
 import os
 import stat
@@ -73,13 +72,13 @@ class _AWSConfigBase(ABC):
     """
 
     _config_parser: ConfigParser
-    _os_user: Optional[SessionUser]
+    _os_user: SessionUser | None
     _parent_dir: Path
 
     def __init__(
         self,
         *,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         parent_dir: Path,
     ) -> None:
         """
@@ -182,7 +181,7 @@ class AWSConfig(_AWSConfigBase):
     def __init__(
         self,
         *,
-        os_user: Optional[SessionUser],
+        os_user: SessionUser | None,
         parent_dir: Path,
         region: str,
     ) -> None:
@@ -197,7 +196,7 @@ class AWSConfig(_AWSConfigBase):
                 written to.
             region (str): The target region where the credentials are for
         """
-        super(AWSConfig, self).__init__(
+        super().__init__(
             os_user=os_user,
             parent_dir=parent_dir,
         )

@@ -10,11 +10,12 @@ from concurrent.futures import (
 )
 from contextlib import nullcontext
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from functools import partial
 from pathlib import Path
 from threading import Event, RLock, Lock, Timer
-from typing import Callable, Literal, Tuple, Union, cast, Optional, Any
+from typing import Literal, cast, Any
+from collections.abc import Callable
 import json
 import logging
 import os
@@ -261,7 +262,7 @@ class WorkerScheduler:
         self._worker_logs_dir = worker_logs_dir
         self._retain_session_dir = retain_session_dir
         self._session_runtime_kind = session_runtime_kind
-        self._windows_credentials_resolver: Optional[WindowsCredentialsResolver]
+        self._windows_credentials_resolver: WindowsCredentialsResolver | None
         self._session_root_dir = session_root_dir
 
         if os.name == "nt" and not (
@@ -418,7 +419,7 @@ class WorkerScheduler:
                 pass
 
     def _shutdown_sessions(
-        self, gracetime: Optional[timedelta], fail_message: Optional[str]
+        self, gracetime: timedelta | None, fail_message: str | None
     ) -> list[Future[None]]:
         return [
             self._executor.submit(
@@ -533,7 +534,7 @@ class WorkerScheduler:
 
     def _updated_session_actions(
         self,
-    ) -> Tuple[dict[str, UpdatedSessionActionInfo], Callable[[], None]]:
+    ) -> tuple[dict[str, UpdatedSessionActionInfo], Callable[[], None]]:
         # Returns a unique identifier for a session action update.
         # This is a tuple of the action ID and the completed state or the update time
         # This is used to only commit deletes from the _action_updates_map that are not newer
@@ -544,7 +545,7 @@ class WorkerScheduler:
             return (
                 session_action_status.id,
                 cast(
-                    Union[datetime, str],
+                    datetime | str,
                     session_action_status.completed_status or session_action_status.update_time,
                 ),
             )
@@ -700,7 +701,7 @@ class WorkerScheduler:
         # if we experience an unrecoverable error during the setup phases of a new Session, but
         # before we've started the Session's actions running
         actions = assigned_session["sessionActions"]
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         self._action_updates_map.update(
             {
                 action["sessionActionId"]: SessionActionStatus(
@@ -722,16 +723,16 @@ class WorkerScheduler:
     def _determine_user_for_session(
         *,
         host_is_posix: bool,
-        job_run_as_user: Optional[JobRunAsUser],
+        job_run_as_user: JobRunAsUser | None,
         job_run_as_user_override: JobsRunAsUserOverride,
         queue_id: str,
         job_id: str,
         session_id: str,
-    ) -> Optional[SessionUser]:
+    ) -> SessionUser | None:
         # Called only in self._create_new_sessions() to determine what os_user the Session should
         # run as.
         # Raises a ValueError if an impossible situation arises and we need to fail the Session.
-        os_user: Optional[SessionUser] = None
+        os_user: SessionUser | None = None
         if not job_run_as_user_override.run_as_agent:
             if job_run_as_user_override.job_user is not None:
                 os_user = job_run_as_user_override.job_user
@@ -986,7 +987,7 @@ class WorkerScheduler:
 
             queue.replace(actions=session_spec["sessionActions"])
 
-            os_user: Optional[SessionUser] = None
+            os_user: SessionUser | None = None
 
             # Resolve domain user credentials from Secrets Manager if configured as a config override.
             # This takes precedence over the queue-configured user.
@@ -1399,8 +1400,8 @@ class WorkerScheduler:
                     )
 
     def _get_queue_aws_credentials(
-        self, queue_id: str, queue_role_arn: str, session_id: str, os_user: Optional[SessionUser]
-    ) -> Optional[QueueAwsCredentials]:
+        self, queue_id: str, queue_role_arn: str, session_id: str, os_user: SessionUser | None
+    ) -> QueueAwsCredentials | None:
         """Creates an AWS Credentials Manager for the given Queue if necessary.
         Returns the credentials profile name for the credentials if there is one.
         """
@@ -1610,15 +1611,15 @@ class WorkerScheduler:
                 # Session before it exited.
                 continue
 
-            completed_status: Optional[
-                Literal["SUCCEEDED", "FAILED", "INTERRUPTED", "CANCELED", "NEVER_ATTEMPTED"]
-            ]
-            start_time: Optional[datetime] = None
-            end_time: Optional[datetime] = None
+            completed_status: (
+                Literal["SUCCEEDED", "FAILED", "INTERRUPTED", "CANCELED", "NEVER_ATTEMPTED"] | None
+            )
+            start_time: datetime | None = None
+            end_time: datetime | None = None
             if i == 0 or action["actionType"] == "ENV_EXIT":
                 # Fail the first Action, or all ENV_EXITs
                 completed_status = "FAILED"
-                start_time = end_time = datetime.now(tz=timezone.utc)
+                start_time = end_time = datetime.now(tz=UTC)
             else:
                 # NEVER_ATTEMPTED all other Actions
                 # Note: NEVER_ATTEMPED must not be reported with a started/ended time.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import builtins
 from datetime import timedelta
 from pathlib import Path
-from typing import Generator
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -36,7 +36,7 @@ def runtime_config() -> SessionRuntimeConfig:
 
 
 @pytest.fixture()
-def mock_openjd_session() -> Generator[MagicMock, None, None]:
+def mock_openjd_session() -> Generator[MagicMock]:
     with patch.object(python_module, "OpenJDSession", autospec=True) as mock_cls:
         yield mock_cls
 

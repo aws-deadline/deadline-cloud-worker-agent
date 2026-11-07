@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from typing import Generator, Optional
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
@@ -30,7 +30,7 @@ def config(
     # Specified to avoid any impact from an existing worker agent config file in the development
     # environment
     mock_config_file_not_found: MagicMock,
-) -> Generator[Configuration, None, None]:
+) -> Generator[Configuration]:
     cli_args = ParsedCommandLineArguments()
     cli_args.farm_id = farm_id
     cli_args.fleet_id = fleet_id
@@ -51,7 +51,7 @@ def config(
 
 
 @pytest.fixture
-def sleep_mock() -> Generator[MagicMock, None, None]:
+def sleep_mock() -> Generator[MagicMock]:
     with patch.object(deadline_mod, "sleep") as sleep_mock:
         yield sleep_mock
 
@@ -140,7 +140,7 @@ def test_retries_when_appropriate(
     mock_create_worker_response: CreateWorkerResponse,
     host_properties: HostProperties,
     exception: ClientError,
-    min_retry: Optional[float],
+    min_retry: float | None,
     sleep_mock: MagicMock,
 ):
     # A test that the create_worker() function will retry calls to the API when:

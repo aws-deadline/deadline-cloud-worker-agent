@@ -135,10 +135,18 @@ line-length = 100
 per-file-target-version = { "test/e2e/**/*.py" = "py310", "hatch_version_hook.py" = "py310", ".github/scripts/*.py" = "py310" }
 
 [tool.ruff.lint]
+extend-select = ["UP"]
 ignore = [
   "E501",
   "E722",
   "F811",
+  # Not auto-fixable; %-formatting is left to change alongside the code around it.
+  "UP031",
+  # StrEnum changes str() and format() of the members, which callers may rely on.
+  "UP042",
+  # PEP 695 generics are a rewrite of the type parameters, not a syntax upgrade.
+  "UP046",
+  "UP047",
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -6,7 +6,8 @@ from collections import deque
 from datetime import datetime, timedelta
 from logging import INFO, Formatter, LogRecord
 from threading import Event
-from typing import Any, Generator, Optional
+from typing import Any
+from collections.abc import Generator
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
 from pytest import fixture, mark, param, raises
@@ -28,7 +29,7 @@ from deadline_worker_agent.log_messages import LogRecordStringTranslationFilter
 
 
 @fixture
-def mock_module_logger() -> Generator[MagicMock, None, None]:
+def mock_module_logger() -> Generator[MagicMock]:
     """Patches deadline_worker_agent.log_sync.cloudwatch.logger.logger with a mock object"""
     with patch.object(module, "_logger") as mock_module_logger:
         yield mock_module_logger
@@ -40,7 +41,7 @@ class TestCloudWatchLogEventBatch:
         return datetime(2000, 1, 1)
 
     @fixture(autouse=True)
-    def datetime_mock(self, now: datetime) -> Generator[MagicMock, None, None]:
+    def datetime_mock(self, now: datetime) -> Generator[MagicMock]:
         with patch.object(module, "datetime") as mock:
             mock.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
             mock.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(
@@ -53,7 +54,7 @@ class TestCloudWatchLogEventBatch:
     def event(self, now: datetime) -> PartitionedCloudWatchLogEvent:
         return PartitionedCloudWatchLogEvent(
             log_event=CloudWatchLogEvent(timestamp=int(now.timestamp() * 1000), message="abc"),
-            size=len("abc".encode("utf-8")),
+            size=len(b"abc"),
         )
 
     @fixture
@@ -361,13 +362,13 @@ class TestCloudWatchLogEventPartitioner:
         )
 
     @fixture
-    def deque_mock(self) -> Generator[MagicMock, None, None]:
+    def deque_mock(self) -> Generator[MagicMock]:
         with patch.object(module, "deque") as cls_mock:
             yield cls_mock.return_value
 
     class TestNext:
         @fixture(autouse=True)
-        def process_raw_event_mock(self) -> Generator[MagicMock, None, None]:
+        def process_raw_event_mock(self) -> Generator[MagicMock]:
             with patch.object(CloudWatchLogEventPartitioner, "_partition_raw_event") as mock:
                 yield mock
 
@@ -419,7 +420,7 @@ class TestCloudWatchLogEventPartitioner:
 
     class TestProcessRawEvent:
         @fixture
-        def chunk_string_mock(self) -> Generator[MagicMock, None, None]:
+        def chunk_string_mock(self) -> Generator[MagicMock]:
             with patch.object(CloudWatchLogEventPartitioner, "_chunk_string") as mock:
                 yield mock
 
@@ -621,7 +622,7 @@ class TestCloudWatchLogStreamThread:
         self,
         logs_client: MagicMock,
         describe_log_groups_response: dict,
-    ) -> Generator[MagicMock, None, None]:
+    ) -> Generator[MagicMock]:
         with patch.object(logs_client, "describe_log_groups") as mock_describe_log_groups:
             mock_describe_log_groups.return_value = describe_log_groups_response
             yield logs_client
@@ -644,7 +645,7 @@ class TestCloudWatchLogStreamThread:
         )
 
     @fixture(autouse=True)
-    def sleep_mock(self) -> Generator[MagicMock, None, None]:
+    def sleep_mock(self) -> Generator[MagicMock]:
         with patch.object(module, "sleep") as sleep_mock:
             yield sleep_mock
 
@@ -1103,7 +1104,7 @@ class TestCloudWatchLogStreamThread:
         cloud_watch_log_stream_thread: CloudWatchLogStreamThread,
         initial_prev_request_times: list[float],
         cur_time: float,
-        expected_sleep_amt: Optional[float],
+        expected_sleep_amt: float | None,
         expected_next_prev_request_times: list[float],
         sleep_mock: MagicMock,
         mock_module_logger: MagicMock,
@@ -1135,7 +1136,7 @@ class TestCloudWatchLogStreamThread:
 
     class TestCollectLogs:
         @fixture
-        def log_event_partitioner_mock(self) -> Generator[MagicMock, None, None]:
+        def log_event_partitioner_mock(self) -> Generator[MagicMock]:
             with patch.object(module, "CloudWatchLogEventPartitioner") as cls_mock:
                 yield cls_mock.return_value
 
@@ -1207,7 +1208,7 @@ class TestCloudWatchLogStreamThread:
         def test_rejected_log_event(
             self,
             batch_full: bool,
-            reason: Optional[str],
+            reason: str | None,
             cw_thread: CloudWatchLogStreamThread,
             log_event_partitioner_mock: MagicMock,
         ):
@@ -1252,7 +1253,7 @@ class TestCloudWatchHandler:
     @fixture(autouse=True)
     def mock_cloud_watch_log_stream_thread_cls(
         self,
-    ) -> Generator[MagicMock, None, None]:
+    ) -> Generator[MagicMock]:
         with patch.object(
             module, "CloudWatchLogStreamThread"
         ) as mock_cloud_watch_log_stream_thread:

@@ -1,6 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from typing import Any, Generator, Optional
+from typing import Any
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
@@ -33,7 +34,7 @@ SAMPLE_RESPONSE: BatchGetJobEntityResponse = {
 
 
 @pytest.fixture
-def sleep_mock() -> Generator[MagicMock, None, None]:
+def sleep_mock() -> Generator[MagicMock]:
     with patch.object(deadline_mod, "sleep") as sleep_mock:
         yield sleep_mock
 
@@ -114,7 +115,7 @@ def test_retries_when_appropriate(
     fleet_id: str,
     worker_id: str,
     exception: ClientError,
-    min_retry: Optional[float],
+    min_retry: float | None,
     sleep_mock: MagicMock,
 ):
     # A test that the batch_get_job_entity() function will retry calls to the API when:

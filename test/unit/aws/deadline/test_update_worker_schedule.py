@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from typing import Generator, Optional
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import (
@@ -39,7 +39,7 @@ SAMPLE_UPDATE_WORKER_SCHEDULE_RESPONSE: UpdateWorkerScheduleResponse = {
 
 
 @pytest.fixture
-def sleep_mock() -> Generator[MagicMock, None, None]:
+def sleep_mock() -> Generator[MagicMock]:
     with patch.object(deadline_mod, "sleep") as sleep_mock:
         yield sleep_mock
 
@@ -50,7 +50,7 @@ def test_success(
     farm_id: str,
     fleet_id: str,
     worker_id: str,
-    updated_session_actions: Optional[dict[str, UpdatedSessionActionInfo]],
+    updated_session_actions: dict[str, UpdatedSessionActionInfo] | None,
 ) -> None:
     # Test the happy-path of the update_worker_schedule function.
 
@@ -192,7 +192,7 @@ def test_retries_when_appropriate(
     fleet_id: str,
     worker_id: str,
     exception: ClientError,
-    min_retry: Optional[float],
+    min_retry: float | None,
     sleep_mock: MagicMock,
 ) -> None:
     # A test that the update_worker_schedule() function will retry calls to the API when:

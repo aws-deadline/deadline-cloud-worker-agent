@@ -6,7 +6,8 @@ import json
 import os
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING
+from collections.abc import Generator
 from unittest.mock import MagicMock, Mock, patch, ANY
 
 import pytest
@@ -69,7 +70,7 @@ def session_dir(session_id: str):
 
 
 @pytest.fixture
-def mock_runtime(session_dir: str) -> Generator[MagicMock, None, None]:
+def mock_runtime(session_dir: str) -> Generator[MagicMock]:
     """Patches create_session_runtime and yields a runtime mock with working_directory set."""
     runtime = MagicMock()
     runtime.working_directory = session_dir
@@ -116,7 +117,7 @@ def session(
 
 
 @pytest.fixture(autouse=True)
-def mock_asset_sync(session: Mock) -> Generator[MagicMock, None, None]:
+def mock_asset_sync(session: Mock) -> Generator[MagicMock]:
     with patch.object(session, "_asset_sync") as mock_asset_sync:
         yield mock_asset_sync
 

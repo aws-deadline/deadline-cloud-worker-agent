@@ -12,7 +12,6 @@ from time import sleep
 from botocore.exceptions import NoRegionError
 from logging.handlers import TimedRotatingFileHandler
 from threading import Event
-from typing import Optional
 from pathlib import Path
 
 from ..aws_credentials.worker_boto3_session import WorkerBoto3Session
@@ -52,7 +51,7 @@ def _repeatedly_attempt_host_shutdown() -> bool:
     return True
 
 
-def entrypoint(cli_args: Optional[list[str]] = None, *, stop: Optional[Event] = None) -> None:
+def entrypoint(cli_args: list[str] | None = None, *, stop: Event | None = None) -> None:
     """Entrypoint for the Worker Agent. The worker gets registered and then polls for tasks to
     complete.
 

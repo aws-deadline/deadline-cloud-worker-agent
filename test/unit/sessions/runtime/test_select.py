@@ -1,7 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 from __future__ import annotations
 
-from typing import Optional
 
 import pytest
 
@@ -51,7 +50,7 @@ from deadline_worker_agent.sessions.runtime import select_runtime
     ],
 )
 def test_select_runtime(
-    configured: SessionRuntimeKind, hint: Optional[str], expected: SessionRuntimeKind
+    configured: SessionRuntimeKind, hint: str | None, expected: SessionRuntimeKind
 ) -> None:
     assert select_runtime(configured, runtime_hint=hint) is expected
 

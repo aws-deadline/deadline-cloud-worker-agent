@@ -2,7 +2,8 @@
 
 import logging
 from time import sleep, monotonic
-from typing import Any, Callable, Dict, Optional, TypeVar, cast
+from typing import Any, TypeVar, cast
+from collections.abc import Callable
 from threading import Event
 from dataclasses import asdict, dataclass
 from functools import wraps
@@ -153,19 +154,19 @@ class WorkerLogConfig:
     """The name of the CloudWatch Log Stream that the Agent log should be streamed to"""
 
 
-def _get_error_code_from_header(response: dict[str, Any]) -> Optional[str]:
+def _get_error_code_from_header(response: dict[str, Any]) -> str | None:
     return response.get("Error", {}).get("Code", None)
 
 
-def _get_error_reason_from_header(response: dict[str, Any]) -> Optional[str]:
+def _get_error_reason_from_header(response: dict[str, Any]) -> str | None:
     return response.get("reason", None)
 
 
-def _get_retry_after_seconds_from_header(response: dict[str, Any]) -> Optional[int]:
+def _get_retry_after_seconds_from_header(response: dict[str, Any]) -> int | None:
     return response.get("retryAfterSeconds", None)
 
 
-def _apply_lower_bound_to_delay(delay: float, lower_bound: Optional[float] = None) -> float:
+def _apply_lower_bound_to_delay(delay: float, lower_bound: float | None = None) -> float:
     if lower_bound is not None and delay < lower_bound:
         # We add just a tiny bit of jitter (20%) to the lower bound to reduce the probability
         # of a group of workers all retry-storming in lock-step.
@@ -175,7 +176,7 @@ def _apply_lower_bound_to_delay(delay: float, lower_bound: Optional[float] = Non
 
 def _get_resource_id_and_status_from_conflictexception_header(
     response: dict[str, Any],
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     context = response.get("context", {})
     resourceId = response.get("resourceId")
     return resourceId, context.get("status")
@@ -185,7 +186,7 @@ def _handle_transient_network_error(
     e: Exception,
     transient_retries: int,
     backoff: Backoff,
-    interrupt_event: Optional[Event],
+    interrupt_event: Event | None,
     api_name: str,
 ) -> None:
     """Handles a transient network error raised during a Deadline Cloud API call by logging
@@ -292,7 +293,7 @@ def assume_queue_role_for_worker(
     fleet_id: str,
     worker_id: str,
     queue_id: str,
-    interrupt_event: Optional[Event] = None,
+    interrupt_event: Event | None = None,
 ) -> AssumeQueueRoleForWorkerResponse:
     """Calls the AssumeFleetRoleForWorker API, with automatic infinite retries
     when throttled.
@@ -596,9 +597,9 @@ def update_worker(
     fleet_id: str,
     worker_id: str,
     status: WorkerStatus,
-    capabilities: Optional[Capabilities] = None,
-    host_properties: Optional[HostProperties] = None,
-    interrupt_event: Optional[Event] = None,
+    capabilities: Capabilities | None = None,
+    host_properties: HostProperties | None = None,
+    interrupt_event: Event | None = None,
 ) -> UpdateWorkerResponse:
     """Calls the UpdateWorker API to update this Worker's status, capabilities, and/or host properties with the service.
 
@@ -721,7 +722,7 @@ def update_worker(
     return response
 
 
-def construct_worker_log_config(log_config: LogConfiguration) -> Optional[WorkerLogConfig]:
+def construct_worker_log_config(log_config: LogConfiguration) -> WorkerLogConfig | None:
     """Parses the LogConfiguration response value from an API response in to a WorkerLogConfig
     if possible.
 
@@ -768,8 +769,8 @@ def update_worker_schedule(
     farm_id: str,
     fleet_id: str,
     worker_id: str,
-    updated_session_actions: Optional[dict[str, UpdatedSessionActionInfo]] = None,
-    interrupt_event: Optional[Event] = None,
+    updated_session_actions: dict[str, UpdatedSessionActionInfo] | None = None,
+    interrupt_event: Event | None = None,
 ) -> UpdateWorkerScheduleResponse:
     """Calls the UpdateWorkerSchedule API get information about this Worker's schedule, and
     provide updates on Session Actions that had previously been given to the Worker.
@@ -864,7 +865,7 @@ def update_worker_schedule(
     return response
 
 
-_telemetry_client: Optional[TelemetryClient] = None
+_telemetry_client: TelemetryClient | None = None
 
 # Exception messages can be arbitrarily long (e.g. validation errors); RUM
 # rejects oversized events, which would silently drop the failure report.
@@ -914,11 +915,11 @@ def record_runtime_selection_telemetry_event(
     runtime_kind: str,
     selection_reason: str,
     session_runtime_config: str,
-    runtime_hint: Optional[str],
+    runtime_hint: str | None,
     session_id: str,
     queue_id: str,
     farm_id: str,
-    region: Optional[str],
+    region: str | None,
 ) -> None:
     """Records a com.amazon.rum.deadline.worker_agent.runtime_selection telemetry event
     capturing which session runtime was selected and why.
@@ -948,11 +949,11 @@ def record_runtime_failure_telemetry_event(
     runtime_kind: str,
     failure_reason: str,
     exception_type: str,
-    runtime_hint: Optional[str],
+    runtime_hint: str | None,
     session_id: str,
     queue_id: str,
     farm_id: str,
-    region: Optional[str],
+    region: str | None,
 ) -> None:
     """Records a com.amazon.rum.deadline.worker_agent.runtime_failure telemetry event
     for a session failure caused by a runtime issue.
@@ -979,7 +980,7 @@ def record_runtime_failure_telemetry_event(
 
 def _record_attachment_download_filesystem_event(queue_id: str, file_system: str) -> None:
     """Calls the telemetry client to record what filesystem was used"""
-    details: Dict[str, Any] = {"queue_id": queue_id, "filesystem": file_system}
+    details: dict[str, Any] = {"queue_id": queue_id, "filesystem": file_system}
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.attachment_download_filesystem",
         event_details=details,
@@ -988,7 +989,7 @@ def _record_attachment_download_filesystem_event(queue_id: str, file_system: str
 
 def record_vfs_mount_telemetry_event(successfully_mounted: bool) -> None:
     """Calls the telemetry client to record whether a VFS mount succeeded."""
-    details: Dict[str, Any] = {"successfully_mounted": successfully_mounted}
+    details: dict[str, Any] = {"successfully_mounted": successfully_mounted}
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.job_attachments.vfs_mount",
         event_details=details,
@@ -997,7 +998,7 @@ def record_vfs_mount_telemetry_event(successfully_mounted: bool) -> None:
 
 def record_sync_inputs_telemetry_event(queue_id: str, summary: SummaryStatistics) -> None:
     """Calls the telemetry client to record an event capturing the sync-inputs summary."""
-    details: Dict[str, Any] = asdict(summary)
+    details: dict[str, Any] = asdict(summary)
     details["queue_id"] = queue_id
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.sync_inputs_summary",
@@ -1007,7 +1008,7 @@ def record_sync_inputs_telemetry_event(queue_id: str, summary: SummaryStatistics
 
 def record_sync_outputs_telemetry_event(queue_id: str, summary: SummaryStatistics) -> None:
     """Calls the telemetry client to record an event capturing the sync-outputs summary."""
-    details: Dict[str, Any] = asdict(summary)
+    details: dict[str, Any] = asdict(summary)
     details["queue_id"] = queue_id
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.sync_outputs_summary",
@@ -1057,7 +1058,7 @@ def record_attachment_download_fail_telemetry_event(
 
 def record_attachment_download_latencies_telemetry_event(
     queue_id: str,
-    latencies: Dict[str, Any],
+    latencies: dict[str, Any],
 ) -> None:
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.attachment_download_latencies",
@@ -1102,7 +1103,7 @@ def record_attachment_upload_fail_telemetry_event(
 
 def record_attachment_upload_latencies_telemetry_event(
     queue_id: str,
-    latencies: Dict[str, Any],
+    latencies: dict[str, Any],
 ) -> None:
     _get_deadline_telemetry_client().record_event(
         event_type="com.amazon.rum.deadline.worker_agent.attachment_upload_latencies",

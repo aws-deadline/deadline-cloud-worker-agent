@@ -8,7 +8,7 @@ import json
 import yaml
 
 from glob import glob
-from typing import Any, Dict, Optional, List
+from typing import Any
 from pathlib import Path
 from configparser import ConfigParser
 from deadline.job_attachments import download
@@ -30,7 +30,7 @@ LOG = logging.getLogger(__name__)
 
 def _get_queue_attachment_settings(
     deadline_client: DeadlineClient, farm_id: str, queue_id: str
-) -> Optional[JobAttachmentS3Settings]:
+) -> JobAttachmentS3Settings | None:
     """Get job attachment settings from a queue using the Deadline API directly."""
     response = deadline_client.get_queue(farmId=farm_id, queueId=queue_id)
     settings = response.get("jobAttachmentSettings")
@@ -46,7 +46,7 @@ def wait_for_job_output(
     job: Job,
     deadline_client: DeadlineClient,
     deadline_resources: DeadlineResources,
-    output_root_path: Optional[str] = None,
+    output_root_path: str | None = None,
 ) -> dict[str, list[str]]:
     job.wait_until_complete(client=deadline_client, max_retries=20)
 
@@ -142,8 +142,8 @@ def submit_job_from_bundle(
     bundle_path: str,
     template_file_name: str = "template",
     job_attachments_file_system: str = "COPIED",
-    queue_parameter_definitions: List[dict] = [],
-    max_retries_per_task: Optional[int] = None,
+    queue_parameter_definitions: list[dict] = [],
+    max_retries_per_task: int | None = None,
     job_parameters: list[dict[str, Any]] = [],
 ) -> Job:
     bundle_path = os.path.normpath(bundle_path)
@@ -249,7 +249,7 @@ def verify_output_dir_matches(
     assert len(errors) == 0, "Number of errors is non-zero"
 
 
-def recursively_list_files_as_relative_paths(dir_path: str) -> List[str]:
+def recursively_list_files_as_relative_paths(dir_path: str) -> list[str]:
     """
     Get all files in a directory and its subdirectories, returning paths relative to dir_path.
     Uses glob for more efficient file discovery.
@@ -346,7 +346,7 @@ def submit_custom_job(
 def is_worker_started(
     deadline_client: DeadlineClient, farm_id: str, fleet_id: str, worker_id: str
 ) -> bool:
-    get_worker_response: Dict[str, Any] = deadline_client.get_worker(
+    get_worker_response: dict[str, Any] = deadline_client.get_worker(
         farmId=farm_id,
         fleetId=fleet_id,
         workerId=worker_id,
@@ -370,7 +370,7 @@ def is_worker_started(
 def is_worker_stopped(
     deadline_client: DeadlineClient, farm_id: str, fleet_id: str, worker_id: str
 ) -> bool:
-    get_worker_response: Dict[str, Any] = deadline_client.get_worker(
+    get_worker_response: dict[str, Any] = deadline_client.get_worker(
         farmId=farm_id,
         fleetId=fleet_id,
         workerId=worker_id,
@@ -413,7 +413,7 @@ def submit_job_from_create_job_API(
     queue: Queue,
     debug_snapshot_dir: str,
     storage_profile: bool = False,
-    job_name: Optional[str] = None,
+    job_name: str | None = None,
 ) -> Job:
     """Submit a job using the Deadline create job API.
 
@@ -459,15 +459,15 @@ def submit_job_from_create_job_API(
     )
 
     # Load template file
-    with open(f"{debug_snapshot_dir}/template_param.data", "r") as f:
+    with open(f"{debug_snapshot_dir}/template_param.data") as f:
         template_content = f.read()
 
     # Load attachments file
-    with open(f"{debug_snapshot_dir}/attachments_param.json", "r") as f:
+    with open(f"{debug_snapshot_dir}/attachments_param.json") as f:
         attachments = json.load(f)
 
     # Load parameters file
-    with open(f"{debug_snapshot_dir}/parameters_param.json", "r") as f:
+    with open(f"{debug_snapshot_dir}/parameters_param.json") as f:
         parameters = json.load(f)
 
     # Override job name if provided

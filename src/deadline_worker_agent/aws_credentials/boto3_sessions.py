@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from threading import Lock
 
 from botocore.session import Session as BotocoreSession, get_session as get_botocore_session
@@ -34,7 +33,7 @@ class PassThroughCredentialProvider(CredentialProvider):
     CANONICAL_NAME = "custom-pass-through"
 
     def __init__(
-        self, *, session: Optional[BotocoreSession] = None, credentials: BotocoreCredentials
+        self, *, session: BotocoreSession | None = None, credentials: BotocoreCredentials
     ) -> None:
         super().__init__(session)
         self._credentials = credentials
@@ -60,7 +59,7 @@ class SettableCredentials(BotocoreCredentials):
         self._access_key = ""
         self._secret_key = ""
         self._token = ""
-        self._expiry = datetime.fromtimestamp(0, tz=timezone.utc)
+        self._expiry = datetime.fromtimestamp(0, tz=UTC)
         self._lock = Lock()
 
     def set_credentials(self, credentials: AwsCredentials) -> None:
@@ -92,7 +91,7 @@ class SettableCredentials(BotocoreCredentials):
         """Determine whether or not the stored credentials are expired.
         Returns: True if so, False otherwise.
         """
-        return datetime.now(timezone.utc) > self.expiry
+        return datetime.now(UTC) > self.expiry
 
     @property
     def expiry(self) -> datetime:

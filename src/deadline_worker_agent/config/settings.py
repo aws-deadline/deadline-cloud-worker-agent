@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
 from pathlib import Path
 
 from pydantic.v1 import BaseSettings, Field
@@ -101,15 +100,13 @@ class WorkerSettings(BaseSettings):
     farm_id: str = Field(regex=r"^farm-[a-z0-9]{32}$")
     fleet_id: str = Field(regex=r"^fleet-[a-z0-9]{32}$")
     cleanup_session_user_processes: bool = True
-    profile: Optional[str] = Field(min_length=1, max_length=64, default=None)
+    profile: str | None = Field(min_length=1, max_length=64, default=None)
     verbose: bool = False
     no_shutdown: bool = False
     run_jobs_as_agent_user: bool = False
-    posix_job_user: Optional[str] = Field(
-        regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$"
-    )
-    windows_job_user: Optional[str] = Field(regex=r"^.{1,512}$")
-    windows_job_user_password_arn: Optional[str] = Field(
+    posix_job_user: str | None = Field(regex=r"^[a-zA-Z0-9_.][^:]{0,31}:[a-zA-Z0-9_.][^:]{0,31}$")
+    windows_job_user: str | None = Field(regex=r"^.{1,512}$")
+    windows_job_user_password_arn: str | None = Field(
         regex=r"^arn:aws:secretsmanager:[a-z0-9\-]+:\d{12}:secret[:/][a-zA-Z0-9/_+=.@:-]+$"
     )
     allow_instance_profile: bool = True
@@ -179,7 +176,7 @@ class WorkerSettings(BaseSettings):
             init_settings: SettingsSourceCallable,
             env_settings: SettingsSourceCallable,
             file_secret_settings: SettingsSourceCallable,
-        ) -> Tuple[SettingsSourceCallable, ...]:
+        ) -> tuple[SettingsSourceCallable, ...]:
             """This function is called by pydantic to determine the settings sources used and their
             priority order.
 

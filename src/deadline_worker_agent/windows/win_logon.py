@@ -15,9 +15,9 @@ from win32security import (
 import win32net
 import win32security
 from win32profile import LoadUserProfile, PI_NOUI, UnloadUserProfile
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from logging import getLogger
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import secrets
 import string
@@ -43,19 +43,17 @@ class PasswordResetException(Exception):
 class _WindowsCredentialsCacheEntry:
     def __init__(
         self,
-        windows_session_user: Optional[WindowsSessionUser],
-        last_fetched_at: Optional[datetime] = None,
-        last_accessed: Optional[datetime] = None,
-        user_profile: Optional[PyHKEY] = None,
-        logon_token: Optional[PyHANDLE] = None,
+        windows_session_user: WindowsSessionUser | None,
+        last_fetched_at: datetime | None = None,
+        last_accessed: datetime | None = None,
+        user_profile: PyHKEY | None = None,
+        logon_token: PyHANDLE | None = None,
     ):
         self.windows_session_user = windows_session_user
         self.last_fetched_at = (
-            last_fetched_at if last_fetched_at is not None else datetime.now(tz=timezone.utc)
+            last_fetched_at if last_fetched_at is not None else datetime.now(tz=UTC)
         )
-        self.last_accessed = (
-            last_accessed if last_accessed is not None else datetime.now(tz=timezone.utc)
-        )
+        self.last_accessed = last_accessed if last_accessed is not None else datetime.now(tz=UTC)
         self.user_profile = user_profile
         self.logon_token = logon_token
 
@@ -165,7 +163,7 @@ def reset_user_password(username: str) -> _WindowsCredentialsCacheEntry:
         raise PasswordResetException(f'Failed to logon as "{username}". Error: {e}') from e
 
 
-def unload_and_close(user_profile: Optional[PyHKEY], logon_token: PyHANDLE):
+def unload_and_close(user_profile: PyHKEY | None, logon_token: PyHANDLE):
     """Unloads the user profile and closes the logon token handle"""
     # https://timgolden.me.uk/pywin32-docs/win32profile__UnloadUserProfile_meth.html
     if user_profile is not None:

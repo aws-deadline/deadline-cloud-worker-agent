@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 from unittest.mock import MagicMock, Mock, patch
-from typing import Any, Generator, NamedTuple, Type
+from typing import Any, NamedTuple
+from collections.abc import Generator
 import pytest
 import os
 import sys
@@ -19,14 +20,14 @@ from deadline_worker_agent.sessions import SessionRuntimeKind
 
 
 @pytest.fixture(autouse=True)
-def mock_config_file_cls() -> Generator[MagicMock, None, None]:
+def mock_config_file_cls() -> Generator[MagicMock]:
     with patch.object(settings_mod, "ConfigFile", autospec=True) as mock_config_file_cls:
         yield mock_config_file_cls
 
 
 class FieldTestCaseParams(NamedTuple):
     field_name: str
-    expected_type: Type
+    expected_type: type
     expected_required: bool
     expected_default: Any
     expected_default_factory_return_value: Any

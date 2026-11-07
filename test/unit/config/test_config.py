@@ -6,7 +6,8 @@ from __future__ import annotations
 from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
-from typing import Generator, List, Optional, cast
+from typing import cast
+from collections.abc import Generator
 import logging
 import pytest
 import os
@@ -20,7 +21,7 @@ from deadline_worker_agent.sessions import SessionRuntimeKind
 
 
 @pytest.fixture(autouse=True)
-def mock_config_file_load() -> Generator[MagicMock, None, None]:
+def mock_config_file_load() -> Generator[MagicMock]:
     """Patches ConfigFile.load in the config module so Configuration.__init__ doesn't
     try to read a real config file when loading the region."""
     with patch.object(config_mod.ConfigFile, "load") as mock_load:
@@ -31,7 +32,7 @@ def mock_config_file_load() -> Generator[MagicMock, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def mock_worker_settings_cls() -> Generator[MagicMock, None, None]:
+def mock_worker_settings_cls() -> Generator[MagicMock]:
     """Patches the WorkerSettings class import in the deadline_worker_agent.config.config module
     module and returns the Mock instance"""
 
@@ -86,7 +87,7 @@ def parsed_args(
 @pytest.fixture(autouse=True)
 def arg_parser(
     parsed_args: ParsedCommandLineArguments,
-) -> Generator[MagicMock, None, None]:
+) -> Generator[MagicMock]:
     """Fixture containing the mocked argument parser"""
     with patch.object(config_mod, "get_argument_parser") as get_argument_parser:
         arg_parser = MagicMock()
@@ -96,7 +97,7 @@ def arg_parser(
 
 
 @pytest.fixture
-def expected_session_user() -> Optional[SessionUser]:
+def expected_session_user() -> SessionUser | None:
     if os.name == "posix":
         return PosixSessionUser(user="user", group="group")
     else:
@@ -104,7 +105,7 @@ def expected_session_user() -> Optional[SessionUser]:
 
 
 @pytest.fixture(autouse=os.name == "nt")
-def reset_user_password(expected_session_user) -> Generator[Optional[MagicMock], None, None]:
+def reset_user_password(expected_session_user) -> Generator[MagicMock | None]:
     if sys.platform == "win32":
         with patch.object(config_mod, "reset_user_password") as reset_user_password:
             reset_user_password.return_value = MagicMock()
@@ -128,7 +129,7 @@ class TestLoad:
         self,
         arg_parser: MagicMock,
         parsed_args: config_mod.ParsedCommandLineArguments,
-        args: Optional[List[str]],
+        args: list[str] | None,
     ) -> None:
         """
         Tests to ensure `Configuration.load()` uses the argument parser.
@@ -487,7 +488,7 @@ class TestInit:
         self,
         farm_id: str,
         fleet_id: str,
-        profile: Optional[str],
+        profile: str | None,
         verbose: bool,
     ) -> None:
         """Tests that valid arguments used to initialize a Configuration instance match the instance's attributes"""
@@ -1324,7 +1325,7 @@ class TestLog:
         logger_mock: MagicMock,
         farm_id: str,
         fleet_id: str,
-        profile: Optional[str],
+        profile: str | None,
         verbose: bool,
     ) -> None:
         """Assert that log calls made if the logger is not enabled for the specified level"""

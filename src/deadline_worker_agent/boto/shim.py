@@ -5,7 +5,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Callable, Optional, TYPE_CHECKING, Union
+from typing import Any, TYPE_CHECKING
+from collections.abc import Callable
 from uuid import uuid4
 
 from boto3 import Session as _Session
@@ -50,7 +51,7 @@ class DeadlineClient:
         hostProperties: HostProperties | None = None,
     ) -> CreateWorkerResponse:
         """Create a Worker and get a worker ID to be used to identify it."""
-        create_worker_method: Optional[Callable]
+        create_worker_method: Callable | None
 
         create_worker_method = getattr(self._real_client, "create_worker", None)
 
@@ -83,7 +84,7 @@ class DeadlineClient:
     ) -> dict[str, Any]:
         """De-Register this worker agent for the given worker ID."""
 
-        delete_worker_method: Optional[Callable]
+        delete_worker_method: Callable | None
 
         delete_worker_method = getattr(self._real_client, "delete_worker", None)
 
@@ -418,7 +419,7 @@ class DeadlineClient:
         farmId: str,
         fleetId: str,
         workerId: str,
-        status: Union[str, WorkerStatus],
+        status: str | WorkerStatus,
         capabilities: dict[str, Any] | None = None,
         hostProperties: HostProperties | None = None,
     ) -> UpdateWorkerResponse:
@@ -466,7 +467,7 @@ class Session(_Session):
     def client(self, service: str, *args: Any, **kwargs: Any) -> DeadlineClient:
         """Returns a real boto3 client for any service other than deadline.
         If 'deadline' is requested, the mocked class is returned."""
-        real_client = super(Session, self).client(service, *args, **kwargs)
+        real_client = super().client(service, *args, **kwargs)
         if service != "deadline":
             return real_client
         return DeadlineClient(real_client)

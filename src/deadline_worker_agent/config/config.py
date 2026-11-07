@@ -8,7 +8,8 @@ import getpass
 import logging as _logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Sequence, Tuple, cast, TYPE_CHECKING
+from typing import Any, cast, TYPE_CHECKING
+from collections.abc import Sequence
 
 from .._session_runtime_kind import SessionRuntimeKind
 
@@ -49,15 +50,15 @@ class JobsRunAsUserOverride:
     run_as_agent: bool
     """True -> All jobs run as the agent process' user."""
 
-    job_user: Optional[SessionUser] = None
+    job_user: SessionUser | None = None
     """If provided and run_as_agent is False, then all Jobs run by this agent will run as this user."""
 
     if sys.platform == "win32":
         # we need to keep this handle referenced to avoid it being garbage collected.
-        logon_token: Optional[PyHANDLE] = None
-        user_profile: Optional[PyHKEY] = None
+        logon_token: PyHANDLE | None = None
+        user_profile: PyHKEY | None = None
         # Domain user settings for deferred credential resolution at runtime.
-        windows_user_settings: Optional[WindowsUserSettings] = None
+        windows_user_settings: WindowsUserSettings | None = None
 
 
 # Default paths for the Worker persistence directory subdirectories.
@@ -80,7 +81,7 @@ class Configuration:
     farm_id: str
     fleet_id: str
     cleanup_session_user_processes: bool
-    profile: Optional[str]
+    profile: str | None
     verbose: bool
     no_shutdown: bool
     job_run_as_user_overrides: JobsRunAsUserOverride
@@ -109,7 +110,7 @@ class Configuration:
     """Path to the root directory where worker session directories are created under"""
     session_runtime: SessionRuntimeKind
     """The session runtime implementation to use"""
-    region: Optional[str]
+    region: str | None
     """The AWS region to use. If None, boto3's default region resolution is used."""
 
     # Used to optimize the memory allocation and attribute lookup speed. Tells python to not create a dict
@@ -275,7 +276,7 @@ class Configuration:
         # Region is loaded directly from the config file as a fallback.
         # It is only used if boto3 cannot resolve a region on its own
         # (e.g. via AWS_DEFAULT_REGION, AWS_REGION, AWS config file, or IMDS).
-        self.region: Optional[str] = None
+        self.region: str | None = None
         try:
             config_file = ConfigFile.load()
             self.region = config_file.aws.region
@@ -289,7 +290,7 @@ class Configuration:
 
         self._validate()
 
-    def _get_user_and_group_from_job_user(self, job_user: str) -> Tuple[str, str]:
+    def _get_user_and_group_from_job_user(self, job_user: str) -> tuple[str, str]:
         try:
             user, group = job_user.split(":")
         except ValueError:
@@ -325,7 +326,7 @@ class Configuration:
                 f"Host metrics logging interval must be a positive number, but got: {repr(self.host_metrics_logging_interval_seconds)}"
             )
 
-    def log(self, logger: Optional[_logging.Logger] = None, level: int = _logging.DEBUG) -> None:
+    def log(self, logger: _logging.Logger | None = None, level: int = _logging.DEBUG) -> None:
         """Emit logs that represent the effective Configuration.
 
         Arguments:
@@ -351,7 +352,7 @@ class Configuration:
     @classmethod
     def load(
         cls,
-        cli_args: Optional[Sequence[str]] = None,
+        cli_args: Sequence[str] | None = None,
     ) -> Configuration:
         """Loads the AWS Deadline Cloud Worker Agent configuration.
 

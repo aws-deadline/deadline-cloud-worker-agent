@@ -6,7 +6,8 @@ from collections.abc import MutableMapping
 import os
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, Generic, Iterator, TypeVar
+from typing import Any, Generic, TypeVar
+from collections.abc import Callable, Iterator
 
 _K = TypeVar("_K")
 _V = TypeVar("_V")

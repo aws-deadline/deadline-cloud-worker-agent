@@ -1,7 +1,8 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from typing import Generator, Any
+from typing import Any
+from collections.abc import Generator
 
 import pytest
 import sys
@@ -26,13 +27,13 @@ def caps() -> MagicMock:
 @pytest.fixture(autouse=True)
 def mock_get_libcap(
     libcap: MagicMock,
-) -> Generator[MagicMock, None, None]:
+) -> Generator[MagicMock]:
     with patch.object(test_mod, "_get_libcap", return_value=libcap) as mock_get_libcap:
         yield mock_get_libcap
 
 
 @pytest.fixture
-def mock_module_logger() -> Generator[MagicMock, None, None]:
+def mock_module_logger() -> Generator[MagicMock]:
     with patch.object(test_mod, "logger") as mock_module_logger:
         yield mock_module_logger
 
