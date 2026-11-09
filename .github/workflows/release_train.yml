@@ -20,6 +20,8 @@ on:
   schedule:
     # Daily backstop, off the hour.
     - cron: "17 6 * * *"
+    # Monday check for a weekly release; the train decides. Pause with the repo variable RELEASE_TRAIN_WEEKLY=false.
+    - cron: "17 15 * * 1"
   workflow_dispatch:
   push:
     # The default branch: a merged bot PR is reported right away instead of on the next schedule.
