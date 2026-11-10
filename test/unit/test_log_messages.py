@@ -6,7 +6,8 @@ import pytest
 import sys
 
 from unittest.mock import patch, MagicMock
-from typing import Any, Union, Generator, Optional
+from typing import Any
+from collections.abc import Generator
 
 import deadline_worker_agent as agent_module
 from deadline_worker_agent.log_messages import (
@@ -639,7 +640,7 @@ TEST_RECORDS = (
 )
 def test_messages_logged(
     level: int,
-    message: Union[str, BaseLogEvent],
+    message: str | BaseLogEvent,
     expected_dict: dict[str, Any],
     expected_desc: str,
     expected_message: str,
@@ -693,7 +694,7 @@ def test_messages_logged(
 
 @pytest.mark.parametrize("message, expected_dict, expected_desc, expected_message", TEST_RECORDS)
 def test_messages_logged_exception(
-    message: Union[str, BaseLogEvent],
+    message: str | BaseLogEvent,
     expected_dict: dict[str, Any],
     expected_desc: str,
     expected_message: str,
@@ -799,9 +800,7 @@ def scheduler_session(queue_id: str, job_id: str) -> MagicMock:
 
 
 @pytest.fixture
-def session_map(
-    session_id: str, scheduler_session: MagicMock
-) -> Generator[dict[str, MagicMock], None, None]:
+def session_map(session_id: str, scheduler_session: MagicMock) -> Generator[dict[str, MagicMock]]:
     with patch.object(
         agent_module.scheduler.scheduler.SessionMap, "get_session_map"
     ) as mock_get_session_map:
@@ -829,7 +828,7 @@ def test_log_openjd_logs(
     queue_id: str,
     job_id: str,
     session_map: dict[str, MagicMock],
-    log_content: Optional[LogContent],
+    log_content: LogContent | None,
     expected_result: bool,
 ) -> None:
     # GIVEN

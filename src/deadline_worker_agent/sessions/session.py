@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from functools import partial
 from logging import getLogger, LoggerAdapter
 from pathlib import Path
@@ -15,14 +15,10 @@ from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Generator,
-    Iterable,
     Literal,
-    Optional,
-    Tuple,
     TypeVar,
 )
+from collections.abc import Callable, Generator, Iterable
 from deadline_worker_agent.api_models import (
     EntityIdentifier,
     AttachmentDownloadAction,
@@ -134,7 +130,7 @@ class Session:
 
     _action_update_lock: RLock
     _active_envs: list[ActiveEnvironment]
-    _asset_sync: Optional[AssetSync]
+    _asset_sync: AssetSync | None
     _id: str
     _interrupted: bool = False
     _queue: SessionActionQueue
@@ -161,7 +157,7 @@ class Session:
 
     _manifest_paths_by_root: dict[str, list[str]] = dict()
 
-    _action_output_log_filter: Optional[ActionOutputCaptureFilter]
+    _action_output_log_filter: ActionOutputCaptureFilter | None
 
     logger: LoggerAdapter
 
@@ -173,7 +169,7 @@ class Session:
         env: dict[str, str] | None = None,
         queue_id: str,
         job_id: str,
-        asset_sync: Optional[AssetSync],
+        asset_sync: AssetSync | None,
         os_user: SessionUser | None,
         retain_session_dir: bool = False,
         session_runtime_kind: SessionRuntimeKind = SessionRuntimeKind.PYTHON,
@@ -182,7 +178,7 @@ class Session:
         action_update_lock: RLock,
         session_root_dir: Path,
         farm_id: str = "",
-        region: Optional[str] = None,
+        region: str | None = None,
         resolved_symbol_table_json: str | None = None,
     ) -> None:
         self._id = id
@@ -257,7 +253,7 @@ class Session:
         return self._id
 
     @property
-    def os_user(self) -> Optional[SessionUser]:
+    def os_user(self) -> SessionUser | None:
         """The session user"""
         return self._os_user
 
@@ -432,7 +428,7 @@ class Session:
         #################
 
         # Build up an ordered list of cleanup actions for the session
-        actions: list[Tuple[Callable[[], None], str]] = []
+        actions: list[tuple[Callable[[], None], str]] = []
 
         # If we have a running action in the session, we cancel it
         with (
@@ -454,7 +450,7 @@ class Session:
                     SessionActionStatus(
                         completed_status=self._stop_current_action_result,
                         start_time=current_action.start_time,
-                        end_time=datetime.now(tz=timezone.utc),
+                        end_time=datetime.now(tz=UTC),
                         id=current_action.definition.id,
                         status=ActionStatus(
                             state=ActionState.CANCELED,
@@ -659,8 +655,8 @@ class Session:
             self._report_action_update(
                 SessionActionStatus(
                     completed_status="FAILED",
-                    start_time=datetime.now(tz=timezone.utc),
-                    end_time=datetime.now(tz=timezone.utc),
+                    start_time=datetime.now(tz=UTC),
+                    end_time=datetime.now(tz=UTC),
                     id=e.action_id,
                     status=ActionStatus(
                         state=ActionState.FAILED,
@@ -689,7 +685,7 @@ class Session:
             self._current_action = None
             return
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
 
         logger.info(
             SessionActionLogEvent(
@@ -806,7 +802,7 @@ class Session:
 
     def _monitor_action(
         self, timeout: timedelta | None = None, frequency: timedelta = timedelta(seconds=0.3)
-    ) -> Generator[ActionStatus, None, None]:
+    ) -> Generator[ActionStatus]:
         """A generator function to help a caller monitor the life-cycle of an action.
 
         The generator will yield the status of the action at a regular frequency. The generator
@@ -877,7 +873,7 @@ class Session:
         *,
         job_env_id: str,
         environment: EnvironmentModel,
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
         step_let_declarations: list[str] | None = None,
@@ -902,7 +898,7 @@ class Session:
         self,
         *,
         job_env_id: str,
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         resolved_symbol_table_json: str | None = None,
     ) -> None:
         if not self._active_envs or self._active_envs[-1].job_env_id != job_env_id:
@@ -952,7 +948,7 @@ class Session:
             The status of the action that has updated/completed
         """
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
 
         with (
             # NOTE: Lock acquisition order is important. Must be:
@@ -991,7 +987,7 @@ class Session:
         *,
         action_status: ActionStatus,
         now: datetime,
-    ) -> Optional[Future]:
+    ) -> Future | None:
         """Internal implementation for the callback invoked on every Open Job Description status/progress
         update and the completion/exit of the current action. The caller should acquire the
         Session._current_action_lock before calling this method.
@@ -1228,7 +1224,7 @@ class Session:
         *,
         step_script: StepScriptModel,
         task_parameter_values: TaskParameterSet,
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
         resolved_symbol_table_json: str | None = None,
@@ -1247,7 +1243,7 @@ class Session:
         *,
         step_script: StepScriptModel,
         task_parameter_values: TaskParameterSet,
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         log_task_banner: bool = True,
     ) -> None:
         self._runtime._run_task_without_session_env(
@@ -1261,7 +1257,7 @@ class Session:
         self,
         *,
         current_action_result: Literal["INTERRUPTED", "FAILED"] = "FAILED",
-        grace_time: Optional[timedelta] = None,
+        grace_time: timedelta | None = None,
         fail_message: str | None = None,
     ) -> None:
         """Synchronously stops the session

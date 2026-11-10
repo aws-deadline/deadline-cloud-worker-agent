@@ -6,11 +6,10 @@ from unittest.mock import MagicMock, patch
 import os
 import secrets
 import string
-from typing import Optional
 
 import pytest
 from pytest import FixtureRequest
-from typing import Generator, Optional
+from collections.abc import Generator
 
 from deadline.job_attachments.models import (
     JobAttachmentsFileSystem,
@@ -70,7 +69,7 @@ def password() -> str:
 
 
 @pytest.fixture(params=("wa_group",))
-def group(request: pytest.FixtureRequest) -> Optional[str]:
+def group(request: pytest.FixtureRequest) -> str | None:
     return request.param
 
 
@@ -133,8 +132,8 @@ def parsed_args(
     fleet_id: str,
     region: str,
     user: str,
-    password: Optional[str],
-    group: Optional[str],
+    password: str | None,
+    group: str | None,
     service_start: bool,
     confirmed: bool,
     allow_shutdown: bool,
@@ -452,7 +451,7 @@ def host_properties(hostname: str) -> HostProperties:
 
 
 @pytest.fixture
-def mock_config_file_not_found() -> Generator[MagicMock, None, None]:
+def mock_config_file_not_found() -> Generator[MagicMock]:
     """Fixture that mocks deadline_worker_agent.config.config_file.ConfigFile.load() to raise a
     FileNotFound error.
 

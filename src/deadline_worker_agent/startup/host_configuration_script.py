@@ -5,9 +5,9 @@ from datetime import timedelta
 from logging import Logger
 from pathlib import Path
 from threading import Event, Thread
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from openjd.model import SymbolTable
-from typing import Any, MutableMapping, Optional
+from typing import Any
 import sys
 
 from deadline_worker_agent.utils import FileContext
@@ -60,7 +60,7 @@ class _HostConfigurationOutputLogAdapter(LoggerAdapter):
         logger: Logger,
         farm_id: str,
         fleet_id: str,
-        worker_id: Optional[str],
+        worker_id: str | None,
     ) -> None:
         super().__init__(logger=logger, extra={"worker_id": worker_id})
         self._farm_id = farm_id
@@ -90,7 +90,7 @@ class _HostConfigurationOutputLogAdapter(LoggerAdapter):
             )
             try:
                 msg = msg % fmt_args
-            except (TypeError, ValueError, KeyError):
+            except TypeError, ValueError, KeyError:
                 # A malformed template. Leaving the args attached would drop them
                 # silently: process() below wraps any str in an event, and the filter's
                 # BaseLogEvent branch neither applies args nor reports the mismatch, so
@@ -141,7 +141,7 @@ class _HostConfigTimer:
         self._fleet_id = fleet_id
         self._worker_id = worker_id
         self._stop_event = Event()
-        self._thread: Optional[Thread] = None
+        self._thread: Thread | None = None
 
     def start(self) -> None:
         self._thread = Thread(target=self._run, daemon=True, name="host-config-timer")
@@ -253,7 +253,7 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
 
         # Async processing event.
         self._action_event = Event()
-        self._action_state: Optional[ActionState] = None
+        self._action_state: ActionState | None = None
 
         # Super init is after setting members for computing env vars.
         super().__init__(
@@ -377,7 +377,7 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
 
         assert False, "This method should never be run outside of Win32."
 
-    def _host_configuration_env_vars(self) -> Optional[dict[str, Optional[str]]]:
+    def _host_configuration_env_vars(self) -> dict[str, str | None] | None:
         credentials = self._worker_boto3_session.get_credentials()
         env = {
             "DEADLINE_FARM_ID": self._configuration.farm_id,
@@ -401,7 +401,7 @@ class HostConfigurationScriptRunner(ScriptRunnerBase):
         self._action_event.set()
 
     def cancel(
-        self, *, time_limit: Optional[timedelta] = None, mark_action_failed: bool = False
+        self, *, time_limit: timedelta | None = None, mark_action_failed: bool = False
     ) -> None:
         """This method is inherited from the base class and only used for posix."""
         # Action cancellation. In this case, we terminate the child.

@@ -6,7 +6,7 @@ Deadline Cloud service and checking that the result/output of the jobs is as we 
 
 from flaky import flaky
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 import pytest
 import logging
 from deadline_test_fixtures import (
@@ -418,8 +418,8 @@ class TestJobSubmission:
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         session_worker: EC2InstanceWorker,
-        run_actions: Dict[str, Any],
-        environment_actions: Dict[str, Any],
+        run_actions: dict[str, Any],
+        environment_actions: dict[str, Any],
         expected_failed_action: str,
     ) -> None:
         job: Job = Job.submit(
@@ -459,7 +459,7 @@ class TestJobSubmission:
             max_time=60,
             interval=10,
         )
-        def is_expected_session_action_failed(sessions: List[Dict[str, Any]]) -> bool:
+        def is_expected_session_action_failed(sessions: list[dict[str, Any]]) -> bool:
             found_failed_session_action: bool = False
             for session in sessions:
                 session_actions = deadline_client.list_session_actions(
@@ -545,11 +545,11 @@ class TestJobSubmission:
         job.wait_until_complete(client=deadline_client)
 
         found_task_run_action: bool = False
-        sessions: List[Dict[str, Any]] = deadline_client.list_sessions(
+        sessions: list[dict[str, Any]] = deadline_client.list_sessions(
             farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
         ).get("sessions")
         for session in sessions:
-            session_actions: List[Dict[str, Any]] = deadline_client.list_session_actions(
+            session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
                 farmId=job.farm.id,
                 queueId=job.queue.id,
                 jobId=job.id,
@@ -562,7 +562,7 @@ class TestJobSubmission:
                 if "taskRun" in session_action["definition"]:
                     found_task_run_action = True
                     session_action_id: str = session_action["sessionActionId"]
-                    get_session_action_response: Dict[str, Any] = (
+                    get_session_action_response: dict[str, Any] = (
                         deadline_client.get_session_action(
                             farmId=job.farm.id,
                             queueId=job.queue.id,
@@ -649,8 +649,8 @@ class TestJobSubmission:
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         session_worker: EC2InstanceWorker,
-        run_actions: Dict[str, Any],
-        environment_actions: Dict[str, Any],
+        run_actions: dict[str, Any],
+        environment_actions: dict[str, Any],
         expected_canceled_action: str,
     ) -> None:
         job: Job = Job.submit(
@@ -730,7 +730,7 @@ class TestJobSubmission:
             max_time=120,
             interval=10,
         )
-        def is_expected_session_action_canceled(sessions: List[Dict[str, Any]]) -> bool:
+        def is_expected_session_action_canceled(sessions: list[dict[str, Any]]) -> bool:
             found_canceled_session_action: bool = False
             for session in sessions:
                 session_actions: list[dict[str, Any]] = deadline_client.list_session_actions(
@@ -1008,9 +1008,9 @@ class TestJobSubmission:
                 farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
             ).get("sessions")
 
-            env_exit_status: Optional[str] = None
-            env_exit_action_id: Optional[str] = None
-            env_exit_session_id: Optional[str] = None
+            env_exit_status: str | None = None
+            env_exit_action_id: str | None = None
+            env_exit_session_id: str | None = None
 
             @backoff.on_predicate(
                 wait_gen=backoff.constant,
@@ -1072,7 +1072,7 @@ class TestJobSubmission:
     ) -> None:
         # Test that when syncing input job attachments and the user cancels the job, the syncInputJobAttachments session actions are canceled
         # Create the template file, the job won't actually do anything substantial
-        job_parameters: List[Dict[str, str]] = [
+        job_parameters: list[dict[str, str]] = [
             {"name": "DataDir", "value": tmp_path},
         ]
         with open(os.path.join(tmp_path, "template.json"), "w+") as template_file:
@@ -1129,7 +1129,7 @@ class TestJobSubmission:
         set_setting("defaults.farm_id", deadline_resources.farm.id, config)
         set_setting("defaults.queue_id", deadline_resources.queue_a.id, config)
 
-        job_id: Optional[str] = api.create_job_from_job_bundle(
+        job_id: str | None = api.create_job_from_job_bundle(
             tmp_path,
             job_parameters,
             priority=99,
@@ -1194,7 +1194,7 @@ class TestJobSubmission:
             max_time=120,
             interval=10,
         )
-        def sync_input_actions_are_canceled(sessions: List[Dict[str, Any]]) -> bool:
+        def sync_input_actions_are_canceled(sessions: list[dict[str, Any]]) -> bool:
             found_canceled_sync_input_action: bool = False
             for session in sessions:
                 session_actions = deadline_client.list_session_actions(
@@ -1363,8 +1363,8 @@ class TestJobSubmission:
             interval=5,
         )
         def find_succeeded_and_running_actions() -> tuple[str, str]:
-            found_succeeded_action_id: Optional[str] = None
-            found_running_action_id: Optional[str] = None
+            found_succeeded_action_id: str | None = None
+            found_running_action_id: str | None = None
 
             sessions: list[dict[str, Any]] = deadline_client.list_sessions(
                 farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
@@ -1656,7 +1656,7 @@ class TestJobSubmission:
         deadline_resources: DeadlineResources,
         deadline_client: DeadlineClient,
         session_worker: EC2InstanceWorker,
-        job_environments: List[Dict[str, Any]],
+        job_environments: list[dict[str, Any]],
     ) -> None:
         job_template: dict[str, Any] = {
             "specificationVersion": "jobtemplate-2023-09",
@@ -1775,7 +1775,7 @@ class TestJobSubmission:
         worker_log_group_name: str = (
             f"/aws/deadline/{deadline_resources.farm.id}/{deadline_resources.fleet.id}"
         )
-        worker_id: Optional[str] = session_worker.worker_id
+        worker_id: str | None = session_worker.worker_id
         assert worker_id is not None
 
         @backoff.on_predicate(
@@ -1854,7 +1854,7 @@ class TestJobSubmission:
             max_time=180,
             interval=4,
         )
-        def get_session_action_id() -> Optional[str]:
+        def get_session_action_id() -> str | None:
             sessions: list[dict[str, Any]] = deadline_client.list_sessions(
                 farmId=job.farm.id, queueId=job.queue.id, jobId=job.id
             ).get("sessions")
@@ -1877,7 +1877,7 @@ class TestJobSubmission:
 
             return None
 
-        session_action_id: Optional[str] = get_session_action_id()
+        session_action_id: str | None = get_session_action_id()
         assert session_action_id is not None
 
         @backoff.on_predicate(

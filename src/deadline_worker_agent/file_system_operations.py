@@ -1,6 +1,5 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from typing import Optional
 from openjd.sessions import WindowsSessionUser, SessionUser
 import getpass
 from pathlib import Path
@@ -20,9 +19,9 @@ class FileSystemPermissionEnum(Enum):
 
 def set_permissions(
     file_path: Path,
-    user_permission: Optional[FileSystemPermissionEnum] = None,
-    permitted_user: Optional[SessionUser] = None,
-    agent_user_permission: Optional[FileSystemPermissionEnum] = None,
+    user_permission: FileSystemPermissionEnum | None = None,
+    permitted_user: SessionUser | None = None,
+    agent_user_permission: FileSystemPermissionEnum | None = None,
 ):
     if os.name == "nt":
         permitted_user = cast(WindowsSessionUser, permitted_user)
@@ -37,11 +36,11 @@ def set_permissions(
 
 def touch_file(
     file_path: Path,
-    user_permission: Optional[FileSystemPermissionEnum] = None,
-    permitted_user: Optional[SessionUser] = None,
-    agent_user_permission: Optional[FileSystemPermissionEnum] = None,
-    group: Optional[str] = None,
-    group_permission: Optional[FileSystemPermissionEnum] = None,
+    user_permission: FileSystemPermissionEnum | None = None,
+    permitted_user: SessionUser | None = None,
+    agent_user_permission: FileSystemPermissionEnum | None = None,
+    group: str | None = None,
+    group_permission: FileSystemPermissionEnum | None = None,
     disable_permission_inheritance: bool = False,
 ):
     if os.name == "nt":
@@ -63,9 +62,9 @@ def touch_file(
 
 def make_directory(
     dir_path: Path,
-    user_permission: Optional[FileSystemPermissionEnum] = None,
-    permitted_user: Optional[SessionUser] = None,
-    agent_user_permission: Optional[FileSystemPermissionEnum] = None,
+    user_permission: FileSystemPermissionEnum | None = None,
+    permitted_user: SessionUser | None = None,
+    agent_user_permission: FileSystemPermissionEnum | None = None,
     exist_ok: bool = True,
     parents: bool = False,
 ):
@@ -84,12 +83,12 @@ def make_directory(
 
 def _set_windows_permissions(
     path: Path,
-    user: Optional[str] = None,
-    user_permission: Optional[FileSystemPermissionEnum] = None,
-    group: Optional[str] = None,
-    group_permission: Optional[FileSystemPermissionEnum] = None,
-    agent_user_permission: Optional[FileSystemPermissionEnum] = None,
-    users_group_permission: Optional[FileSystemPermissionEnum] = None,
+    user: str | None = None,
+    user_permission: FileSystemPermissionEnum | None = None,
+    group: str | None = None,
+    group_permission: FileSystemPermissionEnum | None = None,
+    agent_user_permission: FileSystemPermissionEnum | None = None,
+    users_group_permission: FileSystemPermissionEnum | None = None,
     disable_permission_inheritance: bool = False,
 ):
     import win32security

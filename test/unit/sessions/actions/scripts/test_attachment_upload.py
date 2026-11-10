@@ -5,7 +5,7 @@ import sys
 import pytest
 from pathlib import Path, PurePath
 from unittest.mock import Mock, call, patch, mock_open
-from typing import Optional, Generator
+from collections.abc import Generator
 
 import deadline_worker_agent.sessions.actions.scripts.attachment_upload as attachment_upload_mod
 from deadline.job_attachments.api.manifest import _manifest_snapshot
@@ -29,19 +29,19 @@ from deadline_worker_agent.sessions.actions.scripts.attachment_upload import (
 
 
 @pytest.fixture(autouse=True)
-def mock_record_attachment_upload_fail_telemetry_event() -> Generator[Mock, None, None]:
+def mock_record_attachment_upload_fail_telemetry_event() -> Generator[Mock]:
     with patch.object(attachment_upload_mod, "record_attachment_upload_fail_telemetry_event") as m:
         yield m
 
 
 @pytest.fixture(autouse=True)
-def mock_record_attachment_upload_telemetry_event() -> Generator[Mock, None, None]:
+def mock_record_attachment_upload_telemetry_event() -> Generator[Mock]:
     with patch.object(attachment_upload_mod, "record_attachment_upload_telemetry_event") as m:
         yield m
 
 
 @pytest.fixture(autouse=True)
-def mock_record_attachment_upload_latencies_telemetry_event() -> Generator[Mock, None, None]:
+def mock_record_attachment_upload_latencies_telemetry_event() -> Generator[Mock]:
     with patch.object(
         attachment_upload_mod, "record_attachment_upload_latencies_telemetry_event"
     ) as m:
@@ -49,7 +49,7 @@ def mock_record_attachment_upload_latencies_telemetry_event() -> Generator[Mock,
 
 
 @pytest.fixture(autouse=True)
-def mock_record_success_fail_telemetry_event() -> Generator[Mock, None, None]:
+def mock_record_success_fail_telemetry_event() -> Generator[Mock]:
     with patch.object(attachment_upload_mod, "record_success_fail_telemetry_event") as m:
         yield m
 
@@ -125,7 +125,7 @@ class TestAttachmentUpload:
 
     def test_parse_worker_manifest_properties_file_error(self):
         # Test file I/O error handling
-        with patch("builtins.open", side_effect=IOError("File not found")):
+        with patch("builtins.open", side_effect=OSError("File not found")):
             with pytest.raises(ValueError, match="Error reading worker properties file"):
                 parse_worker_manifest_properties("/nonexistent/path.json")
 
@@ -765,7 +765,7 @@ class TestTelemetry:
         mock_snapshot: Mock,
         mock_upload: Mock,
         mock_latencies_telemetry: Mock,
-        root_path_to_output_manifest: Optional[Mock],
+        root_path_to_output_manifest: Mock | None,
     ):
         """Test that latencies telemetry is recorded whether output is uploaded or not"""
         # GIVEN

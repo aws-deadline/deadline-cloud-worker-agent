@@ -3,7 +3,7 @@
 
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
-from typing import Generator
+from collections.abc import Generator
 import botocore
 import sys
 
@@ -24,7 +24,7 @@ if sys.platform == "win32":
             return datetime(2000, 1, 1)
 
         @fixture(autouse=True)
-        def datetime_mock(self, now: datetime) -> Generator[MagicMock, None, None]:
+        def datetime_mock(self, now: datetime) -> Generator[MagicMock]:
             with patch.object(credentials_mod, "datetime") as mock:
                 mock.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
                 mock.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(

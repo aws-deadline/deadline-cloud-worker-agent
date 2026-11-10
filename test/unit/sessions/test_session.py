@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 from collections.abc import Generator, Iterable
 from concurrent.futures import wait
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from threading import RLock
 from types import TracebackType
-from typing import Literal, Optional
+from typing import Literal
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -81,7 +81,7 @@ from deadline_worker_agent.sessions.attachment_models import (
 
 
 @pytest.fixture
-def os_user() -> Optional[SessionUser]:
+def os_user() -> SessionUser | None:
     if os.name == "posix":
         return PosixSessionUser(user="some-user", group="some-group")
     elif os.name == "nt":
@@ -124,7 +124,7 @@ def action_complete_time() -> datetime:
 
 
 @pytest.fixture
-def mock_create_runtime() -> Generator[MagicMock, None, None]:
+def mock_create_runtime() -> Generator[MagicMock]:
     """Patches create_session_runtime in the session module and yields the mock factory."""
     with patch.object(session_mod, "create_session_runtime") as mock_create:
         yield mock_create
@@ -347,7 +347,7 @@ def success_action_status(request: pytest.FixtureRequest) -> ActionStatus:
 
 
 @pytest.fixture
-def mock_mod_logger() -> Generator[MagicMock, None, None]:
+def mock_mod_logger() -> Generator[MagicMock]:
     """Fixture that mocks the session module's logger"""
     with patch.object(session_mod, "logger") as mock_mod_logger:
         yield mock_mod_logger
@@ -501,8 +501,8 @@ class TestSessionRuntimeKind:
     def test_explicit_runtime_kind_passed(
         self,
         asset_sync: MagicMock,
-        job_details: "JobDetails",
-        os_user: "SessionUser | None",
+        job_details: JobDetails,
+        os_user: SessionUser | None,
         mock_create_runtime: MagicMock,
         queue_id: str,
         session_action_queue: MagicMock,
@@ -532,8 +532,8 @@ class TestSessionRuntimeKind:
     def test_default_runtime_kind_is_python(
         self,
         asset_sync: MagicMock,
-        job_details: "JobDetails",
-        os_user: "SessionUser | None",
+        job_details: JobDetails,
+        os_user: SessionUser | None,
         mock_create_runtime: MagicMock,
         queue_id: str,
         session_action_queue: MagicMock,
@@ -567,7 +567,7 @@ class TestSessionOuterRun:
     def mock_inner_run(
         self,
         session: Session,
-    ) -> Generator[MagicMock, None, None]:
+    ) -> Generator[MagicMock]:
         """Fixture to patch Session._run() with a MagicMock and return it"""
         with patch.object(session, "_run") as mock_inner_run:
             yield mock_inner_run
@@ -576,7 +576,7 @@ class TestSessionOuterRun:
     def mock_cleanup(
         self,
         session: Session,
-    ) -> Generator[MagicMock, None, None]:
+    ) -> Generator[MagicMock]:
         """Fixture to patch Session._cleanup with a MagicMock and return it"""
         with patch.object(session, "_cleanup") as mock_cleanup:
             yield mock_cleanup
@@ -1019,13 +1019,13 @@ class TestSessionActionUpdatedImpl:
     """Test cases for Session._action_updated_impl()"""
 
     @pytest.fixture(autouse=True)
-    def mock_report_action_update(self, session: Session) -> Generator[MagicMock, None, None]:
+    def mock_report_action_update(self, session: Session) -> Generator[MagicMock]:
         """Returns a patched mock for Session._report_action_update"""
         with patch.object(session, "_report_action_update") as mock_report_action_update:
             yield mock_report_action_update
 
     @pytest.fixture
-    def mock_action_output_log_filter(self) -> Generator[MagicMock, None, None]:
+    def mock_action_output_log_filter(self) -> Generator[MagicMock]:
         """Returns a patched mock for ActionOutputCaptureFilter"""
         with patch(
             "deadline_worker_agent.sessions.session.ActionOutputCaptureFilter"
@@ -1033,7 +1033,7 @@ class TestSessionActionUpdatedImpl:
             yield mock_filter
 
     @pytest.fixture
-    def mock_openjd_log(self) -> Generator[MagicMock, None, None]:
+    def mock_openjd_log(self) -> Generator[MagicMock]:
         """Returns a patched mock for OPENJD_LOG"""
         with patch("deadline_worker_agent.sessions.session.OPENJD_LOG") as mock_log:
             yield mock_log
@@ -1617,7 +1617,7 @@ class TestSessionActionUpdatedImpl:
                 task_id=task_id,
                 task_parameter_values=dict[str, ParameterValue](),
             ),
-            start_time=datetime.now(tz=timezone.utc),
+            start_time=datetime.now(tz=UTC),
         )
         session._current_action = current_action
 
@@ -1629,7 +1629,7 @@ class TestSessionActionUpdatedImpl:
         # WHEN - Progress update is reported
         session._action_updated_impl(
             action_status=progress_action_status,
-            now=datetime.now(tz=timezone.utc),
+            now=datetime.now(tz=UTC),
         )
 
         # THEN - No manifests field should be included
@@ -1670,7 +1670,7 @@ class TestSessionActionUpdatedImpl:
                 task_id=task_id,
                 task_parameter_values=dict[str, ParameterValue](),
             ),
-            start_time=datetime.now(tz=timezone.utc),
+            start_time=datetime.now(tz=UTC),
         )
         session._current_action = current_action
 
@@ -1685,7 +1685,7 @@ class TestSessionActionUpdatedImpl:
         ):
             session._action_updated_impl(
                 action_status=failed_action_status,
-                now=datetime.now(tz=timezone.utc),
+                now=datetime.now(tz=UTC),
             )
 
         # THEN - No manifests field should be included
@@ -2002,7 +2002,7 @@ class TestSessionCleanup:
         openjd_session_cleanup.assert_called_once_with()
 
     @pytest.fixture
-    def mock_asset_sync(self, session: Session) -> Generator[MagicMock, None, None]:
+    def mock_asset_sync(self, session: Session) -> Generator[MagicMock]:
         with patch.object(session, "_asset_sync") as mock_asset_sync:
             yield mock_asset_sync
 
@@ -2871,8 +2871,8 @@ class TestResolvedSymbolTableForwarding:
     def test_init_passes_resolved_symbol_table_json_to_runtime_config(
         self,
         asset_sync: MagicMock,
-        job_details: "JobDetails",
-        os_user: "SessionUser | None",
+        job_details: JobDetails,
+        os_user: SessionUser | None,
         mock_create_runtime: MagicMock,
         queue_id: str,
         session_action_queue: MagicMock,

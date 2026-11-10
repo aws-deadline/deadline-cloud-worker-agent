@@ -7,7 +7,7 @@ from deadline_worker_agent.session_events import (
     LoggingAllowList,
     LOGGING_ALLOW_LIST,
 )
-from typing import Any, Dict
+from typing import Any
 import datetime
 import json
 
@@ -17,7 +17,7 @@ from deadline_worker_agent.log_messages import ApiRequestLogEvent, ApiResponseLo
 def test_logging_allow_list():
     # This test exists to ensure that no ACCIDENTAL changes are made to the logging allow-list
 
-    test_allow_list: Dict[str, LoggingAllowList] = {
+    test_allow_list: dict[str, LoggingAllowList] = {
         "deadline:CreateWorker": {
             "log_request_url": True,
             "req_log_body": {"hostProperties": True},
@@ -322,7 +322,7 @@ def test_logging_allow_list():
     ),
 )
 def test_log_before_call(
-    event_name: str, params: Dict[str, Any], expected_result: str, caplog: pytest.LogCaptureFixture
+    event_name: str, params: dict[str, Any], expected_result: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(0)
     log_before_call(event_name, params)
@@ -355,7 +355,7 @@ def test_log_before_call(
     ),
 )
 def test_log_before_ignore_list(
-    api_name: str, params: Dict[str, Any], caplog: pytest.LogCaptureFixture
+    api_name: str, params: dict[str, Any], caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(0)
     log_before_call("before-call." + api_name, params)
@@ -600,7 +600,7 @@ def test_log_before_ignore_list(
                 "SecretBinary": b"abdc",
                 "VersionStages": ["AWSCURRENT"],
                 "CreatedDate": datetime.datetime(
-                    2021, 4, 27, 14, 8, 44, 337000, tzinfo=datetime.timezone.utc
+                    2021, 4, 27, 14, 8, 44, 337000, tzinfo=datetime.UTC
                 ),
             },
             '{"ti": "📥", "type": "API", "subtype": "Resp", "operation": "secretsmanager:GetSecretValue", "status_code": 200, "params": {"ARN": "arn:aws:secretsmanager:us-west-2:000000000000:secret:Secret-qsrF9d", "Name": "Secret", "VersionId": "6fb9f17a-f9a9-4729-af0f-df67e976484c", "SecretString": "*REDACTED*", "SecretBinary": "*REDACTED*", "VersionStages": "*REDACTED*", "CreatedDate": "2021-04-27 14:08:44.337000+00:00"}, "request_id": "abc878ee-32b5-44d4-885f-29071648328c"}',
@@ -624,7 +624,7 @@ def test_log_before_ignore_list(
     ),
 )
 def test_log_after_call(
-    event_name: str, params: Dict[str, Any], expected_result: str, caplog: pytest.LogCaptureFixture
+    event_name: str, params: dict[str, Any], expected_result: str, caplog: pytest.LogCaptureFixture
 ):
     caplog.set_level(0)
     log_after_call(event_name, params)
@@ -661,7 +661,7 @@ def test_log_after_call(
     ),
 )
 def test_log_after_ignore_list(
-    api_name: str, params: Dict[str, Any], caplog: pytest.LogCaptureFixture
+    api_name: str, params: dict[str, Any], caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(0)
     log_before_call("after-call." + api_name, params)

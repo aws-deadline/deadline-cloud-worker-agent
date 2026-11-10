@@ -6,11 +6,11 @@ import os
 import sys
 import threading
 import traceback
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from configparser import ConfigParser
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
-from typing import Callable, Optional, Type, cast
+from typing import cast
 
 import backoff
 import boto3
@@ -59,13 +59,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.fixture(scope="session")
-def session_runtime_option(request: pytest.FixtureRequest) -> Optional[str]:
+def session_runtime_option(request: pytest.FixtureRequest) -> str | None:
     """Resolve the session runtime from the CLI option or environment variable.
 
     CLI option takes precedence over the environment variable.
     Returns None when neither is set (agent default behaviour).
     """
-    value: Optional[str] = request.config.getoption("--session-runtime")
+    value: str | None = request.config.getoption("--session-runtime")
     if value is None:
         value = os.environ.get("WORKER_AGENT_SESSION_RUNTIME")
         if value is not None and value not in _VALID_SESSION_RUNTIMES:
@@ -278,6 +278,15 @@ def test_runner_identity() -> dict[str, str]:
     return sts_client.get_caller_identity()
 
 
+# The worker agent requires Python 3.14, and neither EC2 worker's default interpreter is 3.14.
+# Both take the newest 3.14 available: Linux from AL2023's packages, Windows from python.org's
+# installers. See DeadlineWorkerConfiguration.worker_python.
+_DEFAULT_WORKER_PYTHON = {
+    "linux": "python3.14",
+    "windows": "3.14",
+}
+
+
 @pytest.fixture(scope="session")
 def worker_config(
     posix_job_user: PosixSessionUser,
@@ -285,7 +294,7 @@ def worker_config(
     posix_config_override_job_user: PosixSessionUser,
     worker_config: DeadlineWorkerConfiguration,
     windows_job_users: list[str],
-    session_runtime_option: Optional[str],
+    session_runtime_option: str | None,
 ) -> DeadlineWorkerConfiguration:
     """
     Builds the configuration for a DeadlineWorker.
@@ -302,10 +311,20 @@ def worker_config(
             If DEADLINE_SERVICE_MODEL_S3_URI was provided, this option is ignored.
         WORKER_AGENT_SESSION_RUNTIME: Pin the session_runtime worker config setting.
             Accepts: python, rust, service-selected. Overridden by --session-runtime CLI option.
+        WORKER_PYTHON: The Python that runs the agent. Defaults to Python 3.14 on the Linux and
+            Windows workers. Required on macOS: the path of a Python 3.14 interpreter on the host.
 
     Returns:
         DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
     """
+    worker_python = worker_config.worker_python or _DEFAULT_WORKER_PYTHON.get(
+        os.environ["OPERATING_SYSTEM"]
+    )
+    if worker_python is None:
+        raise RuntimeError(
+            "Set WORKER_PYTHON to the path of a Python 3.14 interpreter: the worker agent requires "
+            "Python 3.14 and the macOS worker's default /usr/bin/python3 is older."
+        )
 
     return dataclasses.replace(
         worker_config,
@@ -318,6 +337,7 @@ def worker_config(
         # TODO: Temporary workaround due to AWS CLI v2 upgrade causing canary failures when copying over AWS models for deadline
         service_model_path=None,
         session_runtime=session_runtime_option,
+        worker_python=worker_python,
     )
 
 
@@ -495,13 +515,13 @@ def _grab_bootstrap_log(worker: DeadlineWorker) -> None:
 # concurrent, so nothing here changes for them.
 _MACOS = os.environ.get("OPERATING_SYSTEM") == "macos"
 _SESSION_WORKER_KEY: pytest.StashKey[DeadlineWorker] = pytest.StashKey()
-_installed_worker: Optional[DeadlineWorker] = None
-_displaced_session_worker: Optional[DeadlineWorker] = None
+_installed_worker: DeadlineWorker | None = None
+_displaced_session_worker: DeadlineWorker | None = None
 # The worker stop_worker deliberately left installed for KEEP_WORKER_AFTER_FAILURE, if any. Not the
 # same question as "has a test failed and is the flag set": testsfailed only ever increases, so that
 # condition stays true for the rest of the session and would refuse every later claim, including
 # ones displacing an ordinary live worker that nothing chose to keep.
-_kept_worker: Optional[DeadlineWorker] = None
+_kept_worker: DeadlineWorker | None = None
 
 
 def _keeping_workers_after_failure(request: pytest.FixtureRequest) -> bool:
@@ -514,7 +534,7 @@ def _keeping_workers_after_failure(request: pytest.FixtureRequest) -> bool:
 def _claim_host(
     request: pytest.FixtureRequest,
     worker: DeadlineWorker,
-    session_worker: Optional[DeadlineWorker],
+    session_worker: DeadlineWorker | None,
 ) -> None:
     """Stop whatever currently holds the host so `worker` can install onto it."""
     global _installed_worker, _displaced_session_worker
@@ -678,7 +698,7 @@ def create_worker(
         # Resolved inside this branch, not above it. ec2_worker_type raises ValueError for an
         # operating system it does not recognise, so resolving it unconditionally would fail the
         # macOS run at fixture setup with an unsupported-OS error before the branch above could run.
-        worker_type = cast(Type[EC2InstanceWorker], request.getfixturevalue("ec2_worker_type"))
+        worker_type = cast(type[EC2InstanceWorker], request.getfixturevalue("ec2_worker_type"))
         LOG.info("Creating EC2 worker")
         ami_id = os.getenv("AMI_ID")
         subnet_id = os.getenv("SUBNET_ID")

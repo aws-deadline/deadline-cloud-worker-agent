@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Optional, Type
+from datetime import datetime, UTC
+from typing import Any, TypedDict
 import logging
 import json
 
-from typing_extensions import TypedDict
 
 from botocore.credentials import JSONFileCache
 
@@ -59,11 +58,11 @@ class TemporaryCredentials:
 
     @classmethod
     def from_cache(
-        cls: Type[TemporaryCredentials],
+        cls: type[TemporaryCredentials],
         *,
         cache: JSONFileCache,
         cache_key: str,
-    ) -> Optional[TemporaryCredentials]:
+    ) -> TemporaryCredentials | None:
         """Obtains temporary credentials from a botocore JSONFileCache"""
         try:
             if cache_key not in cache:
@@ -124,20 +123,18 @@ class TemporaryCredentials:
             AccessKeyId=self.access_key_id,
             SecretAccessKey=self.secret_access_key,
             SessionToken=self.session_token,
-            Expiration=self.expiry_time.astimezone(timezone.utc).strftime(_DATETIME_FORMAT),
+            Expiration=self.expiry_time.astimezone(UTC).strftime(_DATETIME_FORMAT),
         )
 
     @classmethod
     def from_file_format(
-        cls: Type[TemporaryCredentials], data: FileCredentials
+        cls: type[TemporaryCredentials], data: FileCredentials
     ) -> TemporaryCredentials:
         return cls(
             access_key_id=data["AccessKeyId"],
             secret_access_key=data["SecretAccessKey"],
             session_token=data["SessionToken"],
-            expiry_time=datetime.strptime(data["Expiration"], _DATETIME_FORMAT).replace(
-                tzinfo=timezone.utc
-            ),
+            expiry_time=datetime.strptime(data["Expiration"], _DATETIME_FORMAT).replace(tzinfo=UTC),
         )
 
     @classmethod
@@ -166,9 +163,7 @@ class TemporaryCredentials:
             raise TypeError('Expected key "Expiration" was not a ISO 8601 format string')
         else:
             try:
-                expiration = datetime.strptime(expiration, _DATETIME_FORMAT).replace(
-                    tzinfo=timezone.utc
-                )
+                expiration = datetime.strptime(expiration, _DATETIME_FORMAT).replace(tzinfo=UTC)
             except ValueError:
                 raise ValueError('Expected key "Expiration" was not a valid ISO 8601 format string')
         if not (version := data.get("Version", None)):
@@ -186,7 +181,7 @@ class TemporaryCredentials:
 
     @classmethod
     def from_deadline(
-        cls: Type[TemporaryCredentials],
+        cls: type[TemporaryCredentials],
         data: AwsCredentials,
     ) -> TemporaryCredentials:
         """
@@ -236,7 +231,7 @@ class TemporaryCredentials:
     @classmethod
     def from_deadline_assume_role_response(
         cls, *, response: dict[str, Any], credentials_required: bool, api_name: str
-    ) -> Optional[TemporaryCredentials]:
+    ) -> TemporaryCredentials | None:
         """
         Converts the response as returned by a boto3 method for AWS Deadline Cloud's Assume*RoleForWorker
         methods into a TemporaryCredentials instance.
@@ -274,4 +269,4 @@ class TemporaryCredentials:
         return cls.from_deadline(temporary_creds)
 
     def are_expired(self) -> bool:
-        return datetime.now(timezone.utc) > self.expiry_time
+        return datetime.now(UTC) > self.expiry_time

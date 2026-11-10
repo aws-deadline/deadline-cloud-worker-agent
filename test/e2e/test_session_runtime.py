@@ -18,9 +18,8 @@ Hint-dependent scenarios:
     TestServiceSelectedFollowsServiceHint accepts either hint the service may
     stamp (pythonexpr by default, rust for allowlisted accounts), so it needs
     no allowlist state of its own. It does need the worker's botocore to model
-    AssignedSession.metadata: Python 3.9 caps botocore below that release and
-    the hint is dropped, which is what the xfail on that class covers for the
-    Linux and macOS workers.
+    AssignedSession.metadata, which every botocore release that supports
+    Python 3.14 does.
 
 The Rust adapter needs no env var: openjd-model ships the Rust extension
 (openjd._openjd_rs) in its platform wheels from 0.10.0 onward, and this
@@ -41,7 +40,7 @@ Worker openjd package location (for making the Rust adapter unloadable):
     the rust_unavailable_worker fixture)
 """
 
-from typing import Generator, Sequence, Union
+from collections.abc import Generator, Sequence
 
 import backoff
 import dataclasses
@@ -74,7 +73,7 @@ LOG = logging.getLogger(__name__)
 # This module drives the agent's service directly, which the DeadlineWorker base
 # class does not declare. Both concrete workers that can host a macOS or Linux
 # agent expose it, so accept either rather than requiring the EC2 one.
-ServiceControllableWorker = Union[EC2InstanceWorker, LocalMacWorker]
+ServiceControllableWorker = EC2InstanceWorker | LocalMacWorker
 
 _LINUX_AGENT_LOG = "/var/log/amazon/deadline/worker-agent.log"
 _WINDOWS_AGENT_LOG = r"C:\ProgramData\Amazon\Deadline\Logs\worker-agent.log"
@@ -86,7 +85,7 @@ _WINDOWS_WORKER_TOML = r"C:\ProgramData\Amazon\Deadline\Config\worker.toml"
 # Worker venv site-packages path (for making the Rust adapter unloadable).
 # Linux: the worker agent runs inside a venv at this path. This is not a
 # guess: it is the same literal deadline_test_fixtures uses to create the
-# venv in its userdata ("python3 -m venv /opt/deadline/worker"). The openjd
+# venv in its userdata ("<worker_python> -m venv /opt/deadline/worker"). The openjd
 # package location inside it is resolved by asking that venv's python at
 # test time, so no Python minor version appears here. On Windows the
 # installer puts python on the machine PATH (PrependPath=1 in the fixtures
@@ -133,7 +132,7 @@ def _agent_log_path(worker: ServiceControllableWorker) -> str:
 
 def _assert_log_contains(
     worker: ServiceControllableWorker,
-    pattern: Union[str, Sequence[str]],
+    pattern: str | Sequence[str],
     description: str,
 ) -> None:
     """Assert that the agent log on the remote worker contains *pattern*.
@@ -257,14 +256,6 @@ def service_selected_worker(
     stop_worker(request, worker)
 
 
-@pytest.mark.xfail(
-    os.environ["OPERATING_SYSTEM"] in ("linux", "macos"),
-    strict=False,
-    reason="The Linux and macOS workers run Python 3.9, which caps botocore below the release "
-    "that models AssignedSession.metadata, so the runtimeHint is dropped. macOS is included "
-    "because LocalMacWorker builds its venv from /usr/bin/python3, which is 3.9.6 on current "
-    "macOS. Remove each platform from this mark once its botocore keeps the field.",
-)
 class TestServiceSelectedFollowsServiceHint:
     """Worker with session_runtime=service-selected receives and follows the service's runtimeHint.
 

@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 import logging
-from typing import Any, Optional, TypedDict, Union
+from typing import Any, TypedDict
 import json
 import datetime
 import re
@@ -284,7 +284,7 @@ class PreviousRequestRecord:
         *,
         operation_name: str,
         params: dict[str, Any],
-        resource: Optional[dict[str, str]] = None,
+        resource: dict[str, str] | None = None,
     ) -> None:
         if operation_name not in self._allowlist:
             return
@@ -308,7 +308,7 @@ class PreviousRequestRecord:
         *,
         operation_name: str,
         params: dict[str, Any],
-        resource: Optional[dict[str, str]] = None,
+        resource: dict[str, str] | None = None,
     ) -> bool:
         # Return true if and only if the request should be suppressed from the log.
         # i.e. That it exactly matches the previous request made.
@@ -383,7 +383,7 @@ def log_before_call(event_name, params, **kwargs) -> None:
                 body = body.decode()
         if isinstance(body, str):
             body = json.loads(body)
-        loggable_params: Union[dict[str, Any], str] = {}
+        loggable_params: dict[str, Any] | str = {}
         if operation_name in LOGGING_ALLOW_LIST:
             allow_list = LOGGING_ALLOW_LIST[operation_name]
             if allow_list.get("log_request_url", True):
@@ -482,7 +482,7 @@ def log_after_call(event_name, parsed, **kwargs) -> None:
         operation_name = event_name.split(".", 1)[1].replace(".", ":")
         if LOGGING_IGNORE_MATCHER.match(operation_name):
             return
-        loggable_params: Union[dict[str, Any], str] = dict()
+        loggable_params: dict[str, Any] | str = dict()
         if "Error" in parsed:
             loggable_params = dict(parsed)
             del loggable_params["Error"]

@@ -4,7 +4,7 @@ import json
 import os
 import tempfile
 from unittest.mock import Mock, patch, mock_open, ANY
-from typing import Generator
+from collections.abc import Generator
 import pytest
 
 from deadline.job_attachments.progress_tracker import (
@@ -273,25 +273,25 @@ class TestPerformDownload:
     """Test cases for perform_download function."""
 
     @pytest.fixture(autouse=True)
-    def mock_boto3(self) -> Generator[Mock, None, None]:
+    def mock_boto3(self) -> Generator[Mock]:
         """Mock boto3 session for testing."""
         with patch.object(attachment_download_mod, "boto3") as m:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_download_files(self) -> Generator[Mock, None, None]:
+    def mock_download_files(self) -> Generator[Mock]:
         with patch.object(attachment_download_mod, "download_files_from_manifests") as m:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_success_telemetry(self) -> Generator[Mock, None, None]:
+    def mock_success_telemetry(self) -> Generator[Mock]:
         with patch.object(
             attachment_download_mod, "record_attachment_download_telemetry_event"
         ) as m:
             yield m
 
     @pytest.fixture(autouse=True)
-    def mock_fail_telemetry(self) -> Generator[Mock, None, None]:
+    def mock_fail_telemetry(self) -> Generator[Mock]:
         with patch.object(
             attachment_download_mod, "record_attachment_download_fail_telemetry_event"
         ) as m:

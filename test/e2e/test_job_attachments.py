@@ -12,7 +12,7 @@ import pathlib
 import tempfile
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import backoff
 import boto3
@@ -289,7 +289,7 @@ if __name__ == "__main__":
         )
         output_file_path = os.path.join(output_root_path, output_file_paths[0])
         try:
-            with open(output_file_path, "r", encoding="utf-8-sig") as output_file:
+            with open(output_file_path, encoding="utf-8-sig") as output_file:
                 output_file_content = output_file.read()
 
                 # Verify that the output file content is as expected
@@ -511,7 +511,7 @@ if __name__ == "__main__":
             os.path.dirname(__file__),
             "job_attachment_bundle",
         )
-        job_parameters: List[Dict[str, str]] = [
+        job_parameters: list[dict[str, str]] = [
             {"name": "StringToAppend", "value": test_run_uuid},
             {"name": "DataDir", "value": job_bundle_path},
         ]
@@ -573,7 +573,7 @@ if __name__ == "__main__":
             set_setting("defaults.farm_id", deadline_resources.farm.id, config)
             set_setting("defaults.queue_id", deadline_resources.queue_a.id, config)
 
-            job_id: Optional[str] = api.create_job_from_job_bundle(
+            job_id: str | None = api.create_job_from_job_bundle(
                 job_bundle_path,
                 job_parameters,
                 priority=99,
@@ -612,13 +612,12 @@ if __name__ == "__main__":
 
         try:
             with (
-                open(os.path.join(job_bundle_path, "files", "test_input_file"), "r") as input_file,
+                open(os.path.join(job_bundle_path, "files", "test_input_file")) as input_file,
                 open(
                     os.path.join(
                         list(output_path.keys())[0],
                         "output_file",
                     ),
-                    "r",
                     encoding="utf-8-sig",
                 ) as output_file,
             ):
@@ -649,7 +648,7 @@ if __name__ == "__main__":
                 open(os.path.join(job_bundle_path, "template.json"), "w+") as template_file,
                 tempfile.TemporaryDirectory() as temporary_output_directory,
             ):
-                job_parameters: List[Dict[str, str]] = [
+                job_parameters: list[dict[str, str]] = [
                     {
                         "name": "OutputFilePath",
                         "value": temporary_output_directory,
@@ -694,7 +693,7 @@ if __name__ == "__main__":
 
             set_setting("defaults.farm_id", deadline_resources.farm.id, config)
             set_setting("defaults.queue_id", deadline_resources.queue_a.id, config)
-            job_id: Optional[str] = api.create_job_from_job_bundle(
+            job_id: str | None = api.create_job_from_job_bundle(
                 job_bundle_path,
                 job_parameters,
                 priority=99,
@@ -752,7 +751,7 @@ if __name__ == "__main__":
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "linux_bundle"
         )
 
-        job_parameters: List[Dict[str, str]] = [
+        job_parameters: list[dict[str, str]] = [
             {
                 "name": "JobName",
                 "value": f"Step-Step Dataflow Linux_{file_system}",
@@ -816,7 +815,7 @@ if __name__ == "__main__":
             os.path.dirname(__file__), "job_attachment_bundle", "dep_data_flow", "windows_bundle"
         )
 
-        job_parameters: List[Dict[str, str]] = [
+        job_parameters: list[dict[str, str]] = [
             {
                 "name": "JobName",
                 "value": "Step-Step Dataflow Win",
@@ -881,7 +880,7 @@ if __name__ == "__main__":
             os.path.dirname(__file__),
             "job_attachment_bundle",
         )
-        job_parameters: List[Dict[str, str]] = [
+        job_parameters: list[dict[str, str]] = [
             {"name": "DataDir", "value": job_bundle_path},
         ]
         append_string_script = (
@@ -946,7 +945,7 @@ if __name__ == "__main__":
             set_setting("defaults.farm_id", deadline_resources.farm.id, config)
             set_setting("defaults.queue_id", deadline_resources.non_valid_role_queue.id, config)
 
-            job_id: Optional[str] = api.create_job_from_job_bundle(
+            job_id: str | None = api.create_job_from_job_bundle(
                 job_bundle_path,
                 job_parameters,
                 priority=99,
@@ -1066,7 +1065,7 @@ if __name__ == "__main__":
         for file_name in sorted(os.listdir(file_path)):
             file: str = os.path.join(file_path, file_name)
             # Open the file and read its contents
-            with open(file, "r") as file_string:
+            with open(file) as file_string:
                 file_contents: str = file_string.read()
 
             # Concatenate the file contents to the combined string
@@ -1075,7 +1074,7 @@ if __name__ == "__main__":
         combined_hash: str = hashlib.sha256(combined_string.encode()).hexdigest()
 
         # JA template to get all files and compute the hash
-        job_parameters: List[Dict[str, str]] = [
+        job_parameters: list[dict[str, str]] = [
             {"name": "DataDir", "value": job_bundle_path},
         ]
 
@@ -1141,7 +1140,7 @@ if __name__ == "__main__":
         set_setting("defaults.farm_id", deadline_resources.farm.id, config)
         set_setting("defaults.queue_id", deadline_resources.queue_a.id, config)
 
-        job_id: Optional[str] = api.create_job_from_job_bundle(
+        job_id: str | None = api.create_job_from_job_bundle(
             job_bundle_path,
             job_parameters,
             priority=99,
@@ -1213,7 +1212,7 @@ if __name__ == "__main__":
             job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
         )
         with (
-            open(os.path.join(list(output_path.keys())[0], "output_file.txt"), "r") as output_file,
+            open(os.path.join(list(output_path.keys())[0], "output_file.txt")) as output_file,
         ):
             output_file_content: str = output_file.read()
             # Verify that the hash is the same
@@ -1243,7 +1242,7 @@ if __name__ == "__main__":
         with open(input_file_name, "w") as input_file:
             input_file.write("Hello")
 
-        job_parameters: List[Dict[str, str]] = [
+        job_parameters: list[dict[str, str]] = [
             {"name": "DataDir", "value": job_bundle_path},
         ]
 
@@ -1345,7 +1344,7 @@ if __name__ == "__main__":
         set_setting("defaults.farm_id", deadline_resources.farm.id, config)
         set_setting("defaults.queue_id", deadline_resources.queue_a.id, config)
 
-        job_id: Optional[str] = api.create_job_from_job_bundle(
+        job_id: str | None = api.create_job_from_job_bundle(
             job_bundle_path,
             job_parameters,
             priority=99,
@@ -1379,7 +1378,6 @@ if __name__ == "__main__":
                         "files",
                         "output_file",
                     ),
-                    "r",
                     encoding="utf-8-sig",
                 ) as output_file,
             ):
@@ -1409,7 +1407,7 @@ if __name__ == "__main__":
         with open(input_file_name, "w+") as file_to_write:
             file_to_write.write(str(uuid.uuid4()))
 
-        job_parameters: List[Dict[str, str]] = [
+        job_parameters: list[dict[str, str]] = [
             {"name": "deadline:targetTaskRunStatus", "value": "SUSPENDED"},
             {"name": "DataDir", "value": job_bundle_path},
         ]
@@ -1467,7 +1465,7 @@ if __name__ == "__main__":
         config = configparser.ConfigParser()
         set_setting("defaults.farm_id", deadline_resources.farm.id, config)
         set_setting("defaults.queue_id", queue_a.id, config)
-        job_id: Optional[str] = api.create_job_from_job_bundle(
+        job_id: str | None = api.create_job_from_job_bundle(
             job_bundle_path,
             job_parameters,
             priority=99,
@@ -1487,7 +1485,7 @@ if __name__ == "__main__":
 
         LOG.info(f"job details: {job_details}")
         assert job_details.get("task_run_status") == "SUSPENDED"
-        attachments: Optional[dict] = job_details.get("attachments")
+        attachments: dict | None = job_details.get("attachments")
         assert attachments is not None
 
         manifests: list[dict[str, Any]] = attachments["manifests"]
@@ -1763,7 +1761,7 @@ with open(output_path, "w") as f:
             job=job, deadline_client=deadline_client, deadline_resources=deadline_resources
         )
         output_file = os.path.join(list(output_path.keys())[0], "output.txt")
-        with open(output_file, "r") as f:
+        with open(output_file) as f:
             assert f.read() == "Job attachments working"
 
         ## TODO: add verification that manifest cleanup completes successfully

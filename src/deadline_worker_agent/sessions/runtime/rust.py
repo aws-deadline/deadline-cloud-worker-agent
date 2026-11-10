@@ -10,7 +10,7 @@ from datetime import timedelta
 from logging import getLogger
 from pathlib import Path
 from shutil import chown
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from openjd._openjd_rs import deserialize_step
 from openjd.expr import PathFormat, PathMappingRule as RustPathMappingRule, SerializedSymbolTable
@@ -99,8 +99,8 @@ def _to_v0_action_state(state: RustActionState) -> ActionState:
 
 
 def _to_rust_session_user(
-    user: Optional[SessionUser],
-) -> Optional[RustPosixSessionUser | RustWindowsSessionUser]:
+    user: SessionUser | None,
+) -> RustPosixSessionUser | RustWindowsSessionUser | None:
     """Convert a worker (v0) SessionUser into the equivalent _v1 type.
 
     The worker builds v0 ``openjd.sessions`` user objects, but the Rust session
@@ -179,8 +179,8 @@ def _to_rust_path_mapping_rule(rule: PathMappingRule) -> RustPathMappingRule:
 
 
 def _to_rust_path_mapping_rules(
-    rules: Optional[list[PathMappingRule]],
-) -> Optional[list[RustPathMappingRule]]:
+    rules: list[PathMappingRule] | None,
+) -> list[RustPathMappingRule] | None:
     """Convert worker (v0) PathMappingRule lists into the _v1 type, passing None through."""
     if rules is None:
         return None
@@ -259,7 +259,7 @@ class RustSessionRuntime(SessionRuntime):
     """SessionRuntime backed by openjd.sessions._v1 (Rust implementation)."""
 
     _session: OpenJDRustSession
-    _user: Optional[SessionUser]
+    _user: SessionUser | None
     _supported_extensions: tuple[str, ...]
 
     def __init__(self, config: SessionRuntimeConfig) -> None:
@@ -313,8 +313,8 @@ class RustSessionRuntime(SessionRuntime):
         self,
         *,
         environment: EnvironmentModel,
-        identifier: Optional[EnvironmentIdentifier] = None,
-        os_env_vars: Optional[dict[str, str]] = None,
+        identifier: EnvironmentIdentifier | None = None,
+        os_env_vars: dict[str, str] | None = None,
         resolved_symbol_table_json: str | None = None,
         step_name: str | None = None,
         step_let_declarations: list[str] | None = None,
@@ -364,7 +364,7 @@ class RustSessionRuntime(SessionRuntime):
         self,
         *,
         identifier: EnvironmentIdentifier,
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         keep_session_running: bool = False,
         resolved_symbol_table_json: str | None = None,
     ) -> None:
@@ -391,7 +391,7 @@ class RustSessionRuntime(SessionRuntime):
         *,
         step_script: StepScriptModel,
         task_parameter_values: dict[str, Any],
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
         resolved_symbol_table_json: str | None = None,
@@ -432,7 +432,7 @@ class RustSessionRuntime(SessionRuntime):
         *,
         step_script: StepScriptModel,
         task_parameter_values: dict[str, Any],
-        os_env_vars: Optional[dict[str, str]] = None,
+        os_env_vars: dict[str, str] | None = None,
         log_task_banner: bool = True,
         step_name: str | None = None,
     ) -> None:
@@ -519,7 +519,7 @@ class RustSessionRuntime(SessionRuntime):
     def cancel_action(
         self,
         *,
-        time_limit: Optional[timedelta] = None,
+        time_limit: timedelta | None = None,
         mark_action_failed: bool = False,
     ) -> None:
         self._session.cancel_action(time_limit=time_limit, mark_action_failed=mark_action_failed)
@@ -535,6 +535,6 @@ class RustSessionRuntime(SessionRuntime):
 
     @property
     @convert_runtime_crashes
-    def action_status(self) -> Optional[ActionStatus]:
+    def action_status(self) -> ActionStatus | None:
         status = self._session.action_status
         return _to_v0_action_status(status) if status is not None else None

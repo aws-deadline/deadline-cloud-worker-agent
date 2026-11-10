@@ -35,9 +35,7 @@ class ExitEnvironmentAction(OpenjdAction):
         environment_id: str,
         details: EnvironmentDetails | None = None,
     ) -> None:
-        super(ExitEnvironmentAction, self).__init__(
-            id=id, action_log_kind=SessionActionLogKind.ENV_EXIT
-        )
+        super().__init__(id=id, action_log_kind=SessionActionLogKind.ENV_EXIT)
         self._environment_id = environment_id
         self._details = details
 

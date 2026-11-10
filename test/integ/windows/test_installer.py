@@ -37,10 +37,7 @@ from deadline_worker_agent.installer.win_installer import (
     WorkerAgentDirectories,
 )
 
-try:
-    from tomllib import load as load_toml
-except ModuleNotFoundError:
-    from tomli import load as load_toml
+from tomllib import load as load_toml
 
 
 def test_user_existence():
@@ -467,9 +464,7 @@ def test_set_registry_key_value():
                 win32api.CloseHandle(handle)
 
 
-def get_registry_key_value_data(
-    key: int, sub_key: typing.Optional[str], value_name: str
-) -> typing.Any:
+def get_registry_key_value_data(key: int, sub_key: str | None, value_name: str) -> typing.Any:
     """
     Gets a registry key value data. If the key, sub key, or value name do not exist, an error is raised.
 

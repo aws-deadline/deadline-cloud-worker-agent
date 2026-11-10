@@ -7,7 +7,8 @@ import stat
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any, Generator
+from typing import Any
+from collections.abc import Generator
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -44,7 +45,7 @@ def runtime_config() -> SessionRuntimeConfig:
 
 
 @pytest.fixture()
-def mock_rust_session() -> Generator[MagicMock, None, None]:
+def mock_rust_session() -> Generator[MagicMock]:
     with patch.object(rust_module, "OpenJDRustSession", autospec=True) as mock_cls:
         yield mock_cls
 
@@ -704,7 +705,7 @@ class TestRustSessionRuntimeTypeConversions:
     """Tests for v0 ↔ v1 type conversion helpers."""
 
     @pytest.fixture()
-    def mock_rust_session(self) -> Generator[MagicMock, None, None]:
+    def mock_rust_session(self) -> Generator[MagicMock]:
         with patch.object(rust_module, "OpenJDRustSession") as mock_cls:
             yield mock_cls
 

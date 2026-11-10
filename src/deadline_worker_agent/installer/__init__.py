@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 from __future__ import annotations
-from typing import Optional, Any
+from typing import Any
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from subprocess import CalledProcessError, run
@@ -30,7 +30,7 @@ INSTALLER_PATH = {
 }
 
 
-def _get_ec2_region() -> Optional[str]:
+def _get_ec2_region() -> str | None:
     """
     Gets the AWS region if running on EC2 by querying IMDS.
     Returns None if region could not be detected.
@@ -172,10 +172,10 @@ class ParsedCommandLineArguments(Namespace):
 
     farm_id: str
     fleet_id: str
-    region: Optional[str] = None
+    region: str | None = None
     user: str
-    password: Optional[str] = None
-    group: Optional[str] = None
+    password: str | None = None
+    group: str | None = None
     confirmed: bool
     service_start: bool
     allow_shutdown: bool
@@ -184,7 +184,7 @@ class ParsedCommandLineArguments(Namespace):
     vfs_install_path: str
     grant_required_access: bool
     disallow_instance_profile: bool
-    windows_job_user: Optional[str] = None
+    windows_job_user: str | None = None
     session_root_dir: Path
 
 

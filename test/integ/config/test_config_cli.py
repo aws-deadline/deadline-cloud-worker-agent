@@ -9,7 +9,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
+from collections.abc import Callable
 
 import pytest
 
@@ -138,7 +139,7 @@ class TestMissingExistingCommented:
         updated correctly.
         """
         # GIVEN
-        with open(output_path, "r") as f:
+        with open(output_path) as f:
             expected_output = f.read()
         shutil.copyfile(input_path, worker_config_path)
         cmd = [
@@ -202,7 +203,7 @@ class TestUnsetCommentsOutInputSetting:
     ) -> None:
         """The functional test. See class docstring"""
         # GIVEN
-        with open(output_path, "r") as f:
+        with open(output_path) as f:
             expected_output = f.read()
         shutil.copyfile(input_path, worker_config_path)
         cmd = [

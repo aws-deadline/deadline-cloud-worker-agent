@@ -13,7 +13,7 @@ import time
 from argparse import ArgumentParser
 from getpass import getpass
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import pywintypes
 import win32api
@@ -335,9 +335,9 @@ def update_config_file(
     fleet_id: str,
     region: str,
     allow_ec2_instance_profile: bool,
-    shutdown_on_stop: Optional[bool] = None,
-    windows_job_user: Optional[str] = None,
-    session_root_dir: Optional[Path] = None,
+    shutdown_on_stop: bool | None = None,
+    windows_job_user: str | None = None,
+    session_root_dir: Path | None = None,
     telemetry_opt_out: bool = False,
 ) -> None:
     """
@@ -738,8 +738,8 @@ def get_effective_user_rights(user: str) -> set[str]:
 
 
 def set_registry_key_value(
-    reg_key: Union[int, str],
-    reg_sub_key: Optional[str],
+    reg_key: int | str,
+    reg_sub_key: str | None,
     value_name: str,
     value_type: int,
     value_data: Any,
@@ -801,9 +801,9 @@ def start_windows_installer(
     parser: ArgumentParser,
     session_root_dir: Path,
     user_name: str = DEFAULT_WA_USER,
-    password: Optional[str] = None,
+    password: str | None = None,
     group_name: str = DEFAULT_JOB_GROUP,
-    windows_job_user: Optional[str] = None,
+    windows_job_user: str | None = None,
     install_service: bool = False,
     start_service: bool = False,
     confirm: bool = False,

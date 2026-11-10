@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
 
 if TYPE_CHECKING:
     from openjd.sessions import (
@@ -29,11 +30,11 @@ class SessionRuntimeConfig:
 
     session_id: str
     job_parameter_values: dict[str, Any]
-    path_mapping_rules: Optional[list[PathMappingRule]]
+    path_mapping_rules: list[PathMappingRule] | None
     retain_working_dir: bool
-    user: Optional[SessionUser]
+    user: SessionUser | None
     action_callback: ActionCallback
-    os_env_vars: Optional[dict[str, str]]
+    os_env_vars: dict[str, str] | None
     session_root_directory: Path
     spec_revision: str = "2023-09"
     supported_extensions: tuple[str, ...] = ()

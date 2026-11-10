@@ -5,14 +5,15 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import closing, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import timedelta
 from enum import Enum
 
 from pathlib import Path
-from typing import Any, Callable, ContextManager
+from contextlib import AbstractContextManager
+from typing import Any
 
 from ..log_sync.log_constants import (
     LOG_CONFIG_OPTION_GROUP_NAME_KEY,
@@ -108,7 +109,7 @@ class SessionLogFilter(logging.Filter):
         *,
         session_id: str,
     ) -> None:
-        super(SessionLogFilter, self).__init__(name)
+        super().__init__(name)
         self._session_id = session_id
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -337,7 +338,7 @@ class LogConfiguration:
         job_id: str,
         session_id: str,
         boto_session: BotoSession,
-    ) -> Generator[logging.Handler | None, None, None]:
+    ) -> Generator[logging.Handler | None]:
         """Returns a context manager that provisions a log handler, and configures logs to be
         streamed to the log destination.
 
@@ -349,7 +350,7 @@ class LogConfiguration:
             The boto session which may be used by log drivers to provision log destinations and
             deliver logs to those destinations
         """
-        ctx_mgr: ContextManager
+        ctx_mgr: AbstractContextManager
         remote_handler = self.create_remote_handler(
             boto_session=boto_session,
         )

@@ -7,9 +7,8 @@ import sys
 assert sys.platform == "win32"
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from logging import getLogger
-from typing import Dict
 
 from botocore.client import BaseClient
 from botocore.exceptions import ClientError
@@ -45,7 +44,7 @@ class WindowsCredentialsResolver:
         if os.name != "nt":  # pragma: no cover
             raise RuntimeError("Windows credentials resolver can only be used on Windows")
         self._boto_session = boto_session
-        self._user_cache: Dict[str, _WindowsCredentialsCacheEntry] = {}
+        self._user_cache: dict[str, _WindowsCredentialsCacheEntry] = {}
 
     def _get_secrets_manager_client(self) -> BaseClient:
         secrets_manager_client = self._boto_session.client(
@@ -100,7 +99,7 @@ class WindowsCredentialsResolver:
             return
 
         # Filter out entries that haven't been accessed in the last CACHE_EXPIRATION hours
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         self._user_cache = {
             key: value
             for key, value in self._user_cache.items()
@@ -157,13 +156,13 @@ class WindowsCredentialsResolver:
             if cached_data.windows_session_user:
                 # We have valid credentials for this user
                 # Update last accessed time
-                self._user_cache[user_key].last_accessed = datetime.now(tz=timezone.utc)
+                self._user_cache[user_key].last_accessed = datetime.now(tz=UTC)
 
                 logger.info("Using cached WindowsSessionUser for %s", user)
                 return cached_data.windows_session_user
             else:
                 # Only refetch if the last fetch was more than RETRY_AFTER minutes ago
-                now = datetime.now(tz=timezone.utc)
+                now = datetime.now(tz=UTC)
                 if now - self._user_cache[user_key].last_fetched_at < self.RETRY_AFTER:
                     should_fetch = False
 
@@ -190,11 +189,9 @@ class WindowsCredentialsResolver:
                         )
                     except OSError as e:
                         logger.error(
-                            (
-                                f'Error loading profile for "{user}": {e}\n'
-                                "Please ensure that the Worker Agent is running as a user that is an Administrator, and"
-                                " has user rights to both backup and restore files and directories."
-                            )
+                            f'Error loading profile for "{user}": {e}\n'
+                            "Please ensure that the Worker Agent is running as a user that is an Administrator, and"
+                            " has user rights to both backup and restore files and directories."
                         )
 
         if not cache_entry:

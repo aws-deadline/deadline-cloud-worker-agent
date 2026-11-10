@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-from typing import Generator
+from collections.abc import Generator
 from datetime import datetime, timedelta
 from dateutil.tz import tzutc
 from unittest.mock import MagicMock, patch
@@ -24,7 +24,7 @@ from deadline_worker_agent.api_models import AssumeQueueRoleForWorkerResponse, A
 def deadline_credentials() -> AwsCredentials:
     return AwsCredentials(
         accessKeyId="accessKeyId",
-        expiration=datetime.utcnow().astimezone(tzutc()) + timedelta(hours=1),
+        expiration=datetime.now(tzutc()) + timedelta(hours=1),
         secretAccessKey="secretAccessKey",
         sessionToken="sessionToken",
     )
@@ -40,7 +40,7 @@ def mock_assume_queue_role_for_worker_response(
 
 
 @pytest.fixture
-def sleep_mock() -> Generator[MagicMock, None, None]:
+def sleep_mock() -> Generator[MagicMock]:
     with patch.object(deadline_mod, "sleep") as sleep_mock:
         yield sleep_mock
 
