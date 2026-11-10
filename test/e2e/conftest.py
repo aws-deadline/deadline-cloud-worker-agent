@@ -278,6 +278,16 @@ def test_runner_identity() -> dict[str, str]:
     return sts_client.get_caller_identity()
 
 
+# The worker agent requires Python 3.10, and each EC2 worker's default interpreter is either older
+# (AL2023's system python3 is 3.9) or newer. Test on the floor where the worker can install it:
+# Windows installs 3.10 from python.org; AL2023 does not package 3.10, so Linux uses 3.11, its
+# oldest. See DeadlineWorkerConfiguration.worker_python.
+_DEFAULT_WORKER_PYTHON = {
+    "linux": "python3.11",
+    "windows": "3.10",
+}
+
+
 @pytest.fixture(scope="session")
 def worker_config(
     posix_job_user: PosixSessionUser,
@@ -302,10 +312,21 @@ def worker_config(
             If DEADLINE_SERVICE_MODEL_S3_URI was provided, this option is ignored.
         WORKER_AGENT_SESSION_RUNTIME: Pin the session_runtime worker config setting.
             Accepts: python, rust, service-selected. Overridden by --session-runtime CLI option.
+        WORKER_PYTHON: The Python that runs the agent. Defaults to the oldest one the agent
+            supports that each EC2 worker can install. Required on macOS: the path of a Python
+            interpreter on the host.
 
     Returns:
         DeadlineWorkerConfiguration: Configuration for use by DeadlineWorker.
     """
+    worker_python = worker_config.worker_python or _DEFAULT_WORKER_PYTHON.get(
+        os.environ["OPERATING_SYSTEM"]
+    )
+    if worker_python is None:
+        raise RuntimeError(
+            "Set WORKER_PYTHON to the path of a Python 3.10 or later interpreter: the macOS "
+            "worker's default /usr/bin/python3 is too old for the worker agent."
+        )
 
     return dataclasses.replace(
         worker_config,
@@ -318,6 +339,7 @@ def worker_config(
         # TODO: Temporary workaround due to AWS CLI v2 upgrade causing canary failures when copying over AWS models for deadline
         service_model_path=None,
         session_runtime=session_runtime_option,
+        worker_python=worker_python,
     )
 
 
