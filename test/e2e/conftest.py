@@ -279,11 +279,11 @@ def test_runner_identity() -> dict[str, str]:
 
 
 # The worker agent requires Python 3.14, and neither EC2 worker's default interpreter is 3.14.
-# Linux takes an AL2023 package name and Windows a python.org installer version; see
-# DeadlineWorkerConfiguration.worker_python.
+# Both take the newest 3.14 available: Linux from AL2023's packages, Windows from python.org's
+# installers. See DeadlineWorkerConfiguration.worker_python.
 _DEFAULT_WORKER_PYTHON = {
     "linux": "python3.14",
-    "windows": "3.14.10",
+    "windows": "3.14",
 }
 
 
