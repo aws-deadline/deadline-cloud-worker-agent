@@ -1,0 +1,57 @@
+# The OpenJD release train for this repository. The train runs in AWS and holds no GitHub credential: this
+# workflow asks it what to do (start a train for a new upstream release, push a bot/* branch, open its PR,
+# notice a merge, dispatch Release: Bump) and does the GitHub writes with this job's GITHUB_TOKEN. All the logic
+# and its checks live in the reusable workflow; this caller only sets the triggers and forwards the variables
+# and secrets.
+#
+# Inert until an admin sets the variable RELEASE_TRAIN_ENABLED=true (the job is skipped otherwise).
+# RELEASE_TRAIN_MODE names the train's mode, the secret RELEASE_TRAIN_ROLE the AWS role that may invoke the
+# train's gateway.
+#
+# A PR the train opens has its CI held until a maintainer approves the run; review and squash-merge it as
+# usual. The merge (a push to the default branch) runs this workflow, which tells the train.
+#
+# What runs it: a merge pushes, the repository's own "Release: Publish" completing, an upstream repository's
+# run after its release (workflow_dispatch), and a person (workflow_dispatch). A run that started or advanced
+# a train waits for the train's next step. The daily schedule is the backstop for an event that went missing.
+name: Release train
+
+on:
+  schedule:
+    # Daily backstop, off the hour.
+    - cron: "17 6 * * *"
+    # Monday check for a weekly release; the train decides. Pause with the repo variable RELEASE_TRAIN_WEEKLY=false.
+    - cron: "17 15 * * 1"
+  workflow_dispatch:
+  push:
+    # The default branch: a merged bot PR is reported right away instead of on the next schedule.
+    branches: [mainline]
+  # A release: the train sees it without waiting for the schedule. The run is only a signal: it runs this file
+  # from the default branch with the default branch's OIDC subject, and the reusable workflow reads nothing of
+  # the run that triggered it (no artifact, head ref or event payload).
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: ["Release: Publish"]
+    types: [completed]
+
+# One run at a time per repository; a run that finds nothing to do takes a few seconds.
+concurrency:
+  group: release-train
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  train:
+    if: ${{ vars.RELEASE_TRAIN_ENABLED == 'true' }}
+    # Our own reusable workflow, referenced by branch like every aws-deadline/.github workflow (the
+    # aws-deadline zizmor policy allows that ref pin for aws-deadline/*).
+    uses: aws-deadline/.github/.github/workflows/reusable_release_train.yml@mainline
+    permissions:
+      contents: write # push bot/* branches; create tags and releases (rehearsal only)
+      pull-requests: write # open and update the train's PRs and their labels
+      actions: write # dispatch this repository's own Release: Bump (live mode)
+      id-token: write # OIDC tokens for the AWS role and the gateway
+    with:
+      mode: ${{ vars.RELEASE_TRAIN_MODE }}
+    secrets:
+      role_arn: ${{ secrets.RELEASE_TRAIN_ROLE }}

@@ -11,6 +11,10 @@ updates:
       interval: "daily"
     commit-message: 
       prefix: "chore(deps):"
+    ignore:
+      # The OpenJD release train bumps the openjd-* packages itself (release_train.yml), with its tests and
+      # release notes; a Dependabot PR for them would race it.
+      - dependency-name: "openjd-*"
     # Combine all minor and patch bumps into a single PR. Major bumps do not
     # match this group and so each get their own individual PR.
     groups:
