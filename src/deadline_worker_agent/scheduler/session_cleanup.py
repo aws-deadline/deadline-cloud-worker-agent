@@ -9,6 +9,7 @@ from threading import Lock
 
 from openjd.sessions import SessionUser, PosixSessionUser, WindowsSessionUser
 from .log import LOGGER
+from .._system_commands import system_command_path
 from ..sessions import Session
 
 logger = LOGGER
@@ -105,7 +106,13 @@ class SessionUserCleanupManager:
 
         try:
             pkill_result = subprocess.run(
-                args=["sudo", "-u", user.user, "/usr/bin/pkill", *pkill_opt],
+                args=[
+                    system_command_path("sudo"),
+                    "-u",
+                    user.user,
+                    system_command_path("pkill"),
+                    *pkill_opt,
+                ],
                 capture_output=True,
                 check=True,
                 text=True,

@@ -603,8 +603,11 @@ fi
 # --- Sudoers configuration (--allow-shutdown) ---------------------------------------
 # macOS shutdown binary lives at /sbin/shutdown (BSD shutdown). The Linux line used
 # `/usr/sbin/shutdown now`; the BSD invocation is `/sbin/shutdown -h now` (-h = halt/power off).
-# The agent invokes `sudo shutdown -h now` on macOS (startup/entrypoint.py:_host_shutdown);
-# sudo resolves `shutdown` to /sbin/shutdown via PATH and matches this rule by full path.
+# The agent invokes `sudo /sbin/shutdown -h now` on macOS (startup/entrypoint.py:_host_shutdown),
+# passing the absolute path itself rather than letting sudo resolve `shutdown` via PATH.
+# The path comes from entrypoint.MACOS_SHUTDOWN_PATH, and a unit test reads this rule and
+# compares the two, so a change on either side fails the build rather than silently
+# producing a password prompt.
 # The sudoers command MUST continue to match that argv exactly for the NOPASSWD rule to apply.
 if [[ "${allow_shutdown}" == "yes" ]]; then
     echo "Setting up sudoers shutdown rule at /etc/sudoers.d/deadline-worker-shutdown"

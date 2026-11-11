@@ -10,6 +10,10 @@ import requests
 import sys
 import sysconfig
 
+from deadline_worker_agent._system_commands import (
+    SystemCommandNotFoundError,
+    system_command_path,
+)
 from deadline_worker_agent.config.settings import (
     DEFAULT_MACOS_SESSION_ROOT_DIR,
     DEFAULT_POSIX_SESSION_ROOT_DIR,
@@ -123,8 +127,18 @@ def install() -> None:
             print(f"ERROR: {e}")
             sys.exit(1)
     else:
+        # Resolved before building the argv, and handled here rather than left to
+        # escape. The try below covers only run()/CalledProcessError, so an
+        # unresolvable sudo would otherwise end the installer in a raw traceback
+        # instead of the actionable message the Windows branch gives for its
+        # equivalent failure a few lines up.
+        try:
+            sudo_path = system_command_path("sudo")
+        except SystemCommandNotFoundError as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
         cmd = [
-            "sudo",
+            sudo_path,
             str(INSTALLER_PATH[sys.platform]),
             "--farm-id",
             args.farm_id,
