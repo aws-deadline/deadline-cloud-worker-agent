@@ -44,6 +44,9 @@ AGENT_LAUNCHD_LABEL=com.amazon.deadline.worker-agent
 AGENT_WORKER_JSON=/var/lib/deadline/worker.json
 AGENT_WORKER_TOML=/etc/amazon/deadline/worker.toml
 AGENT_VENV=/opt/deadline/worker
+# The Python the agent venv is built from: the oldest the agent supports. reset_agent_state removes a
+# venv built from any other version, so changing this rebuilds the venv once.
+AGENT_PYTHON_VERSION=3.10
 
 # This script's own sudoers drop-in, written further down so the agent install can reach CodeArtifact
 # under sudo. Declared up here because reset_agent_state removes a leftover one, and that runs before
@@ -135,6 +138,14 @@ reset_agent_state() {
     for path in "${BUILD_RESIDUE[@]}"; do
         sudo -n rm -rf "${path}" >/dev/null 2>&1 || true
     done
+    # A venv from a build that used another Python, such as /usr/bin/python3. Building a venv over
+    # it would leave bin/python on the old interpreter while pip and the agent move to the new one.
+    if [ -d "${AGENT_VENV}" ] && ! "${AGENT_VENV}/bin/python" -c \
+        "import sys; sys.exit('%d.%d' % sys.version_info[:2] != '${AGENT_PYTHON_VERSION}')" \
+        >/dev/null 2>&1; then
+        echo "NOTE: ${AGENT_VENV} is not a Python ${AGENT_PYTHON_VERSION} venv; removing it." >&2
+        sudo -n rm -rf "${AGENT_VENV}" >/dev/null 2>&1 || true
+    fi
     restore_moved_aside_openjd_v1
 }
 
@@ -143,13 +154,6 @@ echo "=== host ==="
 sw_vers
 uname -m
 id
-
-# The interpreter LocalMacWorker builds the agent venv from. Logged because the
-# TestServiceSelectedFollowsServiceHint xfail is justified by this being 3.9, which caps botocore
-# below the release that models AssignedSession.metadata: if a future macOS ships something newer,
-# the xfail should be removed rather than left to pass silently as an xpass.
-echo "=== agent venv interpreter ==="
-/usr/bin/python3 --version 2>&1 || echo "no /usr/bin/python3"
 
 # Is IMDS reachable here? Nothing has established this, and one skip depends on the answer.
 # test_worker_requires_no_instance_profile asserts a job is never picked up, which holds on EC2
@@ -211,11 +215,24 @@ TOOLS_VENV="${CODEBUILD_SRC_DIR:-/tmp}/.e2e-tools"
 rm -rf "${TOOLS_VENV}"
 python3 -m venv "${TOOLS_VENV}"
 "${TOOLS_VENV}/bin/pip" install --upgrade pip
-"${TOOLS_VENV}/bin/pip" install --upgrade hatch "virtualenv<21"
+"${TOOLS_VENV}/bin/pip" install --upgrade hatch 'virtualenv<21; python_version < "3.10"'
 # Ahead of the existing PATH so `hatch` below resolves to this venv's copy rather than anything
 # preinstalled on the image.
 export PATH="${TOOLS_VENV}/bin:${PATH}"
 echo "hatch: $(command -v hatch) ($(hatch --version 2>&1))"
+
+# The agent requires Python 3.10 or later and the host's /usr/bin/python3 is 3.9, so LocalMacWorker builds
+# the agent venv from a uv-managed CPython instead (conftest reads WORKER_PYTHON). It lives under
+# /Users/Shared rather than the build directory because the agent runs as its own account, which
+# must be able to reach the interpreter the venv links to. Reinstalling is a no-op when present.
+WORKER_PYTHON_DIR=/Users/Shared/deadline-e2e-python
+"${TOOLS_VENV}/bin/pip" install --upgrade uv
+uv python install "${AGENT_PYTHON_VERSION}" --no-bin --install-dir "${WORKER_PYTHON_DIR}"
+WORKER_PYTHON="$(UV_PYTHON_INSTALL_DIR="${WORKER_PYTHON_DIR}" uv python find --managed-python "${AGENT_PYTHON_VERSION}")"
+export WORKER_PYTHON
+chmod -R a+rX "${WORKER_PYTHON_DIR}"
+echo "=== agent venv interpreter ==="
+echo "WORKER_PYTHON=${WORKER_PYTHON} ($("${WORKER_PYTHON}" --version 2>&1))"
 
 # Mirrors e2e.sh rather than shortening to `hatch run e2e:test`. The reusable workflow sets
 # TEST_TYPE=WHEEL, and with WORKER_AGENT_WHL_PATH unset conftest installs the PUBLISHED agent

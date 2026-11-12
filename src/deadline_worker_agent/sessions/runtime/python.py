@@ -241,8 +241,6 @@ class PythonSessionRuntime(SessionRuntime):
         )
 
     def extend_path_mapping_rules(self, rules: list[PathMappingRule]) -> None:
-        # bisect.insort only supports the 'key' arg in 3.10 or later, so
-        # we first extend the list and sort it afterwards.
         if self._session._path_mapping_rules:
             self._session._path_mapping_rules.extend(rules)
         else:

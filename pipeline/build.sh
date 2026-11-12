@@ -3,7 +3,7 @@
 set -e
 
 pip install --upgrade pip
-pip install --upgrade hatch "virtualenv<21"
+pip install --upgrade hatch 'virtualenv<21; python_version < "3.10"'
 pip install --upgrade twine
 hatch -v run lint
 hatch -v run e2e:lint
