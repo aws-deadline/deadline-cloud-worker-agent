@@ -9,14 +9,20 @@ from botocore.retries.standard import ExponentialBackoff
 
 
 class NoOverflowExponentialBackoff(ExponentialBackoff):
-    """This is the same exponential backoff algorithm as its parent class
-    (botocore.retries.standard.ExponentialBackoff) except that it avoids integer overflow
-    for high attempt numbers.
+    """Truncated binary exponential backoff with jitter, rand(0, 1) * min(2 ** (attempt - 1),
+    max_backoff), that avoids integer overflow for high attempt numbers.
+
+    This is the algorithm botocore.retries.standard.ExponentialBackoff used before botocore 1.44,
+    computed here rather than inherited. botocore 1.44 scales it by 50 ms for any error it cannot
+    classify as throttling, which would make every agent retry, throttled ones included, start
+    at 50 ms instead of 1 s.
 
     We use this in the worker agent because the agent is intended to be long-running and we don't
     want worker admins to need to restart the worker agents over many worker hosts when there
     is a service issue.
     """
+
+    _BASE = 2
 
     _log_val: float
     _random_between: Callable[[float, float], float]
@@ -31,12 +37,14 @@ class NoOverflowExponentialBackoff(ExponentialBackoff):
             max_backoff=max_backoff,
             random=self._unit_random,
         )
-        self._log_val = math.log(max_backoff, self._base)
+        self._max_backoff = max_backoff
+        self._log_val = math.log(max_backoff, self._BASE)
         self._random_between = random_between
 
     def delay_amount(self, context):
-        if (context.attempt_number - 1) <= (self._log_val * 2):
-            return super().delay_amount(context)
+        exponent = context.attempt_number - 1
+        if exponent <= (self._log_val * 2):
+            return self._unit_random() * min(self._BASE**exponent, self._max_backoff)
 
         return self._random_between(
             self._max_backoff * 0.8,
