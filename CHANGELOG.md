@@ -1,3 +1,11 @@
+## 0.33.7 (2026-11-13)
+
+### BREAKING CHANGES
+* The worker agent now requires Python 3.10 or later. Hosts that run the agent on Python 3.9, such as the default `python3` on Amazon Linux 2023 and macOS, have to switch to Python 3.10 or newer before upgrading. (`dcbbc4f`)
+
+### Bug Fixes
+* Fixed retry delays becoming about 20 times shorter with botocore 1.44 or later. Throttled or failed service calls were retried much sooner than intended, for example after up to 0.05 s instead of up to 1 s on the first retry. Retries now back off as they did before. (#1142)
+* Fixed Windows workers not uploading outputs written directly into a job's asset root. Before this fix, the task succeeded but logged "No output to upload", and the job had no outputs to download. (#1129)
 ## 0.33.8 (2026-11-04)
 
 ### Bug Fixes
