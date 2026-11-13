@@ -1,11 +1,16 @@
 ## 0.33.7 (2026-11-13)
 
+
 ### BREAKING CHANGES
-* The worker agent now requires Python 3.10 or later. Hosts that run the agent on Python 3.9, such as the default `python3` on Amazon Linux 2023 and macOS, have to switch to Python 3.10 or newer before upgrading. (`dcbbc4f`)
+* require Python 3.10 or later; hosts on Python 3.9, such as the default python3 on Amazon Linux 2023, must upgrade Python before upgrading the agent (#1130) ([`dcbbc4f`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/dcbbc4f4a39e395c0c92c9ebcffb88c82a328743))
 
 ### Bug Fixes
-* Fixed retry delays becoming about 20 times shorter with botocore 1.44 or later. Throttled or failed service calls were retried much sooner than intended, for example after up to 0.05 s instead of up to 1 s on the first retry. Retries now back off as they did before. (#1142)
-* Fixed Windows workers not uploading outputs written directly into a job's asset root. Before this fix, the task succeeded but logged "No output to upload", and the job had no outputs to download. (#1129)
+* keep the worker agent's retry delays unchanged on botocore 1.44 (#1142) ([`b9fc6ed`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/b9fc6ed0e4d61adf96e8a0ad48304a80eabe8341))
+* upload outputs in the asset root on Windows (#1129) ([`14613c7`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/14613c72bc84c2a1191390baf7950bf3785733aa))
+* Bump deadline-job-attachments to 0.1.5 (#1112) ([`a7de0b8`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/a7de0b81fadab5df811c761935a4b257d79a584a))
+* update requests requirement from ==2.32.* to >=2.32,<2.35 (#1122) ([`c17f12a`](https://github.com/aws-deadline/deadline-cloud-worker-agent/commit/c17f12a0a3dcf41119bb509fea0910aa38a2e00c))
+
+
 ## 0.33.8 (2026-11-04)
 
 ### Bug Fixes
