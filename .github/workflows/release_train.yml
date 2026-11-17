@@ -27,8 +27,9 @@ on:
     # The default branch: a merged bot PR is reported right away instead of on the next schedule.
     branches: [mainline]
   # A release: the train sees it without waiting for the schedule. The run is only a signal: it runs this file
-  # from the default branch with the default branch's OIDC subject, and the reusable workflow reads nothing of
-  # the run that triggered it (no artifact, head ref or event payload).
+  # from the default branch with the default branch's OIDC subject. The reusable workflow reads only the
+  # triggering run's conclusion, head repository, head branch and URL, and goes on only for a successful
+  # Publish of this repository's own release branch.
   workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: ["Release: Publish"]
     types: [completed]
@@ -47,7 +48,7 @@ jobs:
     # aws-deadline zizmor policy allows that ref pin for aws-deadline/*).
     uses: aws-deadline/.github/.github/workflows/reusable_release_train.yml@mainline
     permissions:
-      contents: write # push bot/* branches; create tags and releases (rehearsal only)
+      contents: write # push bot/* branches; a prerelease tag in rehearsal mode only
       pull-requests: write # open and update the train's PRs and their labels
       actions: write # dispatch this repository's own Release: Bump (live mode)
       id-token: write # OIDC tokens for the AWS role and the gateway
