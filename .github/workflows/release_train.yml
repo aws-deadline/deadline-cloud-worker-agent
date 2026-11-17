@@ -5,8 +5,8 @@
 # and secrets.
 #
 # Inert until an admin sets the variable RELEASE_TRAIN_ENABLED=true (the job is skipped otherwise).
-# RELEASE_TRAIN_MODE names the train's mode, the secret RELEASE_TRAIN_ROLE the AWS role that may invoke the
-# train's gateway.
+# RELEASE_TRAIN_MODE must be live (any other value fails the run); the secret RELEASE_TRAIN_ROLE names the AWS
+# role that may invoke the train's gateway.
 #
 # A PR the train opens has its CI held until a maintainer approves the run; review and squash-merge it as
 # usual. The merge (a push to the default branch) runs this workflow, which tells the train.
@@ -48,9 +48,9 @@ jobs:
     # aws-deadline zizmor policy allows that ref pin for aws-deadline/*).
     uses: aws-deadline/.github/.github/workflows/reusable_release_train.yml@mainline
     permissions:
-      contents: write # push bot/* branches; a prerelease tag in rehearsal mode only
+      contents: write # push bot/* branches
       pull-requests: write # open and update the train's PRs and their labels
-      actions: write # dispatch this repository's own Release: Bump (live mode)
+      actions: write # dispatch this repository's own Release: Bump
       id-token: write # OIDC tokens for the AWS role and the gateway
     with:
       mode: ${{ vars.RELEASE_TRAIN_MODE }}
