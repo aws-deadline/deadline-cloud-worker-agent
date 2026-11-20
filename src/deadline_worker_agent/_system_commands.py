@@ -1,0 +1,166 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+"""Resolution of system command names to absolute paths, without consulting PATH.
+
+The problem: the agent invokes privileged helpers (``sudo``, ``pkill``) by bare
+name, which resolves them through ``PATH``. That makes the binary the agent
+actually runs depend on the search path of whatever launched the agent, for
+commands it runs as a privileged user.
+
+The solution: callers pass a bare name here and get back an absolute path found by
+scanning a fixed list of trusted directories, so ``PATH`` plays no part.
+
+Three properties make that work, and all three are easy to undo by accident:
+
+* ``PATH`` is never read. Not directly, and not through :func:`shutil.which`,
+  which resolves via ``PATH`` and so would restore the original behaviour while
+  looking like a fix.
+* Only paths under the trusted directories are returned. A name containing a path
+  separator or a drive specifier is rejected, because ``os.path.join`` would
+  otherwise let ``../../tmp/evil`` or ``D:evil`` escape the directory being
+  searched.
+* A missing command raises. Returning the bare name as a fallback would put
+  resolution back on ``PATH`` while the code still read as though it did not.
+
+A resolver rather than absolute-path literals, because the locations are not
+universal: NixOS keeps the setuid ``sudo`` wrapper at ``/run/wrappers/bin/sudo``,
+and on non-usr-merged Debian some system commands exist only under ``/sbin``. A
+hardcoded literal would trade one failure for a host that cannot run the command
+at all.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from typing import Optional, Tuple
+
+__all__ = [
+    "SystemCommandNotFoundError",
+    "system_command_path",
+    "trusted_directories",
+]
+
+# find_system_command is intentionally absent from __all__. Every caller in this
+# package needs the command it asks for, so none of them can do anything useful
+# with None. It stays defined because the tests use it to exercise the search
+# without asserting on an exception, but exporting it would advertise a
+# "tolerate absence" entry point that nothing here wants.
+
+
+_POSIX_TRUSTED_DIRECTORIES: Tuple[str, ...] = (
+    # Ordered, deliberately. On NixOS the setuid `sudo` wrapper lives here and
+    # the /usr/bin copy is absent or not setuid, so this must be searched first.
+    "/run/wrappers/bin",
+    # ...and these two NixOS entries are a pair. /run/wrappers/bin holds only the
+    # setuid/setcap wrappers, so on NixOS it resolves `sudo` and nothing else:
+    # /usr/bin holds just `env`, /bin just `sh`, and the sbin directories are
+    # absent. `pkill` lives in this symlink farm, which nixos-rebuild manages and
+    # root owns, so it is trust-equivalent to /usr/bin there. Without it the
+    # ordering above would resolve `sudo` and then fail on `pkill`.
+    "/run/current-system/sw/bin",
+    "/usr/bin",
+    "/bin",
+    # sbin last, and with no current caller. `shutdown` used to justify these two,
+    # but its path is a sudoers contract now (entrypoint.LINUX_SHUTDOWN_PATH) and is
+    # not resolved here at all; sudo and pkill both live in /usr/bin. They stay
+    # because the split is real -- a system command can be sbin-only on a
+    # non-usr-merged distribution -- but "no current caller" is the honest status.
+    "/usr/sbin",
+    "/sbin",
+)
+
+_WINDOWS_FALLBACK_SYSTEM_ROOT = r"C:\Windows"
+
+
+class SystemCommandNotFoundError(FileNotFoundError):
+    """A required system command was not present in any trusted directory.
+
+    A :class:`FileNotFoundError`, and therefore an :class:`OSError`, on purpose.
+
+    An earlier revision made this a plain ``Exception``, reasoning that an
+    unavailable privileged helper must not be absorbed by handlers that catch
+    ``FileNotFoundError`` to mean "carry on degraded". That reasoning assumed rather
+    than checked what surrounding code does with it, and the semantics this
+    condition has are ``FileNotFoundError``'s: the thing we meant to launch is not
+    there. ``capabilities.py`` and ``metrics.py`` already treat that as "feature
+    unavailable" for ``nvidia-smi``, which is the right shape here too.
+
+    Remaining a distinct type still lets a caller tell "not in any trusted
+    directory" apart from "``exec`` failed", and the message says which.
+    """
+
+
+def trusted_directories() -> Tuple[str, ...]:
+    """The absolute directories searched for system commands, in order."""
+    if sys.platform == "win32":
+        # SystemRoot is set by the operating system for every process. It is not
+        # job-controlled the way a session subprocess's environment is, and an
+        # attacker able to set it in the agent's own environment already has
+        # agent-level control, so reading it does not weaken the boundary this
+        # module defends.
+        system_root = os.environ.get("SystemRoot") or _WINDOWS_FALLBACK_SYSTEM_ROOT
+        return (os.path.join(system_root, "System32"),)
+    return _POSIX_TRUSTED_DIRECTORIES
+
+
+def _validate_command_name(name: str) -> None:
+    """Reject anything that is not a bare command name."""
+    if not name:
+        raise ValueError("A system command name must not be empty.")
+    if name in (os.curdir, os.pardir):
+        raise ValueError(f"{name!r} is not a system command name.")
+    # Both separators are checked on both platforms. A backslash is a legal POSIX
+    # filename character, but no command resolved here contains one, and treating
+    # it as suspect keeps the check identical rather than subtly weaker on POSIX.
+    # The colon is rejected too, and on this module it is not hypothetical -- this
+    # is the one resolver here with a Windows branch:
+    #
+    #     ntpath.join(r"C:\Windows\System32", "D:evil") == "D:evil"
+    #
+    # A drive-relative name discards the trusted prefix entirely while containing no
+    # separator at all, resolving against that drive's own current directory. A
+    # separator-only guard lets it straight through, which would make this module
+    # the injection point it exists to remove.
+    if "/" in name or "\\" in name or ":" in name:
+        raise ValueError(
+            f"A system command name must not contain a path separator or drive "
+            f"specifier, but got {name!r}."
+        )
+
+
+def _is_executable_file(path: str) -> bool:
+    return os.path.isfile(path) and os.access(path, os.X_OK)
+
+
+def find_system_command(name: str) -> Optional[str]:
+    """Return the absolute path to ``name``, or ``None`` if it is not installed.
+
+    ``PATH`` is not consulted. Use this when the command's absence is tolerable;
+    use :func:`system_command_path` when it is required.
+
+    Raises:
+        ValueError: if ``name`` is not a bare command name.
+    """
+    _validate_command_name(name)
+    for directory in trusted_directories():
+        candidate = os.path.join(directory, name)
+        if _is_executable_file(candidate):
+            return candidate
+    return None
+
+
+def system_command_path(name: str) -> str:
+    """Return the absolute path to ``name``.
+
+    Raises:
+        ValueError: if ``name`` is not a bare command name.
+        SystemCommandNotFoundError: if ``name`` is in no trusted directory.
+    """
+    path = find_system_command(name)
+    if path is None:
+        raise SystemCommandNotFoundError(
+            f"Could not find the system command {name!r} in any trusted directory "
+            f"({', '.join(trusted_directories())}). PATH is deliberately not searched."
+        )
+    return path
