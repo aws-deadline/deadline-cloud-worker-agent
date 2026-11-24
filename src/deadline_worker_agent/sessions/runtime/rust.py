@@ -262,6 +262,7 @@ class RustSessionRuntime(SessionRuntime):
     _user: Optional[SessionUser]
     _supported_extensions: tuple[str, ...]
 
+    @convert_runtime_crashes
     def __init__(self, config: SessionRuntimeConfig) -> None:
         try:
             revision = _SPEC_REVISIONS[config.spec_revision]

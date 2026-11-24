@@ -6,7 +6,9 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Generator, Optional
 from unittest.mock import ANY, MagicMock, Mock, call, patch
+import json
 import logging
+from logging.handlers import BufferingHandler
 
 from deadline_worker_agent.api_models import ManifestInfo
 
@@ -43,7 +45,8 @@ from deadline_worker_agent.sessions.job_entities.job_details import (
 from deadline_worker_agent.config import JobsRunAsUserOverride
 from deadline_worker_agent._session_runtime_kind import SessionRuntimeKind
 from deadline_worker_agent.errors import ServiceShutdown
-from deadline_worker_agent.log_messages import LogRecordStringTranslationFilter
+from deadline_worker_agent.log_messages import LogRecordStringTranslationFilter, SessionLogEvent
+from deadline_worker_agent.sessions.runtime._abc import SessionRuntimeCrashError
 import deadline_worker_agent.scheduler.scheduler as scheduler_mod
 from deadline_worker_agent.aws.deadline import (
     DeadlineRequestError,
@@ -2052,6 +2055,24 @@ class TestCreateNewSessionsConstructionFailure:
                 id="value_error",
             ),
             pytest.param(
+                # openjd-rs session errors reach Python as RuntimeError (SessionError).
+                RuntimeError("native session construction failed"),
+                "session construction failed",
+                id="runtime_error",
+            ),
+            pytest.param(
+                TypeError("invalid native session argument"),
+                "session construction failed",
+                id="type_error",
+            ),
+            pytest.param(
+                # A native panic in the runtime constructor, converted by
+                # convert_runtime_crashes.
+                SessionRuntimeCrashError("session runtime crashed: PanicException"),
+                "session construction failed",
+                id="converted_runtime_panic",
+            ),
+            pytest.param(
                 OSError(13, "Permission denied", "/some/user/path"),
                 "Permission denied",
                 id="os_error_with_strerror",
@@ -2130,39 +2151,142 @@ class TestCreateNewSessionsConstructionFailure:
         assert action_update.status.fail_message is not None
         assert "Failed to create session" in action_update.status.fail_message
 
-    def test_unexpected_session_construction_exception_propagates(
+    def test_session_construction_failure_continues_to_next_session(
         self,
         scheduler_service_selected: WorkerScheduler,
         mock_job_entities: MagicMock,
     ) -> None:
-        """Tests that an unexpected exception type from Session(...) is NOT caught
-        and propagates up, preserving narrow-catch design."""
+        """Tests that a construction failure in one session does not prevent the next
+        assigned session from starting in the same call."""
+        failed_session_id = "session-failed0123456789abcdef012345678"
+        started_session_id = "session-started0123456789abcdef01234567"
+
+        def assigned_session(env_id: str, action_id: str) -> AssignedSession:
+            return AssignedSession(
+                queueId="queue-abcdef0123456789abcdef0123456789",
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs", options={}, parameters={"interval": "15"}
+                ),
+                sessionActions=[
+                    EnvironmentAction(
+                        actionType="ENV_ENTER", environmentId=env_id, sessionActionId=action_id
+                    ),
+                ],
+                metadata={"runtimeHint": "rust"},
+            )
+
+        assigned_sessions: dict[str, AssignedSession] = {
+            failed_session_id: assigned_session("env-1", "action-1"),
+            started_session_id: assigned_session("env-2", "action-2"),
+        }
+        started_session = MagicMock()
+
+        # New session ids are iterated as a set, so either session may be the one
+        # whose construction fails; the assertions below hold for both orders.
+        try:
+            with (
+                patch.object(
+                    scheduler_mod,
+                    "Session",
+                    side_effect=[
+                        RuntimeError("native session construction failed"),
+                        started_session,
+                    ],
+                ),
+                patch.object(scheduler_service_selected._executor, "submit") as mock_submit,
+                patch.object(scheduler_mod, "record_runtime_failure_telemetry_event"),
+            ):
+                scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
+        finally:
+            # SessionMap is a process-wide singleton; do not leak into other tests.
+            for session_id in (failed_session_id, started_session_id):
+                scheduler_service_selected._sessions.pop(session_id, None)
+
+        failed_updates = [
+            update
+            for update in scheduler_service_selected._action_updates_map.values()
+            if update.id in ("action-1", "action-2")
+        ]
+        assert len(failed_updates) == 1
+        assert failed_updates[0].completed_status == "FAILED"
+        mock_submit.assert_called_once()
+        assert mock_submit.call_args.args[1] is started_session
+
+    @pytest.mark.parametrize("control_flow_error", (KeyboardInterrupt, SystemExit))
+    def test_control_flow_from_session_construction_propagates(
+        self,
+        control_flow_error: type[BaseException],
+        scheduler_service_selected: WorkerScheduler,
+        mock_job_entities: MagicMock,
+    ) -> None:
+        """Tests that BaseException control flow is not turned into a session failure."""
         session_id = "session-abcdef0123456789abcdef0123456789"
         assigned_sessions: dict[str, AssignedSession] = {
             session_id: AssignedSession(
                 queueId="queue-abcdef0123456789abcdef0123456789",
                 jobId="job-abcdef0123456789abcdef0123456789",
                 logConfiguration=LogConfiguration(
-                    logDriver="awslogs",
-                    options={},
-                    parameters={"interval": "15"},
+                    logDriver="awslogs", options={}, parameters={"interval": "15"}
                 ),
-                sessionActions=[
-                    EnvironmentAction(
-                        actionType="ENV_ENTER",
-                        environmentId="env-1",
-                        sessionActionId="action-1",
-                    ),
-                ],
+                sessionActions=[],
                 metadata={"runtimeHint": "rust"},
             ),
         }
 
         with (
-            patch.object(scheduler_mod, "Session", side_effect=TypeError("unexpected failure")),
-            pytest.raises(TypeError, match="unexpected failure"),
+            patch.object(scheduler_mod, "Session", side_effect=control_flow_error),
+            pytest.raises(control_flow_error),
         ):
             scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
+
+    def test_session_construction_failure_renders_traceback_in_structured_log(
+        self,
+        scheduler_service_selected: WorkerScheduler,
+        mock_job_entities: MagicMock,
+    ) -> None:
+        """Tests that the worker log's JSON output for the failure carries the traceback,
+        so runtime bugs can be reported from the log."""
+        session_id = "session-abcdef0123456789abcdef0123456789"
+        assigned_sessions: dict[str, AssignedSession] = {
+            session_id: AssignedSession(
+                queueId="queue-abcdef0123456789abcdef0123456789",
+                jobId="job-abcdef0123456789abcdef0123456789",
+                logConfiguration=LogConfiguration(
+                    logDriver="awslogs", options={}, parameters={"interval": "15"}
+                ),
+                sessionActions=[],
+                metadata={"runtimeHint": "rust"},
+            ),
+        }
+        handler = BufferingHandler(capacity=10)
+        handler.setFormatter(logging.Formatter("%(json)s"))
+        handler.addFilter(LogRecordStringTranslationFilter())
+        scheduler_mod.logger.addHandler(handler)
+
+        try:
+            with (
+                patch.object(
+                    scheduler_mod,
+                    "Session",
+                    side_effect=RuntimeError("native session construction failed"),
+                ),
+                patch.object(scheduler_mod, "record_runtime_failure_telemetry_event"),
+            ):
+                scheduler_service_selected._create_new_sessions(assigned_sessions=assigned_sessions)
+        finally:
+            scheduler_mod.logger.removeHandler(handler)
+
+        record = next(
+            record
+            for record in handler.buffer
+            if isinstance(record.msg, SessionLogEvent)
+            and record.msg.subtype == "Failed"
+            and record.msg.session_id == session_id
+        )
+        structured_log = json.loads(handler.format(record))
+        assert "Traceback (most recent call last):" in structured_log["exception"]
+        assert "RuntimeError: native session construction failed" in structured_log["exception"]
 
 
 class TestQueueAwsCredentialsManagement:

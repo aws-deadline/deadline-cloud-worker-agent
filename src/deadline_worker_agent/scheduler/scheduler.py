@@ -1248,11 +1248,15 @@ class WorkerScheduler:
                     region=self._boto_session.region_name,
                     resolved_symbol_table_json=resolved_symbol_table_json,
                 )
-            except (ValueError, NotImplementedError, OSError) as e:
-                # Runtime construction can fail per-session (e.g. the selected runtime's
-                # adapter is unavailable on this host). Fail this session's actions visibly
-                # and continue; do not take down the scheduler. Unexpected exception types
-                # still propagate.
+            except Exception as e:
+                # Runtime construction can fail per-session: the selected runtime's
+                # adapter may be unavailable on this host, or the native runtime may
+                # reject the session (openjd-rs errors surface as RuntimeError, and a
+                # native panic as SessionRuntimeCrashError). Fail this session's actions
+                # visibly, with the traceback in the worker log so runtime bugs can be
+                # reported, and continue: one bad session must not take down every other
+                # session on the host. Only BaseException control flow (KeyboardInterrupt,
+                # SystemExit) propagates.
                 message = f"Failed to create session: {e}"
                 self._fail_all_actions(session_spec, message)
                 logger.error(
@@ -1262,7 +1266,8 @@ class WorkerScheduler:
                         job_id=job_id,
                         session_id=new_session_id,
                         message=message,
-                    )
+                    ),
+                    exc_info=True,
                 )
                 record_runtime_failure_telemetry_event(
                     runtime_kind=runtime_kind.value,

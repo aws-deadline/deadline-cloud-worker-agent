@@ -2128,6 +2128,37 @@ class TestSessionStartAction:
         assert logger_error.call_args.args[0].status == "FAILED"
         assert logger_error.call_args.args[0].action_id == run_step_task_action.id
 
+    def test_rust_runtime_error_from_first_task_fails_action(
+        self,
+        session: Session,
+        mock_runtime: MagicMock,
+        run_step_task_action: RunStepTaskAction,
+        mock_mod_logger: MagicMock,
+    ) -> None:
+        """Tests that a RuntimeError from the runtime on the first action is reported as
+        a failed action and does not escape Session._start_action()."""
+        session._session_runtime_kind = SessionRuntimeKind.RUST
+        mock_runtime.run_task.side_effect = RuntimeError("native runtime failed")
+
+        with (
+            patch.object(session._queue, "dequeue", return_value=run_step_task_action),
+            patch.object(session, "_report_action_update") as mock_report_action_update,
+            patch.object(session._queue, "cancel_all") as mock_queue_cancel_all,
+        ):
+            session._start_action()
+
+        mock_runtime.run_task.assert_called_once()
+        reported_status = mock_report_action_update.call_args.args[0]
+        assert reported_status.completed_status == "FAILED"
+        assert reported_status.status is not None
+        assert reported_status.status.state == ActionState.FAILED
+        assert reported_status.status.fail_message == "native runtime failed"
+        mock_queue_cancel_all.assert_called_once_with(
+            message=f"Error starting prior action {run_step_task_action.id}",
+            ignore_env_exits=True,
+        )
+        assert session._current_action is None
+
     def test_run_action_with_env_variables(
         self,
         session: Session,
