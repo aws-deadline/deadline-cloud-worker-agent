@@ -2,7 +2,12 @@ name: Release Canary
 
 on:
   schedule:
+    # Default (python) session runtime, every 3 hours.
     - cron: '0 */3 * * *'
+    # Rust session runtime, twice a day. The rust jobs share a concurrency
+    # group with the python job for the same OS, so the two never run against
+    # the test farm at the same time.
+    - cron: '30 5,17 * * *'
   workflow_dispatch:
 
 jobs:
@@ -32,6 +37,7 @@ jobs:
       
   ReleaseLinuxE2ECanary:
     name: Release Linux Canary
+    if: github.event_name != 'schedule' || github.event.schedule == '0 */3 * * *'
     permissions:
       id-token: write
       contents: read
@@ -47,6 +53,7 @@ jobs:
 
   ReleaseWindowsE2ECanary:
     name: Release Windows Canary
+    if: github.event_name != 'schedule' || github.event.schedule == '0 */3 * * *'
     permissions:
       id-token: write
       contents: read
@@ -57,5 +64,39 @@ jobs:
       branch: release
       environment: canary
       os: windows
+    concurrency:
+      group: releasewindowse2ecanary
+
+  ReleaseLinuxRustE2ECanary:
+    name: Release Linux Canary (rust session runtime)
+    if: github.event_name != 'schedule' || github.event.schedule == '30 5,17 * * *'
+    permissions:
+      id-token: write
+      contents: read
+    uses: aws-deadline/.github/.github/workflows/reusable_canary.yml@mainline
+    secrets: inherit
+    with:
+      repository: ${{ github.event.repository.name }}
+      branch: release
+      environment: canary
+      os: linux
+      session_runtime: rust
+    concurrency:
+      group: releaselinuxe2ecanary
+
+  ReleaseWindowsRustE2ECanary:
+    name: Release Windows Canary (rust session runtime)
+    if: github.event_name != 'schedule' || github.event.schedule == '30 5,17 * * *'
+    permissions:
+      id-token: write
+      contents: read
+    uses: aws-deadline/.github/.github/workflows/reusable_canary.yml@mainline
+    secrets: inherit
+    with:
+      repository: ${{ github.event.repository.name }}
+      branch: release
+      environment: canary
+      os: windows
+      session_runtime: rust
     concurrency:
       group: releasewindowse2ecanary
