@@ -1,1 +1,7 @@
 * @aws-deadline/sync-team-aws-deadline-cloud-github-developers-for-worker-agent-and-job-attachments
+
+# Allow automated approvals for dependency requirement updates.
+/requirements-e2e.txt
+/requirements-release.txt
+/requirements-research.txt
+/requirements-testing.txt
