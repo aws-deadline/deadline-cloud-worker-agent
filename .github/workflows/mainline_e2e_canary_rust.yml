@@ -1,0 +1,45 @@
+name: Mainline Canary (rust session runtime)
+
+# Runs the E2E suite on mainline with the worker's session_runtime pinned to
+# rust, twice a day. The python canary (mainline_e2e_canary.yml) runs every
+# 3 hours. The jobs here share the per-OS concurrency group with that
+# workflow, so a rust run never overlaps a python run on the test farm
+# (pre_test_cleanup.py terminates every test worker in the account).
+
+on:
+  schedule:
+    - cron: '30 5,17 * * *'
+  workflow_dispatch:
+
+jobs:
+  MainlineLinuxRustE2ECanary:
+    name: Mainline Linux Canary (rust session runtime)
+    permissions:
+      id-token: write
+      contents: read
+    uses: aws-deadline/.github/.github/workflows/reusable_canary.yml@mainline
+    secrets: inherit
+    with:
+      repository: ${{ github.event.repository.name }}
+      branch: mainline
+      environment: canary
+      os: linux
+      session_runtime: rust
+    concurrency:
+      group: mainlinelinuxe2ecanary
+
+  MainlineWindowsRustE2ECanary:
+    name: Mainline Windows Canary (rust session runtime)
+    permissions:
+      id-token: write
+      contents: read
+    uses: aws-deadline/.github/.github/workflows/reusable_canary.yml@mainline
+    secrets: inherit
+    with:
+      repository: ${{ github.event.repository.name }}
+      branch: mainline
+      environment: canary
+      os: windows
+      session_runtime: rust
+    concurrency:
+      group: mainlinewindowse2ecanary

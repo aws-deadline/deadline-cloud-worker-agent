@@ -2,12 +2,7 @@ name: Mainline Canary
 
 on:
   schedule:
-    # Default (python) session runtime, every 3 hours.
     - cron: '0 */3 * * *'
-    # Rust session runtime, twice a day. The rust jobs share a concurrency
-    # group with the python job for the same OS, so the two never run against
-    # the test farm at the same time.
-    - cron: '30 5,17 * * *'
   workflow_dispatch:
 
 jobs:
@@ -37,7 +32,6 @@ jobs:
       
   MainlineLinuxE2ECanary:
     name: Mainline Linux Canary
-    if: github.event_name != 'schedule' || github.event.schedule == '0 */3 * * *'
     permissions:
       id-token: write
       contents: read
@@ -53,7 +47,6 @@ jobs:
 
   MainlineWindowsE2ECanary:
     name: Mainline Windows Canary
-    if: github.event_name != 'schedule' || github.event.schedule == '0 */3 * * *'
     permissions:
       id-token: write
       contents: read
@@ -64,39 +57,5 @@ jobs:
       branch: mainline
       environment: canary
       os: windows
-    concurrency:
-      group: mainlinewindowse2ecanary
-
-  MainlineLinuxRustE2ECanary:
-    name: Mainline Linux Canary (rust session runtime)
-    if: github.event_name != 'schedule' || github.event.schedule == '30 5,17 * * *'
-    permissions:
-      id-token: write
-      contents: read
-    uses: aws-deadline/.github/.github/workflows/reusable_canary.yml@mainline
-    secrets: inherit
-    with:
-      repository: ${{ github.event.repository.name }}
-      branch: mainline
-      environment: canary
-      os: linux
-      session_runtime: rust
-    concurrency:
-      group: mainlinelinuxe2ecanary
-
-  MainlineWindowsRustE2ECanary:
-    name: Mainline Windows Canary (rust session runtime)
-    if: github.event_name != 'schedule' || github.event.schedule == '30 5,17 * * *'
-    permissions:
-      id-token: write
-      contents: read
-    uses: aws-deadline/.github/.github/workflows/reusable_canary.yml@mainline
-    secrets: inherit
-    with:
-      repository: ${{ github.event.repository.name }}
-      branch: mainline
-      environment: canary
-      os: windows
-      session_runtime: rust
     concurrency:
       group: mainlinewindowse2ecanary

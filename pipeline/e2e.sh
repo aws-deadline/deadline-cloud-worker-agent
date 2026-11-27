@@ -16,4 +16,7 @@ then
   fi
 fi
 
+# test/e2e/conftest.py pins every worker's session_runtime to this value when set.
+echo "WORKER_AGENT_SESSION_RUNTIME=${WORKER_AGENT_SESSION_RUNTIME:-<unset, agent default>}"
+
 hatch run e2e:test
