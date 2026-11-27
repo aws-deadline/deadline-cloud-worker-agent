@@ -2,7 +2,9 @@ name: Mainline Canary
 
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    # Default (python) session runtime at 00, 06, 12 and 18 UTC. The rust
+    # canary (mainline_e2e_canary_rust.yml) takes the slots in between.
+    - cron: '0 0,6,12,18 * * *'
   workflow_dispatch:
 
 jobs:
